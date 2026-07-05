@@ -709,3 +709,68 @@ type BuilderReverseInput struct {
 type BuilderReverseReply struct {
 	ReverseOps []ReverseOp `json:"reverse_ops,omitempty"`
 }
+
+// ---------------------------------------------------------------------------
+// Substrate LIFECYCLE wire (M4) — the host↔plugin envelope for the pod/vm deploy
+// lifecycle Ops. The generic grpcSubstrateLifecycle proxy marshals these; the compiled-in
+// pod/vm lifecycles moved to candy/plugin-deploy-{pod,vm} and consume them. All ride
+// Provider.Invoke params/env/reply JSON — no new proto RPC (ProtocolVersion unchanged).
+// ---------------------------------------------------------------------------
+
+// LifecycleOpts is the serializable subset of the host's EmitOpts shipped in a lifecycle Op's
+// params. The two LIVE EmitOpts fields (ParentExec, ParentNode) cannot cross the []byte wire —
+// they re-attach host-side via the reverse channel's live host-build inputs, never serialized.
+type LifecycleOpts struct {
+	DryRun               bool   `json:"dry_run,omitempty"`
+	AllowRepoChanges     bool   `json:"allow_repo_changes,omitempty"`
+	AllowRootTasks       bool   `json:"allow_root_tasks,omitempty"`
+	WithServices         bool   `json:"with_services,omitempty"`
+	AssumeYes            bool   `json:"assume_yes,omitempty"`
+	Verify               bool   `json:"verify,omitempty"`
+	Pull                 bool   `json:"pull,omitempty"`
+	SkipIncompatible     bool   `json:"skip_incompatible,omitempty"`
+	BuilderImageOverride string `json:"builder_image_override,omitempty"`
+}
+
+// HostEnv is the generic host identity a lifecycle plugin (running ON the host) needs but cannot
+// derive: the host charly binary path (os.Args[0] of the CHARLY process — NOT the plugin's own
+// binary) and the host home. Rides op.Env for every lifecycle Op so the plugin's cli legs run
+// `<CharlyBin> …`.
+type HostEnv struct {
+	CharlyBin string `json:"charly_bin,omitempty"`
+	Home      string `json:"home,omitempty"`
+}
+
+// PrepareVenueReply is the OpPrepareVenue reply. Venue is re-materialized host-side into a live
+// DeployExecutor (the live executor never crosses the wire); State is an opaque deploy-entry patch
+// the host persists (pod: {"ResolvedImage": ref}; vm: VmDeployState JSON); Notes are human-facing
+// lines the host prints. Replaces the bare VenueDescriptor OpPrepareVenue reply.
+type PrepareVenueReply struct {
+	Venue VenueDescriptor `json:"venue"`
+	State json.RawMessage `json:"state,omitempty"`
+	Notes []string        `json:"notes,omitempty"`
+}
+
+// PostTeardownReply is the OpPostTeardown reply: the host removes each named charly.yml deploy-entry
+// key AFTER the plugin's teardown (the plugin cannot mutate the host config — vm ships its resolved
+// entry keys here; pod ships none).
+type PostTeardownReply struct {
+	RemoveEntries []string `json:"remove_entries,omitempty"`
+}
+
+// CliRequest is the "cli" host-builder envelope (M4): a lifecycle plugin asks the HOST to run a
+// `charly <argv>` subcommand — Capture=false inherits stdin/out/err (interactive: charly shell,
+// logs -f), Capture=true captures stdout (a status parse). BestEffort swallows a non-zero exit.
+type CliRequest struct {
+	Argv       []string `json:"argv"`
+	Capture    bool     `json:"capture,omitempty"`
+	BestEffort bool     `json:"best_effort,omitempty"`
+}
+
+// CliReply is the "cli" host-builder reply: captured stdout (Capture=true), the exit code, and an
+// error string on a non-zero exit that was not BestEffort-swallowed.
+type CliReply struct {
+	Stdout   string `json:"stdout,omitempty"`
+	ExitCode int    `json:"exit_code,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
