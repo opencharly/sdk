@@ -193,3 +193,18 @@ func IsGitSubmoduleDir(p, root string) bool {
 }
 
 // NOTE: EnvdDir lives in kit (profile.go) — core aliases that copy (kit_aliases.go).
+
+// MappingRoot unwraps a YAML document node to its top-level mapping node (or nil). Shared by
+// charly core (via the mappingRoot alias) and the out-of-module candy/plugin-migrate engine (R3).
+func MappingRoot(n *yaml.Node) *yaml.Node {
+	if n == nil {
+		return nil
+	}
+	if n.Kind == yaml.DocumentNode && len(n.Content) > 0 {
+		n = n.Content[0]
+	}
+	if n.Kind != yaml.MappingNode {
+		return nil
+	}
+	return n
+}

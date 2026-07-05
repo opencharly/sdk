@@ -46,11 +46,12 @@ const (
 	OpPreresolve = "preresolve"
 
 	// OpBootstrap is the BOOTSTRAP-PHASE hook (F9): the kernel invokes a Phase=="bootstrap"
-	// plugin BEFORE config validation/migration, passing the RAW project config bytes
+	// plugin BEFORE config validation, passing the RAW project config bytes
 	// (params {"config": <bytes>}) and applying any transformed bytes the plugin returns
-	// (reply {"config": <bytes>}). This is the migrate enabler (M15: migrate the raw bytes
-	// before the schema gate accepts them) — a no-op bootstrap plugin returns the bytes
-	// unchanged. Bootstrap plugins are COMPILED-IN (in-proc), so this hook never re-enters the
-	// validated-config load.
+	// (reply {"config": <bytes>}) — a generic pre-validation transform hook (a no-op bootstrap
+	// plugin returns the bytes unchanged). It is NOT the migration path: config-schema migration
+	// is candy/plugin-migrate's command:migrate over OpRun (a whole-project file-walk that runs
+	// on the config exactly when it cannot load), never a raw-byte bootstrap transform. Bootstrap
+	// plugins are COMPILED-IN (in-proc), so this hook never re-enters the validated-config load.
 	OpBootstrap = "bootstrap"
 )
