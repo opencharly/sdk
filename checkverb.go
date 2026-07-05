@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io/fs"
 	"time"
 
 	"github.com/opencharly/sdk/kit"
@@ -19,10 +18,11 @@ import (
 // (Mode/Box/Instance/Distros/DialTimeout), runs RunVerb, and returns the verdict. The SAME
 // kit verb compiles INTO charly in-process (registerCompiledCheckVerb passes the live *Runner
 // as the CheckContext); this is the out-of-process placement, ZERO authoring change. A kit
-// candy's cmd/serve is a one-liner: sdk.ServeCheckVerb(pkg.NewCheckVerb(), calver,
-// pkg.SchemaFS, pkg.SchemaDir, pkg.InputDefs).
-func ServeCheckVerb(kv kit.CheckVerbProvider, calver string, schemaFS fs.FS, schemaDir string, inputDefs map[string]string) {
-	Serve(&checkVerbServer{kv: kv}, &checkVerbMeta{kv: kv, calver: calver, schemaFS: schemaFS, schemaDir: schemaDir, inputDefs: inputDefs})
+// candy's cmd/serve is the SAME one-liner shape as every pb-provider plugin:
+// sdk.ServeCheckVerb(pkg.NewCheckVerb(), pkg.NewMeta()) — meta is the ONE shared NewMeta the
+// candy also exports, unifying kit candies with the pb-provider authoring shape (R3).
+func ServeCheckVerb(kv kit.CheckVerbProvider, meta pb.PluginMetaServer) {
+	Serve(&checkVerbServer{kv: kv}, meta)
 }
 
 // checkVerbServer is the pb.ProviderServer that runs a kit verb out-of-process.
@@ -67,23 +67,6 @@ func (s *checkVerbServer) InvokeStream(req *pb.InvokeRequest, stream pb.Provider
 		return err
 	}
 	return stream.Send(&pb.Frame{ResultJson: rep.GetResultJson()})
-}
-
-// checkVerbMeta is the pb.PluginMetaServer half: Describe advertises the verb capability +
-// serves its CUE schema (BuildCapabilities compiles it standalone, failing loudly).
-type checkVerbMeta struct {
-	pb.UnimplementedPluginMetaServer
-	kv        kit.CheckVerbProvider
-	calver    string
-	schemaFS  fs.FS
-	schemaDir string
-	inputDefs map[string]string
-}
-
-func (m *checkVerbMeta) Describe(context.Context, *pb.Empty) (*pb.Capabilities, error) {
-	return BuildCapabilities(m.calver,
-		[]ProvidedCapability{{Class: "verb", Word: m.kv.Reserved(), InputDef: m.inputDefs["verb:"+m.kv.Reserved()]}},
-		m.schemaFS, m.schemaDir)
 }
 
 // checkEnvWire is the plugin-side decode of the host's CheckEnv (charly/provider_checkenv.go)
