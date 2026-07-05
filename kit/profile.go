@@ -178,3 +178,51 @@ func sortStrings(s []string) {
 		}
 	}
 }
+
+// ReplaceOrPrependManagedBlock replaces the marker-tagged managed block in place, or PREPENDS it
+// (with a blank-line separator before the rest of the file) when absent. Used for the ssh-config
+// Include line, which MUST be at the TOP of ~/.ssh/config (outside any Host block) — an appended
+// Include would be gated on the last preceding Host stanza's match (ssh_config(5) lexical scoping).
+func ReplaceOrPrependManagedBlock(existing, body, marker string) string {
+	begin, end := MarkersForTag(marker)
+	if strings.Contains(existing, begin) {
+		var out strings.Builder
+		inBlock := false
+		for _, line := range strings.Split(existing, "\n") {
+			if strings.Contains(line, begin) {
+				inBlock = true
+				out.WriteString(begin + "\n")
+				out.WriteString(body + "\n")
+				continue
+			}
+			if inBlock && strings.Contains(line, end) {
+				inBlock = false
+				out.WriteString(end + "\n")
+				continue
+			}
+			if !inBlock {
+				out.WriteString(line + "\n")
+			}
+		}
+		return strings.TrimRight(out.String(), "\n") + "\n"
+	}
+	suffix := existing
+	if suffix != "" && !strings.HasPrefix(suffix, "\n") {
+		suffix = "\n" + suffix
+	}
+	return begin + "\n" + body + "\n" + end + "\n" + suffix
+}
+
+// ManagedBody returns just the contents between the begin/end fence markers (the global,
+// untagged managed block) in text. Returns "" when the markers are absent.
+func ManagedBody(text string) string {
+	_, after, ok := strings.Cut(text, managedBlockBegin)
+	if !ok {
+		return ""
+	}
+	before0, _, ok0 := strings.Cut(after, managedBlockEnd)
+	if !ok0 {
+		return ""
+	}
+	return strings.TrimLeft(before0, "\n")
+}
