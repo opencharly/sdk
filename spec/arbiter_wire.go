@@ -82,7 +82,7 @@ type PreemptLedger struct {
 // SAME pattern as the C11 GpuProbeInput action multiplex. The plugin sends an
 // ArbiterHost* request tagged by ArbiterAction*; the host runs the seam's CURRENT
 // default implementation (gatherPreemptibleHolders/gatherResources/holderRunning/
-// holderStop+waitStopped/holderStart/gpuSwitchModeTolerant/ensureCDIRoot) and
+// holderStop+waitStopped/holderStart/gpuSwitchModeTolerant/ensureCDIRoot/gpuCDIHolders) and
 // replies. The stop seam FOLDS the wait-until-stopped (it keeps the host-side
 // readiness StopGate + pollUntil, so no readiness machinery moves into the plugin).
 
@@ -94,7 +94,16 @@ const (
 	ArbiterSeamStart     = "start"      // ArbiterHolderReq -> ArbiterErrReply
 	ArbiterSeamSwitch    = "switchMode" // ArbiterSwitchReq -> ArbiterErrReply (routes to plugin-gpu)
 	ArbiterSeamEnsureCDI = "ensureCDI"  // (no payload) -> (no reply)
+	ArbiterSeamGpuCDI    = "gpuCDI"     // (no payload) -> ArbiterGpuCDIReply (running charly GPU-CDI pods)
 )
+
+// ArbiterGpuCDIReply lists every RUNNING charly pod container that holds the nvidia GPU as a CDI
+// device. The arbiter reclaims the ones NOT covered by an active lease (leaked/kept eval beds whose
+// transient owner-PID-tied lease died with the check-runner process) before a nvidia->vfio flip, so
+// a stray container's open GPU handle can never wedge `modprobe -r nvidia`.
+type ArbiterGpuCDIReply struct {
+	Holders []HolderAddr `json:"holders"`
+}
 
 // ArbiterGatherReply is the host's projection of every RUNNING-or-not preemptible
 // holder the arbiter may stop: PreemptionHolds() + holderAddrFor() +
