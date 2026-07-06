@@ -41,6 +41,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
@@ -224,6 +225,11 @@ func writeVocab(dir, out string) error {
 	// intent_do, and origin is yaml:"-" in Go — none is an authoring surface.
 	authoringVerbs := excludeFrom(opFields, opRuntimeDerivedFields)
 
+	kindValues, err := kindValueDefs(schema)
+	if err != nil {
+		return err
+	}
+
 	code := renderVocab(vocabSets{
 		kinds:          kinds,
 		resourceKinds:  resourceKinds,
@@ -233,6 +239,7 @@ func writeVocab(dir, out string) error {
 		opFields:       opFields,
 		opVerbs:        opVerbs,
 		authoringVerbs: authoringVerbs,
+		kindValueDefs:  kindValues,
 	})
 	formatted, err := format.Source([]byte(code))
 	if err != nil {
@@ -292,6 +299,33 @@ func nodeDiscriminators(schema cue.Value) ([]string, error) {
 		}
 	}
 	return sortedKeys(seen), nil
+}
+
+// kindValueDefs derives the word→value-def map the host uses to closedness-gate a
+// substrate/candy node's authored VALUE (validateKindValueCUE). It is DERIVED from
+// the #<Kind>Value defs themselves — the single source (clause D of the kernel/plugin
+// boundary law): every top-level `#<X>Value` definition EXCEPT the shared #DeployValue
+// disjunct. The word is strings.ToLower(X): #PodValue→pod, #K8sValue→k8s,
+// #CandyValue→candy. Adding a value-gated kind (a new #<Kind>Value def) needs no
+// hand-maintained map.
+func kindValueDefs(schema cue.Value) (map[string]string, error) {
+	it, err := schema.Fields(cue.Definitions(true))
+	if err != nil {
+		return nil, fmt.Errorf("iterate schema defs: %w", err)
+	}
+	re := regexp.MustCompile(`^#?([A-Za-z0-9]+)Value$`)
+	out := map[string]string{}
+	for it.Next() {
+		m := re.FindStringSubmatch(it.Selector().String())
+		if m == nil || m[1] == "Deploy" {
+			continue // no match, or the shared authored-deploy disjunct (#DeployValue)
+		}
+		out[strings.ToLower(m[1])] = "#" + m[1] + "Value"
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no #<Kind>Value defs found — the host value gate would be empty")
+	}
+	return out, nil
 }
 
 // fieldLabels returns the sorted regular (non-pattern) field labels of a struct
@@ -386,6 +420,7 @@ type vocabSets struct {
 	opFields       []string
 	opVerbs        []string
 	authoringVerbs []string
+	kindValueDefs  map[string]string
 }
 
 func renderVocab(s vocabSets) string {
@@ -405,6 +440,7 @@ func renderVocab(s vocabSets) string {
 	writeStrSlice(&b, "OpFields", "every #Op verb/modifier field name (the flat Op vocabulary).", s.opFields)
 	writeStrSlice(&b, "OpVerbs", "the verb DISCRIMINATOR vocabulary (#OpVerb) — the exactly-one-set verb subset of #Op fields (Op.Kind() + the VerbCatalog dispatch table gate against it).", s.opVerbs)
 	writeStrSlice(&b, "AuthoringVerbs", "the AUTHORABLE #Op field vocabulary (#Op fields minus the never-authored origin/venue/intent_do/plugin/plugin_input/command).", s.authoringVerbs)
+	writeStrMap(&b, "KindValueDefs", "the word→#<Kind>Value CUE-def map the host uses to closedness-gate a substrate/candy node's authored VALUE (validateKindValueCUE). DERIVED from the #<X>Value defs themselves (every one except the shared #DeployValue disjunct), so a new value-gated kind needs no hand-maintained map.", s.kindValueDefs)
 	return b.String()
 }
 
@@ -413,6 +449,20 @@ func writeStrSlice(b *bytes.Buffer, name, doc string, vals []string) {
 	fmt.Fprintf(b, "var %s = []string{\n", name)
 	for _, v := range vals {
 		fmt.Fprintf(b, "\t%q,\n", v)
+	}
+	b.WriteString("}\n\n")
+}
+
+func writeStrMap(b *bytes.Buffer, name, doc string, m map[string]string) {
+	fmt.Fprintf(b, "// %s is %s\n", name, doc)
+	fmt.Fprintf(b, "var %s = map[string]string{\n", name)
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(b, "\t%q: %q,\n", k, m[k])
 	}
 	b.WriteString("}\n\n")
 }

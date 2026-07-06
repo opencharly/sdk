@@ -148,3 +148,13 @@ var AuthoringVerbs = []string{
 	"uninstall",
 	"write",
 }
+
+// KindValueDefs is the word→#<Kind>Value CUE-def map the host uses to closedness-gate a substrate/candy node's authored VALUE (validateKindValueCUE). DERIVED from the #<X>Value defs themselves (every one except the shared #DeployValue disjunct), so a new value-gated kind needs no hand-maintained map.
+var KindValueDefs = map[string]string{
+	"android": "#AndroidValue",
+	"candy":   "#CandyValue",
+	"k8s":     "#K8sValue",
+	"local":   "#LocalValue",
+	"pod":     "#PodValue",
+	"vm":      "#VmValue",
+}
