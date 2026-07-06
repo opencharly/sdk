@@ -118,7 +118,7 @@
 // all loader-derived from tree position, so authoring any of them is a closed-schema
 // rejection (`run: charly migrate`). The substrate kind at the EDGE supplies the
 // target; from:/image: supply the cross-ref (EDGE-INHERIT cutover B; was #BundleValue).
-#DeployValue: #Deploy & {nested?: _|_, peer?: _|_, target?: _|_, member_of?: _|_, inside?: _|_}
+#DeployValue: #Deploy & {nested?: _|_, peer?: _|_, target?: _|_, member_of?: _|_, inside?: _|_, descent?: _|_}
 
 // ---------------------------------------------------------------------------
 // The unified node — an OPEN struct. C2-candy externalized the LAST #Node arm (`candy`,

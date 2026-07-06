@@ -5,6 +5,23 @@
 // redefined (R3): #Step/#Op/#Security/#InstallOpts/#Duration/#CalVer/
 // #EntityRef/#PortPin/#VmSize/#Sidecar/#ShellSpec live in _common.cue / sidecar.cue.
 
+// #DescentDescriptor is the loader-DERIVED venue-hop descriptor (Cutover H).
+// candy/plugin-substrate stamps it at OpLoad (via kit.StampDescent) so the deploy
+// chain descends generically by TRANSPORT — never by switching on the substrate
+// kind word. The transport set is the kernel's closed nesting-boundary vocabulary;
+// the word→transport MAPPING lives in the plugin/kit, not the kernel.
+#DescentDescriptor: {
+	// transport: how the deploy chain descends INTO this node's substrate:
+	//   none           — shares the parent venue; no hop (local, android).
+	//   container-exec — enter the container by name (pod; podman/docker per engine).
+	//   ssh            — an ssh hop into the guest (vm).
+	//   reject         — unreachable via the deploy chain (k8s → use kubectl).
+	transport: "none" | "container-exec" | "ssh" | "reject"
+	// host_rooted: the substrate's own ROOT executor runs directly on the host
+	// (local), so the check runner uses rootExecutorForDeployNode, not a container chain.
+	host_rooted?: bool @go(HostRooted)
+}
+
 #Deploy: {
 	version?:     #CalVer
 	description?: string & !=""
@@ -28,6 +45,13 @@
 	// (the iterate-benchmark contract): image-less (no box:), not folded to a
 	// top-level entry, exempt from the box-required validators. See deploy.go.
 	agent_provisioned?: bool @go(AgentProvisioned)
+
+	// descent is the loader-DERIVED venue-hop descriptor (the descent de-type,
+	// Cutover H): the substrate plugin stamps it at OpLoad (via kit.StampDescent) so
+	// the deploy chain (appendHopForFlatPath) descends generically BY TRANSPORT,
+	// never by switching on the substrate kind word. charly-written state, never
+	// authored (rejected by #BundleValue).
+	descent?: #DescentDescriptor @go(Descent,optional=nillable)
 
 	// EDGE-INHERIT cutover B: the substrate kind is the EDGE discriminator (pod:/vm:/
 	// k8s:/local:/android:/group:), so the deploy carries only NON-kind cross-refs:

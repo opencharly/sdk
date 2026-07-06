@@ -912,6 +912,25 @@ type CandyArtifactRewrite struct {
 	Replace string `yaml:"replace,omitempty" json:"replace,omitempty"`
 }
 
+// #DescentDescriptor is the loader-DERIVED venue-hop descriptor (Cutover H).
+// candy/plugin-substrate stamps it at OpLoad (via kit.StampDescent) so the deploy
+// chain descends generically by TRANSPORT — never by switching on the substrate
+// kind word. The transport set is the kernel's closed nesting-boundary vocabulary;
+// the word→transport MAPPING lives in the plugin/kit, not the kernel.
+type DescentDescriptor struct {
+	// transport: how the deploy chain descends INTO this node's substrate:
+	//
+	//	none           — shares the parent venue; no hop (local, android).
+	//	container-exec — enter the container by name (pod; podman/docker per engine).
+	//	ssh            — an ssh hop into the guest (vm).
+	//	reject         — unreachable via the deploy chain (k8s → use kubectl).
+	Transport string `yaml:"transport,omitempty" json:"transport"`
+
+	// host_rooted: the substrate's own ROOT executor runs directly on the host
+	// (local), so the check runner uses rootExecutorForDeployNode, not a container chain.
+	HostRooted bool `yaml:"host_rooted,omitempty" json:"host_rooted,omitempty"`
+}
+
 type Deploy struct {
 	Version CalVer `yaml:"version,omitempty" json:"version,omitempty"`
 
@@ -937,6 +956,13 @@ type Deploy struct {
 	// (the iterate-benchmark contract): image-less (no box:), not folded to a
 	// top-level entry, exempt from the box-required validators. See deploy.go.
 	AgentProvisioned bool `yaml:"agent_provisioned,omitempty" json:"agent_provisioned,omitempty"`
+
+	// descent is the loader-DERIVED venue-hop descriptor (the descent de-type,
+	// Cutover H): the substrate plugin stamps it at OpLoad (via kit.StampDescent) so
+	// the deploy chain (appendHopForFlatPath) descends generically BY TRANSPORT,
+	// never by switching on the substrate kind word. charly-written state, never
+	// authored (rejected by #BundleValue).
+	Descent *DescentDescriptor `yaml:"descent,omitempty" json:"descent,omitempty"`
 
 	// EDGE-INHERIT cutover B: the substrate kind is the EDGE discriminator (pod:/vm:/
 	// k8s:/local:/android:/group:), so the deploy carries only NON-kind cross-refs:
