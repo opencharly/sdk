@@ -2,7 +2,7 @@ package vmshared
 
 // SSH local-forward helper built on golang.org/x/crypto/ssh. Used by
 // `charly check libvirt|vnc --uri qemu+ssh://…` auto-tunneling, by the `spice:`
-// check verb's host-side endpoint pre-resolution (spice_preresolve.go, which forwards
+// check verbs' host-side graphics-endpoint resolution (charly's resolveVerbGraphics, which forwards
 // a remote VM's SPICE socket/TCP to a local address for the out-of-process plugin),
 // and by the user-facing `charly ssh tunnel` command (charly/ssh.go).
 //
