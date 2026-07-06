@@ -42,6 +42,7 @@ message ProvidedCapability {
   bool preresolve = 7;                // set ONLY for class="deploy" (F6): the substrate declares a host-side PRERESOLVE step (OpPreresolve) the host runs before apply, shipping the opaque result in DeployVenue.Substrate
   bool validates = 8;                 // set ONLY for class="kind" (F7/C8): the kind serves a deep OpValidate check (returns Diagnostics) BEYOND the static CUE input-def gate; the host dispatches OpValidate at load
   string phase = 9;                   // F9: the plugin lifecycle PHASE (sdk.Phase*; "" => runtime default) — the ordered point at which the kernel loads/invokes the plugin; "bootstrap" runs BEFORE config validation/migration
+  string primary = 10;                // set ONLY for class="verb": the input field the scalar sugar shorthand targets (`file: /x` -> plugin_input: {<primary>: "/x"}); "" => map input only
 }
 
 // StepContract — a class="step" plugin's DECLARED install-step contract (F3): where the

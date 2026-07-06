@@ -24,7 +24,7 @@ import (
 type MethodSpec struct {
 	// Path is the `charly check <verb> <method...>` subcommand path.
 	Path []string
-	// Required names the #Op modifier fields that must be set for this method.
+	// Required names the plugin-input fields that must be set for this method.
 	Required []string
 	// PosArgs builds the positional args inserted after the image name, before -i.
 	PosArgs func(c *spec.Op) []string
@@ -43,20 +43,32 @@ type MethodSpec struct {
 // before this.
 // ---------------------------------------------------------------------------
 
-func PosText(c *spec.Op) []string     { return []string{c.Text} }
-func PosTarget(c *spec.Op) []string   { return []string{c.Target} }
-func PosArtifact(c *spec.Op) []string { return []string{c.Artifact} }
-
-// PosKeyNameSplit splits c.KeyName on whitespace (libvirt send-key: "ctrl alt F2" → 3 slots).
-func PosKeyNameSplit(c *spec.Op) []string {
-	return strings.Fields(c.KeyName)
+// InputStr reads a string field from the step's desugared plugin input map —
+// the per-verb fields live there since the schema-compaction cutover (the
+// `<word>: <input>` sugar desugars to Plugin/PluginInput; core #Op carries no
+// per-verb fields).
+func InputStr(c *spec.Op, key string) string {
+	if c.PluginInput == nil {
+		return ""
+	}
+	s, _ := c.PluginInput[key].(string)
+	return s
 }
 
-// PosCommandFields splits c.Command into argv slots, prefixed with `--` so kong does not
-// treat embedded -flags as its own (libvirt:guest/exec). For shell metachars use
+func PosText(c *spec.Op) []string     { return []string{InputStr(c, "text")} }
+func PosTarget(c *spec.Op) []string   { return []string{c.Target} }
+func PosArtifact(c *spec.Op) []string { return []string{InputStr(c, "artifact")} }
+
+// PosKeyNameSplit splits the input `key` on whitespace (libvirt send-key: "ctrl alt F2" → 3 slots).
+func PosKeyNameSplit(c *spec.Op) []string {
+	return strings.Fields(InputStr(c, "key"))
+}
+
+// PosCommandFields splits the input `command` into argv slots, prefixed with `--` so kong
+// does not treat embedded -flags as its own (libvirt:guest/exec). For shell metachars use
 // `command: "sh -c '<full>'"`.
 func PosCommandFields(c *spec.Op) []string {
-	fields := strings.Fields(c.Command)
+	fields := strings.Fields(InputStr(c, "command"))
 	if len(fields) == 0 {
 		return nil
 	}
@@ -66,11 +78,11 @@ func PosCommandFields(c *spec.Op) []string {
 	return out
 }
 
-// PosLibvirtQmp emits a QMP method name + optional JSON args (Text = method, Input = JSON).
+// PosLibvirtQmp emits a QMP method name + optional JSON args (input text = method, input = JSON).
 func PosLibvirtQmp(c *spec.Op) []string {
-	args := []string{c.Text}
-	if c.Input != "" {
-		args = append(args, c.Input)
+	args := []string{InputStr(c, "text")}
+	if in := InputStr(c, "input"); in != "" {
+		args = append(args, in)
 	}
 	return args
 }

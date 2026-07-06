@@ -2,12 +2,12 @@
 
 package spec
 
-// #Op is the unified operation vocabulary (Go: charly/checkspec.go Op). CLOSED:
-// every authored yaml key is modeled — an unknown key is a typo. Verb
-// discriminators are optional (exactly-one is Go's Kind(), a cross-field rule
-// kept in Go); CUE closes the set, types each field, and enumerates the
-// live-verb methods + matcher operators. yaml:"-" fields (intentDo, origin) are
-// never authored and intentionally absent.
+// #Op is the unified operation vocabulary (Go: charly/checkspec.go Op) AFTER
+// the parse-time desugar: the builtin install verbs + the genuinely SHARED step
+// modifiers + the internal plugin/plugin_input pair every plugin-verb sugar key
+// desugars into. CLOSED: an unknown key on the desugared step is a typo (a
+// plugin word never reaches this def — the desugar consumed it). Per-verb
+// fields live in each plugin's own input def, served over Describe.
 type Op struct {
 	// --- verb discriminators (exactly one set; Go Kind() enforces) ---
 	Mkdir string `yaml:"mkdir,omitempty" json:"mkdir,omitempty"`
@@ -24,190 +24,15 @@ type Op struct {
 
 	Build string `yaml:"build,omitempty" json:"build,omitempty"`
 
-	// `cdp` is an EXTERNAL-CHARLY-VERB: its Chrome DevTools Protocol client (the
-	// golang.org/x/net/websocket CDP WebSocket client + the open/list/text/eval/screenshot/
-	// click/SPA dial+dispatch layer) lives in the out-of-tree candy/plugin-cdp module,
-	// served OUT-OF-PROCESS. Like mcp/vnc/spice (and unlike file/package/service/command,
-	// which left #Op entirely, re-authored as `plugin: <verb>`), cdp KEEPS its `cdp:`
-	// discriminator + every modifier (tab/url/expression/selector/…) on this closed #Op —
-	// authoring is unchanged (`cdp: status`, not `plugin: cdp`). It therefore left
-	// #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc CheckVerbProvider to gate) BUT keeps this
-	// field + #CdpMethod here, so `cdp: status` still validates against the method enum and
-	// VerbsSet still classifies the op (then dispatch resolves the registered external
-	// provider, after the host pre-resolves the deployment's CDP port to a DevTools URL).
-	Cdp CdpMethod `yaml:"cdp,omitempty" json:"cdp,omitempty"`
-
-	// `wl` is an EXTERNAL-CHARLY-VERB: its Wayland/sway desktop driver (input, windows,
-	// screenshots, sway IPC, overlay, atspi, clipboard — ~40 methods) lives in the out-of-tree
-	// candy/plugin-wl module, served OUT-OF-PROCESS. Like cdp/vnc/mcp/record/dbus (and unlike
-	// file/package/service/command, which left #Op entirely, re-authored as `plugin: <verb>`),
-	// wl KEEPS its `wl:` discriminator + every modifier
-	// (x/y/x2/y2/direction/amount/target/text/key/combo/command/action/query/artifact) on this
-	// closed #Op — authoring is unchanged (`wl: screenshot`, not `plugin: wl`). It therefore left
-	// #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc CheckVerbProvider to gate) BUT keeps this field
-	// + #WlMethod here, so `wl: screenshot` still validates against the method enum and VerbsSet
-	// still classifies the op (then dispatch resolves the registered external provider, which
-	// drives the venue's compositor over the executor reverse channel — wl is EXEC-based, like
-	// record/dbus; the screenshot PNG pulls via GetFile). wl is the LAST live-container verb to
-	// leave charly's core: after it, ZERO check verbs are compiled-in.
-	Wl WlMethod `yaml:"wl,omitempty" json:"wl,omitempty"`
-
-	// `dbus` is an EXTERNAL-CHARLY-VERB: its D-Bus driver (list/call/introspect/notify against
-	// the venue's session bus) lives in the out-of-tree candy/plugin-dbus module, served
-	// OUT-OF-PROCESS. Like cdp/vnc/mcp/record (and unlike file/package/service/command, which
-	// left #Op entirely, re-authored as `plugin: <verb>`), dbus KEEPS its `dbus:` discriminator
-	// + every modifier (dest/path/method/args/text/description) on this closed #Op — authoring
-	// is unchanged (`dbus: list`, not `plugin: dbus`). It therefore left
-	// #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc CheckVerbProvider to gate) BUT keeps this
-	// field + #DbusMethod here, so `dbus: list` still validates against the method enum and
-	// VerbsSet still classifies the op (then dispatch resolves the registered external provider,
-	// which drives the venue's session bus with gdbus over the executor reverse channel — dbus
-	// is EXEC-based, like record). STRUCTURAL externalization, not a dep-shed: dbus drives the
-	// venue bus with gdbus, never godbus.
-	Dbus DbusMethod `yaml:"dbus,omitempty" json:"dbus,omitempty"`
-
-	// `vnc` is an EXTERNAL-CHARLY-VERB: its RFB/VNC client (the stdlib-only RFC 6143 VNC
-	// client — VeNCrypt/TLS + ZRLE decode + the status/screenshot/click/mouse/type/key/rfb
-	// dispatch layer) lives in the out-of-tree candy/plugin-vnc module, served
-	// OUT-OF-PROCESS. Like cdp/mcp/spice (and unlike file/package/service/command, which
-	// left #Op entirely, re-authored as `plugin: <verb>`), vnc KEEPS its `vnc:` discriminator
-	// + every modifier (x/y/text/key/artifact/method/params) on this closed #Op — authoring
-	// is unchanged (`vnc: status`, not `plugin: vnc`). It therefore left
-	// #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc CheckVerbProvider to gate) BUT keeps this
-	// field + #VncMethod here, so `vnc: status` still validates against the method enum and
-	// VerbsSet still classifies the op (then dispatch resolves the registered external
-	// provider, after the host pre-resolves the deployment's VNC endpoint — container port
-	// 5900 or a VM's libvirt display — to a host-reachable RFB address).
-	Vnc VncMethod `yaml:"vnc,omitempty" json:"vnc,omitempty"`
-
-	// `mcp` is an EXTERNAL-CHARLY-VERB: its MCP-protocol client implementation (the
-	// github.com/modelcontextprotocol/go-sdk client + the dial/dispatch/format layer)
-	// lives in the out-of-tree candy/plugin-mcp module, served OUT-OF-PROCESS. Like
-	// cdp/vnc/spice (and unlike file/package/service/command, which left #Op entirely,
-	// re-authored as `plugin: <verb>`), mcp KEEPS its `mcp:` discriminator + every
-	// modifier (mcp_name/tool/uri/input) on this closed #Op — authoring is unchanged
-	// (`mcp: ping`, not `plugin: mcp`). It therefore left #OpVerb/spec.OpVerbs/VerbCatalog
-	// (no in-proc CheckVerbProvider to gate) BUT keeps this field + #McpMethod here, so
-	// `mcp: ping` still validates against the method enum and VerbsSet still classifies the
-	// op (then dispatch resolves the registered external provider, after the host
-	// pre-resolves the deployment's declared mcp_provides + the picked dial endpoint).
-	Mcp McpMethod `yaml:"mcp,omitempty" json:"mcp,omitempty"`
-
-	// `record` is an EXTERNAL-CHARLY-VERB: its recording driver (the asciinema/wf-recorder/
-	// pixelflux session management) lives in the out-of-tree candy/plugin-record module,
-	// served OUT-OF-PROCESS. Like cdp/vnc/mcp/spice (and unlike file/package/service/command,
-	// which left #Op entirely, re-authored as `plugin: <verb>`), record KEEPS its `record:`
-	// discriminator + every modifier (record_name/record_mode/record_fps/record_audio) on
-	// this closed #Op — authoring is unchanged (`record: start`, not `plugin: record`). It
-	// therefore left #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc CheckVerbProvider to gate)
-	// BUT keeps this field + #RecordMethod here, so `record: start` still validates against
-	// the method enum and VerbsSet still classifies the op (then dispatch resolves the
-	// registered external provider, which drives the venue over the executor reverse channel —
-	// record is the FIRST EXEC-based external verb).
-	Record RecordMethod `yaml:"record,omitempty" json:"record,omitempty"`
-
-	// `spice` is an EXTERNAL-CHARLY-VERB: its SPICE-wire implementation (+ the upstream
-	// SPICE wire client library and its cgo opus/portaudio audio transitives, vendored
-	// under candy/plugin-spice/third_party) lives in the out-of-tree candy/plugin-spice
-	// module, served OUT-OF-PROCESS. Like cdp/vnc (and unlike file/package/service/command, which
-	// left #Op entirely, re-authored as `plugin: <verb>`), spice KEEPS its `spice:`
-	// discriminator + every modifier on this closed #Op — authoring is unchanged
-	// (`spice: status`, not `plugin: spice`). It therefore left
-	// #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc CheckVerbProvider to gate) BUT keeps
-	// this field + #SpiceMethod here, so `spice: status` still validates against the
-	// method enum and VerbsSet still classifies the op (then dispatch resolves the
-	// registered external provider, after the host pre-resolves the VM's live SPICE
-	// endpoint to a dialable address — the plugin needs no go-libvirt).
-	Spice SpiceMethod `yaml:"spice,omitempty" json:"spice,omitempty"`
-
-	// `libvirt` is an EXTERNAL-CHARLY-VERB: its go-libvirt + kata-containers/govmm +
-	// libvirt.org/go/libvirtxml VM implementation lives in the out-of-tree candy/plugin-vm module,
-	// served OUT-OF-PROCESS. Like spice/kube/adb (and unlike file/package/service/command, which
-	// left #Op entirely, re-authored as `plugin: <verb>`), libvirt KEEPS its `libvirt:` discriminator
-	// + every #LibvirtMethod modifier on this closed #Op — authoring is unchanged (`libvirt: list`,
-	// not `plugin: libvirt`). It therefore left #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc
-	// CheckVerbProvider to gate) BUT keeps this field + #LibvirtMethod here, so `libvirt: list` still
-	// validates against the method enum and VerbsSet still classifies the op (then dispatch resolves
-	// the registered external provider; the host pre-resolves any VM display endpoint host-side).
-	Libvirt LibvirtMethod `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
-
-	// `kube` is an EXTERNAL-CHARLY-VERB: its implementation (+ the heavy
-	// client-go + apimachinery dependency) lives in the out-of-tree
-	// candy/plugin-kube module, served OUT-OF-PROCESS. Like cdp/vnc (and unlike
-	// file/package/service/command, which left #Op entirely, re-authored as
-	// `plugin: <verb>`), kube KEEPS its `kube:` discriminator + every modifier on
-	// this closed #Op — authoring is unchanged (`kube: nodes`, not `plugin: kube`).
-	// It therefore left #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc CheckVerbProvider
-	// to gate) BUT keeps this field + #KubeMethod here, so `kube: nodes` still
-	// validates against the method enum and VerbsSet still classifies the op (then
-	// dispatch resolves the registered external provider, after the host pre-resolves
-	// any --cluster profile to a concrete kubeconfig context).
-	Kube KubeMethod `yaml:"kube,omitempty" json:"kube,omitempty"`
-
-	// `adb` is an EXTERNAL-CHARLY-VERB: its implementation (+ the heavy goadb
-	// ADB-wire dependency) lives in the out-of-tree candy/plugin-adb module,
-	// served OUT-OF-PROCESS. Like cdp/vnc (and unlike
-	// file/package/service/command, which left #Op entirely, re-authored as
-	// `plugin: <verb>`), adb KEEPS its `adb:` discriminator + every modifier on
-	// this closed #Op — authoring is unchanged (`adb: devices`, not `plugin: adb`).
-	// It therefore left #OpVerb/spec.OpVerbs/VerbCatalog (no in-proc CheckVerbProvider
-	// to gate) BUT keeps this field + #AdbMethod here, so `adb: devices` still
-	// validates against the method enum and VerbsSet still classifies the op (then
-	// dispatch resolves the registered external provider).
-	Adb AdbMethod `yaml:"adb,omitempty" json:"adb,omitempty"`
-
-	// `appium` is an EXTERNAL-CHARLY-VERB: its implementation (+ the heavy
-	// github.com/tebeka/selenium dependency) lives in the out-of-tree
-	// candy/plugin-appium module, served OUT-OF-PROCESS. Unlike file/package/
-	// service/command (which left #Op entirely, re-authored as `plugin: <verb>`),
-	// appium KEEPS its `appium:` discriminator + every modifier on this closed #Op —
-	// authoring is unchanged. It therefore left #OpVerb/spec.OpVerbs/VerbCatalog (no
-	// in-proc CheckVerbProvider to gate) BUT keeps this field + #AppiumMethod here, so
-	// `appium: status` still validates against the method enum and VerbsSet still
-	// classifies the op (then dispatch resolves the registered external provider).
-	Appium AppiumMethod `yaml:"appium,omitempty" json:"appium,omitempty"`
-
-	Summarize string `yaml:"summarize,omitempty" json:"summarize,omitempty"`
-
-	Kill string `yaml:"kill,omitempty" json:"kill,omitempty"`
-
-	Signal string `yaml:"signal,omitempty" json:"signal,omitempty"`
-
-	// plugin — the generic PLUGIN-VERB discriminator. Its value is a reserved word
-	// served by a registered Provider (built-in or out-of-tree plugin); the host
-	// #Op cannot type per-plugin verb fields (an external plugin's vocabulary is
-	// not compiled in), so a plugin verb is authored via this generic envelope and
-	// dispatched through providerRegistry.ResolveVerb. plugin_input carries the
-	// params, validated by the PLUGIN's own spliced CUE schema (not base #Op).
+	// plugin — the generic PLUGIN-VERB discriminator, INTERNAL-ONLY: the
+	// parse-time desugar rewrites every authored `<word>: <input>` sugar key
+	// into this plugin/plugin_input pair, and authoring plugin:/plugin_input:
+	// directly in a step is a hard load error (run: charly migrate). The pair
+	// stays on #Op because it is the wire/label form (the desugared tree this
+	// def validates, the ai.opencharly.description JSON) and the Go dispatch
+	// surface (providerRegistry.ResolveVerb). plugin_input is validated by the
+	// PLUGIN's own served CUE schema (not base #Op).
 	Plugin string `yaml:"plugin,omitempty" json:"plugin,omitempty"`
-
-	// --- shared resource-identity modifiers ---
-	Name string `yaml:"name,omitempty" json:"name,omitempty"`
-
-	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
-
-	Label string `yaml:"label,omitempty" json:"label,omitempty"`
-
-	Cluster string `yaml:"cluster,omitempty" json:"cluster,omitempty"`
-
-	Manifest string `yaml:"manifest,omitempty" json:"manifest,omitempty"`
-
-	// --- kube-specific modifiers ---
-	KubeKind string `yaml:"kube_kind,omitempty" json:"kube_kind,omitempty"`
-
-	KubeContext string `yaml:"kube_context,omitempty" json:"kube_context,omitempty"`
-
-	Kubeconfig string `yaml:"kubeconfig,omitempty" json:"kubeconfig,omitempty"`
-
-	KubeCount int `yaml:"kube_count,omitempty" json:"kube_count,omitempty"`
-
-	KubeResource string `yaml:"kube_resource,omitempty" json:"kube_resource,omitempty"`
-
-	KubeGroup string `yaml:"kube_group,omitempty" json:"kube_group,omitempty"`
-
-	KubeVersion string `yaml:"kube_version,omitempty" json:"kube_version,omitempty"`
-
-	JSON bool `yaml:"json,omitempty" json:"json,omitempty"`
 
 	// --- shared modifiers ---
 	ID string `yaml:"id,omitempty" json:"id,omitempty"`
@@ -218,14 +43,12 @@ type Op struct {
 
 	Timeout Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 
-	// command — a SHARED exec-string modifier (NOT a verb): the live-container verbs
-	// `wl: exec` / `wl: sway-msg` / `libvirt: guest/exec` read it as their argv, and
-	// the `command` plugin verb's INSTALL-EMIT rehydrates it onto an OpStep for emitCmd
-	// (build) / renderOpCommand (deploy). It LEFT #OpVerb in the command→plugin
-	// extraction (the command CHECK verb is now `plugin: command` + #CommandInput), so
-	// Op.Kind() no longer treats it as a verb; it stays here as a modifier the other
-	// verbs + the act-emit seam read off the step Op. `in_container`/`background`/
-	// `from_host` were command-EXCLUSIVE and moved into #CommandInput.
+	// command — INTERNAL-ONLY rehydration target (never authored): the `command`
+	// plugin verb's INSTALL-EMIT copies plugin_input.command here for emitCmd
+	// (build) / renderOpCommand (deploy). Authored `command:` on a step IS the
+	// command plugin's sugar key (scalar = the primary shorthand), consumed by
+	// the parse-time desugar before this def validates; the wl/libvirt argv
+	// moved into those plugins' own input defs.
 	Command string `yaml:"command,omitempty" json:"command,omitempty"`
 
 	Context []Context `yaml:"context,omitempty" json:"context,omitempty"`
@@ -245,6 +68,10 @@ type Op struct {
 
 	To string `yaml:"to,omitempty" json:"to,omitempty"`
 
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+
+	Caps string `yaml:"caps,omitempty" json:"caps,omitempty"`
+
 	Content string `yaml:"content,omitempty" json:"content,omitempty"`
 
 	Extract string `yaml:"extract,omitempty" json:"extract,omitempty"`
@@ -262,10 +89,6 @@ type Op struct {
 	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
 
 	// --- step modifiers ---
-	Capture string `yaml:"capture,omitempty" json:"capture,omitempty"`
-
-	CaptureExtract string `yaml:"capture_extract,omitempty" json:"capture_extract,omitempty"`
-
 	Eventually Duration `yaml:"eventually,omitempty" json:"eventually,omitempty"`
 
 	RetryInterval Duration `yaml:"retry_interval,omitempty" json:"retry_interval,omitempty"`
@@ -275,30 +98,6 @@ type Op struct {
 	// derived from position (flattenBundleVenues → Op.venue). Authoring `on:` is
 	// a closed-schema rejection (run: charly migrate).
 	Tag []string `yaml:"tag,omitempty" json:"tag,omitempty"`
-
-	// --- concurrency ---
-	Parallel string `yaml:"parallel,omitempty" json:"parallel,omitempty"`
-
-	Count int `yaml:"count,omitempty" json:"count,omitempty"`
-
-	IndexVar string `yaml:"index_var,omitempty" json:"index_var,omitempty"`
-
-	// --- aggregation (summarize) ---
-	OverIDs []string `yaml:"over_id,omitempty" json:"over_id,omitempty"`
-
-	Metrics []string `yaml:"metric,omitempty" json:"metric,omitempty"`
-
-	EmitID string `yaml:"emit_id,omitempty" json:"emit_id,omitempty"`
-
-	P50Match Matcher `yaml:"p50,omitempty" json:"p50,omitempty"`
-
-	P95Match Matcher `yaml:"p95,omitempty" json:"p95,omitempty"`
-
-	P99Match Matcher `yaml:"p99,omitempty" json:"p99,omitempty"`
-
-	MaxMatch Matcher `yaml:"max,omitempty" json:"max,omitempty"`
-
-	MeanMatch Matcher `yaml:"mean,omitempty" json:"mean,omitempty"`
 
 	// Origin is populated at collection time (candy:<name>/box:<name>/deploy-*),
 	// NEVER authored (Go yaml:"-"), but it TRAVELS in the ai.opencharly.description
@@ -337,123 +136,18 @@ type Op struct {
 	// (installed/version/package_map) MOVED into #PackageInput when `package` extracted.
 	ExcludeDistros []string `yaml:"exclude_distro,omitempty" json:"exclude_distro,omitempty"`
 
-	// --- command-verb matchers (SHARED via matchAll: the `command` plugin verb +
-	// the 11 live-container verbs assert exit_status/stdout/stderr off the step Op,
-	// so they STAY in #Op; only the command-EXCLUSIVE command/in_container/background/
-	// from_host moved into #CommandInput) ---
+	// --- shared assertion matchers (SHARED via matchAll: the command/http probe
+	// plugins + every live-verb plugin assert exit_status/stdout/stderr off the
+	// marshalled step Op, so they STAY in #Op; verb-exclusive request/input
+	// fields live in each plugin's input def) ---
 	ExitStatus *int `yaml:"exit_status,omitempty" json:"exit_status,omitempty"`
 
 	Stdout MatcherList `yaml:"stdout,omitempty" json:"stdout,omitempty"`
 
 	Stderr MatcherList `yaml:"stderr,omitempty" json:"stderr,omitempty"`
-
-	// --- shared request modifiers (the http plugin verb + the live cdp/dbus/libvirt
-	// verbs read these off the step Op; they are NOT carried in the http plugin's
-	// plugin_input — the http-exclusive request fields status/body/header/…/ca_file
-	// moved into #HttpInput, see candy/plugin-http) ---
-	Method string `yaml:"method,omitempty" json:"method,omitempty"`
-
-	RequestBody string `yaml:"request_body,omitempty" json:"request_body,omitempty"`
-
-	// --- cdp / wl / dbus / vnc / spice modifiers ---
-	Tab string `yaml:"tab,omitempty" json:"tab,omitempty"`
-
-	Expression string `yaml:"expression,omitempty" json:"expression,omitempty"`
-
-	URL string `yaml:"url,omitempty" json:"url,omitempty"`
-
-	Selector string `yaml:"selector,omitempty" json:"selector,omitempty"`
-
-	Dest string `yaml:"dest,omitempty" json:"dest,omitempty"`
-
-	Path string `yaml:"path,omitempty" json:"path,omitempty"`
-
-	Args []string `yaml:"arg,omitempty" json:"arg,omitempty"`
-
-	Artifact string `yaml:"artifact,omitempty" json:"artifact,omitempty"`
-
-	ArtifactMinBytes int `yaml:"artifact_min_bytes,omitempty" json:"artifact_min_bytes,omitempty"`
-
-	ArtifactMinDimensions string `yaml:"artifact_min_dimensions,omitempty" json:"artifact_min_dimensions,omitempty"`
-
-	ArtifactNotUniform bool `yaml:"artifact_not_uniform,omitempty" json:"artifact_not_uniform,omitempty"`
-
-	ArtifactMinCastEvents int `yaml:"artifact_min_cast_events,omitempty" json:"artifact_min_cast_events,omitempty"`
-
-	X int `yaml:"x,omitempty" json:"x,omitempty"`
-
-	Y int `yaml:"y,omitempty" json:"y,omitempty"`
-
-	X2 int `yaml:"x2,omitempty" json:"x2,omitempty"`
-
-	Y2 int `yaml:"y2,omitempty" json:"y2,omitempty"`
-
-	Button string `yaml:"button,omitempty" json:"button,omitempty"`
-
-	Text string `yaml:"text,omitempty" json:"text,omitempty"`
-
-	KeyName string `yaml:"key,omitempty" json:"key,omitempty"`
-
-	Combo string `yaml:"combo,omitempty" json:"combo,omitempty"`
-
-	Direction string `yaml:"direction,omitempty" json:"direction,omitempty"`
-
-	Amount int `yaml:"amount,omitempty" json:"amount,omitempty"`
-
-	Target string `yaml:"target,omitempty" json:"target,omitempty"`
-
-	Action string `yaml:"action,omitempty" json:"action,omitempty"`
-
-	Query string `yaml:"query,omitempty" json:"query,omitempty"`
-
-	// --- mcp ---
-	McpName string `yaml:"mcp_name,omitempty" json:"mcp_name,omitempty"`
-
-	Tool string `yaml:"tool,omitempty" json:"tool,omitempty"`
-
-	URI string `yaml:"uri,omitempty" json:"uri,omitempty"`
-
-	Input string `yaml:"input,omitempty" json:"input,omitempty"`
-
-	// --- adb / appium ---
-	Apk string `yaml:"apk,omitempty" json:"apk,omitempty"`
-
-	Property string `yaml:"property,omitempty" json:"property,omitempty"`
-
-	Caps string `yaml:"caps,omitempty" json:"caps,omitempty"`
-
-	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
-
-	Session string `yaml:"session,omitempty" json:"session,omitempty"`
-
-	AppId string `yaml:"app_id,omitempty" json:"app_id,omitempty"`
-
-	Source string `yaml:"source,omitempty" json:"source,omitempty"`
-
-	Arch string `yaml:"arch,omitempty" json:"arch,omitempty"`
-
-	AppVersion string `yaml:"app_version,omitempty" json:"app_version,omitempty"`
-
-	Activity string `yaml:"activity,omitempty" json:"activity,omitempty"`
-
-	Attribute string `yaml:"attribute,omitempty" json:"attribute,omitempty"`
-
-	Percent string `yaml:"percent,omitempty" json:"percent,omitempty"`
-
-	Keycode int `yaml:"keycode,omitempty" json:"keycode,omitempty"`
-
-	Params string `yaml:"params,omitempty" json:"params,omitempty"`
-
-	// --- record ---
-	RecordName string `yaml:"record_name,omitempty" json:"record_name,omitempty"`
-
-	RecordMode string `yaml:"record_mode,omitempty" json:"record_mode,omitempty"`
-
-	RecordFps int `yaml:"record_fps,omitempty" json:"record_fps,omitempty"`
-
-	RecordAudio bool `yaml:"record_audio,omitempty" json:"record_audio,omitempty"`
 }
 
+// An env entry: KEY=VALUE (value may be empty / contain =).
 // A YAML scalar Go decodes into a string (map[string]string / string field):
 // yaml.v3 coerces an unquoted int/bool/float to its literal text, so an
 // idiomatic `PORT: 8080` is a valid string value. #StrMap is the matching map.
@@ -763,7 +457,7 @@ type Box struct {
 
 	Produce []BuildType `yaml:"produce,omitempty" json:"produce,omitempty"`
 
-	Env []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
 
 	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
 
@@ -865,6 +559,9 @@ type Candy struct {
 	// --- maturity / engine ---
 	Status string `yaml:"status,omitempty" json:"status,omitempty"`
 
+	// engine — a candy's required run engine; per-image resolution walks the
+	// candy chain (engine.go ResolveBoxEngine) and cross-candy conflicts are a
+	// validate error. RETAINED by the schema-compaction consumer audit.
 	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
 
 	// `from:` is NOT a candy field — EDGE-INHERIT cutover D: a candy: node carrying
@@ -1022,6 +719,13 @@ type Plugin struct {
 	// a git ref (github.com/org/repo[/sub][@tag]) fetched via the @github resolver +
 	// built into a provider binary. Default builtin.
 	Source string `yaml:"source,omitempty" json:"source"`
+
+	// primary: verb word → the input field its scalar sugar shorthand targets
+	// (`file: /x` → plugin_input: {<primary>: "/x"}). Declared in the MANIFEST so
+	// the byte-gated prescan registers it BEFORE the out-of-process provider
+	// connects (the parse-time desugar needs it pre-parse); the served
+	// ProvidedCapability.Primary mirrors it for the compiled-in placement.
+	Primary map[string]string `yaml:"primary,omitempty" json:"primary,omitempty"`
 }
 
 // #PluginCapability — a "<class>:<word>" capability string. class ∈ the closed
@@ -1275,7 +979,7 @@ type Deploy struct {
 	// state (like resolved_port), never authored; empty for a plain pod.
 	ResolvedImage string `yaml:"resolved_image,omitempty" json:"resolved_image,omitempty"`
 
-	Env []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
 
 	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
 
@@ -1424,16 +1128,15 @@ type Iterate struct {
 	MCPEndpoint *string `yaml:"mcp_endpoint,omitempty" json:"mcp_endpoint,omitempty"`
 }
 
-// DeployShellOverlay (deploy.go) — per-deploy shell-rc overlay. CLOSED: the Go
-// UnmarshalYAML allowlists exactly these keys + the 4 shell names.
+// DeployShellOverlay (deploy.go) — per-deploy shell-rc overlay: the shared
+// #Shell body extended with the overlay identity/skip keys (id-keyed
+// replace / skip merge semantics, MergeDeployShell).
 type DeployShellOverlay struct {
 	ID string `yaml:"id,omitempty" json:"id,omitempty"`
 
-	Origin string `yaml:"origin,omitempty" json:"origin,omitempty"`
-
-	Skip bool `yaml:"skip,omitempty" json:"skip,omitempty"`
-
 	Init string `yaml:"init,omitempty" json:"init,omitempty"`
+
+	Origin string `yaml:"origin,omitempty" json:"origin,omitempty"`
 
 	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
 
@@ -1442,6 +1145,8 @@ type DeployShellOverlay struct {
 	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
 
 	Bash *ShellSpec `yaml:"bash,omitempty" json:"bash,omitempty"`
+
+	Skip bool `yaml:"skip,omitempty" json:"skip,omitempty"`
 
 	Zsh *ShellSpec `yaml:"zsh,omitempty" json:"zsh,omitempty"`
 
@@ -1673,38 +1378,6 @@ type LocalPkg struct {
 	DownloadTemplate string `yaml:"download_template,omitempty" json:"download_template,omitempty"`
 }
 
-type Group struct {
-	Name EntityRef `yaml:"name,omitempty" json:"name"`
-
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
-
-	Package []PackageItem `yaml:"package,omitempty" json:"package,omitempty"`
-
-	Distro map[string]*DistroPackages `yaml:"distro,omitempty" json:"distro,omitempty"`
-
-	Hidden bool `yaml:"hidden,omitempty" json:"hidden"`
-
-	Selected bool `yaml:"selected,omitempty" json:"selected"`
-
-	Critical bool `yaml:"critical,omitempty" json:"critical"`
-
-	Immutable bool `yaml:"immutable,omitempty" json:"immutable"`
-
-	Expanded bool `yaml:"expanded,omitempty" json:"expanded"`
-
-	NonCheckable bool `yaml:"noncheckable,omitempty" json:"noncheckable"`
-
-	PreInstall string `yaml:"pre_install,omitempty" json:"pre_install,omitempty"`
-
-	PostInstall string `yaml:"post_install,omitempty" json:"post_install,omitempty"`
-
-	Source string `yaml:"source,omitempty" json:"source,omitempty"`
-
-	Subgroup []*Group `yaml:"subgroup,omitempty" json:"subgroup,omitempty"`
-
-	Require []string `yaml:"require,omitempty" json:"require,omitempty"`
-}
-
 type Init struct {
 	CandyFields []string `yaml:"candy_field,omitempty" json:"candy_field,omitempty"`
 
@@ -1888,39 +1561,11 @@ type Local struct {
 
 	InstallOpts *InstallOpts `yaml:"install_opts,omitempty" json:"install_opts,omitempty"`
 
-	Env []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
 
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 
 	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
-}
-
-type Module struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
-
-	Type string `yaml:"type,omitempty" json:"type,omitempty"`
-
-	Interface string `yaml:"interface,omitempty" json:"interface,omitempty"`
-
-	Load string `yaml:"load,omitempty" json:"load,omitempty"`
-
-	Script string `yaml:"script,omitempty" json:"script,omitempty"`
-
-	Command []string `yaml:"command,omitempty" json:"command,omitempty"`
-
-	RequiredModules []string `yaml:"requiredModules,omitempty" json:"requiredModules,omitempty"`
-
-	Weight int `yaml:"weight,omitempty" json:"weight,omitempty"`
-
-	NoConfig bool `yaml:"noconfig,omitempty" json:"noconfig"`
-
-	Emergency bool `yaml:"emergency,omitempty" json:"emergency"`
-
-	Timeout int `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-
-	Chroot bool `yaml:"chroot,omitempty" json:"chroot"`
 }
 
 type Pod struct {
@@ -1934,7 +1579,7 @@ type Pod struct {
 
 	Secret []DeploySecret `yaml:"secret,omitempty" json:"secret,omitempty"`
 
-	EnvDefaults []EnvVar `yaml:"env_default,omitempty" json:"env_default,omitempty"`
+	EnvDefaults map[string]string `yaml:"env_default,omitempty" json:"env_default,omitempty"`
 
 	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
 }
@@ -1953,46 +1598,6 @@ type Resource struct {
 // "10DE"/"0X10de"/"0x10de" — a strict regex would reject Go-valid input).
 type GpuSelector struct {
 	Vendor string `yaml:"vendor,omitempty" json:"vendor"`
-}
-
-type Target struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
-
-	ModulesSearch []string `yaml:"modules-search,omitempty" json:"modules-search,omitempty"`
-
-	Instances []TargetInstance `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	Sequence TargetSequence `yaml:"sequence,omitempty" json:"sequence,omitempty"`
-
-	Branding string `yaml:"branding,omitempty" json:"branding,omitempty"`
-
-	PromptInstall bool `yaml:"prompt-install,omitempty" json:"prompt-install"`
-
-	DontChroot bool `yaml:"dont-chroot,omitempty" json:"dont-chroot"`
-
-	OemSetup bool `yaml:"oem-setup,omitempty" json:"oem-setup"`
-
-	DisableCancel bool `yaml:"disable-cancel,omitempty" json:"disable-cancel"`
-
-	Group []string `yaml:"group,omitempty" json:"group,omitempty"`
-
-	Box []string `yaml:"box,omitempty" json:"box,omitempty"`
-}
-
-type TargetInstance struct {
-	ID string `yaml:"id,omitempty" json:"id"`
-
-	Module string `yaml:"module,omitempty" json:"module"`
-
-	Config string `yaml:"config,omitempty" json:"config,omitempty"`
-}
-
-type TargetSequence struct {
-	Show []string `yaml:"show,omitempty" json:"show,omitempty"`
-
-	Exec []string `yaml:"exec,omitempty" json:"exec,omitempty"`
 }
 
 type Vm struct {

@@ -26,37 +26,78 @@ import (
 // charly's core check runner was deleted with the in-proc live-verb runtime).
 // ---------------------------------------------------------------------------
 
-// RunArtifactValidators runs every artifact assertion the Op declares against
-// the file at op.Artifact: min_bytes, min_dimensions (WxH), not_uniform, and
-// min_cast_events. Returns nil when every declared validator passes, or the
-// first validator's error. A plugin that produces an artifact calls this after
-// writing the file as the post-run validation pipeline.
+// RunArtifactValidators runs every artifact assertion the step's plugin input
+// declares against the file at the input's `artifact` path: artifact_min_bytes,
+// artifact_min_dimensions (WxH), artifact_not_uniform, and
+// artifact_min_cast_events. The artifact fields live in the desugared plugin
+// input map (per-verb fields left core #Op in the schema-compaction cutover).
+// Returns nil when every declared validator passes, or the first validator's
+// error. A plugin that produces an artifact calls this after writing the file
+// as the post-run validation pipeline.
 func RunArtifactValidators(op *spec.Op) error {
-	if op.ArtifactMinBytes > 0 {
-		info, err := os.Stat(op.Artifact)
+	artifact := inputString(op, "artifact")
+	if n := inputInt(op, "artifact_min_bytes"); n > 0 {
+		info, err := os.Stat(artifact)
 		if err != nil {
-			return fmt.Errorf("artifact %q not found: %w", op.Artifact, err)
+			return fmt.Errorf("artifact %q not found: %w", artifact, err)
 		}
-		if info.Size() < int64(op.ArtifactMinBytes) {
-			return fmt.Errorf("artifact %q size %d < required min_bytes %d", op.Artifact, info.Size(), op.ArtifactMinBytes)
+		if info.Size() < int64(n) {
+			return fmt.Errorf("artifact %q size %d < required min_bytes %d", artifact, info.Size(), n)
 		}
 	}
-	if op.ArtifactMinDimensions != "" {
-		if err := assertArtifactMinDimensions(op.Artifact, op.ArtifactMinDimensions); err != nil {
+	if wxh := inputString(op, "artifact_min_dimensions"); wxh != "" {
+		if err := assertArtifactMinDimensions(artifact, wxh); err != nil {
 			return err
 		}
 	}
-	if op.ArtifactNotUniform {
-		if err := assertArtifactNotUniform(op.Artifact); err != nil {
+	if inputBool(op, "artifact_not_uniform") {
+		if err := assertArtifactNotUniform(artifact); err != nil {
 			return err
 		}
 	}
-	if op.ArtifactMinCastEvents > 0 {
-		if err := assertArtifactMinCastEvents(op.Artifact, op.ArtifactMinCastEvents); err != nil {
+	if n := inputInt(op, "artifact_min_cast_events"); n > 0 {
+		if err := assertArtifactMinCastEvents(artifact, n); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// inputString / inputInt / inputBool read typed values from the desugared
+// plugin input map. Numbers tolerate the int/float64 split a JSON round-trip
+// introduces (the Op crosses the plugin boundary as JSON).
+func inputString(op *spec.Op, key string) string {
+	if op.PluginInput == nil {
+		return ""
+	}
+	s, _ := op.PluginInput[key].(string)
+	return s
+}
+
+func inputInt(op *spec.Op, key string) int {
+	if op.PluginInput == nil {
+		return 0
+	}
+	switch v := op.PluginInput[key].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	}
+	return 0
+}
+
+func inputBool(op *spec.Op, key string) bool {
+	if op.PluginInput == nil {
+		return false
+	}
+	b, _ := op.PluginInput[key].(bool)
+	return b
 }
 
 // assertArtifactMinDimensions decodes the artifact's image header (PNG/JPEG) and

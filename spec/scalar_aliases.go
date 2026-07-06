@@ -40,18 +40,3 @@ type (
 	BuildFormat = string
 	BuildType   = string
 )
-
-// --- live-verb method enums (string; CUE enumerates the allowed methods) ---
-type (
-	CdpMethod     = string
-	WlMethod      = string
-	DbusMethod    = string
-	VncMethod     = string
-	McpMethod     = string
-	RecordMethod  = string
-	SpiceMethod   = string
-	LibvirtMethod = string
-	KubeMethod    = string
-	AdbMethod     = string
-	AppiumMethod  = string
-)

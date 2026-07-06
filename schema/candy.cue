@@ -17,6 +17,9 @@
 
 	// --- maturity / engine ---
 	status?: *"testing" | "working" | "broken"
+	// engine — a candy's required run engine; per-image resolution walks the
+	// candy chain (engine.go ResolveBoxEngine) and cross-candy conflicts are a
+	// validate error. RETAINED by the schema-compaction consumer audit.
 	engine?: "docker" | "podman"
 	// `from:` is NOT a candy field — EDGE-INHERIT cutover D: a candy: node carrying
 	// `base:` or `from:` is a full IMAGE (#Box, the former box:), routed there by the
@@ -295,8 +298,14 @@
 	// a git ref (github.com/org/repo[/sub][@tag]) fetched via the @github resolver +
 	// built into a provider binary. Default builtin.
 	source: *"builtin" | (string & =~"^github\\.com/[^/]+/[^/]+(/.+)?$")
+	// primary: verb word → the input field its scalar sugar shorthand targets
+	// (`file: /x` → plugin_input: {<primary>: "/x"}). Declared in the MANIFEST so
+	// the byte-gated prescan registers it BEFORE the out-of-process provider
+	// connects (the parse-time desugar needs it pre-parse); the served
+	// ProvidedCapability.Primary mirrors it for the compiled-in placement.
+	primary?: {[string]: string & !=""}
 })
 
 // #PluginCapability — a "<class>:<word>" capability string. class ∈ the closed
 // ProviderClass set; word is lowercase-hyphenated.
-#PluginCapability: string & =~"^(kind|deploy|verb|step|build|builder):[a-z0-9][a-z0-9-]*$"
+#PluginCapability: string & =~"^(kind|deploy|verb|step|build|builder|command):[a-z0-9][a-z0-9_-]*$"

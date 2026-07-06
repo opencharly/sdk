@@ -8,10 +8,10 @@
 	// a staged name-reservation stub; the loader warns, not errors).
 	candy!: [...#CandyRef]
 	install_opts?: #InstallOpts @go(InstallOpts,optional=nillable)
-	env?: [...#EnvVar]
+	env?: {PATH?: _|_, [string]: #StrVal} @go(Env,type=map[string]string)
 	description?: string & !=""
 	plan?: [...#Step]
 }
 
-// #CandyRef / #EnvVar / #InstallOpts now live in _common.cue (shared with
+// #CandyRef / #InstallOpts now live in _common.cue (shared with
 // deploy + pod + candy).

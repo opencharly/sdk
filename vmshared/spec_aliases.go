@@ -147,9 +147,6 @@ type (
 	SidecarVolume            = spec.SidecarVolume
 	Step                     = spec.Step
 	StepKeyword              = spec.StepKeyword
-	TargetInstance           = spec.TargetInstance
-	TargetSequence           = spec.TargetSequence
-	TargetSpec               = spec.TargetSpec
 	TunnelYAML               = spec.TunnelYAML
 	VmCharlyInstall          = spec.VmCharlyInstall
 	VmChecksum               = spec.VmChecksum

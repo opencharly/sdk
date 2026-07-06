@@ -30,8 +30,6 @@ type (
 	K8sSpec     = K8s
 	AndroidSpec = Android
 	SidecarDef  = Sidecar
-	ModuleSpec  = Module
-	TargetSpec  = Target
 	ResourceDef = Resource
 	DistroDef   = Distro
 	BuilderDef  = Builder

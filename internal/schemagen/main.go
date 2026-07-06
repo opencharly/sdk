@@ -228,29 +228,12 @@ func writeVocab(dir, out string) error {
 	// authorable entity defs (#Candy + #Deploy) that the node-form parser SETS as a
 	// CHILD node onto the owning entity. Candy contributes every non-scalar field;
 	// #Deploy contributes every non-scalar field EXCEPT the inline-tolerated +
-	// loader-derived set (see deployInlineNonScalarFields). `plan` is excluded
-	// everywhere — plan steps are CHILD step nodes, not a data field.
-	candyData, err := nonScalarFieldLabels(schema, "#Candy", map[string]bool{"plan": true})
-	if err != nil {
-		return err
-	}
-	deployExclude := map[string]bool{"plan": true}
-	for _, f := range deployInlineNonScalarFields {
-		deployExclude[f] = true
-	}
-	deployData, err := nonScalarFieldLabels(schema, "#Deploy", deployExclude)
-	if err != nil {
-		return err
-	}
-	dataKeys := unionSorted(candyData, deployData)
-
 	code := renderVocab(vocabSets{
 		kinds:          kinds,
 		resourceKinds:  resourceKinds,
 		directives:     directives,
 		stepKeywords:   stepKeywords,
 		contexts:       contexts,
-		dataKeys:       dataKeys,
 		opFields:       opFields,
 		opVerbs:        opVerbs,
 		authoringVerbs: authoringVerbs,
@@ -262,60 +245,15 @@ func writeVocab(dir, out string) error {
 	return os.WriteFile(out, formatted, 0o644)
 }
 
-// opRuntimeDerivedFields are the #Op fields that are RUNTIME-DERIVED, never
-// authored — excluded from AuthoringVerbs. origin is OCI-label reporting state
-// (yaml:"-"); venue is stamped from a step's bundle-tree position; intent_do is
-// stamped from the step keyword. The #Step arms forbid venue + intent_do
-// (`venue?: _|_, intent_do?: _|_`), so this list mirrors a CUE-declared fact.
-var opRuntimeDerivedFields = []string{"origin", "venue", "intent_do"}
-
-// deployInlineNonScalarFields are the NON-SCALAR #Deploy fields the node-form
-// parser TOLERATES inline in the bundle value rather than folding into a CHILD
-// node — so they are NOT DataKeys. Two reasons a field lands here:
-//   - loader-derived / machine-persisted runtime state, authored inline by
-//     saveDeployState's explodeFields default arm (resolved_port, vm_state) or
-//     forbidden by #BundleValue and rebuilt from tree position (nested, peer);
-//   - legacy inline-tolerated authoring (sidecar — the common tailscale sidecar
-//     map is persisted inline; kubernetes/resources/expose/storage/probes).
-//
-// Adding `<x>` here keeps a non-scalar #Deploy field inline-legal; omitting a NEW
-// non-scalar field makes it a child-node DataKey (the node-form "everything is a
-// node" default). Behavior-preserving: this list is exactly the gap between
-// #Deploy's non-scalar fields and the former hand nodeDataKeys.
-var deployInlineNonScalarFields = []string{
-	"sidecar", "kubernetes", "resources", "expose", "storage", "probes",
-	"resolved_port", "vm_state", "nested", "peer",
-}
-
-// nonScalarFieldLabels returns the sorted field labels of a struct def whose
-// VALUE is non-scalar — its incomplete kind includes StructKind or ListKind (a
-// list, struct, or map). These are the fields that, in node-form, fold into a
-// CHILD node. A field in `exclude` is skipped; a bottom (_|_) field is skipped.
-func nonScalarFieldLabels(schema cue.Value, def string, exclude map[string]bool) ([]string, error) {
-	v := schema.LookupPath(cue.ParsePath(def))
-	if v.Err() != nil {
-		return nil, fmt.Errorf("%s not found: %w", def, v.Err())
-	}
-	it, err := v.Fields(cue.Optional(true), cue.Definitions(false))
-	if err != nil {
-		return nil, fmt.Errorf("%s fields: %w", def, err)
-	}
-	seen := map[string]bool{}
-	for it.Next() {
-		label := it.Selector().Unquoted()
-		if exclude[label] {
-			continue
-		}
-		fv := it.Value()
-		if fv.Err() != nil {
-			continue // bottom (_|_) — a forbidden / unsatisfiable field
-		}
-		if fv.IncompleteKind()&(cue.StructKind|cue.ListKind) != 0 {
-			seen[label] = true
-		}
-	}
-	return sortedKeys(seen), nil
-}
+// opRuntimeDerivedFields are the #Op fields that are NEVER authored — excluded
+// from AuthoringVerbs. origin is OCI-label reporting state (yaml:"-"); venue is
+// stamped from a step's bundle-tree position; intent_do is stamped from the step
+// keyword; plugin/plugin_input are the INTERNAL wire pair the parse-time desugar
+// rewrites every `<word>: <input>` sugar key into (authoring them is a hard load
+// error); command is the internal rehydration target the command plugin's
+// install-emit fills from plugin_input (authored `command:` is that plugin's
+// sugar key, consumed by the desugar).
+var opRuntimeDerivedFields = []string{"origin", "venue", "intent_do", "plugin", "plugin_input", "command"}
 
 // excludeFrom returns vals with every name in exclude removed (order preserved).
 func excludeFrom(vals []string, exclude []string) []string {
@@ -330,18 +268,6 @@ func excludeFrom(vals []string, exclude []string) []string {
 		}
 	}
 	return out
-}
-
-// unionSorted returns the sorted union of two label slices.
-func unionSorted(a, b []string) []string {
-	seen := map[string]bool{}
-	for _, x := range a {
-		seen[x] = true
-	}
-	for _, x := range b {
-		seen[x] = true
-	}
-	return sortedKeys(seen)
 }
 
 // nodeDiscriminators returns the kind keywords — the concrete discriminator key
@@ -461,7 +387,6 @@ type vocabSets struct {
 	directives     []string
 	stepKeywords   []string
 	contexts       []string
-	dataKeys       []string
 	opFields       []string
 	opVerbs        []string
 	authoringVerbs []string
@@ -481,10 +406,9 @@ func renderVocab(s vocabSets) string {
 	writeStrSlice(&b, "DocDirectives", "the reserved document directives (#NodeDoc top-level keys).", s.directives)
 	writeStrSlice(&b, "StepKeywords", "the plan-step intent keywords (#Step arms minus #Op fields).", s.stepKeywords)
 	writeStrSlice(&b, "ContextWords", "the plan-step execution contexts (#Context).", s.contexts)
-	writeStrSlice(&b, "DataKeys", "the DATA discriminator keywords — the non-scalar #Candy/#Deploy fields the node-form parser folds in as a CHILD node (excludes plan + the inline-tolerated/loader-derived #Deploy non-scalars).", s.dataKeys)
 	writeStrSlice(&b, "OpFields", "every #Op verb/modifier field name (the flat Op vocabulary).", s.opFields)
 	writeStrSlice(&b, "OpVerbs", "the verb DISCRIMINATOR vocabulary (#OpVerb) — the exactly-one-set verb subset of #Op fields (Op.Kind() + the VerbCatalog dispatch table gate against it).", s.opVerbs)
-	writeStrSlice(&b, "AuthoringVerbs", "the AUTHORABLE #Op field vocabulary (#Op fields minus the runtime-derived origin/venue/intent_do).", s.authoringVerbs)
+	writeStrSlice(&b, "AuthoringVerbs", "the AUTHORABLE #Op field vocabulary (#Op fields minus the never-authored origin/venue/intent_do/plugin/plugin_input/command).", s.authoringVerbs)
 	return b.String()
 }
 

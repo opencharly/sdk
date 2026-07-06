@@ -7,7 +7,7 @@
 package spec
 
 // SchemaVersion is the HEAD schema CalVer (schema/version.cue #SchemaVersion).
-const SchemaVersion = "2026.174.1100"
+const SchemaVersion = "2026.186.2323"
 
 // SchemaFloor is the oldest schema version `charly migrate` can migrate FROM
 // (schema/version.cue #SchemaFloor).

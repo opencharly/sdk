@@ -7,8 +7,8 @@ import (
 
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/opencharly/sdk/schemaconcat"
 	pb "github.com/opencharly/sdk/proto"
+	"github.com/opencharly/sdk/schemaconcat"
 )
 
 // ProvidedCapability is one capability a plugin serves plus the CUE def that
@@ -46,6 +46,13 @@ type ProvidedCapability struct {
 	// declare it for a capability that must load/run early (migrate, egress). The kernel loads +
 	// invokes plugins in PhaseOrder.
 	Phase string
+	// Primary is set ONLY for Class=="verb": the input field the scalar sugar
+	// shorthand targets (`file: /x` → plugin_input: {<Primary>: "/x"}). "" → the
+	// verb takes a map input only. The host registers it into the parse-time
+	// desugar's primary registry (compiled-in at init; an EXTERNAL plugin
+	// additionally declares it in its candy manifest's plugin.primary map so the
+	// byte-gated prescan knows it BEFORE the provider connects).
+	Primary string
 }
 
 // StepContract is the SDK-facing form of the proto StepContract — a class="step" plugin's
@@ -76,19 +83,35 @@ type StepContract struct {
 // schemaconcat because the SDK lives under charly/ — an external module imports
 // only this SDK, never charly/internal directly.
 func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs.FS, dir string) (*pb.Capabilities, error) {
-	body, _, err := schemaconcat.ConcatSchema(schemaFS, dir, nil)
-	if err != nil {
-		return nil, fmt.Errorf("plugin schema: %w", err)
+	// Stub-gate relaxation (schema-compaction cutover): an INPUT-LESS plugin (no
+	// capability declares an InputDef) may ship no schema at all — pass a nil
+	// schemaFS. A plugin that declares an input def must serve the schema
+	// defining it (the host cross-checks def + primary at registration).
+	var body string
+	if schemaFS != nil {
+		var err error
+		body, _, err = schemaconcat.ConcatSchema(schemaFS, dir, nil)
+		if err != nil {
+			return nil, fmt.Errorf("plugin schema: %w", err)
+		}
+	}
+	hasInputDef := false
+	for _, c := range provided {
+		if c.InputDef != "" {
+			hasInputDef = true
+		}
 	}
 	if strings.TrimSpace(body) == "" {
-		return nil, fmt.Errorf("plugin ships no CUE schema (every plugin MUST ship its own schema)")
-	}
-	if v := cuecontext.New().CompileString(body); v.Err() != nil {
+		if hasInputDef {
+			return nil, fmt.Errorf("plugin declares an input def but ships no CUE schema")
+		}
+		body = ""
+	} else if v := cuecontext.New().CompileString(body); v.Err() != nil {
 		return nil, fmt.Errorf("plugin schema does not compile: %w", v.Err())
 	}
 	out := make([]*pb.ProvidedCapability, 0, len(provided))
 	for _, c := range provided {
-		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase}
+		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary}
 		if c.StepContract != nil {
 			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope, Venue: int32(c.StepContract.Venue), Gate: c.StepContract.Gate, Emits: c.StepContract.Emits}
 		}

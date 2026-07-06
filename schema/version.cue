@@ -15,11 +15,13 @@
 #CanonCalVer: string & =~"^[0-9]{4}\\.[0-9]{3}\\.[0-9]{4}$" @go(-)
 
 // #SchemaVersion is the HEAD schema CalVer — the version every current-format
-// config is stamped to and the value the load-time gate requires. Unchanged by the
-// migration-baseline reset (this cutover replaced the migration MACHINERY, not the
-// ingress YAML format — no authored wire key changed), per /charly-build:migrate
-// "a pure refactor that leaves every authored wire key untouched needs NO bump".
-#SchemaVersion: #CanonCalVer & "2026.174.1100" @go(-)
+// config is stamped to and the value the load-time gate requires. Bumped by the
+// schema-compaction cutover (compact node grammar: collections inline in the kind
+// value, steps as an unnamed `plan:` list, plugin-verb sugar replacing the
+// plugin:/plugin_input: envelope, live-verb fields relocated to plugin input
+// defs, box env as a map) — a format change on every authored wire surface,
+// migrated by the single `apply:` reshaper hook in candy/plugin-migrate.
+#SchemaVersion: #CanonCalVer & "2026.186.2323" @go(-)
 
 // #SchemaFloor is the OLDEST schema version `charly migrate` can migrate FROM. At
 // the migration-baseline reset it EQUALS #SchemaVersion — the deleted 47-step chain

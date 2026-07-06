@@ -2,7 +2,7 @@
 // BundleNode (charly/deploy.go): a `deploy:` map entry, or a `kind: check`
 // bed (disposable:true + usually iterate:/plan:). #Deploy is the base node;
 // #Check narrows it to the bed invariants. CLOSED. Shared defs REFERENCED, not
-// redefined (R3): #Step/#Op/#Security/#EnvVar/#InstallOpts/#Duration/#CalVer/
+// redefined (R3): #Step/#Op/#Security/#InstallOpts/#Duration/#CalVer/
 // #EntityRef/#PortPin/#VmSize/#Sidecar/#ShellSpec live in _common.cue / sidecar.cue.
 
 #Deploy: {
@@ -56,7 +56,7 @@
 	// overlay alias can lose to the base on a same-minute build. charly-written
 	// state (like resolved_port), never authored; empty for a plain pod.
 	resolved_image?: string & !="" @go(ResolvedImage)
-	env?: [...#EnvVar]
+	env?: {PATH?: _|_, [string]: #StrVal} @go(Env,type=map[string]string)
 	env_file?: string & !="" @go(EnvFile)
 	network?:  string & !=""
 	engine?:   "podman" | "docker"
@@ -133,20 +133,14 @@
 // port→hostname map (PortMap). Ports are ints; hostnames strings.
 #PortScope: ("all" | [...int] | {[=~"^[0-9]+$"]: string}) @go(-) // gengotypes: hand PortScope
 
-// DeployShellOverlay (deploy.go) — per-deploy shell-rc overlay. CLOSED: the Go
-// UnmarshalYAML allowlists exactly these keys + the 4 shell names.
+// DeployShellOverlay (deploy.go) — per-deploy shell-rc overlay: the shared
+// #Shell body extended with the overlay identity/skip keys (id-keyed
+// replace / skip merge semantics, MergeDeployShell).
 #DeployShellOverlay: {
+	#Shell
 	id?:     string & !="" @go(ID)
 	origin?: string & !=""
 	skip?:   bool
-	init?:   string
-	path_append?: [...string] @go(PathAppend)
-	path?:     string
-	priority?: int        @go(,type=int)
-	bash?:     #ShellSpec @go(Bash,optional=nillable)
-	zsh?:      #ShellSpec @go(Zsh,optional=nillable)
-	fish?:     #ShellSpec @go(Fish,optional=nillable)
-	sh?:       #ShellSpec @go(Sh,optional=nillable)
 }
 
 // DeployProbes (deploy.go) — each probe is an inline Op (the check verb vocab).

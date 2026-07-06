@@ -19,5 +19,5 @@ schema concatenation (`schemaconcat/`), and the shared VM types (`vmshared/`).
 hard cutover, AI attribution, and the git workflow are defined there; this file
 only signposts. Schema changes here are FORMAT changes for every consumer —
 follow `/charly-build:migrate` (bump `schema/version.cue` + a superproject
-`charly/migrations.cue` entry) and the SDK-first landing order in
+`candy/plugin-migrate/migrations.cue` entry) and the SDK-first landing order in
 `/charly-internals:git-workflow`. History lives in this repo's `CHANGELOG/`.

@@ -3,7 +3,7 @@
 // D; the image arm of #CandyValue) in a discovered box/<distro>/box/<name>/charly.yml.
 // Per-entity model.
 // CLOSED (an unknown key is a typo). Shared defs (#Step/#Security/#Shell/#CalVer/
-// #EntityRef/#EnvVar) come from _common.cue. Source of truth: charly/config.go
+// #EntityRef) come from _common.cue. Source of truth: charly/config.go
 // BoxConfig (the `defaults:` block reuses BoxConfig but is NOT validated against
 // #Box — only box ENTITIES are — so every BoxConfig field is modeled here even
 // when only `defaults:` authors it).
@@ -90,7 +90,7 @@
 	builder?: {[string]: string & !=""}
 	produce?: [...#BuildType]
 
-	env?: [...#EnvVar]
+	env?: {PATH?: _|_, [string]: #StrVal} @go(Env,type=map[string]string)
 	env_file?:   string & !="" @go(EnvFile)
 	security?:   #Security @go(Security,optional=nillable)
 	network?:    string & !=""

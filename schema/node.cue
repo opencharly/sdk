@@ -1,21 +1,21 @@
 // CUE schema for the UNIFIED `#Node` model — ONE name-first node shape for ALL of
-// charly.yml: `<name>: {<kind>: <SCALARS>, <child-node>…}`.
+// charly.yml: `<name>: {<kind>: <FULL BODY>, <member-name>: <entity>…}`.
 //
-// EVERYTHING IS A NODE. A kind's discriminator value holds only the entity's SCALAR
-// fields; every NON-scalar field (composition, collection, single object) is a CHILD
-// node `<name>-<key>: {<key>: <value>}`, every plan step is a CHILD step node, and a
-// resource nested under a deployable kind is a sub-ENTITY child. The assembler
-// (node_build.go) folds the data + step children back into the entity body and
-// decodes it through the COMPLETE per-kind def (#Candy/#Deploy/…), so the strict
-// field typing comes from the complete def — there are no per-arm value gaps.
+// THE COMPACT GRAMMAR. An entity is a mapping with EXACTLY ONE kind-word key whose
+// value is the COMPLETE per-kind body — scalars, collections, and the ordered
+// `plan:` step list all INLINE (the schema-compaction cutover deleted the former
+// named data/step child-node layer). The only other children an entity may carry
+// are sub-ENTITY members, and only under a deployable (#ResourceKind) kind — the
+// member NAME is load-bearing (tree-position venue + `${HOST:member}` addressing).
+// A plan step is one intent keyword (run/check/agent-run/agent-check/include)
+// plus at most one verb-position key: a builtin install verb, or the generic
+// plugin sugar `<word>: <input>` that the loader's parse-time desugar rewrites
+// into the internal plugin/plugin_input pair before #Step validates it.
 //
-// STRICTNESS: #Node is a DISJUNCTION of per-kind CLOSED arms (never matchN — that
-// disables closedness). Each arm pins its one discriminator to a SCALAR-only kind
-// value (#ForbidCollections forbids every non-scalar field in the value, forcing it
-// to be a child) and narrows children to the legal set: data/step children
-// (#ChildCommon) everywhere, plus resource arms (#ChildResource) under a deployable
-// kind. A typo'd discriminator, an unknown value field, a wrong-kind child, and two
-// discriminators all FAIL closedness.
+// STRICTNESS: the kind value decodes through the COMPLETE closed per-kind def
+// (#Candy/#Deploy/…), so unknown-field typo detection comes from the def itself;
+// the loader (node_parse.go) hard-errors a typo'd/absent/double discriminator, a
+// member under a non-deployable kind, and a member named like a kind word.
 
 // EVERY authoring kind is now EXTERNALIZED to a plugin — there are NO #Node arms left
 // (C2-candy externalized the LAST one, `candy`, to candy/plugin-candy, after C2-group +
@@ -51,12 +51,9 @@
 #ResourceKind: ("pod" | "vm" | "k8s" | "local" | "android" | "group") @go(-)
 
 // ---------------------------------------------------------------------------
-// Per-kind node VALUES — the COMPLETE per-kind def. A node's collections /
-// composition / objects live in CHILD nodes, so they are ABSENT from the value
-// (each def leaves them optional). The Go parser (node_parse.go) rejects any
-// non-scalar field that appears in the value directly — the deterministic
-// "everything is a node" gate — while CUE owns the closed-typo / unknown-field /
-// wrong-kind-child strictness via the closed def + the child-narrowed arms.
+// Per-kind node VALUES — the COMPLETE per-kind def, authored INLINE: the kind
+// value IS the full body (scalars + collections + `plan:`), validated directly
+// against the closed def. CUE owns closed-typo / unknown-field strictness.
 // ---------------------------------------------------------------------------
 // EDGE-INHERIT cutover D: `box:` merges INTO `candy:`. A `candy:` node is EITHER a
 // LAYER fragment (#Candy, no base/from) OR a full IMAGE (#Image — a #Box that REQUIRES
@@ -96,17 +93,17 @@
 #K8sValue:     (#K8s | #DeployValue) @go(-)
 #AndroidValue: (#Android | #DeployValue) @go(-)
 // EVERY authoring kind is externalized to a plugin unit — the build-vocabulary kinds
-// (`distro:`/`builder:`/`init:`/`resource:`), the Calamares `target:`/`package-group:`/`module:`,
-// the AI-CLI grader `agent:`, the sidecar `sidecar:`, the targetless deploy `group:` (C2-group),
-// the 5 substrate kinds `pod:`/`vm:`/`k8s:`/`local:`/`android:` (C2-substrate), AND the box⊻layer
+// (`distro:`/`builder:`/`init:`/`resource:`), the AI-CLI grader `agent:`, the sidecar
+// `sidecar:`, the targetless deploy `group:` (C2-group), the 5 substrate kinds
+// `pod:`/`vm:`/`k8s:`/`local:`/`android:` (C2-substrate), AND the box⊻layer
 // factory `candy:` (C2-candy) — so NONE has a #Node arm; such a node passes #NodeDoc as a
 // registered non-core discriminator (the OPEN #Node struct). A plugin with a self-contained served
 // #*Input schema (distro/builder/…/group) is validated by that schema (runPluginKind →
 // validateAuthoredPluginInput); the substrates AND candy, whose value is rich + core-referencing
 // (#Vm/#Deploy/#LibvirtDomain/#Candy/#Box/…) and so cannot be a self-contained plugin schema, are
 // validated HOST-SIDE against the KEPT #<Kind>Value / #CandyValue defs above (runPluginKind →
-// validateKindValueCUE). The core #Distro / #Builder / #Init / #Resource / #Target / #Agent /
-// #Module / #Sidecar / #Pod / #Vm / #K8s / #Local / #Android / #Deploy / #Candy / #Box defs
+// validateKindValueCUE). The core #Distro / #Builder / #Init / #Resource / #Agent /
+// #Sidecar / #Pod / #Vm / #K8s / #Local / #Android / #Deploy / #Candy / #Box defs
 // (schema/*.cue) are KEPT — they still generate spec.Distro / spec.Vm / spec.Candy / spec.Box /
 // … (the canonical types the plugins' Invoke and the host decode into). For `group` the plugin
 // (candy/plugin-group) decodes its scalar VALUE into the core spec.Deploy (#Deploy, kept via

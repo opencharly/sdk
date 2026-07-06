@@ -88,50 +88,15 @@ func (c *Op) VerbsSet() []string {
 	// `service` is NO LONGER a verb — it left #OpVerb in the service→plugin extraction
 	// (a service check/run is now `plugin: service` + #ServiceInput, running/enabled moved
 	// into plugin_input). Op no longer carries a Service field, so it contributes no verb.
-	// `command` is NO LONGER a verb — it left #OpVerb in the command→plugin extraction
-	// (a command check/run is now `plugin: command` + #CommandInput). It stays an #Op
-	// modifier ONLY: the live-container verbs wl/libvirt read it as their argv, and the
-	// command plugin's install-emit rehydrates it onto an OpStep for emitCmd. So Op.Command
-	// never contributes a verb here.
-	if c.Cdp != "" {
-		set = append(set, "cdp")
-	}
-	if c.Wl != "" {
-		set = append(set, "wl")
-	}
-	if c.Dbus != "" {
-		set = append(set, "dbus")
-	}
-	if c.Vnc != "" {
-		set = append(set, "vnc")
-	}
-	if c.Mcp != "" {
-		set = append(set, "mcp")
-	}
-	if c.Record != "" {
-		set = append(set, "record")
-	}
-	if c.Spice != "" {
-		set = append(set, "spice")
-	}
-	if c.Libvirt != "" {
-		set = append(set, "libvirt")
-	}
-	if c.Kube != "" {
-		set = append(set, "kube")
-	}
-	if c.Adb != "" {
-		set = append(set, "adb")
-	}
-	if c.Appium != "" {
-		set = append(set, "appium")
-	}
-	if c.Summarize != "" {
-		set = append(set, "summarize")
-	}
-	if c.Kill != "" {
-		set = append(set, "kill")
-	}
+	// `command` is NO LONGER a verb — authored `command:` is the command plugin's
+	// sugar key, consumed by the parse-time desugar; Op.Command is the internal
+	// rehydration target the command plugin's install-emit fills, so it never
+	// contributes a verb here.
+	// The 11 live-container verbs (cdp/wl/dbus/vnc/mcp/record/spice/libvirt/kube/
+	// adb/appium) left #Op in the schema-compaction cutover: each is authored as
+	// the generic `<word>: <input>` sugar and desugars to Plugin/PluginInput, so
+	// only the generic plugin verb below classifies them. The summarize/kill
+	// harness verbs were deleted with their never-authored aggregation surface.
 	if c.Plugin != "" {
 		set = append(set, "plugin")
 	}
@@ -148,31 +113,13 @@ func (c *Op) StringFields() []*string {
 		// sha256 left with the file verb into #FileInput; file's plugin_input is expanded by
 		// the plugin path, not here).
 		&c.Mode,
-		&c.Method, &c.RequestBody,
-		// Test-mode live-container verb discriminators + modifiers.
-		&c.Cdp, &c.Wl, &c.Dbus, &c.Vnc, &c.Mcp,
-		&c.Record, &c.Spice, &c.Libvirt, &c.Kube,
-		&c.Adb, &c.Appium,
-		// kube + shared resource-identity modifiers
-		&c.Name, &c.Namespace, &c.Label, &c.Cluster, &c.Manifest,
-		&c.KubeKind, &c.KubeContext, &c.Kubeconfig,
-		&c.KubeResource, &c.KubeGroup, &c.KubeVersion,
-		&c.Tab, &c.Expression, &c.URL, &c.Selector,
-		&c.Dest, &c.Path, &c.Artifact,
-		&c.Button, &c.Text, &c.KeyName, &c.Combo,
-		&c.Direction, &c.Target, &c.Action, &c.Query,
-		// mcp-specific modifiers
-		&c.McpName, &c.Tool, &c.URI, &c.Input,
-		// adb / appium-specific modifiers
-		&c.Apk, &c.Property, &c.Caps, &c.Strategy, &c.Session,
-		// record-specific modifiers
-		&c.RecordName, &c.RecordMode,
-		// Capture/Eventually/RetryInterval are identifiers/durations but still run
-		// through the expander for symmetry.
-		&c.Capture, &c.CaptureExtract, &c.Eventually, &c.RetryInterval,
-		// kill: verb's PID arg is typically ${CAPTURED:<name>} from a prior
-		// background command; Signal is a literal but expanded for symmetry.
-		&c.Kill, &c.Signal,
+		// A plugin verb's input fields are expanded by the plugin path (the
+		// marshalled PluginInput map), not here — per-verb fields left #Op in
+		// the schema-compaction cutover.
+		&c.Target, &c.Caps,
+		// Eventually/RetryInterval are durations but still run through the
+		// expander for symmetry.
+		&c.Eventually, &c.RetryInterval,
 		// Install/build verb discriminators + path-like modifiers (the former
 		// Task surface). Content is INTENTIONALLY excluded — write: bodies are
 		// verbatim bytes, never ${VAR}-substituted (matches the task rule).

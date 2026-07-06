@@ -32,15 +32,22 @@ func ResultJSON(status, msg string) (*pb.InvokeReply, error) {
 	return &pb.InvokeReply{ResultJson: j}, nil
 }
 
-// OpModifierZero reports whether the modifier named `name` — its yaml WIRE KEY on spec.Op —
-// is absent (zero) on op. It is the ONE generic replacement for the ~10 copy-pasted per-plugin
-// modifierZero funcs (R3): reflection over spec.Op's fields keyed by their yaml tag, so a
-// modifier name ("tab", "key", "x2", …) maps to the field carrying that tag (op.Tab, op.KeyName,
-// op.X2, …) and IsZero handles every field type uniformly (string "" / int 0). An unknown name
-// is treated as absent. The tag→name equivalence is asserted by TestOpModifierZeroMatchesFields.
+// OpModifierZero reports whether the modifier named `name` is absent (zero) on
+// the step. Since the schema-compaction cutover a verb's per-method fields live
+// in the desugared plugin INPUT map (op.PluginInput), so the lookup is map-first:
+// a key present in the input with a non-zero value is present. The handful of
+// genuinely SHARED #Op fields a method contract may still name (target, caps)
+// fall back to reflection over spec.Op's yaml tags. An unknown name is treated
+// as absent. Asserted by TestOpModifierZeroMatchesFields.
 func OpModifierZero(op *spec.Op, name string) bool {
 	if op == nil {
 		return true
+	}
+	if op.PluginInput != nil {
+		if v, ok := op.PluginInput[name]; ok {
+			rv := reflect.ValueOf(v)
+			return !rv.IsValid() || rv.IsZero()
+		}
 	}
 	v := reflect.ValueOf(*op)
 	t := v.Type()
