@@ -224,10 +224,6 @@ func writeVocab(dir, out string) error {
 	// intent_do, and origin is yaml:"-" in Go — none is an authoring surface.
 	authoringVerbs := excludeFrom(opFields, opRuntimeDerivedFields)
 
-	// DataKeys — the DATA discriminator keywords: the non-scalar fields of the
-	// authorable entity defs (#Candy + #Deploy) that the node-form parser SETS as a
-	// CHILD node onto the owning entity. Candy contributes every non-scalar field;
-	// #Deploy contributes every non-scalar field EXCEPT the inline-tolerated +
 	code := renderVocab(vocabSets{
 		kinds:          kinds,
 		resourceKinds:  resourceKinds,
