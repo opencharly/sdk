@@ -44,6 +44,27 @@ func (a *ResolvedAndroid) EffectiveSerial() string {
 	return "emulator-5554"
 }
 
+// ResolvedPod is the resolve-to-envelope form of a `pod:` template — a box + sidecar
+// + plan bundle. The kernel reads it (currently the include-spliced Plan), never spec.Pod.
+type ResolvedPod struct {
+	Box         CandyRef          `json:"box,omitempty"`
+	Sidecar     []PodSidecar      `json:"sidecar,omitempty"`
+	Secret      []DeploySecret    `json:"secret,omitempty"`
+	EnvDefaults map[string]string `json:"env_default,omitempty"`
+	Plan        []Step            `json:"plan,omitempty"`
+	Raw         RawBody           `json:"raw,omitempty"`
+}
+
+// PodResolveInput carries one opaque pod template body to project.
+type PodResolveInput struct {
+	Pod RawBody `json:"pod"`
+}
+
+// PodResolveReply wraps the resolved pod template.
+type PodResolveReply struct {
+	Resolved *ResolvedPod `json:"resolved,omitempty"`
+}
+
 // LocalResolveInput / AndroidResolveInput carry one opaque template body to project.
 type LocalResolveInput struct {
 	Local RawBody `json:"local"`
@@ -63,8 +84,9 @@ type AndroidResolveReply struct {
 }
 
 // SubstrateTemplateResolveRequest is the discriminated OpResolve request for the
-// substrate-template de-type: exactly one of Local / Android is set.
+// substrate-template de-type: exactly one of Local / Android / Pod is set.
 type SubstrateTemplateResolveRequest struct {
 	Local   *LocalResolveInput   `json:"local,omitempty"`
 	Android *AndroidResolveInput `json:"android,omitempty"`
+	Pod     *PodResolveInput     `json:"pod,omitempty"`
 }
