@@ -106,6 +106,11 @@ type CheckContext interface {
 	// plugin cannot reach. A cluster-probing verb (kube/…) declares its cluster and gets the
 	// context; an empty string (no matching profile) means "fall back to the current-context".
 	ResolveClusterContext(ctx context.Context, cluster string) (kubeContext string, err error)
+	// ResolveImageLabel reads one OCI label value off the deployment-under-test's image — the
+	// host owns the podman engine + container→image resolution the out-of-process plugin cannot
+	// reach. A verb declares the label it needs (mcp reads ai.opencharly.mcp_provide) and parses
+	// the returned value; an empty string means the label is absent on the image.
+	ResolveImageLabel(ctx context.Context, label string) (value string, err error)
 	// DialTimeout is the per-dial ceiling for host-side TCP reachability probes.
 	DialTimeout() time.Duration
 	// Box / Instance are the deployment's image + instance names (empty under ModeBox).

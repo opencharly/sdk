@@ -191,6 +191,11 @@ service CheckContextService {
   // cluster-probing verb declares its cluster profile and gets the context. Empty context (no
   // matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
   rpc ResolveClusterContext(ResolveClusterContextRequest) returns (ResolveClusterContextReply);
+  // ResolveImageLabel: read one OCI label value off the deployment-under-test's image — the
+  // host owns the podman engine + container→image resolution the out-of-process plugin cannot
+  // reach. Class-generic (parameterized by label name): the mcp verb reads ai.opencharly.mcp_provide;
+  // any verb needing a baked label uses it. Empty value (label absent) is a valid reply.
+  rpc ResolveImageLabel(ResolveImageLabelRequest) returns (ResolveImageLabelReply);
 }
 // HTTPDoRequest carries the FULL request + per-request policy the host needs to build the
 // client (httpClientFor) host-side: ca_pem is the resolved CA PEM bytes (the candy reads its
@@ -239,5 +244,12 @@ message ResolveClusterContextRequest { string cluster = 1; }
 // ResolveClusterContextReply: the resolved kubeconfig context ("" = no matching profile).
 message ResolveClusterContextReply {
   string context = 1;
+  string error = 2;
+}
+// ResolveImageLabelRequest: the OCI label name to read (e.g. "ai.opencharly.mcp_provide").
+message ResolveImageLabelRequest { string label = 1; }
+// ResolveImageLabelReply: the raw label value ("" = label absent on the image).
+message ResolveImageLabelReply {
+  string value = 1;
   string error = 2;
 }

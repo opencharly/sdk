@@ -705,6 +705,7 @@ const (
 	CheckContextService_ResolveEndpoint_FullMethodName         = "/charlyplugin.CheckContextService/ResolveEndpoint"
 	CheckContextService_ResolveGraphicsEndpoint_FullMethodName = "/charlyplugin.CheckContextService/ResolveGraphicsEndpoint"
 	CheckContextService_ResolveClusterContext_FullMethodName   = "/charlyplugin.CheckContextService/ResolveClusterContext"
+	CheckContextService_ResolveImageLabel_FullMethodName       = "/charlyplugin.CheckContextService/ResolveImageLabel"
 )
 
 // CheckContextServiceClient is the client API for CheckContextService service.
@@ -730,6 +731,11 @@ type CheckContextServiceClient interface {
 	// cluster-probing verb declares its cluster profile and gets the context. Empty context (no
 	// matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
 	ResolveClusterContext(ctx context.Context, in *ResolveClusterContextRequest, opts ...grpc.CallOption) (*ResolveClusterContextReply, error)
+	// ResolveImageLabel: read one OCI label value off the deployment-under-test's image — the
+	// host owns the podman engine + container→image resolution the out-of-process plugin cannot
+	// reach. Class-generic (parameterized by label name): the mcp verb reads ai.opencharly.mcp_provide;
+	// any verb needing a baked label uses it. Empty value (label absent) is a valid reply.
+	ResolveImageLabel(ctx context.Context, in *ResolveImageLabelRequest, opts ...grpc.CallOption) (*ResolveImageLabelReply, error)
 }
 
 type checkContextServiceClient struct {
@@ -785,6 +791,15 @@ func (c *checkContextServiceClient) ResolveClusterContext(ctx context.Context, i
 	return out, nil
 }
 
+func (c *checkContextServiceClient) ResolveImageLabel(ctx context.Context, in *ResolveImageLabelRequest, opts ...grpc.CallOption) (*ResolveImageLabelReply, error) {
+	out := new(ResolveImageLabelReply)
+	err := c.cc.Invoke(ctx, CheckContextService_ResolveImageLabel_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CheckContextServiceServer is the server API for CheckContextService service.
 // All implementations must embed UnimplementedCheckContextServiceServer
 // for forward compatibility
@@ -808,6 +823,11 @@ type CheckContextServiceServer interface {
 	// cluster-probing verb declares its cluster profile and gets the context. Empty context (no
 	// matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
 	ResolveClusterContext(context.Context, *ResolveClusterContextRequest) (*ResolveClusterContextReply, error)
+	// ResolveImageLabel: read one OCI label value off the deployment-under-test's image — the
+	// host owns the podman engine + container→image resolution the out-of-process plugin cannot
+	// reach. Class-generic (parameterized by label name): the mcp verb reads ai.opencharly.mcp_provide;
+	// any verb needing a baked label uses it. Empty value (label absent) is a valid reply.
+	ResolveImageLabel(context.Context, *ResolveImageLabelRequest) (*ResolveImageLabelReply, error)
 	mustEmbedUnimplementedCheckContextServiceServer()
 }
 
@@ -829,6 +849,9 @@ func (UnimplementedCheckContextServiceServer) ResolveGraphicsEndpoint(context.Co
 }
 func (UnimplementedCheckContextServiceServer) ResolveClusterContext(context.Context, *ResolveClusterContextRequest) (*ResolveClusterContextReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveClusterContext not implemented")
+}
+func (UnimplementedCheckContextServiceServer) ResolveImageLabel(context.Context, *ResolveImageLabelRequest) (*ResolveImageLabelReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveImageLabel not implemented")
 }
 func (UnimplementedCheckContextServiceServer) mustEmbedUnimplementedCheckContextServiceServer() {}
 
@@ -933,6 +956,24 @@ func _CheckContextService_ResolveClusterContext_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CheckContextService_ResolveImageLabel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveImageLabelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CheckContextServiceServer).ResolveImageLabel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CheckContextService_ResolveImageLabel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CheckContextServiceServer).ResolveImageLabel(ctx, req.(*ResolveImageLabelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CheckContextService_ServiceDesc is the grpc.ServiceDesc for CheckContextService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -959,6 +1000,10 @@ var CheckContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveClusterContext",
 			Handler:    _CheckContextService_ResolveClusterContext_Handler,
+		},
+		{
+			MethodName: "ResolveImageLabel",
+			Handler:    _CheckContextService_ResolveImageLabel_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

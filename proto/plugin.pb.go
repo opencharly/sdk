@@ -1893,6 +1893,104 @@ func (x *ResolveClusterContextReply) GetError() string {
 	return ""
 }
 
+// ResolveImageLabelRequest: the OCI label name to read (e.g. "ai.opencharly.mcp_provide").
+type ResolveImageLabelRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveImageLabelRequest) Reset() {
+	*x = ResolveImageLabelRequest{}
+	mi := &file_plugin_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveImageLabelRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveImageLabelRequest) ProtoMessage() {}
+
+func (x *ResolveImageLabelRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveImageLabelRequest.ProtoReflect.Descriptor instead.
+func (*ResolveImageLabelRequest) Descriptor() ([]byte, []int) {
+	return file_plugin_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ResolveImageLabelRequest) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+// ResolveImageLabelReply: the raw label value ("" = label absent on the image).
+type ResolveImageLabelReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveImageLabelReply) Reset() {
+	*x = ResolveImageLabelReply{}
+	mi := &file_plugin_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveImageLabelReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveImageLabelReply) ProtoMessage() {}
+
+func (x *ResolveImageLabelReply) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveImageLabelReply.ProtoReflect.Descriptor instead.
+func (*ResolveImageLabelReply) Descriptor() ([]byte, []int) {
+	return file_plugin_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ResolveImageLabelReply) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *ResolveImageLabelReply) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_plugin_proto protoreflect.FileDescriptor
 
 const file_plugin_proto_rawDesc = "" +
@@ -2036,6 +2134,11 @@ const file_plugin_proto_rawDesc = "" +
 	"\acluster\x18\x01 \x01(\tR\acluster\"L\n" +
 	"\x1aResolveClusterContextReply\x12\x18\n" +
 	"\acontext\x18\x01 \x01(\tR\acontext\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"0\n" +
+	"\x18ResolveImageLabelRequest\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\"D\n" +
+	"\x16ResolveImageLabelReply\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error2I\n" +
 	"\n" +
 	"PluginMeta\x12;\n" +
@@ -2054,13 +2157,14 @@ const file_plugin_proto_rawDesc = "" +
 	"\vRunHostStep\x12\x1d.charlyplugin.HostStepRequest\x1a\x1b.charlyplugin.HostStepReply\x12P\n" +
 	"\x0eInvokeProvider\x12#.charlyplugin.InvokeProviderRequest\x1a\x19.charlyplugin.InvokeReply\x12I\n" +
 	"\tHostBuild\x12\x1e.charlyplugin.HostBuildRequest\x1a\x1c.charlyplugin.HostBuildReply\x12O\n" +
-	"\vHostArbiter\x12 .charlyplugin.HostArbiterRequest\x1a\x1e.charlyplugin.HostArbiterReply2\xe2\x03\n" +
+	"\vHostArbiter\x12 .charlyplugin.HostArbiterRequest\x1a\x1e.charlyplugin.HostArbiterReply2\xc5\x04\n" +
 	"\x13CheckContextService\x12@\n" +
 	"\x06HTTPDo\x12\x1b.charlyplugin.HTTPDoRequest\x1a\x19.charlyplugin.HTTPDoReply\x12H\n" +
 	"\rAddBackground\x12\".charlyplugin.AddBackgroundRequest\x1a\x13.charlyplugin.Empty\x12[\n" +
 	"\x0fResolveEndpoint\x12$.charlyplugin.ResolveEndpointRequest\x1a\".charlyplugin.ResolveEndpointReply\x12s\n" +
 	"\x17ResolveGraphicsEndpoint\x12,.charlyplugin.ResolveGraphicsEndpointRequest\x1a*.charlyplugin.ResolveGraphicsEndpointReply\x12m\n" +
-	"\x15ResolveClusterContext\x12*.charlyplugin.ResolveClusterContextRequest\x1a(.charlyplugin.ResolveClusterContextReplyB!Z\x1fgithub.com/opencharly/sdk/protob\x06proto3"
+	"\x15ResolveClusterContext\x12*.charlyplugin.ResolveClusterContextRequest\x1a(.charlyplugin.ResolveClusterContextReply\x12a\n" +
+	"\x11ResolveImageLabel\x12&.charlyplugin.ResolveImageLabelRequest\x1a$.charlyplugin.ResolveImageLabelReplyB!Z\x1fgithub.com/opencharly/sdk/protob\x06proto3"
 
 var (
 	file_plugin_proto_rawDescOnce sync.Once
@@ -2074,7 +2178,7 @@ func file_plugin_proto_rawDescGZIP() []byte {
 	return file_plugin_proto_rawDescData
 }
 
-var file_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_plugin_proto_goTypes = []any{
 	(*Empty)(nil),                          // 0: charlyplugin.Empty
 	(*Capabilities)(nil),                   // 1: charlyplugin.Capabilities
@@ -2107,12 +2211,14 @@ var file_plugin_proto_goTypes = []any{
 	(*ResolveGraphicsEndpointReply)(nil),   // 28: charlyplugin.ResolveGraphicsEndpointReply
 	(*ResolveClusterContextRequest)(nil),   // 29: charlyplugin.ResolveClusterContextRequest
 	(*ResolveClusterContextReply)(nil),     // 30: charlyplugin.ResolveClusterContextReply
-	nil,                                    // 31: charlyplugin.HTTPDoRequest.HeadersEntry
+	(*ResolveImageLabelRequest)(nil),       // 31: charlyplugin.ResolveImageLabelRequest
+	(*ResolveImageLabelReply)(nil),         // 32: charlyplugin.ResolveImageLabelReply
+	nil,                                    // 33: charlyplugin.HTTPDoRequest.HeadersEntry
 }
 var file_plugin_proto_depIdxs = []int32{
 	2,  // 0: charlyplugin.Capabilities.provided:type_name -> charlyplugin.ProvidedCapability
 	3,  // 1: charlyplugin.ProvidedCapability.step_contract:type_name -> charlyplugin.StepContract
-	31, // 2: charlyplugin.HTTPDoRequest.headers:type_name -> charlyplugin.HTTPDoRequest.HeadersEntry
+	33, // 2: charlyplugin.HTTPDoRequest.headers:type_name -> charlyplugin.HTTPDoRequest.HeadersEntry
 	0,  // 3: charlyplugin.PluginMeta.Describe:input_type -> charlyplugin.Empty
 	4,  // 4: charlyplugin.Provider.Invoke:input_type -> charlyplugin.InvokeRequest
 	4,  // 5: charlyplugin.Provider.InvokeStream:input_type -> charlyplugin.InvokeRequest
@@ -2131,26 +2237,28 @@ var file_plugin_proto_depIdxs = []int32{
 	25, // 18: charlyplugin.CheckContextService.ResolveEndpoint:input_type -> charlyplugin.ResolveEndpointRequest
 	27, // 19: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:input_type -> charlyplugin.ResolveGraphicsEndpointRequest
 	29, // 20: charlyplugin.CheckContextService.ResolveClusterContext:input_type -> charlyplugin.ResolveClusterContextRequest
-	1,  // 21: charlyplugin.PluginMeta.Describe:output_type -> charlyplugin.Capabilities
-	5,  // 22: charlyplugin.Provider.Invoke:output_type -> charlyplugin.InvokeReply
-	6,  // 23: charlyplugin.Provider.InvokeStream:output_type -> charlyplugin.Frame
-	12, // 24: charlyplugin.ExecutorService.Venue:output_type -> charlyplugin.VenueReply
-	14, // 25: charlyplugin.ExecutorService.RunSystem:output_type -> charlyplugin.RunReply
-	14, // 26: charlyplugin.ExecutorService.RunUser:output_type -> charlyplugin.RunReply
-	16, // 27: charlyplugin.ExecutorService.PutFile:output_type -> charlyplugin.PutFileReply
-	17, // 28: charlyplugin.ExecutorService.RunCapture:output_type -> charlyplugin.CaptureReply
-	19, // 29: charlyplugin.ExecutorService.GetFile:output_type -> charlyplugin.GetFileReply
-	21, // 30: charlyplugin.ExecutorService.RunHostStep:output_type -> charlyplugin.HostStepReply
-	5,  // 31: charlyplugin.ExecutorService.InvokeProvider:output_type -> charlyplugin.InvokeReply
-	9,  // 32: charlyplugin.ExecutorService.HostBuild:output_type -> charlyplugin.HostBuildReply
-	11, // 33: charlyplugin.ExecutorService.HostArbiter:output_type -> charlyplugin.HostArbiterReply
-	23, // 34: charlyplugin.CheckContextService.HTTPDo:output_type -> charlyplugin.HTTPDoReply
-	0,  // 35: charlyplugin.CheckContextService.AddBackground:output_type -> charlyplugin.Empty
-	26, // 36: charlyplugin.CheckContextService.ResolveEndpoint:output_type -> charlyplugin.ResolveEndpointReply
-	28, // 37: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:output_type -> charlyplugin.ResolveGraphicsEndpointReply
-	30, // 38: charlyplugin.CheckContextService.ResolveClusterContext:output_type -> charlyplugin.ResolveClusterContextReply
-	21, // [21:39] is the sub-list for method output_type
-	3,  // [3:21] is the sub-list for method input_type
+	31, // 21: charlyplugin.CheckContextService.ResolveImageLabel:input_type -> charlyplugin.ResolveImageLabelRequest
+	1,  // 22: charlyplugin.PluginMeta.Describe:output_type -> charlyplugin.Capabilities
+	5,  // 23: charlyplugin.Provider.Invoke:output_type -> charlyplugin.InvokeReply
+	6,  // 24: charlyplugin.Provider.InvokeStream:output_type -> charlyplugin.Frame
+	12, // 25: charlyplugin.ExecutorService.Venue:output_type -> charlyplugin.VenueReply
+	14, // 26: charlyplugin.ExecutorService.RunSystem:output_type -> charlyplugin.RunReply
+	14, // 27: charlyplugin.ExecutorService.RunUser:output_type -> charlyplugin.RunReply
+	16, // 28: charlyplugin.ExecutorService.PutFile:output_type -> charlyplugin.PutFileReply
+	17, // 29: charlyplugin.ExecutorService.RunCapture:output_type -> charlyplugin.CaptureReply
+	19, // 30: charlyplugin.ExecutorService.GetFile:output_type -> charlyplugin.GetFileReply
+	21, // 31: charlyplugin.ExecutorService.RunHostStep:output_type -> charlyplugin.HostStepReply
+	5,  // 32: charlyplugin.ExecutorService.InvokeProvider:output_type -> charlyplugin.InvokeReply
+	9,  // 33: charlyplugin.ExecutorService.HostBuild:output_type -> charlyplugin.HostBuildReply
+	11, // 34: charlyplugin.ExecutorService.HostArbiter:output_type -> charlyplugin.HostArbiterReply
+	23, // 35: charlyplugin.CheckContextService.HTTPDo:output_type -> charlyplugin.HTTPDoReply
+	0,  // 36: charlyplugin.CheckContextService.AddBackground:output_type -> charlyplugin.Empty
+	26, // 37: charlyplugin.CheckContextService.ResolveEndpoint:output_type -> charlyplugin.ResolveEndpointReply
+	28, // 38: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:output_type -> charlyplugin.ResolveGraphicsEndpointReply
+	30, // 39: charlyplugin.CheckContextService.ResolveClusterContext:output_type -> charlyplugin.ResolveClusterContextReply
+	32, // 40: charlyplugin.CheckContextService.ResolveImageLabel:output_type -> charlyplugin.ResolveImageLabelReply
+	22, // [22:41] is the sub-list for method output_type
+	3,  // [3:22] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -2167,7 +2275,7 @@ func file_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plugin_proto_rawDesc), len(file_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   32,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   4,
 		},
