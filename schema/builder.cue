@@ -12,7 +12,6 @@
 	cache_mount?: [...#CacheMount] @go(CacheMount)
 	env?:              #StrMap
 	runtime_env?:      #StrMap       @go(RuntimeEnv)
-	stage_template?:   string        @go(StageTemplate)
 	install_template?: string        @go(InstallTemplate)
 	manylinux_fix?:    string        @go(ManylinuxFix)
 	build_script?:     string & !="" @go(BuildScript)

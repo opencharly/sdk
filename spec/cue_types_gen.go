@@ -513,8 +513,6 @@ type Builder struct {
 
 	RuntimeEnv StrMap `yaml:"runtime_env,omitempty" json:"runtime_env,omitempty"`
 
-	StageTemplate string `yaml:"stage_template,omitempty" json:"stage_template,omitempty"`
-
 	InstallTemplate string `yaml:"install_template,omitempty" json:"install_template,omitempty"`
 
 	ManylinuxFix string `yaml:"manylinux_fix,omitempty" json:"manylinux_fix,omitempty"`
