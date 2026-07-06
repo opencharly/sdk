@@ -40,7 +40,7 @@ type (
 	DeployResources          = spec.DeployResources
 	DeployShellOverlay       = spec.DeployShellOverlay
 	DeployStorage            = spec.DeployStorage
-	DistroDef                = spec.DistroDef
+	DistroDef                = spec.ResolvedDistro
 	DistroPackages           = spec.DistroPackages
 	EnvDependency            = spec.EnvDependency
 	EphemeralLifetime        = spec.EphemeralLifetime
