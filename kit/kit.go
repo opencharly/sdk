@@ -54,6 +54,19 @@ type Executor interface {
 	Kind() string
 }
 
+// GraphicsEndpoint is the resolved, dialable VM graphics endpoint a vnc/spice verb gets from
+// CheckContext.ResolveGraphicsEndpoint. Exactly one of Addr / Socket is set (the host bridges
+// a UNIX socket to TCP for a TCP-only client, or forwards a remote listener, before returning).
+// Password is the resolved ticket ("" = no auth). Skip=true (with SkipMessage) means the
+// deployment declares no graphics device of that kind — an N/A skip, not a failure.
+type GraphicsEndpoint struct {
+	Addr        string
+	Socket      string
+	Password    string
+	Skip        bool
+	SkipMessage string
+}
+
 // CheckContext is the live check-engine surface a host-coupled verb's RunVerb
 // consumes. charly's *Runner implements it; a candy reaches the running deployment
 // through it without importing charly's package main.
@@ -80,6 +93,14 @@ type CheckContext interface {
 	// nil error means "no live venue" (box-mode / no-box) — the verb's own no-endpoint skip
 	// then fires; a resolution failure is returned as err.
 	ResolveEndpoint(ctx context.Context, port int) (addr string, err error)
+	// ResolveGraphicsEndpoint resolves a VM's <graphics type='<kind>'> listener (kind =
+	// "vnc" | "spice") to a dialable endpoint, opening (and host-side tracking, for teardown
+	// after this verb's Invoke) any ssh -L forward + socket->TCP bridge the venue needs. A
+	// graphics verb (vnc/spice) calls it instead of the removed per-verb host preresolver;
+	// the host owns the go-libvirt resolution, tunnel, bridge, and credential-store password.
+	// GraphicsEndpoint.Skip=true means the deployment declares no graphics device of that kind
+	// (an N/A skip). A zero GraphicsEndpoint with a nil error means no live VM context.
+	ResolveGraphicsEndpoint(ctx context.Context, kind string) (GraphicsEndpoint, error)
 	// DialTimeout is the per-dial ceiling for host-side TCP reachability probes.
 	DialTimeout() time.Duration
 	// Box / Instance are the deployment's image + instance names (empty under ModeBox).

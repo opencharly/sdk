@@ -700,9 +700,10 @@ var ExecutorService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	CheckContextService_HTTPDo_FullMethodName          = "/charlyplugin.CheckContextService/HTTPDo"
-	CheckContextService_AddBackground_FullMethodName   = "/charlyplugin.CheckContextService/AddBackground"
-	CheckContextService_ResolveEndpoint_FullMethodName = "/charlyplugin.CheckContextService/ResolveEndpoint"
+	CheckContextService_HTTPDo_FullMethodName                  = "/charlyplugin.CheckContextService/HTTPDo"
+	CheckContextService_AddBackground_FullMethodName           = "/charlyplugin.CheckContextService/AddBackground"
+	CheckContextService_ResolveEndpoint_FullMethodName         = "/charlyplugin.CheckContextService/ResolveEndpoint"
+	CheckContextService_ResolveGraphicsEndpoint_FullMethodName = "/charlyplugin.CheckContextService/ResolveGraphicsEndpoint"
 )
 
 // CheckContextServiceClient is the client API for CheckContextService service.
@@ -716,6 +717,12 @@ type CheckContextServiceClient interface {
 	// tracking, for post-Invoke teardown) any ssh -L forward a VM/ssh venue needs. Class-
 	// generic: ANY endpoint check verb (cdp/vnc/spice/…) declares its port and dials the addr.
 	ResolveEndpoint(ctx context.Context, in *ResolveEndpointRequest, opts ...grpc.CallOption) (*ResolveEndpointReply, error)
+	// ResolveGraphicsEndpoint: resolve a VM's <graphics type='<kind>'> listener (kind = "vnc"
+	// | "spice") to a dialable endpoint — the host owns the go-libvirt resolution, any
+	// qemu+ssh:// tunnel (tracked for post-Invoke teardown), the socket->TCP bridge a TCP-only
+	// client needs, and the credential-store password. Class-generic: parameterized by kind,
+	// shared by the vnc + spice verbs (never a per-verb RPC).
+	ResolveGraphicsEndpoint(ctx context.Context, in *ResolveGraphicsEndpointRequest, opts ...grpc.CallOption) (*ResolveGraphicsEndpointReply, error)
 }
 
 type checkContextServiceClient struct {
@@ -753,6 +760,15 @@ func (c *checkContextServiceClient) ResolveEndpoint(ctx context.Context, in *Res
 	return out, nil
 }
 
+func (c *checkContextServiceClient) ResolveGraphicsEndpoint(ctx context.Context, in *ResolveGraphicsEndpointRequest, opts ...grpc.CallOption) (*ResolveGraphicsEndpointReply, error) {
+	out := new(ResolveGraphicsEndpointReply)
+	err := c.cc.Invoke(ctx, CheckContextService_ResolveGraphicsEndpoint_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CheckContextServiceServer is the server API for CheckContextService service.
 // All implementations must embed UnimplementedCheckContextServiceServer
 // for forward compatibility
@@ -764,6 +780,12 @@ type CheckContextServiceServer interface {
 	// tracking, for post-Invoke teardown) any ssh -L forward a VM/ssh venue needs. Class-
 	// generic: ANY endpoint check verb (cdp/vnc/spice/…) declares its port and dials the addr.
 	ResolveEndpoint(context.Context, *ResolveEndpointRequest) (*ResolveEndpointReply, error)
+	// ResolveGraphicsEndpoint: resolve a VM's <graphics type='<kind>'> listener (kind = "vnc"
+	// | "spice") to a dialable endpoint — the host owns the go-libvirt resolution, any
+	// qemu+ssh:// tunnel (tracked for post-Invoke teardown), the socket->TCP bridge a TCP-only
+	// client needs, and the credential-store password. Class-generic: parameterized by kind,
+	// shared by the vnc + spice verbs (never a per-verb RPC).
+	ResolveGraphicsEndpoint(context.Context, *ResolveGraphicsEndpointRequest) (*ResolveGraphicsEndpointReply, error)
 	mustEmbedUnimplementedCheckContextServiceServer()
 }
 
@@ -779,6 +801,9 @@ func (UnimplementedCheckContextServiceServer) AddBackground(context.Context, *Ad
 }
 func (UnimplementedCheckContextServiceServer) ResolveEndpoint(context.Context, *ResolveEndpointRequest) (*ResolveEndpointReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveEndpoint not implemented")
+}
+func (UnimplementedCheckContextServiceServer) ResolveGraphicsEndpoint(context.Context, *ResolveGraphicsEndpointRequest) (*ResolveGraphicsEndpointReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveGraphicsEndpoint not implemented")
 }
 func (UnimplementedCheckContextServiceServer) mustEmbedUnimplementedCheckContextServiceServer() {}
 
@@ -847,6 +872,24 @@ func _CheckContextService_ResolveEndpoint_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CheckContextService_ResolveGraphicsEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveGraphicsEndpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CheckContextServiceServer).ResolveGraphicsEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CheckContextService_ResolveGraphicsEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CheckContextServiceServer).ResolveGraphicsEndpoint(ctx, req.(*ResolveGraphicsEndpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CheckContextService_ServiceDesc is the grpc.ServiceDesc for CheckContextService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -865,6 +908,10 @@ var CheckContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveEndpoint",
 			Handler:    _CheckContextService_ResolveEndpoint_Handler,
+		},
+		{
+			MethodName: "ResolveGraphicsEndpoint",
+			Handler:    _CheckContextService_ResolveGraphicsEndpoint_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

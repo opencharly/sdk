@@ -165,6 +165,23 @@ func (c *sdkCheckContext) ResolveEndpoint(ctx context.Context, port int) (string
 	return rep.GetAddr(), nil
 }
 
+func (c *sdkCheckContext) ResolveGraphicsEndpoint(ctx context.Context, kind string) (kit.GraphicsEndpoint, error) {
+	rep, err := c.cc.ResolveGraphicsEndpoint(ctx, &pb.ResolveGraphicsEndpointRequest{Kind: kind})
+	if err != nil {
+		return kit.GraphicsEndpoint{}, err
+	}
+	if rep.GetError() != "" {
+		return kit.GraphicsEndpoint{}, errors.New(rep.GetError())
+	}
+	return kit.GraphicsEndpoint{
+		Addr:        rep.GetAddr(),
+		Socket:      rep.GetSocket(),
+		Password:    rep.GetPassword(),
+		Skip:        rep.GetSkip(),
+		SkipMessage: rep.GetSkipMessage(),
+	}, nil
+}
+
 // NewCheckContext builds the out-of-process kit.CheckContext for a RAW pb.Provider (Invoke)
 // that needs the reverse-channel legs (ResolveEndpoint / HTTPDo / Exec) but is NOT a
 // kit.CheckVerbProvider (so the kit-verb serve path never built one for it). envJSON is the

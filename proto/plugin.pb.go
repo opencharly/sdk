@@ -1663,6 +1663,138 @@ func (x *ResolveEndpointReply) GetError() string {
 	return ""
 }
 
+// ResolveGraphicsEndpointRequest: the graphics kind to resolve ("vnc" | "spice").
+type ResolveGraphicsEndpointRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveGraphicsEndpointRequest) Reset() {
+	*x = ResolveGraphicsEndpointRequest{}
+	mi := &file_plugin_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveGraphicsEndpointRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveGraphicsEndpointRequest) ProtoMessage() {}
+
+func (x *ResolveGraphicsEndpointRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveGraphicsEndpointRequest.ProtoReflect.Descriptor instead.
+func (*ResolveGraphicsEndpointRequest) Descriptor() ([]byte, []int) {
+	return file_plugin_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ResolveGraphicsEndpointRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+// ResolveGraphicsEndpointReply: the dialable endpoint. Exactly one of addr / socket is set;
+// password is the resolved ticket (empty = no auth). skip=true with skip_message signals a
+// deployment with no graphics device of that kind (an N/A skip, not a failure).
+type ResolveGraphicsEndpointReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Addr          string                 `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
+	Socket        string                 `protobuf:"bytes,2,opt,name=socket,proto3" json:"socket,omitempty"`
+	Password      string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
+	Skip          bool                   `protobuf:"varint,4,opt,name=skip,proto3" json:"skip,omitempty"`
+	SkipMessage   string                 `protobuf:"bytes,5,opt,name=skip_message,json=skipMessage,proto3" json:"skip_message,omitempty"`
+	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveGraphicsEndpointReply) Reset() {
+	*x = ResolveGraphicsEndpointReply{}
+	mi := &file_plugin_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveGraphicsEndpointReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveGraphicsEndpointReply) ProtoMessage() {}
+
+func (x *ResolveGraphicsEndpointReply) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveGraphicsEndpointReply.ProtoReflect.Descriptor instead.
+func (*ResolveGraphicsEndpointReply) Descriptor() ([]byte, []int) {
+	return file_plugin_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ResolveGraphicsEndpointReply) GetAddr() string {
+	if x != nil {
+		return x.Addr
+	}
+	return ""
+}
+
+func (x *ResolveGraphicsEndpointReply) GetSocket() string {
+	if x != nil {
+		return x.Socket
+	}
+	return ""
+}
+
+func (x *ResolveGraphicsEndpointReply) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *ResolveGraphicsEndpointReply) GetSkip() bool {
+	if x != nil {
+		return x.Skip
+	}
+	return false
+}
+
+func (x *ResolveGraphicsEndpointReply) GetSkipMessage() string {
+	if x != nil {
+		return x.SkipMessage
+	}
+	return ""
+}
+
+func (x *ResolveGraphicsEndpointReply) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_plugin_proto protoreflect.FileDescriptor
 
 const file_plugin_proto_rawDesc = "" +
@@ -1792,7 +1924,16 @@ const file_plugin_proto_rawDesc = "" +
 	"\x04port\x18\x01 \x01(\x05R\x04port\"@\n" +
 	"\x14ResolveEndpointReply\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2I\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"4\n" +
+	"\x1eResolveGraphicsEndpointRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\"\xb3\x01\n" +
+	"\x1cResolveGraphicsEndpointReply\x12\x12\n" +
+	"\x04addr\x18\x01 \x01(\tR\x04addr\x12\x16\n" +
+	"\x06socket\x18\x02 \x01(\tR\x06socket\x12\x1a\n" +
+	"\bpassword\x18\x03 \x01(\tR\bpassword\x12\x12\n" +
+	"\x04skip\x18\x04 \x01(\bR\x04skip\x12!\n" +
+	"\fskip_message\x18\x05 \x01(\tR\vskipMessage\x12\x14\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error2I\n" +
 	"\n" +
 	"PluginMeta\x12;\n" +
 	"\bDescribe\x12\x13.charlyplugin.Empty\x1a\x1a.charlyplugin.Capabilities2\x90\x01\n" +
@@ -1810,11 +1951,12 @@ const file_plugin_proto_rawDesc = "" +
 	"\vRunHostStep\x12\x1d.charlyplugin.HostStepRequest\x1a\x1b.charlyplugin.HostStepReply\x12P\n" +
 	"\x0eInvokeProvider\x12#.charlyplugin.InvokeProviderRequest\x1a\x19.charlyplugin.InvokeReply\x12I\n" +
 	"\tHostBuild\x12\x1e.charlyplugin.HostBuildRequest\x1a\x1c.charlyplugin.HostBuildReply\x12O\n" +
-	"\vHostArbiter\x12 .charlyplugin.HostArbiterRequest\x1a\x1e.charlyplugin.HostArbiterReply2\xfe\x01\n" +
+	"\vHostArbiter\x12 .charlyplugin.HostArbiterRequest\x1a\x1e.charlyplugin.HostArbiterReply2\xf3\x02\n" +
 	"\x13CheckContextService\x12@\n" +
 	"\x06HTTPDo\x12\x1b.charlyplugin.HTTPDoRequest\x1a\x19.charlyplugin.HTTPDoReply\x12H\n" +
 	"\rAddBackground\x12\".charlyplugin.AddBackgroundRequest\x1a\x13.charlyplugin.Empty\x12[\n" +
-	"\x0fResolveEndpoint\x12$.charlyplugin.ResolveEndpointRequest\x1a\".charlyplugin.ResolveEndpointReplyB!Z\x1fgithub.com/opencharly/sdk/protob\x06proto3"
+	"\x0fResolveEndpoint\x12$.charlyplugin.ResolveEndpointRequest\x1a\".charlyplugin.ResolveEndpointReply\x12s\n" +
+	"\x17ResolveGraphicsEndpoint\x12,.charlyplugin.ResolveGraphicsEndpointRequest\x1a*.charlyplugin.ResolveGraphicsEndpointReplyB!Z\x1fgithub.com/opencharly/sdk/protob\x06proto3"
 
 var (
 	file_plugin_proto_rawDescOnce sync.Once
@@ -1828,41 +1970,43 @@ func file_plugin_proto_rawDescGZIP() []byte {
 	return file_plugin_proto_rawDescData
 }
 
-var file_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_plugin_proto_goTypes = []any{
-	(*Empty)(nil),                  // 0: charlyplugin.Empty
-	(*Capabilities)(nil),           // 1: charlyplugin.Capabilities
-	(*ProvidedCapability)(nil),     // 2: charlyplugin.ProvidedCapability
-	(*StepContract)(nil),           // 3: charlyplugin.StepContract
-	(*InvokeRequest)(nil),          // 4: charlyplugin.InvokeRequest
-	(*InvokeReply)(nil),            // 5: charlyplugin.InvokeReply
-	(*Frame)(nil),                  // 6: charlyplugin.Frame
-	(*InvokeProviderRequest)(nil),  // 7: charlyplugin.InvokeProviderRequest
-	(*HostBuildRequest)(nil),       // 8: charlyplugin.HostBuildRequest
-	(*HostBuildReply)(nil),         // 9: charlyplugin.HostBuildReply
-	(*HostArbiterRequest)(nil),     // 10: charlyplugin.HostArbiterRequest
-	(*HostArbiterReply)(nil),       // 11: charlyplugin.HostArbiterReply
-	(*VenueReply)(nil),             // 12: charlyplugin.VenueReply
-	(*RunRequest)(nil),             // 13: charlyplugin.RunRequest
-	(*RunReply)(nil),               // 14: charlyplugin.RunReply
-	(*PutFileRequest)(nil),         // 15: charlyplugin.PutFileRequest
-	(*PutFileReply)(nil),           // 16: charlyplugin.PutFileReply
-	(*CaptureReply)(nil),           // 17: charlyplugin.CaptureReply
-	(*GetFileRequest)(nil),         // 18: charlyplugin.GetFileRequest
-	(*GetFileReply)(nil),           // 19: charlyplugin.GetFileReply
-	(*HostStepRequest)(nil),        // 20: charlyplugin.HostStepRequest
-	(*HostStepReply)(nil),          // 21: charlyplugin.HostStepReply
-	(*HTTPDoRequest)(nil),          // 22: charlyplugin.HTTPDoRequest
-	(*HTTPDoReply)(nil),            // 23: charlyplugin.HTTPDoReply
-	(*AddBackgroundRequest)(nil),   // 24: charlyplugin.AddBackgroundRequest
-	(*ResolveEndpointRequest)(nil), // 25: charlyplugin.ResolveEndpointRequest
-	(*ResolveEndpointReply)(nil),   // 26: charlyplugin.ResolveEndpointReply
-	nil,                            // 27: charlyplugin.HTTPDoRequest.HeadersEntry
+	(*Empty)(nil),                          // 0: charlyplugin.Empty
+	(*Capabilities)(nil),                   // 1: charlyplugin.Capabilities
+	(*ProvidedCapability)(nil),             // 2: charlyplugin.ProvidedCapability
+	(*StepContract)(nil),                   // 3: charlyplugin.StepContract
+	(*InvokeRequest)(nil),                  // 4: charlyplugin.InvokeRequest
+	(*InvokeReply)(nil),                    // 5: charlyplugin.InvokeReply
+	(*Frame)(nil),                          // 6: charlyplugin.Frame
+	(*InvokeProviderRequest)(nil),          // 7: charlyplugin.InvokeProviderRequest
+	(*HostBuildRequest)(nil),               // 8: charlyplugin.HostBuildRequest
+	(*HostBuildReply)(nil),                 // 9: charlyplugin.HostBuildReply
+	(*HostArbiterRequest)(nil),             // 10: charlyplugin.HostArbiterRequest
+	(*HostArbiterReply)(nil),               // 11: charlyplugin.HostArbiterReply
+	(*VenueReply)(nil),                     // 12: charlyplugin.VenueReply
+	(*RunRequest)(nil),                     // 13: charlyplugin.RunRequest
+	(*RunReply)(nil),                       // 14: charlyplugin.RunReply
+	(*PutFileRequest)(nil),                 // 15: charlyplugin.PutFileRequest
+	(*PutFileReply)(nil),                   // 16: charlyplugin.PutFileReply
+	(*CaptureReply)(nil),                   // 17: charlyplugin.CaptureReply
+	(*GetFileRequest)(nil),                 // 18: charlyplugin.GetFileRequest
+	(*GetFileReply)(nil),                   // 19: charlyplugin.GetFileReply
+	(*HostStepRequest)(nil),                // 20: charlyplugin.HostStepRequest
+	(*HostStepReply)(nil),                  // 21: charlyplugin.HostStepReply
+	(*HTTPDoRequest)(nil),                  // 22: charlyplugin.HTTPDoRequest
+	(*HTTPDoReply)(nil),                    // 23: charlyplugin.HTTPDoReply
+	(*AddBackgroundRequest)(nil),           // 24: charlyplugin.AddBackgroundRequest
+	(*ResolveEndpointRequest)(nil),         // 25: charlyplugin.ResolveEndpointRequest
+	(*ResolveEndpointReply)(nil),           // 26: charlyplugin.ResolveEndpointReply
+	(*ResolveGraphicsEndpointRequest)(nil), // 27: charlyplugin.ResolveGraphicsEndpointRequest
+	(*ResolveGraphicsEndpointReply)(nil),   // 28: charlyplugin.ResolveGraphicsEndpointReply
+	nil,                                    // 29: charlyplugin.HTTPDoRequest.HeadersEntry
 }
 var file_plugin_proto_depIdxs = []int32{
 	2,  // 0: charlyplugin.Capabilities.provided:type_name -> charlyplugin.ProvidedCapability
 	3,  // 1: charlyplugin.ProvidedCapability.step_contract:type_name -> charlyplugin.StepContract
-	27, // 2: charlyplugin.HTTPDoRequest.headers:type_name -> charlyplugin.HTTPDoRequest.HeadersEntry
+	29, // 2: charlyplugin.HTTPDoRequest.headers:type_name -> charlyplugin.HTTPDoRequest.HeadersEntry
 	0,  // 3: charlyplugin.PluginMeta.Describe:input_type -> charlyplugin.Empty
 	4,  // 4: charlyplugin.Provider.Invoke:input_type -> charlyplugin.InvokeRequest
 	4,  // 5: charlyplugin.Provider.InvokeStream:input_type -> charlyplugin.InvokeRequest
@@ -1879,24 +2023,26 @@ var file_plugin_proto_depIdxs = []int32{
 	22, // 16: charlyplugin.CheckContextService.HTTPDo:input_type -> charlyplugin.HTTPDoRequest
 	24, // 17: charlyplugin.CheckContextService.AddBackground:input_type -> charlyplugin.AddBackgroundRequest
 	25, // 18: charlyplugin.CheckContextService.ResolveEndpoint:input_type -> charlyplugin.ResolveEndpointRequest
-	1,  // 19: charlyplugin.PluginMeta.Describe:output_type -> charlyplugin.Capabilities
-	5,  // 20: charlyplugin.Provider.Invoke:output_type -> charlyplugin.InvokeReply
-	6,  // 21: charlyplugin.Provider.InvokeStream:output_type -> charlyplugin.Frame
-	12, // 22: charlyplugin.ExecutorService.Venue:output_type -> charlyplugin.VenueReply
-	14, // 23: charlyplugin.ExecutorService.RunSystem:output_type -> charlyplugin.RunReply
-	14, // 24: charlyplugin.ExecutorService.RunUser:output_type -> charlyplugin.RunReply
-	16, // 25: charlyplugin.ExecutorService.PutFile:output_type -> charlyplugin.PutFileReply
-	17, // 26: charlyplugin.ExecutorService.RunCapture:output_type -> charlyplugin.CaptureReply
-	19, // 27: charlyplugin.ExecutorService.GetFile:output_type -> charlyplugin.GetFileReply
-	21, // 28: charlyplugin.ExecutorService.RunHostStep:output_type -> charlyplugin.HostStepReply
-	5,  // 29: charlyplugin.ExecutorService.InvokeProvider:output_type -> charlyplugin.InvokeReply
-	9,  // 30: charlyplugin.ExecutorService.HostBuild:output_type -> charlyplugin.HostBuildReply
-	11, // 31: charlyplugin.ExecutorService.HostArbiter:output_type -> charlyplugin.HostArbiterReply
-	23, // 32: charlyplugin.CheckContextService.HTTPDo:output_type -> charlyplugin.HTTPDoReply
-	0,  // 33: charlyplugin.CheckContextService.AddBackground:output_type -> charlyplugin.Empty
-	26, // 34: charlyplugin.CheckContextService.ResolveEndpoint:output_type -> charlyplugin.ResolveEndpointReply
-	19, // [19:35] is the sub-list for method output_type
-	3,  // [3:19] is the sub-list for method input_type
+	27, // 19: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:input_type -> charlyplugin.ResolveGraphicsEndpointRequest
+	1,  // 20: charlyplugin.PluginMeta.Describe:output_type -> charlyplugin.Capabilities
+	5,  // 21: charlyplugin.Provider.Invoke:output_type -> charlyplugin.InvokeReply
+	6,  // 22: charlyplugin.Provider.InvokeStream:output_type -> charlyplugin.Frame
+	12, // 23: charlyplugin.ExecutorService.Venue:output_type -> charlyplugin.VenueReply
+	14, // 24: charlyplugin.ExecutorService.RunSystem:output_type -> charlyplugin.RunReply
+	14, // 25: charlyplugin.ExecutorService.RunUser:output_type -> charlyplugin.RunReply
+	16, // 26: charlyplugin.ExecutorService.PutFile:output_type -> charlyplugin.PutFileReply
+	17, // 27: charlyplugin.ExecutorService.RunCapture:output_type -> charlyplugin.CaptureReply
+	19, // 28: charlyplugin.ExecutorService.GetFile:output_type -> charlyplugin.GetFileReply
+	21, // 29: charlyplugin.ExecutorService.RunHostStep:output_type -> charlyplugin.HostStepReply
+	5,  // 30: charlyplugin.ExecutorService.InvokeProvider:output_type -> charlyplugin.InvokeReply
+	9,  // 31: charlyplugin.ExecutorService.HostBuild:output_type -> charlyplugin.HostBuildReply
+	11, // 32: charlyplugin.ExecutorService.HostArbiter:output_type -> charlyplugin.HostArbiterReply
+	23, // 33: charlyplugin.CheckContextService.HTTPDo:output_type -> charlyplugin.HTTPDoReply
+	0,  // 34: charlyplugin.CheckContextService.AddBackground:output_type -> charlyplugin.Empty
+	26, // 35: charlyplugin.CheckContextService.ResolveEndpoint:output_type -> charlyplugin.ResolveEndpointReply
+	28, // 36: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:output_type -> charlyplugin.ResolveGraphicsEndpointReply
+	20, // [20:37] is the sub-list for method output_type
+	3,  // [3:20] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -1913,7 +2059,7 @@ func file_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plugin_proto_rawDesc), len(file_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   4,
 		},

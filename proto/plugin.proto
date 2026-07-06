@@ -179,6 +179,12 @@ service CheckContextService {
   // tracking, for post-Invoke teardown) any ssh -L forward a VM/ssh venue needs. Class-
   // generic: ANY endpoint check verb (cdp/vnc/spice/…) declares its port and dials the addr.
   rpc ResolveEndpoint(ResolveEndpointRequest) returns (ResolveEndpointReply);
+  // ResolveGraphicsEndpoint: resolve a VM's <graphics type='<kind>'> listener (kind = "vnc"
+  // | "spice") to a dialable endpoint — the host owns the go-libvirt resolution, any
+  // qemu+ssh:// tunnel (tracked for post-Invoke teardown), the socket->TCP bridge a TCP-only
+  // client needs, and the credential-store password. Class-generic: parameterized by kind,
+  // shared by the vnc + spice verbs (never a per-verb RPC).
+  rpc ResolveGraphicsEndpoint(ResolveGraphicsEndpointRequest) returns (ResolveGraphicsEndpointReply);
 }
 // HTTPDoRequest carries the FULL request + per-request policy the host needs to build the
 // client (httpClientFor) host-side: ca_pem is the resolved CA PEM bytes (the candy reads its
@@ -208,4 +214,17 @@ message ResolveEndpointRequest { int32 port = 1; }
 message ResolveEndpointReply {
   string addr = 1;
   string error = 2;
+}
+// ResolveGraphicsEndpointRequest: the graphics kind to resolve ("vnc" | "spice").
+message ResolveGraphicsEndpointRequest { string kind = 1; }
+// ResolveGraphicsEndpointReply: the dialable endpoint. Exactly one of addr / socket is set;
+// password is the resolved ticket (empty = no auth). skip=true with skip_message signals a
+// deployment with no graphics device of that kind (an N/A skip, not a failure).
+message ResolveGraphicsEndpointReply {
+  string addr = 1;
+  string socket = 2;
+  string password = 3;
+  bool skip = 4;
+  string skip_message = 5;
+  string error = 6;
 }
