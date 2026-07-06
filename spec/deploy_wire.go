@@ -752,7 +752,7 @@ type HostEnv struct {
 // waits, charly delivery, nested pods) itself over generic seams, consuming only this resolved data.
 type LifecyclePrepareInput struct {
 	Entity         string         `json:"entity"`                    // the kind:vm entity name (node.From-resolved)
-	VM             *VmSpec        `json:"vm,omitempty"`              // the resolved VmSpec (uf.VM[entity])
+	VM             *ResolvedVm    `json:"vm,omitempty"`              // the resolved vm value envelope (uf.VM[entity] via the plugin)
 	SSHUser        string         `json:"ssh_user"`                 // resolveVmSshUser(spec)
 	SSHPort        int            `json:"ssh_port"`                 // resolveVmSshPort(spec, entity) — auto-alloc + persisted-port idempotency
 	Alias          string         `json:"alias"`                    // VmSshAlias(entity)

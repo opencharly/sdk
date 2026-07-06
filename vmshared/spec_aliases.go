@@ -162,7 +162,7 @@ type (
 	VmSnapshotDecl           = spec.VmSnapshotDecl
 	VmSnapshotState          = spec.VmSnapshotState
 	VmSource                 = spec.VmSource
-	VmSpec                   = spec.VmSpec
+	VmSpec                   = spec.ResolvedVm
 	VmSSH                    = spec.VmSSH
 	VolumeYAML               = spec.VolumeYAML
 

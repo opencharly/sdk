@@ -108,4 +108,15 @@ type SubstrateTemplateResolveRequest struct {
 	Android *AndroidResolveInput `json:"android,omitempty"`
 	Pod     *PodResolveInput     `json:"pod,omitempty"`
 	K8s     *K8sResolveInput     `json:"k8s,omitempty"`
+	Vm      *VmResolveInput      `json:"vm,omitempty"`
+}
+
+// VmResolveInput carries one opaque vm template body to project (Cutover L).
+type VmResolveInput struct {
+	Vm RawBody `json:"vm"`
+}
+
+// VmResolveReply wraps the resolved vm value envelope (ResolvedVm lives in vm_wire.go).
+type VmResolveReply struct {
+	Resolved *ResolvedVm `json:"resolved,omitempty"`
 }
