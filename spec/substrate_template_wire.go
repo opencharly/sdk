@@ -65,6 +65,24 @@ type PodResolveReply struct {
 	Resolved *ResolvedPod `json:"resolved,omitempty"`
 }
 
+// ResolvedK8s is the resolve-to-envelope form of a `k8s:` cluster template. The
+// kernel reads only KubeconfigContext (the deploy preresolver); the full cluster
+// model rides opaquely in Raw and is decoded by candy/plugin-k8sgen, never the kernel.
+type ResolvedK8s struct {
+	KubeconfigContext string  `json:"kubeconfig_context,omitempty"`
+	Raw               RawBody `json:"raw,omitempty"`
+}
+
+// K8sResolveInput carries one opaque k8s cluster template body to project.
+type K8sResolveInput struct {
+	K8s RawBody `json:"k8s"`
+}
+
+// K8sResolveReply wraps the resolved k8s cluster template.
+type K8sResolveReply struct {
+	Resolved *ResolvedK8s `json:"resolved,omitempty"`
+}
+
 // LocalResolveInput / AndroidResolveInput carry one opaque template body to project.
 type LocalResolveInput struct {
 	Local RawBody `json:"local"`
@@ -89,4 +107,5 @@ type SubstrateTemplateResolveRequest struct {
 	Local   *LocalResolveInput   `json:"local,omitempty"`
 	Android *AndroidResolveInput `json:"android,omitempty"`
 	Pod     *PodResolveInput     `json:"pod,omitempty"`
+	K8s     *K8sResolveInput     `json:"k8s,omitempty"`
 }

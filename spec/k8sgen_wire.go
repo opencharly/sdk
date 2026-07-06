@@ -25,7 +25,12 @@ type K8sGenInput struct {
 	Instance       string   `json:"instance"`
 	ImageRef       string   `json:"image_ref"`
 	Deploy         Deploy   `json:"deploy"`     // = the former BundleNode
-	Cluster        K8s      `json:"cluster"`    // = the former K8sSpec
+	// Cluster is the decoded kind:k8s cluster template. After the k8s substrate-value
+	// de-type (Cutover K) the KERNEL no longer sets it — it ships the opaque body in
+	// ClusterRaw and the plugin decodes ClusterRaw into Cluster before generating, so
+	// the kernel never types spec.K8s.
+	Cluster    K8s     `json:"cluster,omitempty"`
+	ClusterRaw RawBody `json:"cluster_raw,omitempty"` // opaque k8s cluster body (Cutover K)
 	Ports          []string `json:"ports"`      // from BoxMetadata.Port
 	UID            int      `json:"uid"`        // from BoxMetadata.UID
 	GID            int      `json:"gid"`        // from BoxMetadata.GID
