@@ -71,6 +71,15 @@ type CheckContext interface {
 	// and dials directly. The transport-level error is returned as err (a non-2xx is NOT an
 	// error — the caller matches resp.Status).
 	HTTPDo(ctx context.Context, req HTTPRequest) (HTTPResponse, error)
+	// ResolveEndpoint resolves the check target's venue (container / VM / ssh / local) and
+	// returns a host-reachable "host:port" address for an in-venue TCP port, opening (and
+	// host-side tracking, for teardown after this verb's Invoke) any ssh -L forward a VM/ssh
+	// venue needs. An endpoint verb (cdp/vnc/spice/…) declares its in-venue port and dials
+	// the returned addr — REPLACING the per-verb host preresolvers: the host owns the
+	// venue/podman/go-libvirt machinery the out-of-process plugin lacks. Empty addr with a
+	// nil error means "no live venue" (box-mode / no-box) — the verb's own no-endpoint skip
+	// then fires; a resolution failure is returned as err.
+	ResolveEndpoint(ctx context.Context, port int) (addr string, err error)
 	// DialTimeout is the per-dial ceiling for host-side TCP reachability probes.
 	DialTimeout() time.Duration
 	// Box / Instance are the deployment's image + instance names (empty under ModeBox).

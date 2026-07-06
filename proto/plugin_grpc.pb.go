@@ -700,8 +700,9 @@ var ExecutorService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	CheckContextService_HTTPDo_FullMethodName        = "/charlyplugin.CheckContextService/HTTPDo"
-	CheckContextService_AddBackground_FullMethodName = "/charlyplugin.CheckContextService/AddBackground"
+	CheckContextService_HTTPDo_FullMethodName          = "/charlyplugin.CheckContextService/HTTPDo"
+	CheckContextService_AddBackground_FullMethodName   = "/charlyplugin.CheckContextService/AddBackground"
+	CheckContextService_ResolveEndpoint_FullMethodName = "/charlyplugin.CheckContextService/ResolveEndpoint"
 )
 
 // CheckContextServiceClient is the client API for CheckContextService service.
@@ -710,6 +711,11 @@ const (
 type CheckContextServiceClient interface {
 	HTTPDo(ctx context.Context, in *HTTPDoRequest, opts ...grpc.CallOption) (*HTTPDoReply, error)
 	AddBackground(ctx context.Context, in *AddBackgroundRequest, opts ...grpc.CallOption) (*Empty, error)
+	// ResolveEndpoint: resolve the check target's venue (container / VM / ssh / local) and
+	// return a host-reachable address for an in-venue TCP port — opening (and host-side
+	// tracking, for post-Invoke teardown) any ssh -L forward a VM/ssh venue needs. Class-
+	// generic: ANY endpoint check verb (cdp/vnc/spice/…) declares its port and dials the addr.
+	ResolveEndpoint(ctx context.Context, in *ResolveEndpointRequest, opts ...grpc.CallOption) (*ResolveEndpointReply, error)
 }
 
 type checkContextServiceClient struct {
@@ -738,12 +744,26 @@ func (c *checkContextServiceClient) AddBackground(ctx context.Context, in *AddBa
 	return out, nil
 }
 
+func (c *checkContextServiceClient) ResolveEndpoint(ctx context.Context, in *ResolveEndpointRequest, opts ...grpc.CallOption) (*ResolveEndpointReply, error) {
+	out := new(ResolveEndpointReply)
+	err := c.cc.Invoke(ctx, CheckContextService_ResolveEndpoint_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CheckContextServiceServer is the server API for CheckContextService service.
 // All implementations must embed UnimplementedCheckContextServiceServer
 // for forward compatibility
 type CheckContextServiceServer interface {
 	HTTPDo(context.Context, *HTTPDoRequest) (*HTTPDoReply, error)
 	AddBackground(context.Context, *AddBackgroundRequest) (*Empty, error)
+	// ResolveEndpoint: resolve the check target's venue (container / VM / ssh / local) and
+	// return a host-reachable address for an in-venue TCP port — opening (and host-side
+	// tracking, for post-Invoke teardown) any ssh -L forward a VM/ssh venue needs. Class-
+	// generic: ANY endpoint check verb (cdp/vnc/spice/…) declares its port and dials the addr.
+	ResolveEndpoint(context.Context, *ResolveEndpointRequest) (*ResolveEndpointReply, error)
 	mustEmbedUnimplementedCheckContextServiceServer()
 }
 
@@ -756,6 +776,9 @@ func (UnimplementedCheckContextServiceServer) HTTPDo(context.Context, *HTTPDoReq
 }
 func (UnimplementedCheckContextServiceServer) AddBackground(context.Context, *AddBackgroundRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddBackground not implemented")
+}
+func (UnimplementedCheckContextServiceServer) ResolveEndpoint(context.Context, *ResolveEndpointRequest) (*ResolveEndpointReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveEndpoint not implemented")
 }
 func (UnimplementedCheckContextServiceServer) mustEmbedUnimplementedCheckContextServiceServer() {}
 
@@ -806,6 +829,24 @@ func _CheckContextService_AddBackground_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CheckContextService_ResolveEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveEndpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CheckContextServiceServer).ResolveEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CheckContextService_ResolveEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CheckContextServiceServer).ResolveEndpoint(ctx, req.(*ResolveEndpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CheckContextService_ServiceDesc is the grpc.ServiceDesc for CheckContextService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -820,6 +861,10 @@ var CheckContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddBackground",
 			Handler:    _CheckContextService_AddBackground_Handler,
+		},
+		{
+			MethodName: "ResolveEndpoint",
+			Handler:    _CheckContextService_ResolveEndpoint_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

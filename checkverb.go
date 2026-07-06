@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/opencharly/sdk/kit"
@@ -151,6 +152,32 @@ func (c *sdkCheckContext) HTTPDo(ctx context.Context, req kit.HTTPRequest) (kit.
 
 func (c *sdkCheckContext) AddBackground(pid int) {
 	_, _ = c.cc.AddBackground(context.Background(), &pb.AddBackgroundRequest{Pid: int32(pid)})
+}
+
+func (c *sdkCheckContext) ResolveEndpoint(ctx context.Context, port int) (string, error) {
+	rep, err := c.cc.ResolveEndpoint(ctx, &pb.ResolveEndpointRequest{Port: int32(port)})
+	if err != nil {
+		return "", err
+	}
+	if rep.GetError() != "" {
+		return "", errors.New(rep.GetError())
+	}
+	return rep.GetAddr(), nil
+}
+
+// NewCheckContext builds the out-of-process kit.CheckContext for a RAW pb.Provider (Invoke)
+// that needs the reverse-channel legs (ResolveEndpoint / HTTPDo / Exec) but is NOT a
+// kit.CheckVerbProvider (so the kit-verb serve path never built one for it). envJSON is the
+// InvokeRequest.env_json (the host's CheckEnv snapshot). Dials the broker ONCE — do NOT also
+// call ExecutorFromInvoke on the same Invoke (a second Dial hangs; use cc.Exec() instead).
+func NewCheckContext(brokerID uint32, envJSON []byte) (kit.CheckContext, error) {
+	var env checkEnvWire
+	if len(envJSON) > 0 {
+		if err := json.Unmarshal(envJSON, &env); err != nil {
+			return nil, fmt.Errorf("sdk: decode check env: %w", err)
+		}
+	}
+	return newSDKCheckContext(brokerID, env)
 }
 
 // sdkKitExecutor adapts the plugin-side *sdk.Executor to kit.Executor (RunCapture over the
