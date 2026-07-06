@@ -95,9 +95,9 @@ func fatal(format string, a ...any) {
 // are no egress_*.cue files here to exclude.)
 func excludeParamGen(name string) bool {
 	// node.cue: the node-disjunction wrappers (degrade to map[string]any).
-	// migration.cue: the #Migration validation-only defs — not param structs
-	// (the charly migrate engine hand-decodes the table; see migration.cue).
-	return name == "node.cue" || name == "migration.cue"
+	// (The #Migration validation-only defs moved to candy/plugin-migrate/schema/
+	// per the kernel/plugin boundary law, so there is no migration.cue here.)
+	return name == "node.cue"
 }
 
 // concatSchema delegates to schemaconcat.ConcatSchema — the SINGLE schema-concatenation
