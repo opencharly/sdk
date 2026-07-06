@@ -63,7 +63,11 @@
 	security?: #Security @go(Security,optional=nillable)
 	secret?: [...#DeploySecret]
 	volume?: [...#DeployVolume]
-	sidecar?: {[string]: #Sidecar}
+	// The Go type is OPAQUE (map[string]json.RawMessage): CUE still validates each
+	// per-deploy sidecar override against #Sidecar, but the kernel stores it as
+	// opaque bodies — ALL sidecar business logic lives in candy/plugin-sidecar's
+	// OpResolve (the sidecar de-type, Cutover D). The host never reads Sidecar fields.
+	sidecar?: {[string]: #Sidecar} @go(Sidecar,type=map[string]RawBody)
 	forward_gpg_agent?: bool @go(ForwardGpgAgent,type=*bool)
 	forward_ssh_agent?: bool @go(ForwardSshAgent,type=*bool)
 

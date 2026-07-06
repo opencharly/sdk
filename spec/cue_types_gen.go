@@ -991,7 +991,11 @@ type Deploy struct {
 
 	Volume []DeployVolume `yaml:"volume,omitempty" json:"volume,omitempty"`
 
-	Sidecar map[string]Sidecar `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
+	// The Go type is OPAQUE (map[string]json.RawMessage): CUE still validates each
+	// per-deploy sidecar override against #Sidecar, but the kernel stores it as
+	// opaque bodies — ALL sidecar business logic lives in candy/plugin-sidecar's
+	// OpResolve (the sidecar de-type, Cutover D). The host never reads Sidecar fields.
+	Sidecar map[string]RawBody `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
 
 	ForwardGpgAgent *bool `yaml:"forward_gpg_agent,omitempty" json:"forward_gpg_agent,omitempty"`
 
@@ -1074,40 +1078,6 @@ type DeployVolume struct {
 	DataSeeded bool `yaml:"data_seeded,omitempty" json:"data_seeded,omitempty"`
 
 	DataSource string `yaml:"data_source,omitempty" json:"data_source,omitempty"`
-}
-
-type Sidecar struct {
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
-
-	Image string `yaml:"image,omitempty" json:"image,omitempty"`
-
-	// env / parameter are map[string]string — values MUST be strings (quote
-	// YAML bools/numbers). parameter "" is the "deploy must supply" sentinel.
-	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
-
-	Parameter StrMap `yaml:"parameter,omitempty" json:"parameter,omitempty"`
-
-	Secret []SidecarSecret `yaml:"secret,omitempty" json:"secret,omitempty"`
-
-	Volume []SidecarVolume `yaml:"volume,omitempty" json:"volume,omitempty"`
-
-	Security *Security `yaml:"security,omitempty" json:"security,omitempty"`
-}
-
-type SidecarSecret struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Env string `yaml:"env,omitempty" json:"env"`
-
-	EnvFrom string `yaml:"env_from,omitempty" json:"env_from,omitempty"`
-
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
-}
-
-type SidecarVolume struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Path string `yaml:"path,omitempty" json:"path"`
 }
 
 type Iterate struct {
@@ -1586,6 +1556,40 @@ type Pod struct {
 // named sidecar templates. CLOSED (the struct has exactly one field).
 type PodSidecar struct {
 	Sidecar map[string]Sidecar `yaml:"sidecar,omitempty" json:"sidecar"`
+}
+
+type Sidecar struct {
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+
+	// env / parameter are map[string]string — values MUST be strings (quote
+	// YAML bools/numbers). parameter "" is the "deploy must supply" sentinel.
+	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Parameter StrMap `yaml:"parameter,omitempty" json:"parameter,omitempty"`
+
+	Secret []SidecarSecret `yaml:"secret,omitempty" json:"secret,omitempty"`
+
+	Volume []SidecarVolume `yaml:"volume,omitempty" json:"volume,omitempty"`
+
+	Security *Security `yaml:"security,omitempty" json:"security,omitempty"`
+}
+
+type SidecarSecret struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Env string `yaml:"env,omitempty" json:"env"`
+
+	EnvFrom string `yaml:"env_from,omitempty" json:"env_from,omitempty"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+type SidecarVolume struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Path string `yaml:"path,omitempty" json:"path"`
 }
 
 type Resource struct {

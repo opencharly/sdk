@@ -795,3 +795,66 @@ type CliReply struct {
 	ExitCode int    `json:"exit_code,omitempty"`
 	Error    string `json:"error,omitempty"`
 }
+
+// RawBody is an opaque JSON body the kernel stores and transports WITHOUT typing —
+// a same-package alias for json.RawMessage so a CUE `@go(type=map[string]RawBody)`
+// override renders an opaque map in the generated types with no cross-package import
+// (gengotypes would mis-import a qualified `json.RawMessage`). Used for the deploy
+// node's `sidecar:` override (Deploy.Sidecar), which candy/plugin-sidecar owns.
+type RawBody = json.RawMessage
+
+// SidecarResolveInput is the input to candy/plugin-sidecar's OpResolve leg (the
+// host-side sidecar de-type, Cutover D). The host passes the three sidecar-def
+// layers to merge (embedded template base, project-root templates, per-deploy
+// overrides — each a name→Sidecar map the host keeps OPAQUE: it never reads their
+// fields) plus the CLI -e flags to route and the box/instance for name scoping.
+// The plugin owns ALL sidecar business logic (env-flag routing, template merge,
+// volume/secret-name + env_from resolution).
+type SidecarResolveInput struct {
+	EmbeddedTemplates map[string]json.RawMessage `json:"embedded_templates,omitempty"`
+	ProjectTemplates  map[string]json.RawMessage `json:"project_templates,omitempty"`
+	DeployOverrides   map[string]json.RawMessage `json:"deploy_overrides,omitempty"`
+	CliEnv            []string                   `json:"cli_env,omitempty"`
+	Box               string                     `json:"box,omitempty"`
+	Instance          string                     `json:"instance,omitempty"`
+}
+
+// SidecarResolveReply is candy/plugin-sidecar's OpResolve reply: the resolved,
+// generation-ready sidecars the host feeds to quadlet gen (no Sidecar fields), the
+// CLI env flags NOT routed to any sidecar (app-only), and the per-deploy sidecar
+// overrides with any routed env folded in — returned as OPAQUE bodies the host
+// persists to charly.yml without typing.
+type SidecarResolveReply struct {
+	Sidecars         []ResolvedSidecar          `json:"sidecars,omitempty"`
+	AppEnv           []string                   `json:"app_env,omitempty"`
+	PersistOverrides map[string]json.RawMessage `json:"persist_overrides,omitempty"`
+}
+
+// ResolvedSidecar is a fully-resolved co-deployed container the host consumes for
+// quadlet generation — the resolve-to-envelope form of a sidecar (NO Sidecar /
+// SidecarDef fields survive; the plugin already merged + resolved everything).
+type ResolvedSidecar struct {
+	Name     string                  `json:"name"`
+	Image    string                  `json:"image,omitempty"`
+	Env      map[string]string       `json:"env,omitempty"`
+	Secret   []ResolvedSidecarSecret `json:"secret,omitempty"`
+	Volume   []ResolvedSidecarVolume `json:"volume,omitempty"`
+	Security *Security               `json:"security,omitempty"`
+}
+
+// ResolvedSidecarSecret is a resolved sidecar secret (the sidecar-scoped subset of
+// the host's CollectedSecret): the podman secret name + the container/host env-var
+// names + the original manifest secret name.
+type ResolvedSidecarSecret struct {
+	Name       string `json:"name"`
+	Env        string `json:"env,omitempty"`
+	HostEnv    string `json:"host_env,omitempty"`
+	SecretName string `json:"secret_name,omitempty"`
+}
+
+// ResolvedSidecarVolume is a resolved sidecar volume: the charly-scoped volume name
+// + its container mount path.
+type ResolvedSidecarVolume struct {
+	VolumeName    string `json:"volume_name"`
+	ContainerPath string `json:"container_path"`
+}
