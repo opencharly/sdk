@@ -101,6 +101,11 @@ type CheckContext interface {
 	// GraphicsEndpoint.Skip=true means the deployment declares no graphics device of that kind
 	// (an N/A skip). A zero GraphicsEndpoint with a nil error means no live VM context.
 	ResolveGraphicsEndpoint(ctx context.Context, kind string) (GraphicsEndpoint, error)
+	// ResolveClusterContext maps a charly k8s cluster-profile name to its kubeconfig context by
+	// reading the project's kind:k8s spec — the host owns the project loader the out-of-process
+	// plugin cannot reach. A cluster-probing verb (kube/…) declares its cluster and gets the
+	// context; an empty string (no matching profile) means "fall back to the current-context".
+	ResolveClusterContext(ctx context.Context, cluster string) (kubeContext string, err error)
 	// DialTimeout is the per-dial ceiling for host-side TCP reachability probes.
 	DialTimeout() time.Duration
 	// Box / Instance are the deployment's image + instance names (empty under ModeBox).

@@ -182,6 +182,17 @@ func (c *sdkCheckContext) ResolveGraphicsEndpoint(ctx context.Context, kind stri
 	}, nil
 }
 
+func (c *sdkCheckContext) ResolveClusterContext(ctx context.Context, cluster string) (string, error) {
+	rep, err := c.cc.ResolveClusterContext(ctx, &pb.ResolveClusterContextRequest{Cluster: cluster})
+	if err != nil {
+		return "", err
+	}
+	if rep.GetError() != "" {
+		return "", errors.New(rep.GetError())
+	}
+	return rep.GetContext(), nil
+}
+
 // NewCheckContext builds the out-of-process kit.CheckContext for a RAW pb.Provider (Invoke)
 // that needs the reverse-channel legs (ResolveEndpoint / HTTPDo / Exec) but is NOT a
 // kit.CheckVerbProvider (so the kit-verb serve path never built one for it). envJSON is the

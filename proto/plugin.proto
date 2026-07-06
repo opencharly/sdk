@@ -185,6 +185,12 @@ service CheckContextService {
   // client needs, and the credential-store password. Class-generic: parameterized by kind,
   // shared by the vnc + spice verbs (never a per-verb RPC).
   rpc ResolveGraphicsEndpoint(ResolveGraphicsEndpointRequest) returns (ResolveGraphicsEndpointReply);
+  // ResolveClusterContext: map a charly k8s cluster-profile NAME to its kubeconfig context by
+  // reading the project's kind:k8s spec (findK8sSpec) — the host owns the project loader the
+  // out-of-process plugin cannot reach. Class-generic (concept-named, not verb-named): any
+  // cluster-probing verb declares its cluster profile and gets the context. Empty context (no
+  // matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
+  rpc ResolveClusterContext(ResolveClusterContextRequest) returns (ResolveClusterContextReply);
 }
 // HTTPDoRequest carries the FULL request + per-request policy the host needs to build the
 // client (httpClientFor) host-side: ca_pem is the resolved CA PEM bytes (the candy reads its
@@ -227,4 +233,11 @@ message ResolveGraphicsEndpointReply {
   bool skip = 4;
   string skip_message = 5;
   string error = 6;
+}
+// ResolveClusterContextRequest: the charly k8s cluster-profile name to map to a context.
+message ResolveClusterContextRequest { string cluster = 1; }
+// ResolveClusterContextReply: the resolved kubeconfig context ("" = no matching profile).
+message ResolveClusterContextReply {
+  string context = 1;
+  string error = 2;
 }
