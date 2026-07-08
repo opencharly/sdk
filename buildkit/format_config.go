@@ -11,14 +11,9 @@ import (
 // charly aliases package-main-side (vmshared_aliases.go); buildkit binds them
 // here so the resolver is importable without charly core.
 type (
-	DistroDef          = spec.ResolvedDistro
-	FormatDef          = spec.Format
-	BuilderDef         = spec.Builder
-	BaseUserDef        = spec.BaseUser
-	PacstrapDef        = spec.Pacstrap
-	DebootstrapDef     = spec.Debootstrap
-	AlpineBootstrapDef = spec.AlpineBootstrap
-	BootloaderDef      = spec.Bootloader
+	DistroDef  = spec.ResolvedDistro
+	FormatDef  = spec.Format
+	BuilderDef = spec.Builder
 )
 
 // --- Distro Config ---
@@ -133,27 +128,6 @@ func (dc *DistroConfig) ResolveInherits(def *DistroDef, maxDepth int) *DistroDef
 		Dnf:             dnf,
 	}
 	return merged
-}
-
-// isNilPtr is a small helper used by ResolveInherits's per-field merge
-// pattern. Returns true for typed nil pointers; false for everything else.
-func isNilPtr(v any) bool {
-	if v == nil {
-		return true
-	}
-	switch p := v.(type) {
-	case *BaseUserDef:
-		return p == nil
-	case *PacstrapDef:
-		return p == nil
-	case *DebootstrapDef:
-		return p == nil
-	case *AlpineBootstrapDef:
-		return p == nil
-	case *BootloaderDef:
-		return p == nil
-	}
-	return false
 }
 
 // AllFormatNames returns a sorted, deduplicated list of all format names across all distros.
