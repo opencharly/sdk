@@ -335,6 +335,65 @@ func (ll LibvirtGraphicsListeners) First() LibvirtGraphicsListen {
 	return ll[0]
 }
 
+// UnmarshalJSON accepts the three interchangeable listen shapes on the JSON read
+// path (the opaque substrate-decode path a de-typed vm body takes): a bare
+// scalar address ("127.0.0.1" → one type:address listener), a single object, or
+// a list of objects. The YAML read path decodes the same three via
+// cue.Value.Decode running THIS method (the Matcher/PortScope self-decoding
+// strategy), so ONE decoder now serves both paths (R3) — replacing the former
+// charly-side expandLibvirtListenersNode YAML expander.
+func (ll *LibvirtGraphicsListeners) UnmarshalJSON(data []byte) error {
+	s := bytes.TrimSpace(data)
+	if len(s) == 0 || string(s) == "null" {
+		*ll = nil
+		return nil
+	}
+	switch s[0] {
+	case '"': // scalar address shorthand
+		var addr string
+		if err := json.Unmarshal(data, &addr); err != nil {
+			return err
+		}
+		*ll = LibvirtGraphicsListeners{{Type: "address", Address: addr}}
+		return nil
+	case '[': // explicit list
+		var list []LibvirtGraphicsListen
+		if err := json.Unmarshal(data, &list); err != nil {
+			return err
+		}
+		*ll = inferListenTypes(list)
+		return nil
+	case '{': // single object
+		var one LibvirtGraphicsListen
+		if err := json.Unmarshal(data, &one); err != nil {
+			return err
+		}
+		*ll = inferListenTypes([]LibvirtGraphicsListen{one})
+		return nil
+	}
+	return fmt.Errorf("listen: expected address string, object, or list, got %s", s)
+}
+
+// inferListenTypes fills an empty Type from the present field (address→address,
+// network→network, socket→socket), matching the former YAML expander's
+// inference so both read paths produce identical listeners.
+func inferListenTypes(list []LibvirtGraphicsListen) LibvirtGraphicsListeners {
+	for i := range list {
+		if list[i].Type != "" {
+			continue
+		}
+		switch {
+		case list[i].Address != "":
+			list[i].Type = "address"
+		case list[i].Network != "":
+			list[i].Type = "network"
+		case list[i].Socket != "":
+			list[i].Type = "socket"
+		}
+	}
+	return LibvirtGraphicsListeners(list)
+}
+
 // ---------------------------------------------------------------------------
 // PortScope / TunnelYAML — #PortScope / #Tunnel (tunnel.go).
 // ---------------------------------------------------------------------------
