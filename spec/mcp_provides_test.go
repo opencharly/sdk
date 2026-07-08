@@ -6,9 +6,9 @@ import "testing"
 // charly's deploy-time provides injection and the mcp check verb rely on (moved here in H part 2).
 func TestPodAwareMCPProvides(t *testing.T) {
 	entries := []MCPProvideEntry{
-		{Name: "self", URL: "http://charly-box:8080/mcp", Source: "box"},          // same-deploy → localhost
-		{Name: "peer", URL: "http://charly-other:9090/mcp", Source: "other"},      // cross-deploy → unchanged
-		{Name: "self", URL: "http://charly-other:8080/mcp", Source: "other"},      // dup name, cross → dropped (local wins)
+		{Name: "self", URL: "http://charly-box:8080/mcp", Source: "box"},     // same-deploy → localhost
+		{Name: "peer", URL: "http://charly-other:9090/mcp", Source: "other"}, // cross-deploy → unchanged
+		{Name: "self", URL: "http://charly-other:8080/mcp", Source: "other"}, // dup name, cross → dropped (local wins)
 	}
 	got := PodAwareMCPProvides(entries, "box", "charly-box")
 	if len(got) != 2 {

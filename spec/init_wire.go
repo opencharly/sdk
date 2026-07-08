@@ -82,25 +82,25 @@ type ServiceRenderReply struct {
 // the concrete spec.Init. Raw is the opaque init body threaded to the plugin's
 // service-render leg (leg 1). candy/plugin-init produces it from spec.Init.
 type ResolvedInit struct {
-	CandyFields          []string          `json:"candy_field,omitempty"`
-	CandyFiles           []string          `json:"candy_file,omitempty"`
-	DependsCandy         string            `json:"depends_candy,omitempty"`
-	RequiresCapability   []string          `json:"requires_capability,omitempty"`
-	Model                string            `json:"model,omitempty"`
-	HeaderFile           string            `json:"header_file,omitempty"`
-	FragmentDir          string            `json:"fragment_dir,omitempty"`
-	RelayTemplate        string            `json:"relay_template,omitempty"`
-	StageName            string            `json:"stage_name,omitempty"`
-	StageHeaderCopy      string            `json:"stage_header_copy,omitempty"`
-	StageFragmentCopy    string            `json:"stage_fragment_copy,omitempty"`
-	AssemblyTemplate     string            `json:"assembly_template,omitempty"`
-	SystemEnableTemplate string            `json:"system_enable_template,omitempty"`
-	PostAssemblyTemplate string            `json:"post_assembly_template,omitempty"`
-	Entrypoint           []string          `json:"entrypoint,omitempty"`
-	FallbackEntrypoint   []string          `json:"fallback_entrypoint,omitempty"`
-	ManagementTool       string            `json:"management_tool,omitempty"`
-	ManagementCommands   map[string]string `json:"management_command,omitempty"`
-	LabelKey             string            `json:"label_key,omitempty"`
+	CandyFields          []string           `json:"candy_field,omitempty"`
+	CandyFiles           []string           `json:"candy_file,omitempty"`
+	DependsCandy         string             `json:"depends_candy,omitempty"`
+	RequiresCapability   []string           `json:"requires_capability,omitempty"`
+	Model                string             `json:"model,omitempty"`
+	HeaderFile           string             `json:"header_file,omitempty"`
+	FragmentDir          string             `json:"fragment_dir,omitempty"`
+	RelayTemplate        string             `json:"relay_template,omitempty"`
+	StageName            string             `json:"stage_name,omitempty"`
+	StageHeaderCopy      string             `json:"stage_header_copy,omitempty"`
+	StageFragmentCopy    string             `json:"stage_fragment_copy,omitempty"`
+	AssemblyTemplate     string             `json:"assembly_template,omitempty"`
+	SystemEnableTemplate string             `json:"system_enable_template,omitempty"`
+	PostAssemblyTemplate string             `json:"post_assembly_template,omitempty"`
+	Entrypoint           []string           `json:"entrypoint,omitempty"`
+	FallbackEntrypoint   []string           `json:"fallback_entrypoint,omitempty"`
+	ManagementTool       string             `json:"management_tool,omitempty"`
+	ManagementCommands   map[string]string  `json:"management_command,omitempty"`
+	LabelKey             string             `json:"label_key,omitempty"`
 	ServiceSchema        *InitServiceSchema `json:"service_schema,omitempty"`
 
 	// Raw is the opaque init body — threaded to the service-render leg (leg 1).
