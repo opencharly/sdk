@@ -21,20 +21,20 @@ import "encoding/json"
 // / UID / GID are lifted from the image's OCI-label Capabilities host-side so the
 // plugin needs no access to the package-main BoxMetadata type.
 type K8sGenInput struct {
-	DeploymentName string   `json:"deployment_name"`
-	Instance       string   `json:"instance"`
-	ImageRef       string   `json:"image_ref"`
-	Deploy         Deploy   `json:"deploy"`     // = the former BundleNode
+	DeploymentName string `json:"deployment_name"`
+	Instance       string `json:"instance"`
+	ImageRef       string `json:"image_ref"`
+	Deploy         Deploy `json:"deploy"` // = the former BundleNode
 	// Cluster is the decoded kind:k8s cluster template. After the k8s substrate-value
 	// de-type (Cutover K) the KERNEL no longer sets it — it ships the opaque body in
 	// ClusterRaw and the plugin decodes ClusterRaw into Cluster before generating, so
 	// the kernel never types spec.K8s.
-	Cluster    K8s     `json:"cluster,omitempty"`
-	ClusterRaw RawBody `json:"cluster_raw,omitempty"` // opaque k8s cluster body (Cutover K)
-	Ports          []string `json:"ports"`      // from BoxMetadata.Port
-	UID            int      `json:"uid"`        // from BoxMetadata.UID
-	GID            int      `json:"gid"`        // from BoxMetadata.GID
-	OutputDir      string   `json:"output_dir"` // provenance; the host owns disk paths
+	Cluster    K8s      `json:"cluster,omitempty"`
+	ClusterRaw RawBody  `json:"cluster_raw,omitempty"` // opaque k8s cluster body (Cutover K)
+	Ports      []string `json:"ports"`                 // from BoxMetadata.Port
+	UID        int      `json:"uid"`                   // from BoxMetadata.UID
+	GID        int      `json:"gid"`                   // from BoxMetadata.GID
+	OutputDir  string   `json:"output_dir"`            // provenance; the host owns disk paths
 }
 
 // K8sGenFile is one generated manifest the plugin returns: its RELATIVE path
