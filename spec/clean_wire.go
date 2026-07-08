@@ -26,6 +26,8 @@ type RetentionRequest struct {
 // plugin to present. Error is a human-facing message on a non-recoverable failure.
 type RetentionReply struct {
 	ImageRefs     []string `json:"image_refs,omitempty"`
+	DanglingIDs   []string `json:"dangling_ids,omitempty"`
+	StagingDirs   []string `json:"staging_dirs,omitempty"`
 	BuildDirs     []string `json:"build_dirs,omitempty"`
 	CheckPaths    []string `json:"check_paths,omitempty"`
 	KeepImages    int      `json:"keep_images,omitempty"`
