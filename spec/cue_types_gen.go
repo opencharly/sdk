@@ -498,6 +498,79 @@ type Box struct {
 	Shell *Shell `yaml:"shell,omitempty" json:"shell,omitempty"`
 }
 
+// #InstallContext — data a distro format's install/prepare/cleanup template
+// renders against: packages + repo/copr/module/exclude/key modifiers, resolved
+// cache mounts, and the builder-stage identity/uid/gid/home.
+type InstallContext struct {
+	CacheMounts []CacheMount `yaml:"cache_mounts,omitempty" json:"cache_mounts,omitempty"`
+
+	Packages []string `yaml:"packages,omitempty" json:"packages,omitempty"`
+
+	Repos []map[string]any/* CUE top */ `yaml:"repos,omitempty" json:"repos,omitempty"`
+
+	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
+
+	Copr []string `yaml:"copr,omitempty" json:"copr,omitempty"`
+
+	Modules []string `yaml:"modules,omitempty" json:"modules,omitempty"`
+
+	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+
+	Keys []string `yaml:"keys,omitempty" json:"keys,omitempty"`
+
+	StageName string `yaml:"stage_name,omitempty" json:"stage_name,omitempty"`
+
+	BuilderRef string `yaml:"builder_ref,omitempty" json:"builder_ref,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	UID int `yaml:"uid,omitempty" json:"uid,omitempty"`
+
+	GID int `yaml:"gid,omitempty" json:"gid,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+}
+
+// #BuildStageContext — data a builder's multi-stage `stage_template` renders
+// against: builder/stage identity, scratch-stage + copy-src wiring, detected
+// manifest/lockfile/build-script, install command, cache mounts, and (for
+// config-detected builders like aur) packages/options.
+type BuildStageContext struct {
+	BuilderRef string `yaml:"builder_ref,omitempty" json:"builder_ref,omitempty"`
+
+	StageName string `yaml:"stage_name,omitempty" json:"stage_name,omitempty"`
+
+	LayerStage string `yaml:"layer_stage,omitempty" json:"layer_stage,omitempty"`
+
+	CopySrc string `yaml:"copy_src,omitempty" json:"copy_src,omitempty"`
+
+	UID int `yaml:"uid,omitempty" json:"uid,omitempty"`
+
+	GID int `yaml:"gid,omitempty" json:"gid,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	Manifest string `yaml:"manifest,omitempty" json:"manifest,omitempty"`
+
+	HasLockFile bool `yaml:"has_lock_file,omitempty" json:"has_lock_file,omitempty"`
+
+	InstallCmd string `yaml:"install_cmd,omitempty" json:"install_cmd,omitempty"`
+
+	ManylinuxFix string `yaml:"manylinux_fix,omitempty" json:"manylinux_fix,omitempty"`
+
+	CacheMounts []CacheMount `yaml:"cache_mounts,omitempty" json:"cache_mounts,omitempty"`
+
+	Packages []string `yaml:"packages,omitempty" json:"packages,omitempty"`
+
+	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
+
+	HasBuildScript bool `yaml:"has_build_script,omitempty" json:"has_build_script,omitempty"`
+
+	BuildScript string `yaml:"build_script,omitempty" json:"build_script,omitempty"`
+}
+
 type Builder struct {
 	DetectFiles []string `yaml:"detect_file,omitempty" json:"detect_file,omitempty"`
 

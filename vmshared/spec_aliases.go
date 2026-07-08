@@ -24,8 +24,10 @@ type (
 	AndroidSpec              = spec.AndroidSpec
 	ApkPackageSpec           = spec.ApkPackageSpec
 	BoxConfig                = spec.BoxConfig
+	BuildStageContext        = spec.BuildStageContext
 	BuilderDef               = spec.BuilderDef
 	BundleNode               = spec.BundleNode
+	InstallContext           = spec.InstallContext
 	CacheMountDef            = spec.CacheMount
 	CandyArtifact            = spec.CandyArtifact
 	CandyArtifactRewrite     = spec.CandyArtifactRewrite
