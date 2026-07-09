@@ -1,4 +1,4 @@
-package vmshared
+package sshx
 
 // SSH local-forward helper built on golang.org/x/crypto/ssh. Used by
 // `charly check libvirt|vnc --uri qemu+ssh://…` auto-tunneling, by the `spice:`
@@ -32,6 +32,8 @@ import (
 	"encoding/hex"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/opencharly/sdk/vmshared"
 )
 
 // SSHTunnel is a live SSH connection plus any forwards opened against
@@ -45,7 +47,7 @@ type SSHTunnel struct {
 
 // NewSSHTunnel dials the target and returns a tunnel handle. The
 // underlying ssh.Client can host any number of forwards.
-func NewSSHTunnel(t SSHTarget) (*SSHTunnel, error) {
+func NewSSHTunnel(t vmshared.SSHTarget) (*SSHTunnel, error) {
 	client, err := DialSSH(t)
 	if err != nil {
 		return nil, err

@@ -7,7 +7,9 @@
 package deploykit
 
 import (
+	"encoding/json"
 	"os"
+	"strings"
 
 	"github.com/opencharly/sdk/spec"
 )
@@ -25,6 +27,14 @@ type (
 	BuilderDef     = spec.BuilderDef
 	Op             = spec.Op
 	LocalPkgDef    = spec.LocalPkg
+	InstallStep    = spec.InstallStep
+	BundleNode     = spec.BundleNode
+	EmitOpts       = spec.EmitOpts
+	DeployExecutor = spec.DeployExecutor
+	BuilderRunOpts = spec.BuilderRunOpts
+	InstallPlan    = spec.InstallPlan
+	StepBatch      = spec.StepBatch
+	DeployTarget   = spec.DeployTarget
 )
 
 const (
@@ -854,4 +864,40 @@ func OpStepScope(userDir string) Scope {
 		return ScopeSystem
 	}
 	return ScopeUser
+}
+
+// ExternalStep is an EXTERNAL, plugin-CONTRIBUTED install-step KIND: a step whose
+// Kind() is "external:<word>", carried OPAQUELY (Payload) and whose Scope/Venue/Gate
+// come from the serving class:step plugin's DECLARED StepContract. Its host EXECUTION
+// funnels through the OpExecute-to-the-serving-plugin path; teardown ops are DYNAMIC
+// (recorded from the OpExecute reply), so Reverse() returns the recorded slice.
+type ExternalStep struct {
+	Word       string          // the reserved step word; Kind() = "external:" + Word
+	ScopeV     Scope           // plugin-declared (StepContract.scope)
+	VenueV     Venue           // plugin-declared (StepContract.venue)
+	GateV      Gate            // plugin-declared (StepContract.gate) — the step SKIPs if the gate is not enabled
+	Payload    json.RawMessage // opaque per-kind input — the OpExecute params
+	CandyName  string          // owning candy (provenance + the ledger CandyRecord key)
+	ReverseOps []ReverseOp     // set DYNAMICALLY from the plugin's OpExecute reply (record-and-replay)
+}
+
+func (s *ExternalStep) Kind() StepKind       { return StepKind(ExternalStepKindPrefix + s.Word) }
+func (s *ExternalStep) Scope() Scope         { return s.ScopeV }
+func (s *ExternalStep) Venue() Venue         { return s.VenueV }
+func (s *ExternalStep) RequiresGate() Gate   { return s.GateV }
+func (s *ExternalStep) Reverse() []ReverseOp { return s.ReverseOps }
+
+// ExternalStepKindPrefix marks a StepKind string as an external (plugin-contributed) kind.
+const ExternalStepKindPrefix = "external:"
+
+// IsExternalStepKind reports whether k is an external (plugin-contributed) step kind.
+func IsExternalStepKind(k StepKind) bool { return strings.HasPrefix(string(k), ExternalStepKindPrefix) }
+
+// AllStepKinds is the fixed InstallStep IR vocabulary — the 13 compiled-in concrete
+// step kinds (external:<word> kinds are dynamic and not listed).
+var AllStepKinds = []StepKind{
+	StepKindSystemPackages, StepKindBuilder, StepKindOp, StepKindFile,
+	StepKindServicePackaged, StepKindServiceCustom, StepKindShellHook,
+	StepKindShellSnippet, StepKindRepoChange, StepKindApkInstall,
+	StepKindLocalPkgInstall, StepKindReboot, StepKindExternalPlugin,
 }

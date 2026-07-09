@@ -1,82 +1,31 @@
-package vmshared
+package sshx
 
-// Shared SSH client plumbing for programmatic TCP/UNIX forwarding
-// (charly/ssh_tunnel.go) and for SPICE/VNC auto-tunneling inside the
-// `charly check` commands. Built on `golang.org/x/crypto/ssh`, which is
-// already a transitive dependency.
+// Package sshx is the in-process SSH client + tunnel — the ONLY sdk package that
+// links golang.org/x/crypto/ssh. It is imported ONLY by the SSH-forwarding call
+// sites (charly's tunnels, plugin-vm), never by sdk/kit or sdk/vmshared, so the
+// executors + every deploy/check plugin that import kit stay x/crypto-free.
 //
-// The executor used by `charly bundle add vm:<name>` (in
-// deploy_executor_ssh.go) keeps shelling out to the system `ssh`
-// binary — that path wants to inherit the user's ~/.ssh/config,
-// ControlMaster, agent forwarding, and everything else OpenSSH
-// knows how to do. This file is a parallel, narrower client just
-// for in-process port forwarding.
+// The SSH target vocabulary (SSHTarget/ParseSSHTarget) is pure and lives in
+// sdk/vmshared (ssh_target.go); this file reuses it via vmshared.SSHTarget.
+//
+// The executor used by `charly bundle add vm:<name>` (deploy_executor_ssh.go)
+// keeps shelling out to the system `ssh` binary — that path wants the user's
+// ~/.ssh/config, ControlMaster, agent forwarding, etc. This is a parallel,
+// narrower client just for in-process port forwarding.
 
 import (
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
+
+	"github.com/opencharly/sdk/vmshared"
 )
-
-// SSHTarget is the parsed form of an ssh-style target string.
-// Examples:
-//   - "host"                     → {User: $USER, Host: "host", Port: 22}
-//   - "user@host"                → {User: "user", Host: "host", Port: 22}
-//   - "user@host:2222"           → {User: "user", Host: "host", Port: 2222}
-//   - "qemu+ssh://user@host/…"   → parsed via ParseLibvirtSSHURI (not here)
-type SSHTarget struct {
-	User string
-	Host string
-	Port int
-}
-
-// ParseSSHTarget accepts "[user@]host[:port]" and fills defaults:
-//   - User: $USER
-//   - Port: 22
-func ParseSSHTarget(s string) (SSHTarget, error) {
-	if s == "" {
-		return SSHTarget{}, fmt.Errorf("empty ssh target")
-	}
-	t := SSHTarget{Port: 22}
-	rest := s
-	if user, after, ok := strings.Cut(rest, "@"); ok {
-		t.User = user
-		rest = after
-	}
-	if i := strings.LastIndex(rest, ":"); i >= 0 {
-		t.Host = rest[:i]
-		p, err := strconv.Atoi(rest[i+1:])
-		if err != nil {
-			return SSHTarget{}, fmt.Errorf("invalid port in %q: %w", s, err)
-		}
-		t.Port = p
-	} else {
-		t.Host = rest
-	}
-	if t.Host == "" {
-		return SSHTarget{}, fmt.Errorf("missing host in ssh target %q", s)
-	}
-	if t.User == "" {
-		t.User = currentUsername()
-	}
-	return t, nil
-}
-
-// String renders the canonical "user@host:port" form.
-func (t SSHTarget) String() string {
-	if t.Port == 22 {
-		return fmt.Sprintf("%s@%s", t.User, t.Host)
-	}
-	return fmt.Sprintf("%s@%s:%d", t.User, t.Host, t.Port)
-}
 
 // SSHClientConfig builds an *ssh.ClientConfig for the given target
 // using (in order):
@@ -88,7 +37,7 @@ func (t SSHTarget) String() string {
 // Host-key checking honors ~/.ssh/known_hosts when present; otherwise
 // it falls back to InsecureIgnoreHostKey. Callers that need strict
 // verification should ensure the agent path is available.
-func SSHClientConfig(t SSHTarget) (*ssh.ClientConfig, error) {
+func SSHClientConfig(t vmshared.SSHTarget) (*ssh.ClientConfig, error) {
 	auths, err := SSHAuthMethods()
 	if err != nil {
 		return nil, err
@@ -154,7 +103,7 @@ func sshHostKeyCallback() ssh.HostKeyCallback {
 
 // DialSSH opens an authenticated SSH client connection to the
 // target. Caller must Close.
-func DialSSH(t SSHTarget) (*ssh.Client, error) {
+func DialSSH(t vmshared.SSHTarget) (*ssh.Client, error) {
 	cfg, err := SSHClientConfig(t)
 	if err != nil {
 		return nil, err
@@ -165,15 +114,4 @@ func DialSSH(t SSHTarget) (*ssh.Client, error) {
 		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
 	}
 	return client, nil
-}
-
-// currentUsername returns $USER or falls back to "charly" if neither
-// $USER nor $LOGNAME is set.
-func currentUsername() string {
-	for _, env := range []string{"USER", "LOGNAME"} {
-		if v := os.Getenv(env); v != "" {
-			return v
-		}
-	}
-	return "charly"
 }
