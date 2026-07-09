@@ -5,7 +5,7 @@ import "github.com/opencharly/sdk/spec"
 // descent.go — the venue-hop descent-descriptor stamper (the descent de-type,
 // Cutover H). This is the SINGLE source of the substrate-word → nesting-transport
 // mapping (R3): candy/plugin-substrate and candy/plugin-group call StampDescent in
-// their OpLoad echo so the kernel's deploy chain (appendHopForFlatPath) descends
+// their OpLoad echo so the kernel's deploy chain (AppendHopForFlatPath) descends
 // generically BY TRANSPORT, never by switching on the substrate kind word. The
 // transport SET is the kernel's closed nesting-boundary vocabulary (JumpKind); the
 // word→transport MAPPING lives here, out of the kernel.
