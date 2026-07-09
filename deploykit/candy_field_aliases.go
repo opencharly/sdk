@@ -34,6 +34,3 @@ type (
 	Step            = vmshared.Step
 	PackageItem     = vmshared.PackageItem
 )
-
-// sortStrings is the in-place sort helper the moved Candy code calls (kit.SortStrings).
-var sortStrings = kit.SortStrings
