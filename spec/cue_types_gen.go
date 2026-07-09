@@ -1032,7 +1032,7 @@ type Deploy struct {
 
 	// descent is the loader-DERIVED venue-hop descriptor (the descent de-type,
 	// Cutover H): the substrate plugin stamps it at OpLoad (via kit.StampDescent) so
-	// the deploy chain (appendHopForFlatPath) descends generically BY TRANSPORT,
+	// the deploy chain (AppendHopForFlatPath) descends generically BY TRANSPORT,
 	// never by switching on the substrate kind word. charly-written state, never
 	// authored (rejected by #BundleValue).
 	Descent *DescentDescriptor `yaml:"descent,omitempty" json:"descent,omitempty"`
