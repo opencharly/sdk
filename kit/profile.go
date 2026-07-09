@@ -8,6 +8,7 @@ package kit
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -225,4 +226,25 @@ func ManagedBody(text string) string {
 		return ""
 	}
 	return strings.TrimLeft(before0, "\n")
+}
+
+// RemoveManagedBlockAt strips the managed block (tagged with marker) from the file
+// at path, in place. A file left empty is removed; a missing file is a no-op. The
+// file-level counterpart to StripManagedBlock (the pure string op).
+func RemoveManagedBlockAt(path, marker string) error {
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("RemoveManagedBlockAt read %s: %w", path, err)
+	}
+	stripped := StripManagedBlock(string(existing), marker)
+	if strings.TrimSpace(stripped) == "" {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("RemoveManagedBlockAt remove %s: %w", path, err)
+		}
+		return nil
+	}
+	return os.WriteFile(path, []byte(stripped), 0644)
 }

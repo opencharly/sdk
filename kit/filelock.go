@@ -6,6 +6,8 @@ package kit
 // module boundary (R3) — kit imports only the stdlib, so both sides link the same code.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -52,4 +54,18 @@ func AcquireFileLock(path string, blocking bool) (release func() error, err erro
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		return f.Close()
 	}, nil
+}
+
+// AcquireLocalPkgBuildLock serializes concurrent localpkg builds sharing a source dir.
+func AcquireLocalPkgBuildLock(srcDir string) (func() error, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("localpkg build lock: %w", err)
+	}
+	dir := filepath.Join(cache, "charly", "locks")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("localpkg build lock dir: %w", err)
+	}
+	sum := sha256.Sum256([]byte(srcDir))
+	return AcquireFileLock(filepath.Join(dir, "localpkg-"+hex.EncodeToString(sum[:8])+".lock"), true)
 }
