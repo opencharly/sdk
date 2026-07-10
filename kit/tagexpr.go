@@ -182,11 +182,20 @@ type tagToken struct {
 	value string
 }
 
-// isTagIdentRune reports whether r may appear inside a tag identifier (after the
-// optional leading '@'). Letters and digits are Unicode-aware; the punctuation set
-// is what tag names actually carry (`ci-smoke`, `v1.2`, `fedora:43`).
+// isTagIdentStart reports whether r may BEGIN a tag identifier (after the optional
+// leading '@'). Deliberately NARROWER than isTagIdentRune: `-`, `.` and `:` may appear
+// INSIDE a tag (`ci-smoke`, `v1.2`, `fedora:43`) but may not start one, so `a and -b`
+// is a lexer error rather than a silently-accepted expression. Keeping the two
+// predicates distinct is the point — collapsing them widens the grammar.
+func isTagIdentStart(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+}
+
+// isTagIdentRune reports whether r may appear INSIDE a tag identifier, after its first
+// character. Letters and digits are Unicode-aware; the punctuation set is what tag names
+// actually carry.
 func isTagIdentRune(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.' || r == ':'
+	return isTagIdentStart(r) || r == '-' || r == '.' || r == ':'
 }
 
 func lexTagExpr(src string) ([]tagToken, error) {
@@ -210,7 +219,7 @@ func lexTagExpr(src string) ([]tagToken, error) {
 		case r == ')':
 			out = append(out, tagToken{kind: tokRParen, value: ")"})
 			i += size
-		case r == '@' || isTagIdentRune(r):
+		case r == '@' || isTagIdentStart(r):
 			start := i
 			if r == '@' {
 				i += size

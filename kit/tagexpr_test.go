@@ -195,3 +195,25 @@ func TestLexTagExpr_InvalidUTF8(t *testing.T) {
 		t.Error("invalid UTF-8 must be a lex error, not a silent match")
 	}
 }
+
+// TestLexTagExpr_IdentifierMayNotStartWithPunctuation locks the deliberately-narrow
+// leading-character predicate.
+//
+// `-`, `.` and `:` may appear INSIDE a tag (`ci-smoke`, `v1.2`, `fedora:43`) but must not
+// START one. Collapsing isTagIdentStart into isTagIdentRune widens the grammar so that
+// `-b`, `.x`, `:y` and `a and -b` are SILENTLY ACCEPTED as valid expressions instead of
+// erroring — which contradicts ParseTagExpr's own contract ("a syntax error is returned
+// rather than silently matching"). This test fails against that widening.
+func TestLexTagExpr_IdentifierMayNotStartWithPunctuation(t *testing.T) {
+	for _, src := range []string{"-b", ".x", ":y", "a and -b", "a or .b", "not :c"} {
+		if _, err := ParseTagExpr(src); err == nil {
+			t.Errorf("ParseTagExpr(%q) must be a lex error: a tag may not START with '-', '.' or ':'", src)
+		}
+	}
+	// ...but the same characters INSIDE an identifier remain valid.
+	for _, src := range []string{"ci-smoke", "v1.2", "fedora:43", "a and b-c"} {
+		if _, err := ParseTagExpr(src); err != nil {
+			t.Errorf("ParseTagExpr(%q) must parse: punctuation is legal inside an identifier: %v", src, err)
+		}
+	}
+}
