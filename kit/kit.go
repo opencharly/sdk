@@ -153,7 +153,8 @@ type HTTPResponse struct {
 	HeaderBlob string
 }
 
-// Status is a check verdict (mirrors charly's CheckStatus ordering).
+// Status is a check verdict. It is the ONE pass/fail/skip enum for the check engine and
+// every plugin candy — charly's CheckStatus is a type alias of it.
 type Status int
 
 const (
@@ -161,6 +162,20 @@ const (
 	StatusFail
 	StatusSkip
 )
+
+// String renders the lowercase verdict word. Reporters uppercase it for display
+// (strings.ToUpper → "PASS"/"FAIL"/"SKIP").
+func (s Status) String() string {
+	switch s {
+	case StatusPass:
+		return "pass"
+	case StatusFail:
+		return "fail"
+	case StatusSkip:
+		return "skip"
+	}
+	return "unknown"
+}
 
 // Result is a host-coupled verb's verdict. charly converts it to its internal
 // CheckResult (stamping the Op/Verb/timing) at the dispatch boundary.
