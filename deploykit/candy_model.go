@@ -55,6 +55,6 @@ type CandyModel interface {
 	RelayPorts() []int            // port_relay: ports (init-agnostic)
 
 	// P8 writeCandySteps accessors.
-	HasTasks() bool         // the candy has any tasks: (runOps non-empty)
-	RunOps() []vmshared.Op  // the candy's plan lowered to build-mode run ops
+	HasTasks() bool        // the candy has any tasks: (runOps non-empty)
+	RunOps() []vmshared.Op // the candy's plan lowered to build-mode run ops
 }
