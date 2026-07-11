@@ -308,4 +308,4 @@
 
 // #PluginCapability — a "<class>:<word>" capability string. class ∈ the closed
 // ProviderClass set; word is lowercase-hyphenated.
-#PluginCapability: string & =~"^(kind|deploy|verb|step|build|builder|command):[a-z0-9][a-z0-9_-]*$"
+#PluginCapability: string & =~"^(kind|deploy|verb|step|build|builder|command|loader):[a-z0-9][a-z0-9_-]*$"
