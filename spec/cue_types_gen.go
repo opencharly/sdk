@@ -1635,6 +1635,31 @@ type Local struct {
 	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
 }
 
+// #ParsedNode — one decomposed reserved-word node: its name, kind discriminator, the opaque
+// entity body (the complete kind value as JSON, materialized per-kind by the host), and any
+// sub-entity member children (deployable kinds only). The recursive Children mirror the
+// deploy tree's member nesting the host folds into uf.Bundle.
+type ParsedNode struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Disc string `yaml:"disc,omitempty" json:"disc"`
+
+	Body RawBody `yaml:"body,omitempty" json:"body,omitempty"`
+
+	Children []*ParsedNode `yaml:"children,omitempty" json:"children,omitempty"`
+}
+
+// #ParsedProject — the whole parse result: the schema version (for the post-parse gate), the
+// decomposed reserved-word nodes, and the resolved import refs (already fetched + merged by
+// the plugin's import walk). Discover results are decomposed into the same nodes list.
+type ParsedProject struct {
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Nodes []ParsedNode `yaml:"nodes,omitempty" json:"nodes,omitempty"`
+
+	Imports []string `yaml:"imports,omitempty" json:"imports,omitempty"`
+}
+
 type Pod struct {
 	// References a kind:box (bare lowercase-hyphenated name or remote ref).
 	// Optional: the Go field has no non-empty validator.
