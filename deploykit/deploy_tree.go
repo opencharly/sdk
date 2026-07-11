@@ -1,12 +1,11 @@
 package deploykit
 
 import (
-	"fmt"
 	"sort"
 )
 
 // DeployTreePhase indicates which lifecycle phase the walker is in.
-// Pre-order for add; post-order for delete.
+// Pre-order for add; teardown walks the flat-path chain (deploy_chain.go).
 type DeployTreePhase int
 
 const (
@@ -58,119 +57,12 @@ func WalkDeploymentTree(rootPath string, root *BundleNode, parentExec DeployExec
 	return nil
 }
 
-// WalkDeploymentTreePostOrder is the post-order analogue used by
-// BundleDelCmd. Children are visited before their parent, so a
-// parent's venue can still accept the teardown commands for its
-// children.
-func WalkDeploymentTreePostOrder(rootPath string, root *BundleNode, parentExec DeployExecutor, visit DeployTreeVisitor) error {
-	if root == nil {
-		return nil
-	}
-	// For post-order we need this node's child-executor BEFORE we
-	// recurse. The visitor is called twice: once in "dry" mode to
-	// yield the child executor (but not execute side effects), and
-	// once after children have torn down (to actually emit this
-	// node's delete). To keep the interface simple, we use a single
-	// visitor call but require it to be idempotent for teardown —
-	// the caller can record the child executor up front from a
-	// lightweight `DeriveChildExecutor` call.
-	thisExec, err := DeriveChildExecutor(root, parentExec, rootPath)
-	if err != nil {
-		return err
-	}
-	if root.HasChildren() {
-		for _, k := range SortedNestedKeys(root.Children) {
-			child := root.Children[k]
-			childPath := k
-			if rootPath != "" {
-				childPath = rootPath + "." + k
-			}
-			if err := WalkDeploymentTreePostOrder(childPath, child, thisExec, visit); err != nil {
-				return err
-			}
-		}
-	}
-	_, err = visit(rootPath, root, parentExec)
-	return err
-}
-
-// DeriveChildExecutor computes the DeployExecutor that this node's
-// children should use, given this node's target and the parent
-// executor. Pure (no side effects) so it can be called from the
-// post-order path before the node itself is dispatched.
-//
-// Semantics by target:
-//
-//	host:       children share the parent venue (host applies candies
-//	            in-place). Child executor = parentExec or
-//	            ShellExecutor at the root.
-//	container:  wrap parent with NestedExecutor{JumpPodmanExec}.
-//	vm:         wrap parent with NestedExecutor{JumpSSH} when parent
-//	            is non-nil; otherwise the child executor is a plain
-//	            SSHExecutor built from the VM's deploy state.
-//	kubernetes: children are K8s manifests — not executed. Returns
-//	            nil + error when non-empty Children.
-//
-// Returns (parentExec, nil) for nodes with no children — no
-// composition needed.
-func DeriveChildExecutor(node *BundleNode, parentExec DeployExecutor, deployName string) (DeployExecutor, error) {
-	if node == nil {
-		return parentExec, nil
-	}
-	if !node.HasChildren() {
-		return parentExec, nil
-	}
-	switch node.Target {
-	case "local", "":
-		// When Target is empty, fall back to "pod" (default for named
-		// deploys). A local node with children → pass-through (children
-		// use parentExec or localhost).
-		if node.Target == "local" {
-			if parentExec != nil {
-				return parentExec, nil
-			}
-			return ShellExecutor{}, nil
-		}
-		return containerChildExecutor(node, parentExec)
-	case "pod", "container":
-		return containerChildExecutor(node, parentExec)
-	case "android":
-		// android shares the parent venue (device reached via adb). No hop.
-		if parentExec != nil {
-			return parentExec, nil
-		}
-		return ShellExecutor{}, nil
-	case "vm":
-		return VmChildExecutor(node, parentExec, deployName)
-	case "k8s", "kubernetes":
-		return nil, fmt.Errorf("target=k8s cannot have children (manifests are leaf artifacts)")
-	default:
-		return nil, fmt.Errorf("unknown target %q", node.Target)
-	}
-}
-
-// containerChildExecutor wraps parentExec with a podman-exec jump
-// into the container spawned by this node. The container name
-// follows the `charly` convention of matching the deploy key — callers
-// that need a custom name can set node.Engine or pass via the deploy
-// entry's naming.
-func containerChildExecutor(node *BundleNode, parentExec DeployExecutor) (DeployExecutor, error) {
-	name := containerNameForNode(node)
-	if name == "" {
-		return nil, fmt.Errorf("container node: cannot determine container name for nested dispatch")
-	}
-	engineJump := JumpPodmanExec
-	if node.Engine == "docker" {
-		engineJump = JumpDockerExec
-	}
-	if parentExec == nil {
-		parentExec = ShellExecutor{}
-	}
-	return &NestedExecutor{
-		Parent: parentExec,
-		Jump:   NestedJump{Kind: engineJump, Target: name},
-	}, nil
-}
+// Child-executor derivation is trait-based: the flat-path executor chain
+// (AppendHopForFlatPath, deploy_chain.go) reads node.Descent.Transport (the
+// plugin-declared venue), never a switch on the kind word. It serves BOTH
+// deploy (pre-order WalkDeploymentTree above) and teardown (bundle del via
+// resolveDelNode + the flat-path chain). VmChildExecutor below is the one
+// venue-hop helper the flat-path visitor still calls, for a vm venue.
 
 // VmChildExecutor wraps parentExec with an SSH jump into the VM
 // represented by this node. At the root (parentExec == nil or
@@ -207,27 +99,6 @@ func VmChildExecutor(node *BundleNode, parentExec DeployExecutor, deployName str
 			Target: ssh.Host,
 		},
 	}, nil
-}
-
-// containerNameForNode derives the container name for a node's
-// container target. Today `charly bundle add <name>` uses the deploy key
-// as the container name; we preserve that convention for the root
-// level. For nested container children, the fully-qualified path is
-// flattened with `_` to produce a unique podman-compatible name
-// (e.g. `stack.web.db` → `stack_web_db`).
-//
-// Callers provide the path via node.pathHint when set; absent that,
-// we fall back to parsing the node's fields. Because BundleNode
-// doesn't carry its own key (the map above owns the key), we embed
-// the dotted path into EmitOpts.Path upstream; DeriveChildExecutor
-// reads that when available.
-func containerNameForNode(_ *BundleNode) string {
-	// Placeholder: the real path is known only by the walker that
-	// tracks it. When invoked from the walker's DeployTreeVisitor,
-	// callers pass the name via the NestedJump.Target directly and
-	// bypass this helper. Kept as a defensive default so standalone
-	// unit tests can exercise the function.
-	return ""
 }
 
 // SSHParamsForVm returns an SSHExecutor pointing at the VM's managed

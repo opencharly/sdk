@@ -985,13 +985,50 @@ type CandyArtifactRewrite struct {
 	Replace string `yaml:"replace,omitempty" json:"replace,omitempty"`
 }
 
-// #DescentDescriptor is the loader-DERIVED venue-hop descriptor (Cutover H).
-// candy/plugin-substrate stamps it at OpLoad (via kit.StampDescent) so the deploy
-// chain descends generically by TRANSPORT — never by switching on the substrate
-// kind word. The transport set is the kernel's closed nesting-boundary vocabulary;
-// the word→transport MAPPING lives in the plugin/kit, not the kernel.
+// #DeployTraits is a SUBSTRATE kind's DECLARED deploy behaviour (P9): a substrate plugin
+// advertises it per word over Describe (ProvidedCapability.deploy_traits), and kit.StampDescent
+// stamps it onto every node's #DescentDescriptor. It is the SINGLE plugin-declared source for
+// "how does this substrate behave in the deploy chain", so the kernel consults the traits off
+// node.Descent BY TRAIT — never by switching on the substrate kind word (the boundary law).
+// Canonical table: pod=container+image_backed+image_context; vm=ssh+machine_venue+exclusive_venue;
+// local=shell+machine_venue; k8s=shell+image_context+leaf_only; android=parent; zero value =
+// external-in-place. Not authored — charly-written state stamped at load.
+type DeployTraits struct {
+	// venue: how commands physically execute in this substrate's venue:
+	//
+	//	container — podman/docker exec into the container by name (pod).
+	//	ssh       — an ssh hop into the guest (vm).
+	//	shell     — the substrate's own root executor runs on the host (local; k8s host-side).
+	//	parent    — reached via the parent's venue, no own executor (android).
+	//	none      — external-in-place (zero value / group).
+	Venue string `yaml:"venue,omitempty" json:"venue,omitempty"`
+
+	// image_backed: the substrate runs a baked OCI image (pod).
+	ImageBacked bool `yaml:"image_backed,omitempty" json:"image_backed,omitempty"`
+
+	// image_context: the substrate composes over an image build context (pod overlay, k8s manifests).
+	ImageContext bool `yaml:"image_context,omitempty" json:"image_context,omitempty"`
+
+	// machine_venue: the substrate is a full machine with a system init (host/vm/local) — its
+	// services render as systemd units, not a container init.
+	MachineVenue bool `yaml:"machine_venue,omitempty" json:"machine_venue,omitempty"`
+
+	// exclusive_venue: the substrate holds an exclusive host-resource lease boundary (vm).
+	ExclusiveVenue bool `yaml:"exclusive_venue,omitempty" json:"exclusive_venue,omitempty"`
+
+	// leaf_only: the substrate is a deploy-chain LEAF — it cannot be descended into (k8s).
+	LeafOnly bool `yaml:"leaf_only,omitempty" json:"leaf_only,omitempty"`
+}
+
+// #DescentDescriptor is the loader-DERIVED venue-hop descriptor (Cutover H + P9).
+// candy/plugin-substrate declares its per-word #DeployTraits over Describe, and kit.StampDescent
+// stamps them here so the deploy chain descends generically by TRANSPORT and every consult site
+// reads the substrate behaviour off the stamped TRAITS — never by switching on the substrate
+// kind word. transport/host_rooted are the DERIVED nesting view (from the traits); the closed
+// transport set is the kernel's nesting-boundary vocabulary.
 type DescentDescriptor struct {
-	// transport: how the deploy chain descends INTO this node's substrate:
+	// transport: how the deploy chain descends INTO this node's substrate (DERIVED from the
+	// declared venue + leaf_only by kit.DescentFromTraits):
 	//
 	//	none           — shares the parent venue; no hop (local, android).
 	//	container-exec — enter the container by name (pod; podman/docker per engine).
@@ -1002,6 +1039,31 @@ type DescentDescriptor struct {
 	// host_rooted: the substrate's own ROOT executor runs directly on the host
 	// (local), so the check runner uses rootExecutorForDeployNode, not a container chain.
 	HostRooted bool `yaml:"host_rooted,omitempty" json:"host_rooted,omitempty"`
+
+	// venue: how commands physically execute in this substrate's venue:
+	//
+	//	container — podman/docker exec into the container by name (pod).
+	//	ssh       — an ssh hop into the guest (vm).
+	//	shell     — the substrate's own root executor runs on the host (local; k8s host-side).
+	//	parent    — reached via the parent's venue, no own executor (android).
+	//	none      — external-in-place (zero value / group).
+	Venue string `yaml:"venue,omitempty" json:"venue,omitempty"`
+
+	// image_backed: the substrate runs a baked OCI image (pod).
+	ImageBacked bool `yaml:"image_backed,omitempty" json:"image_backed,omitempty"`
+
+	// image_context: the substrate composes over an image build context (pod overlay, k8s manifests).
+	ImageContext bool `yaml:"image_context,omitempty" json:"image_context,omitempty"`
+
+	// machine_venue: the substrate is a full machine with a system init (host/vm/local) — its
+	// services render as systemd units, not a container init.
+	MachineVenue bool `yaml:"machine_venue,omitempty" json:"machine_venue,omitempty"`
+
+	// exclusive_venue: the substrate holds an exclusive host-resource lease boundary (vm).
+	ExclusiveVenue bool `yaml:"exclusive_venue,omitempty" json:"exclusive_venue,omitempty"`
+
+	// leaf_only: the substrate is a deploy-chain LEAF — it cannot be descended into (k8s).
+	LeafOnly bool `yaml:"leaf_only,omitempty" json:"leaf_only,omitempty"`
 }
 
 type Deploy struct {

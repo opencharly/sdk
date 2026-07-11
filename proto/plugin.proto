@@ -43,6 +43,23 @@ message ProvidedCapability {
   bool validates = 8;                 // set ONLY for class="kind" (F7/C8): the kind serves a deep OpValidate check (returns Diagnostics) BEYOND the static CUE input-def gate; the host dispatches OpValidate at load
   string phase = 9;                   // F9: the plugin lifecycle PHASE (sdk.Phase*; "" => runtime default) — the ordered point at which the kernel loads/invokes the plugin; "bootstrap" runs BEFORE config validation/migration
   string primary = 10;                // set ONLY for class="verb": the input field the scalar sugar shorthand targets (`file: /x` -> plugin_input: {<primary>: "/x"}); "" => map input only
+  DeployTraits deploy_traits = 11;    // set ONLY for class="kind" (P9): a SUBSTRATE kind's DECLARED deploy behaviour traits, the SINGLE plugin-declared source kit.StampDescent stamps onto node.Descent — the consult sites read the traits off node.Descent instead of switching on the substrate kind word
+}
+
+// DeployTraits — a SUBSTRATE kind's DECLARED deploy behaviour (P9), advertised per substrate
+// word over Describe and stamped by kit.StampDescent onto the node's DescentDescriptor. This is
+// the SINGLE plugin-declared source for "how does this substrate behave in the deploy chain",
+// so the kernel consults it BY TRAIT (off node.Descent) — never by switching on the kind word.
+// Canonical table: pod=container+image_backed+image_context; vm=ssh+machine_venue+exclusive_venue;
+// local=shell+machine_venue; k8s=shell+image_context+leaf_only; android=parent; zero value =
+// external-in-place. Empty/absent for every non-kind (or non-substrate kind) capability.
+message DeployTraits {
+  string venue = 1;         // "container" | "ssh" | "shell" | "parent" | "none": how commands physically execute in this substrate's venue
+  bool image_backed = 2;    // the substrate runs a baked OCI image (pod)
+  bool image_context = 3;   // the substrate composes over an image build context (pod overlay, k8s manifests)
+  bool machine_venue = 4;   // the substrate is a full machine with a system init (host/vm/local) — services render as systemd units, not a container init
+  bool exclusive_venue = 5; // the substrate holds an exclusive host-resource lease boundary (vm)
+  bool leaf_only = 6;       // the substrate is a deploy-chain LEAF — it cannot be descended into (k8s)
 }
 
 // StepContract — a class="step" plugin's DECLARED install-step contract (F3): where the

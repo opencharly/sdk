@@ -145,16 +145,17 @@ func (x *Capabilities) GetSchemaCue() string {
 // candy's schema/ dir. `input_def` is explicit (no Title-case naming convention).
 type ProvidedCapability struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Class         string                 `protobuf:"bytes,1,opt,name=class,proto3" json:"class,omitempty"`                                   // "verb" / "kind" / "deploy" / "step" / "builder"
-	Word          string                 `protobuf:"bytes,2,opt,name=word,proto3" json:"word,omitempty"`                                     // the reserved word, e.g. "externalprobe"
-	InputDef      string                 `protobuf:"bytes,3,opt,name=input_def,json=inputDef,proto3" json:"input_def,omitempty"`             // the CUE def for this word's plugin_input, e.g. "#ExternalprobeInput"
-	StepContract  *StepContract          `protobuf:"bytes,4,opt,name=step_contract,json=stepContract,proto3" json:"step_contract,omitempty"` // set ONLY for class="step" (F3): the plugin-declared install-step contract
-	Structural    bool                   `protobuf:"varint,5,opt,name=structural,proto3" json:"structural,omitempty"`                        // set ONLY for class="kind" (F5): the kind decodes a STRUCTURAL entity (a spec.Deploy member tree -> uf.Bundle) rather than a FLAT body (-> uf.PluginKinds)
-	Lifecycle     bool                   `protobuf:"varint,6,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`                          // set ONLY for class="deploy" (F6): the substrate brings its OWN host-side venue lifecycle (PrepareVenue/Start/Stop/...) served over the lifecycle Ops; the host registers a wire-backed substrateLifecycle for it
-	Preresolve    bool                   `protobuf:"varint,7,opt,name=preresolve,proto3" json:"preresolve,omitempty"`                        // set ONLY for class="deploy" (F6): the substrate declares a host-side PRERESOLVE step (OpPreresolve) the host runs before apply, shipping the opaque result in DeployVenue.Substrate
-	Validates     bool                   `protobuf:"varint,8,opt,name=validates,proto3" json:"validates,omitempty"`                          // set ONLY for class="kind" (F7/C8): the kind serves a deep OpValidate check (returns Diagnostics) BEYOND the static CUE input-def gate; the host dispatches OpValidate at load
-	Phase         string                 `protobuf:"bytes,9,opt,name=phase,proto3" json:"phase,omitempty"`                                   // F9: the plugin lifecycle PHASE (sdk.Phase*; "" => runtime default) — the ordered point at which the kernel loads/invokes the plugin; "bootstrap" runs BEFORE config validation/migration
-	Primary       string                 `protobuf:"bytes,10,opt,name=primary,proto3" json:"primary,omitempty"`                              // set ONLY for class="verb": the input field the scalar sugar shorthand targets (`file: /x` -> plugin_input: {<primary>: "/x"}); "" => map input only
+	Class         string                 `protobuf:"bytes,1,opt,name=class,proto3" json:"class,omitempty"`                                    // "verb" / "kind" / "deploy" / "step" / "builder"
+	Word          string                 `protobuf:"bytes,2,opt,name=word,proto3" json:"word,omitempty"`                                      // the reserved word, e.g. "externalprobe"
+	InputDef      string                 `protobuf:"bytes,3,opt,name=input_def,json=inputDef,proto3" json:"input_def,omitempty"`              // the CUE def for this word's plugin_input, e.g. "#ExternalprobeInput"
+	StepContract  *StepContract          `protobuf:"bytes,4,opt,name=step_contract,json=stepContract,proto3" json:"step_contract,omitempty"`  // set ONLY for class="step" (F3): the plugin-declared install-step contract
+	Structural    bool                   `protobuf:"varint,5,opt,name=structural,proto3" json:"structural,omitempty"`                         // set ONLY for class="kind" (F5): the kind decodes a STRUCTURAL entity (a spec.Deploy member tree -> uf.Bundle) rather than a FLAT body (-> uf.PluginKinds)
+	Lifecycle     bool                   `protobuf:"varint,6,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`                           // set ONLY for class="deploy" (F6): the substrate brings its OWN host-side venue lifecycle (PrepareVenue/Start/Stop/...) served over the lifecycle Ops; the host registers a wire-backed substrateLifecycle for it
+	Preresolve    bool                   `protobuf:"varint,7,opt,name=preresolve,proto3" json:"preresolve,omitempty"`                         // set ONLY for class="deploy" (F6): the substrate declares a host-side PRERESOLVE step (OpPreresolve) the host runs before apply, shipping the opaque result in DeployVenue.Substrate
+	Validates     bool                   `protobuf:"varint,8,opt,name=validates,proto3" json:"validates,omitempty"`                           // set ONLY for class="kind" (F7/C8): the kind serves a deep OpValidate check (returns Diagnostics) BEYOND the static CUE input-def gate; the host dispatches OpValidate at load
+	Phase         string                 `protobuf:"bytes,9,opt,name=phase,proto3" json:"phase,omitempty"`                                    // F9: the plugin lifecycle PHASE (sdk.Phase*; "" => runtime default) — the ordered point at which the kernel loads/invokes the plugin; "bootstrap" runs BEFORE config validation/migration
+	Primary       string                 `protobuf:"bytes,10,opt,name=primary,proto3" json:"primary,omitempty"`                               // set ONLY for class="verb": the input field the scalar sugar shorthand targets (`file: /x` -> plugin_input: {<primary>: "/x"}); "" => map input only
+	DeployTraits  *DeployTraits          `protobuf:"bytes,11,opt,name=deploy_traits,json=deployTraits,proto3" json:"deploy_traits,omitempty"` // set ONLY for class="kind" (P9): a SUBSTRATE kind's DECLARED deploy behaviour traits, the SINGLE plugin-declared source kit.StampDescent stamps onto node.Descent — the consult sites read the traits off node.Descent instead of switching on the substrate kind word
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -259,6 +260,104 @@ func (x *ProvidedCapability) GetPrimary() string {
 	return ""
 }
 
+func (x *ProvidedCapability) GetDeployTraits() *DeployTraits {
+	if x != nil {
+		return x.DeployTraits
+	}
+	return nil
+}
+
+// DeployTraits — a SUBSTRATE kind's DECLARED deploy behaviour (P9), advertised per substrate
+// word over Describe and stamped by kit.StampDescent onto the node's DescentDescriptor. This is
+// the SINGLE plugin-declared source for "how does this substrate behave in the deploy chain",
+// so the kernel consults it BY TRAIT (off node.Descent) — never by switching on the kind word.
+// Canonical table: pod=container+image_backed+image_context; vm=ssh+machine_venue+exclusive_venue;
+// local=shell+machine_venue; k8s=shell+image_context+leaf_only; android=parent; zero value =
+// external-in-place. Empty/absent for every non-kind (or non-substrate kind) capability.
+type DeployTraits struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Venue          string                 `protobuf:"bytes,1,opt,name=venue,proto3" json:"venue,omitempty"`                                          // "container" | "ssh" | "shell" | "parent" | "none": how commands physically execute in this substrate's venue
+	ImageBacked    bool                   `protobuf:"varint,2,opt,name=image_backed,json=imageBacked,proto3" json:"image_backed,omitempty"`          // the substrate runs a baked OCI image (pod)
+	ImageContext   bool                   `protobuf:"varint,3,opt,name=image_context,json=imageContext,proto3" json:"image_context,omitempty"`       // the substrate composes over an image build context (pod overlay, k8s manifests)
+	MachineVenue   bool                   `protobuf:"varint,4,opt,name=machine_venue,json=machineVenue,proto3" json:"machine_venue,omitempty"`       // the substrate is a full machine with a system init (host/vm/local) — services render as systemd units, not a container init
+	ExclusiveVenue bool                   `protobuf:"varint,5,opt,name=exclusive_venue,json=exclusiveVenue,proto3" json:"exclusive_venue,omitempty"` // the substrate holds an exclusive host-resource lease boundary (vm)
+	LeafOnly       bool                   `protobuf:"varint,6,opt,name=leaf_only,json=leafOnly,proto3" json:"leaf_only,omitempty"`                   // the substrate is a deploy-chain LEAF — it cannot be descended into (k8s)
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeployTraits) Reset() {
+	*x = DeployTraits{}
+	mi := &file_plugin_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployTraits) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployTraits) ProtoMessage() {}
+
+func (x *DeployTraits) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployTraits.ProtoReflect.Descriptor instead.
+func (*DeployTraits) Descriptor() ([]byte, []int) {
+	return file_plugin_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *DeployTraits) GetVenue() string {
+	if x != nil {
+		return x.Venue
+	}
+	return ""
+}
+
+func (x *DeployTraits) GetImageBacked() bool {
+	if x != nil {
+		return x.ImageBacked
+	}
+	return false
+}
+
+func (x *DeployTraits) GetImageContext() bool {
+	if x != nil {
+		return x.ImageContext
+	}
+	return false
+}
+
+func (x *DeployTraits) GetMachineVenue() bool {
+	if x != nil {
+		return x.MachineVenue
+	}
+	return false
+}
+
+func (x *DeployTraits) GetExclusiveVenue() bool {
+	if x != nil {
+		return x.ExclusiveVenue
+	}
+	return false
+}
+
+func (x *DeployTraits) GetLeafOnly() bool {
+	if x != nil {
+		return x.LeafOnly
+	}
+	return false
+}
+
 // StepContract — a class="step" plugin's DECLARED install-step contract (F3): where the
 // step's effect lands (scope) + where its commands execute (venue) + the opt-in gate it
 // needs. This is what makes an external step kind a first-class IR step whose privilege /
@@ -277,7 +376,7 @@ type StepContract struct {
 
 func (x *StepContract) Reset() {
 	*x = StepContract{}
-	mi := &file_plugin_proto_msgTypes[3]
+	mi := &file_plugin_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -289,7 +388,7 @@ func (x *StepContract) String() string {
 func (*StepContract) ProtoMessage() {}
 
 func (x *StepContract) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[3]
+	mi := &file_plugin_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -302,7 +401,7 @@ func (x *StepContract) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StepContract.ProtoReflect.Descriptor instead.
 func (*StepContract) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{3}
+	return file_plugin_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StepContract) GetScope() string {
@@ -347,7 +446,7 @@ type InvokeRequest struct {
 
 func (x *InvokeRequest) Reset() {
 	*x = InvokeRequest{}
-	mi := &file_plugin_proto_msgTypes[4]
+	mi := &file_plugin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -359,7 +458,7 @@ func (x *InvokeRequest) String() string {
 func (*InvokeRequest) ProtoMessage() {}
 
 func (x *InvokeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[4]
+	mi := &file_plugin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -372,7 +471,7 @@ func (x *InvokeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeRequest.ProtoReflect.Descriptor instead.
 func (*InvokeRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{4}
+	return file_plugin_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *InvokeRequest) GetReserved() string {
@@ -426,7 +525,7 @@ type InvokeReply struct {
 
 func (x *InvokeReply) Reset() {
 	*x = InvokeReply{}
-	mi := &file_plugin_proto_msgTypes[5]
+	mi := &file_plugin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -438,7 +537,7 @@ func (x *InvokeReply) String() string {
 func (*InvokeReply) ProtoMessage() {}
 
 func (x *InvokeReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[5]
+	mi := &file_plugin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -451,7 +550,7 @@ func (x *InvokeReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeReply.ProtoReflect.Descriptor instead.
 func (*InvokeReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{5}
+	return file_plugin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *InvokeReply) GetResultJson() []byte {
@@ -470,7 +569,7 @@ type Frame struct {
 
 func (x *Frame) Reset() {
 	*x = Frame{}
-	mi := &file_plugin_proto_msgTypes[6]
+	mi := &file_plugin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -482,7 +581,7 @@ func (x *Frame) String() string {
 func (*Frame) ProtoMessage() {}
 
 func (x *Frame) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[6]
+	mi := &file_plugin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -495,7 +594,7 @@ func (x *Frame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Frame.ProtoReflect.Descriptor instead.
 func (*Frame) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{6}
+	return file_plugin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Frame) GetResultJson() []byte {
@@ -520,7 +619,7 @@ type InvokeProviderRequest struct {
 
 func (x *InvokeProviderRequest) Reset() {
 	*x = InvokeProviderRequest{}
-	mi := &file_plugin_proto_msgTypes[7]
+	mi := &file_plugin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -532,7 +631,7 @@ func (x *InvokeProviderRequest) String() string {
 func (*InvokeProviderRequest) ProtoMessage() {}
 
 func (x *InvokeProviderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[7]
+	mi := &file_plugin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -545,7 +644,7 @@ func (x *InvokeProviderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeProviderRequest.ProtoReflect.Descriptor instead.
 func (*InvokeProviderRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{7}
+	return file_plugin_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *InvokeProviderRequest) GetClass() string {
@@ -596,7 +695,7 @@ type HostBuildRequest struct {
 
 func (x *HostBuildRequest) Reset() {
 	*x = HostBuildRequest{}
-	mi := &file_plugin_proto_msgTypes[8]
+	mi := &file_plugin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +707,7 @@ func (x *HostBuildRequest) String() string {
 func (*HostBuildRequest) ProtoMessage() {}
 
 func (x *HostBuildRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[8]
+	mi := &file_plugin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +720,7 @@ func (x *HostBuildRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostBuildRequest.ProtoReflect.Descriptor instead.
 func (*HostBuildRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{8}
+	return file_plugin_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *HostBuildRequest) GetKind() string {
@@ -648,7 +747,7 @@ type HostBuildReply struct {
 
 func (x *HostBuildReply) Reset() {
 	*x = HostBuildReply{}
-	mi := &file_plugin_proto_msgTypes[9]
+	mi := &file_plugin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -660,7 +759,7 @@ func (x *HostBuildReply) String() string {
 func (*HostBuildReply) ProtoMessage() {}
 
 func (x *HostBuildReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[9]
+	mi := &file_plugin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -673,7 +772,7 @@ func (x *HostBuildReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostBuildReply.ProtoReflect.Descriptor instead.
 func (*HostBuildReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{9}
+	return file_plugin_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *HostBuildReply) GetResultJson() []byte {
@@ -704,7 +803,7 @@ type HostArbiterRequest struct {
 
 func (x *HostArbiterRequest) Reset() {
 	*x = HostArbiterRequest{}
-	mi := &file_plugin_proto_msgTypes[10]
+	mi := &file_plugin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -716,7 +815,7 @@ func (x *HostArbiterRequest) String() string {
 func (*HostArbiterRequest) ProtoMessage() {}
 
 func (x *HostArbiterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[10]
+	mi := &file_plugin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -729,7 +828,7 @@ func (x *HostArbiterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostArbiterRequest.ProtoReflect.Descriptor instead.
 func (*HostArbiterRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{10}
+	return file_plugin_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *HostArbiterRequest) GetAction() string {
@@ -756,7 +855,7 @@ type HostArbiterReply struct {
 
 func (x *HostArbiterReply) Reset() {
 	*x = HostArbiterReply{}
-	mi := &file_plugin_proto_msgTypes[11]
+	mi := &file_plugin_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -768,7 +867,7 @@ func (x *HostArbiterReply) String() string {
 func (*HostArbiterReply) ProtoMessage() {}
 
 func (x *HostArbiterReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[11]
+	mi := &file_plugin_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -781,7 +880,7 @@ func (x *HostArbiterReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostArbiterReply.ProtoReflect.Descriptor instead.
 func (*HostArbiterReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{11}
+	return file_plugin_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *HostArbiterReply) GetResultJson() []byte {
@@ -807,7 +906,7 @@ type VenueReply struct {
 
 func (x *VenueReply) Reset() {
 	*x = VenueReply{}
-	mi := &file_plugin_proto_msgTypes[12]
+	mi := &file_plugin_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +918,7 @@ func (x *VenueReply) String() string {
 func (*VenueReply) ProtoMessage() {}
 
 func (x *VenueReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[12]
+	mi := &file_plugin_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +931,7 @@ func (x *VenueReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VenueReply.ProtoReflect.Descriptor instead.
 func (*VenueReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{12}
+	return file_plugin_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *VenueReply) GetVenue() string {
@@ -852,7 +951,7 @@ type RunRequest struct {
 
 func (x *RunRequest) Reset() {
 	*x = RunRequest{}
-	mi := &file_plugin_proto_msgTypes[13]
+	mi := &file_plugin_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -864,7 +963,7 @@ func (x *RunRequest) String() string {
 func (*RunRequest) ProtoMessage() {}
 
 func (x *RunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[13]
+	mi := &file_plugin_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -877,7 +976,7 @@ func (x *RunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunRequest.ProtoReflect.Descriptor instead.
 func (*RunRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{13}
+	return file_plugin_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RunRequest) GetScript() string {
@@ -903,7 +1002,7 @@ type RunReply struct {
 
 func (x *RunReply) Reset() {
 	*x = RunReply{}
-	mi := &file_plugin_proto_msgTypes[14]
+	mi := &file_plugin_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -915,7 +1014,7 @@ func (x *RunReply) String() string {
 func (*RunReply) ProtoMessage() {}
 
 func (x *RunReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[14]
+	mi := &file_plugin_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -928,7 +1027,7 @@ func (x *RunReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunReply.ProtoReflect.Descriptor instead.
 func (*RunReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{14}
+	return file_plugin_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RunReply) GetError() string {
@@ -951,7 +1050,7 @@ type PutFileRequest struct {
 
 func (x *PutFileRequest) Reset() {
 	*x = PutFileRequest{}
-	mi := &file_plugin_proto_msgTypes[15]
+	mi := &file_plugin_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -963,7 +1062,7 @@ func (x *PutFileRequest) String() string {
 func (*PutFileRequest) ProtoMessage() {}
 
 func (x *PutFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[15]
+	mi := &file_plugin_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -976,7 +1075,7 @@ func (x *PutFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutFileRequest.ProtoReflect.Descriptor instead.
 func (*PutFileRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{15}
+	return file_plugin_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PutFileRequest) GetPath() string {
@@ -1023,7 +1122,7 @@ type PutFileReply struct {
 
 func (x *PutFileReply) Reset() {
 	*x = PutFileReply{}
-	mi := &file_plugin_proto_msgTypes[16]
+	mi := &file_plugin_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1035,7 +1134,7 @@ func (x *PutFileReply) String() string {
 func (*PutFileReply) ProtoMessage() {}
 
 func (x *PutFileReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[16]
+	mi := &file_plugin_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1048,7 +1147,7 @@ func (x *PutFileReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutFileReply.ProtoReflect.Descriptor instead.
 func (*PutFileReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{16}
+	return file_plugin_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PutFileReply) GetError() string {
@@ -1070,7 +1169,7 @@ type CaptureReply struct {
 
 func (x *CaptureReply) Reset() {
 	*x = CaptureReply{}
-	mi := &file_plugin_proto_msgTypes[17]
+	mi := &file_plugin_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1082,7 +1181,7 @@ func (x *CaptureReply) String() string {
 func (*CaptureReply) ProtoMessage() {}
 
 func (x *CaptureReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[17]
+	mi := &file_plugin_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1095,7 +1194,7 @@ func (x *CaptureReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CaptureReply.ProtoReflect.Descriptor instead.
 func (*CaptureReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{17}
+	return file_plugin_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CaptureReply) GetStdout() string {
@@ -1137,7 +1236,7 @@ type GetFileRequest struct {
 
 func (x *GetFileRequest) Reset() {
 	*x = GetFileRequest{}
-	mi := &file_plugin_proto_msgTypes[18]
+	mi := &file_plugin_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1149,7 +1248,7 @@ func (x *GetFileRequest) String() string {
 func (*GetFileRequest) ProtoMessage() {}
 
 func (x *GetFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[18]
+	mi := &file_plugin_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1162,7 +1261,7 @@ func (x *GetFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFileRequest.ProtoReflect.Descriptor instead.
 func (*GetFileRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{18}
+	return file_plugin_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetFileRequest) GetPath() string {
@@ -1196,7 +1295,7 @@ type GetFileReply struct {
 
 func (x *GetFileReply) Reset() {
 	*x = GetFileReply{}
-	mi := &file_plugin_proto_msgTypes[19]
+	mi := &file_plugin_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1208,7 +1307,7 @@ func (x *GetFileReply) String() string {
 func (*GetFileReply) ProtoMessage() {}
 
 func (x *GetFileReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[19]
+	mi := &file_plugin_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1221,7 +1320,7 @@ func (x *GetFileReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFileReply.ProtoReflect.Descriptor instead.
 func (*GetFileReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{19}
+	return file_plugin_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetFileReply) GetContent() []byte {
@@ -1254,7 +1353,7 @@ type HostStepRequest struct {
 
 func (x *HostStepRequest) Reset() {
 	*x = HostStepRequest{}
-	mi := &file_plugin_proto_msgTypes[20]
+	mi := &file_plugin_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1266,7 +1365,7 @@ func (x *HostStepRequest) String() string {
 func (*HostStepRequest) ProtoMessage() {}
 
 func (x *HostStepRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[20]
+	mi := &file_plugin_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1279,7 +1378,7 @@ func (x *HostStepRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostStepRequest.ProtoReflect.Descriptor instead.
 func (*HostStepRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{20}
+	return file_plugin_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *HostStepRequest) GetStepJson() []byte {
@@ -1306,7 +1405,7 @@ type HostStepReply struct {
 
 func (x *HostStepReply) Reset() {
 	*x = HostStepReply{}
-	mi := &file_plugin_proto_msgTypes[21]
+	mi := &file_plugin_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1318,7 +1417,7 @@ func (x *HostStepReply) String() string {
 func (*HostStepReply) ProtoMessage() {}
 
 func (x *HostStepReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[21]
+	mi := &file_plugin_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1331,7 +1430,7 @@ func (x *HostStepReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostStepReply.ProtoReflect.Descriptor instead.
 func (*HostStepReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{21}
+	return file_plugin_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *HostStepReply) GetReverseOpsJson() []byte {
@@ -1367,7 +1466,7 @@ type HTTPDoRequest struct {
 
 func (x *HTTPDoRequest) Reset() {
 	*x = HTTPDoRequest{}
-	mi := &file_plugin_proto_msgTypes[22]
+	mi := &file_plugin_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1379,7 +1478,7 @@ func (x *HTTPDoRequest) String() string {
 func (*HTTPDoRequest) ProtoMessage() {}
 
 func (x *HTTPDoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[22]
+	mi := &file_plugin_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1392,7 +1491,7 @@ func (x *HTTPDoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTPDoRequest.ProtoReflect.Descriptor instead.
 func (*HTTPDoRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{22}
+	return file_plugin_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *HTTPDoRequest) GetMethod() string {
@@ -1465,7 +1564,7 @@ type HTTPDoReply struct {
 
 func (x *HTTPDoReply) Reset() {
 	*x = HTTPDoReply{}
-	mi := &file_plugin_proto_msgTypes[23]
+	mi := &file_plugin_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1477,7 +1576,7 @@ func (x *HTTPDoReply) String() string {
 func (*HTTPDoReply) ProtoMessage() {}
 
 func (x *HTTPDoReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[23]
+	mi := &file_plugin_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1490,7 +1589,7 @@ func (x *HTTPDoReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTPDoReply.ProtoReflect.Descriptor instead.
 func (*HTTPDoReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{23}
+	return file_plugin_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *HTTPDoReply) GetStatus() int32 {
@@ -1530,7 +1629,7 @@ type AddBackgroundRequest struct {
 
 func (x *AddBackgroundRequest) Reset() {
 	*x = AddBackgroundRequest{}
-	mi := &file_plugin_proto_msgTypes[24]
+	mi := &file_plugin_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1542,7 +1641,7 @@ func (x *AddBackgroundRequest) String() string {
 func (*AddBackgroundRequest) ProtoMessage() {}
 
 func (x *AddBackgroundRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[24]
+	mi := &file_plugin_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1555,7 +1654,7 @@ func (x *AddBackgroundRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddBackgroundRequest.ProtoReflect.Descriptor instead.
 func (*AddBackgroundRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{24}
+	return file_plugin_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AddBackgroundRequest) GetPid() int32 {
@@ -1575,7 +1674,7 @@ type ResolveEndpointRequest struct {
 
 func (x *ResolveEndpointRequest) Reset() {
 	*x = ResolveEndpointRequest{}
-	mi := &file_plugin_proto_msgTypes[25]
+	mi := &file_plugin_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1587,7 +1686,7 @@ func (x *ResolveEndpointRequest) String() string {
 func (*ResolveEndpointRequest) ProtoMessage() {}
 
 func (x *ResolveEndpointRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[25]
+	mi := &file_plugin_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1600,7 +1699,7 @@ func (x *ResolveEndpointRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveEndpointRequest.ProtoReflect.Descriptor instead.
 func (*ResolveEndpointRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{25}
+	return file_plugin_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ResolveEndpointRequest) GetPort() int32 {
@@ -1621,7 +1720,7 @@ type ResolveEndpointReply struct {
 
 func (x *ResolveEndpointReply) Reset() {
 	*x = ResolveEndpointReply{}
-	mi := &file_plugin_proto_msgTypes[26]
+	mi := &file_plugin_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1633,7 +1732,7 @@ func (x *ResolveEndpointReply) String() string {
 func (*ResolveEndpointReply) ProtoMessage() {}
 
 func (x *ResolveEndpointReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[26]
+	mi := &file_plugin_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1646,7 +1745,7 @@ func (x *ResolveEndpointReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveEndpointReply.ProtoReflect.Descriptor instead.
 func (*ResolveEndpointReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{26}
+	return file_plugin_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ResolveEndpointReply) GetAddr() string {
@@ -1673,7 +1772,7 @@ type ResolveGraphicsEndpointRequest struct {
 
 func (x *ResolveGraphicsEndpointRequest) Reset() {
 	*x = ResolveGraphicsEndpointRequest{}
-	mi := &file_plugin_proto_msgTypes[27]
+	mi := &file_plugin_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1685,7 +1784,7 @@ func (x *ResolveGraphicsEndpointRequest) String() string {
 func (*ResolveGraphicsEndpointRequest) ProtoMessage() {}
 
 func (x *ResolveGraphicsEndpointRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[27]
+	mi := &file_plugin_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1698,7 +1797,7 @@ func (x *ResolveGraphicsEndpointRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveGraphicsEndpointRequest.ProtoReflect.Descriptor instead.
 func (*ResolveGraphicsEndpointRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{27}
+	return file_plugin_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ResolveGraphicsEndpointRequest) GetKind() string {
@@ -1725,7 +1824,7 @@ type ResolveGraphicsEndpointReply struct {
 
 func (x *ResolveGraphicsEndpointReply) Reset() {
 	*x = ResolveGraphicsEndpointReply{}
-	mi := &file_plugin_proto_msgTypes[28]
+	mi := &file_plugin_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1737,7 +1836,7 @@ func (x *ResolveGraphicsEndpointReply) String() string {
 func (*ResolveGraphicsEndpointReply) ProtoMessage() {}
 
 func (x *ResolveGraphicsEndpointReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[28]
+	mi := &file_plugin_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1750,7 +1849,7 @@ func (x *ResolveGraphicsEndpointReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveGraphicsEndpointReply.ProtoReflect.Descriptor instead.
 func (*ResolveGraphicsEndpointReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{28}
+	return file_plugin_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ResolveGraphicsEndpointReply) GetAddr() string {
@@ -1805,7 +1904,7 @@ type ResolveClusterContextRequest struct {
 
 func (x *ResolveClusterContextRequest) Reset() {
 	*x = ResolveClusterContextRequest{}
-	mi := &file_plugin_proto_msgTypes[29]
+	mi := &file_plugin_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1817,7 +1916,7 @@ func (x *ResolveClusterContextRequest) String() string {
 func (*ResolveClusterContextRequest) ProtoMessage() {}
 
 func (x *ResolveClusterContextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[29]
+	mi := &file_plugin_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1830,7 +1929,7 @@ func (x *ResolveClusterContextRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveClusterContextRequest.ProtoReflect.Descriptor instead.
 func (*ResolveClusterContextRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{29}
+	return file_plugin_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ResolveClusterContextRequest) GetCluster() string {
@@ -1851,7 +1950,7 @@ type ResolveClusterContextReply struct {
 
 func (x *ResolveClusterContextReply) Reset() {
 	*x = ResolveClusterContextReply{}
-	mi := &file_plugin_proto_msgTypes[30]
+	mi := &file_plugin_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1863,7 +1962,7 @@ func (x *ResolveClusterContextReply) String() string {
 func (*ResolveClusterContextReply) ProtoMessage() {}
 
 func (x *ResolveClusterContextReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[30]
+	mi := &file_plugin_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1876,7 +1975,7 @@ func (x *ResolveClusterContextReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveClusterContextReply.ProtoReflect.Descriptor instead.
 func (*ResolveClusterContextReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{30}
+	return file_plugin_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ResolveClusterContextReply) GetContext() string {
@@ -1903,7 +2002,7 @@ type ResolveImageLabelRequest struct {
 
 func (x *ResolveImageLabelRequest) Reset() {
 	*x = ResolveImageLabelRequest{}
-	mi := &file_plugin_proto_msgTypes[31]
+	mi := &file_plugin_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1915,7 +2014,7 @@ func (x *ResolveImageLabelRequest) String() string {
 func (*ResolveImageLabelRequest) ProtoMessage() {}
 
 func (x *ResolveImageLabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[31]
+	mi := &file_plugin_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1928,7 +2027,7 @@ func (x *ResolveImageLabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveImageLabelRequest.ProtoReflect.Descriptor instead.
 func (*ResolveImageLabelRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{31}
+	return file_plugin_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ResolveImageLabelRequest) GetLabel() string {
@@ -1949,7 +2048,7 @@ type ResolveImageLabelReply struct {
 
 func (x *ResolveImageLabelReply) Reset() {
 	*x = ResolveImageLabelReply{}
-	mi := &file_plugin_proto_msgTypes[32]
+	mi := &file_plugin_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1961,7 +2060,7 @@ func (x *ResolveImageLabelReply) String() string {
 func (*ResolveImageLabelReply) ProtoMessage() {}
 
 func (x *ResolveImageLabelReply) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_proto_msgTypes[32]
+	mi := &file_plugin_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1974,7 +2073,7 @@ func (x *ResolveImageLabelReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveImageLabelReply.ProtoReflect.Descriptor instead.
 func (*ResolveImageLabelReply) Descriptor() ([]byte, []int) {
-	return file_plugin_proto_rawDescGZIP(), []int{32}
+	return file_plugin_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ResolveImageLabelReply) GetValue() string {
@@ -2002,7 +2101,7 @@ const file_plugin_proto_rawDesc = "" +
 	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\x12<\n" +
 	"\bprovided\x18\x03 \x03(\v2 .charlyplugin.ProvidedCapabilityR\bprovided\x12\x1d\n" +
 	"\n" +
-	"schema_cue\x18\x04 \x01(\tR\tschemaCue\"\xc8\x02\n" +
+	"schema_cue\x18\x04 \x01(\tR\tschemaCue\"\x89\x03\n" +
 	"\x12ProvidedCapability\x12\x14\n" +
 	"\x05class\x18\x01 \x01(\tR\x05class\x12\x12\n" +
 	"\x04word\x18\x02 \x01(\tR\x04word\x12\x1b\n" +
@@ -2018,7 +2117,15 @@ const file_plugin_proto_rawDesc = "" +
 	"\tvalidates\x18\b \x01(\bR\tvalidates\x12\x14\n" +
 	"\x05phase\x18\t \x01(\tR\x05phase\x12\x18\n" +
 	"\aprimary\x18\n" +
-	" \x01(\tR\aprimary\"d\n" +
+	" \x01(\tR\aprimary\x12?\n" +
+	"\rdeploy_traits\x18\v \x01(\v2\x1a.charlyplugin.DeployTraitsR\fdeployTraits\"\xd7\x01\n" +
+	"\fDeployTraits\x12\x14\n" +
+	"\x05venue\x18\x01 \x01(\tR\x05venue\x12!\n" +
+	"\fimage_backed\x18\x02 \x01(\bR\vimageBacked\x12#\n" +
+	"\rimage_context\x18\x03 \x01(\bR\fimageContext\x12#\n" +
+	"\rmachine_venue\x18\x04 \x01(\bR\fmachineVenue\x12'\n" +
+	"\x0fexclusive_venue\x18\x05 \x01(\bR\x0eexclusiveVenue\x12\x1b\n" +
+	"\tleaf_only\x18\x06 \x01(\bR\bleafOnly\"d\n" +
 	"\fStepContract\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x14\n" +
 	"\x05venue\x18\x02 \x01(\x05R\x05venue\x12\x12\n" +
@@ -2178,90 +2285,92 @@ func file_plugin_proto_rawDescGZIP() []byte {
 	return file_plugin_proto_rawDescData
 }
 
-var file_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_plugin_proto_goTypes = []any{
 	(*Empty)(nil),                          // 0: charlyplugin.Empty
 	(*Capabilities)(nil),                   // 1: charlyplugin.Capabilities
 	(*ProvidedCapability)(nil),             // 2: charlyplugin.ProvidedCapability
-	(*StepContract)(nil),                   // 3: charlyplugin.StepContract
-	(*InvokeRequest)(nil),                  // 4: charlyplugin.InvokeRequest
-	(*InvokeReply)(nil),                    // 5: charlyplugin.InvokeReply
-	(*Frame)(nil),                          // 6: charlyplugin.Frame
-	(*InvokeProviderRequest)(nil),          // 7: charlyplugin.InvokeProviderRequest
-	(*HostBuildRequest)(nil),               // 8: charlyplugin.HostBuildRequest
-	(*HostBuildReply)(nil),                 // 9: charlyplugin.HostBuildReply
-	(*HostArbiterRequest)(nil),             // 10: charlyplugin.HostArbiterRequest
-	(*HostArbiterReply)(nil),               // 11: charlyplugin.HostArbiterReply
-	(*VenueReply)(nil),                     // 12: charlyplugin.VenueReply
-	(*RunRequest)(nil),                     // 13: charlyplugin.RunRequest
-	(*RunReply)(nil),                       // 14: charlyplugin.RunReply
-	(*PutFileRequest)(nil),                 // 15: charlyplugin.PutFileRequest
-	(*PutFileReply)(nil),                   // 16: charlyplugin.PutFileReply
-	(*CaptureReply)(nil),                   // 17: charlyplugin.CaptureReply
-	(*GetFileRequest)(nil),                 // 18: charlyplugin.GetFileRequest
-	(*GetFileReply)(nil),                   // 19: charlyplugin.GetFileReply
-	(*HostStepRequest)(nil),                // 20: charlyplugin.HostStepRequest
-	(*HostStepReply)(nil),                  // 21: charlyplugin.HostStepReply
-	(*HTTPDoRequest)(nil),                  // 22: charlyplugin.HTTPDoRequest
-	(*HTTPDoReply)(nil),                    // 23: charlyplugin.HTTPDoReply
-	(*AddBackgroundRequest)(nil),           // 24: charlyplugin.AddBackgroundRequest
-	(*ResolveEndpointRequest)(nil),         // 25: charlyplugin.ResolveEndpointRequest
-	(*ResolveEndpointReply)(nil),           // 26: charlyplugin.ResolveEndpointReply
-	(*ResolveGraphicsEndpointRequest)(nil), // 27: charlyplugin.ResolveGraphicsEndpointRequest
-	(*ResolveGraphicsEndpointReply)(nil),   // 28: charlyplugin.ResolveGraphicsEndpointReply
-	(*ResolveClusterContextRequest)(nil),   // 29: charlyplugin.ResolveClusterContextRequest
-	(*ResolveClusterContextReply)(nil),     // 30: charlyplugin.ResolveClusterContextReply
-	(*ResolveImageLabelRequest)(nil),       // 31: charlyplugin.ResolveImageLabelRequest
-	(*ResolveImageLabelReply)(nil),         // 32: charlyplugin.ResolveImageLabelReply
-	nil,                                    // 33: charlyplugin.HTTPDoRequest.HeadersEntry
+	(*DeployTraits)(nil),                   // 3: charlyplugin.DeployTraits
+	(*StepContract)(nil),                   // 4: charlyplugin.StepContract
+	(*InvokeRequest)(nil),                  // 5: charlyplugin.InvokeRequest
+	(*InvokeReply)(nil),                    // 6: charlyplugin.InvokeReply
+	(*Frame)(nil),                          // 7: charlyplugin.Frame
+	(*InvokeProviderRequest)(nil),          // 8: charlyplugin.InvokeProviderRequest
+	(*HostBuildRequest)(nil),               // 9: charlyplugin.HostBuildRequest
+	(*HostBuildReply)(nil),                 // 10: charlyplugin.HostBuildReply
+	(*HostArbiterRequest)(nil),             // 11: charlyplugin.HostArbiterRequest
+	(*HostArbiterReply)(nil),               // 12: charlyplugin.HostArbiterReply
+	(*VenueReply)(nil),                     // 13: charlyplugin.VenueReply
+	(*RunRequest)(nil),                     // 14: charlyplugin.RunRequest
+	(*RunReply)(nil),                       // 15: charlyplugin.RunReply
+	(*PutFileRequest)(nil),                 // 16: charlyplugin.PutFileRequest
+	(*PutFileReply)(nil),                   // 17: charlyplugin.PutFileReply
+	(*CaptureReply)(nil),                   // 18: charlyplugin.CaptureReply
+	(*GetFileRequest)(nil),                 // 19: charlyplugin.GetFileRequest
+	(*GetFileReply)(nil),                   // 20: charlyplugin.GetFileReply
+	(*HostStepRequest)(nil),                // 21: charlyplugin.HostStepRequest
+	(*HostStepReply)(nil),                  // 22: charlyplugin.HostStepReply
+	(*HTTPDoRequest)(nil),                  // 23: charlyplugin.HTTPDoRequest
+	(*HTTPDoReply)(nil),                    // 24: charlyplugin.HTTPDoReply
+	(*AddBackgroundRequest)(nil),           // 25: charlyplugin.AddBackgroundRequest
+	(*ResolveEndpointRequest)(nil),         // 26: charlyplugin.ResolveEndpointRequest
+	(*ResolveEndpointReply)(nil),           // 27: charlyplugin.ResolveEndpointReply
+	(*ResolveGraphicsEndpointRequest)(nil), // 28: charlyplugin.ResolveGraphicsEndpointRequest
+	(*ResolveGraphicsEndpointReply)(nil),   // 29: charlyplugin.ResolveGraphicsEndpointReply
+	(*ResolveClusterContextRequest)(nil),   // 30: charlyplugin.ResolveClusterContextRequest
+	(*ResolveClusterContextReply)(nil),     // 31: charlyplugin.ResolveClusterContextReply
+	(*ResolveImageLabelRequest)(nil),       // 32: charlyplugin.ResolveImageLabelRequest
+	(*ResolveImageLabelReply)(nil),         // 33: charlyplugin.ResolveImageLabelReply
+	nil,                                    // 34: charlyplugin.HTTPDoRequest.HeadersEntry
 }
 var file_plugin_proto_depIdxs = []int32{
 	2,  // 0: charlyplugin.Capabilities.provided:type_name -> charlyplugin.ProvidedCapability
-	3,  // 1: charlyplugin.ProvidedCapability.step_contract:type_name -> charlyplugin.StepContract
-	33, // 2: charlyplugin.HTTPDoRequest.headers:type_name -> charlyplugin.HTTPDoRequest.HeadersEntry
-	0,  // 3: charlyplugin.PluginMeta.Describe:input_type -> charlyplugin.Empty
-	4,  // 4: charlyplugin.Provider.Invoke:input_type -> charlyplugin.InvokeRequest
-	4,  // 5: charlyplugin.Provider.InvokeStream:input_type -> charlyplugin.InvokeRequest
-	0,  // 6: charlyplugin.ExecutorService.Venue:input_type -> charlyplugin.Empty
-	13, // 7: charlyplugin.ExecutorService.RunSystem:input_type -> charlyplugin.RunRequest
-	13, // 8: charlyplugin.ExecutorService.RunUser:input_type -> charlyplugin.RunRequest
-	15, // 9: charlyplugin.ExecutorService.PutFile:input_type -> charlyplugin.PutFileRequest
-	13, // 10: charlyplugin.ExecutorService.RunCapture:input_type -> charlyplugin.RunRequest
-	18, // 11: charlyplugin.ExecutorService.GetFile:input_type -> charlyplugin.GetFileRequest
-	20, // 12: charlyplugin.ExecutorService.RunHostStep:input_type -> charlyplugin.HostStepRequest
-	7,  // 13: charlyplugin.ExecutorService.InvokeProvider:input_type -> charlyplugin.InvokeProviderRequest
-	8,  // 14: charlyplugin.ExecutorService.HostBuild:input_type -> charlyplugin.HostBuildRequest
-	10, // 15: charlyplugin.ExecutorService.HostArbiter:input_type -> charlyplugin.HostArbiterRequest
-	22, // 16: charlyplugin.CheckContextService.HTTPDo:input_type -> charlyplugin.HTTPDoRequest
-	24, // 17: charlyplugin.CheckContextService.AddBackground:input_type -> charlyplugin.AddBackgroundRequest
-	25, // 18: charlyplugin.CheckContextService.ResolveEndpoint:input_type -> charlyplugin.ResolveEndpointRequest
-	27, // 19: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:input_type -> charlyplugin.ResolveGraphicsEndpointRequest
-	29, // 20: charlyplugin.CheckContextService.ResolveClusterContext:input_type -> charlyplugin.ResolveClusterContextRequest
-	31, // 21: charlyplugin.CheckContextService.ResolveImageLabel:input_type -> charlyplugin.ResolveImageLabelRequest
-	1,  // 22: charlyplugin.PluginMeta.Describe:output_type -> charlyplugin.Capabilities
-	5,  // 23: charlyplugin.Provider.Invoke:output_type -> charlyplugin.InvokeReply
-	6,  // 24: charlyplugin.Provider.InvokeStream:output_type -> charlyplugin.Frame
-	12, // 25: charlyplugin.ExecutorService.Venue:output_type -> charlyplugin.VenueReply
-	14, // 26: charlyplugin.ExecutorService.RunSystem:output_type -> charlyplugin.RunReply
-	14, // 27: charlyplugin.ExecutorService.RunUser:output_type -> charlyplugin.RunReply
-	16, // 28: charlyplugin.ExecutorService.PutFile:output_type -> charlyplugin.PutFileReply
-	17, // 29: charlyplugin.ExecutorService.RunCapture:output_type -> charlyplugin.CaptureReply
-	19, // 30: charlyplugin.ExecutorService.GetFile:output_type -> charlyplugin.GetFileReply
-	21, // 31: charlyplugin.ExecutorService.RunHostStep:output_type -> charlyplugin.HostStepReply
-	5,  // 32: charlyplugin.ExecutorService.InvokeProvider:output_type -> charlyplugin.InvokeReply
-	9,  // 33: charlyplugin.ExecutorService.HostBuild:output_type -> charlyplugin.HostBuildReply
-	11, // 34: charlyplugin.ExecutorService.HostArbiter:output_type -> charlyplugin.HostArbiterReply
-	23, // 35: charlyplugin.CheckContextService.HTTPDo:output_type -> charlyplugin.HTTPDoReply
-	0,  // 36: charlyplugin.CheckContextService.AddBackground:output_type -> charlyplugin.Empty
-	26, // 37: charlyplugin.CheckContextService.ResolveEndpoint:output_type -> charlyplugin.ResolveEndpointReply
-	28, // 38: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:output_type -> charlyplugin.ResolveGraphicsEndpointReply
-	30, // 39: charlyplugin.CheckContextService.ResolveClusterContext:output_type -> charlyplugin.ResolveClusterContextReply
-	32, // 40: charlyplugin.CheckContextService.ResolveImageLabel:output_type -> charlyplugin.ResolveImageLabelReply
-	22, // [22:41] is the sub-list for method output_type
-	3,  // [3:22] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	4,  // 1: charlyplugin.ProvidedCapability.step_contract:type_name -> charlyplugin.StepContract
+	3,  // 2: charlyplugin.ProvidedCapability.deploy_traits:type_name -> charlyplugin.DeployTraits
+	34, // 3: charlyplugin.HTTPDoRequest.headers:type_name -> charlyplugin.HTTPDoRequest.HeadersEntry
+	0,  // 4: charlyplugin.PluginMeta.Describe:input_type -> charlyplugin.Empty
+	5,  // 5: charlyplugin.Provider.Invoke:input_type -> charlyplugin.InvokeRequest
+	5,  // 6: charlyplugin.Provider.InvokeStream:input_type -> charlyplugin.InvokeRequest
+	0,  // 7: charlyplugin.ExecutorService.Venue:input_type -> charlyplugin.Empty
+	14, // 8: charlyplugin.ExecutorService.RunSystem:input_type -> charlyplugin.RunRequest
+	14, // 9: charlyplugin.ExecutorService.RunUser:input_type -> charlyplugin.RunRequest
+	16, // 10: charlyplugin.ExecutorService.PutFile:input_type -> charlyplugin.PutFileRequest
+	14, // 11: charlyplugin.ExecutorService.RunCapture:input_type -> charlyplugin.RunRequest
+	19, // 12: charlyplugin.ExecutorService.GetFile:input_type -> charlyplugin.GetFileRequest
+	21, // 13: charlyplugin.ExecutorService.RunHostStep:input_type -> charlyplugin.HostStepRequest
+	8,  // 14: charlyplugin.ExecutorService.InvokeProvider:input_type -> charlyplugin.InvokeProviderRequest
+	9,  // 15: charlyplugin.ExecutorService.HostBuild:input_type -> charlyplugin.HostBuildRequest
+	11, // 16: charlyplugin.ExecutorService.HostArbiter:input_type -> charlyplugin.HostArbiterRequest
+	23, // 17: charlyplugin.CheckContextService.HTTPDo:input_type -> charlyplugin.HTTPDoRequest
+	25, // 18: charlyplugin.CheckContextService.AddBackground:input_type -> charlyplugin.AddBackgroundRequest
+	26, // 19: charlyplugin.CheckContextService.ResolveEndpoint:input_type -> charlyplugin.ResolveEndpointRequest
+	28, // 20: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:input_type -> charlyplugin.ResolveGraphicsEndpointRequest
+	30, // 21: charlyplugin.CheckContextService.ResolveClusterContext:input_type -> charlyplugin.ResolveClusterContextRequest
+	32, // 22: charlyplugin.CheckContextService.ResolveImageLabel:input_type -> charlyplugin.ResolveImageLabelRequest
+	1,  // 23: charlyplugin.PluginMeta.Describe:output_type -> charlyplugin.Capabilities
+	6,  // 24: charlyplugin.Provider.Invoke:output_type -> charlyplugin.InvokeReply
+	7,  // 25: charlyplugin.Provider.InvokeStream:output_type -> charlyplugin.Frame
+	13, // 26: charlyplugin.ExecutorService.Venue:output_type -> charlyplugin.VenueReply
+	15, // 27: charlyplugin.ExecutorService.RunSystem:output_type -> charlyplugin.RunReply
+	15, // 28: charlyplugin.ExecutorService.RunUser:output_type -> charlyplugin.RunReply
+	17, // 29: charlyplugin.ExecutorService.PutFile:output_type -> charlyplugin.PutFileReply
+	18, // 30: charlyplugin.ExecutorService.RunCapture:output_type -> charlyplugin.CaptureReply
+	20, // 31: charlyplugin.ExecutorService.GetFile:output_type -> charlyplugin.GetFileReply
+	22, // 32: charlyplugin.ExecutorService.RunHostStep:output_type -> charlyplugin.HostStepReply
+	6,  // 33: charlyplugin.ExecutorService.InvokeProvider:output_type -> charlyplugin.InvokeReply
+	10, // 34: charlyplugin.ExecutorService.HostBuild:output_type -> charlyplugin.HostBuildReply
+	12, // 35: charlyplugin.ExecutorService.HostArbiter:output_type -> charlyplugin.HostArbiterReply
+	24, // 36: charlyplugin.CheckContextService.HTTPDo:output_type -> charlyplugin.HTTPDoReply
+	0,  // 37: charlyplugin.CheckContextService.AddBackground:output_type -> charlyplugin.Empty
+	27, // 38: charlyplugin.CheckContextService.ResolveEndpoint:output_type -> charlyplugin.ResolveEndpointReply
+	29, // 39: charlyplugin.CheckContextService.ResolveGraphicsEndpoint:output_type -> charlyplugin.ResolveGraphicsEndpointReply
+	31, // 40: charlyplugin.CheckContextService.ResolveClusterContext:output_type -> charlyplugin.ResolveClusterContextReply
+	33, // 41: charlyplugin.CheckContextService.ResolveImageLabel:output_type -> charlyplugin.ResolveImageLabelReply
+	23, // [23:42] is the sub-list for method output_type
+	4,  // [4:23] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_plugin_proto_init() }
@@ -2275,7 +2384,7 @@ func file_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plugin_proto_rawDesc), len(file_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   34,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   4,
 		},
