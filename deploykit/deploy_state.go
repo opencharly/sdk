@@ -109,6 +109,18 @@ func SplitDottedPath(path string) []string {
 	return out
 }
 
+// deployNodeVenue returns a node's stamped descent VENUE trait (P9) nil-safely — the deploykit
+// analogue of charly's nodeTraits for the SDK-side consult sites, which cannot reach charly's
+// provider registry to resolve traits for an unstamped node. A node with no stamped descent
+// yields "" (the external-in-place default), so a caller that also checks a positive fallback
+// (e.g. `|| e.From != ""`) preserves the former word-switch behaviour.
+func deployNodeVenue(n *BundleNode) string {
+	if n != nil && n.Descent != nil {
+		return n.Descent.Venue
+	}
+	return ""
+}
+
 // SortedNestedKeys returns the keys of a children map in deterministic
 // order so traversal produces stable output across runs.
 // BedCheckLiveRefs returns the ordered `charly check live` targets for a bed: the
@@ -129,7 +141,7 @@ func BedCheckLiveRefs(name string, children map[string]*BundleNode) []string {
 		// and already run in the parent ref. `charly check live` has no android
 		// dotted-path branch, so a hop for it would wrongly resolve to a
 		// non-existent `charly-<parent>.device` container. Skip android children.
-		if c := children[k]; c != nil && c.Target == "android" {
+		if c := children[k]; c != nil && deployNodeVenue(c) == "parent" { // android (parent venue)
 			continue
 		}
 		refs = append(refs, name+"."+k)

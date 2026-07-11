@@ -3,47 +3,73 @@ package kit
 import "github.com/opencharly/sdk/spec"
 
 // descent.go — the venue-hop descent-descriptor stamper (the descent de-type,
-// Cutover H). This is the SINGLE source of the substrate-word → nesting-transport
-// mapping (R3): candy/plugin-substrate and candy/plugin-group call StampDescent in
-// their OpLoad echo so the kernel's deploy chain (AppendHopForFlatPath) descends
-// generically BY TRANSPORT, never by switching on the substrate kind word. The
-// transport SET is the kernel's closed nesting-boundary vocabulary (JumpKind); the
-// word→transport MAPPING lives here, out of the kernel.
+// Cutover H; the trait SOURCE de-branched in P9). This is the SINGLE mechanism that
+// projects a substrate's DECLARED #DeployTraits onto every node's #DescentDescriptor
+// (R3): a substrate plugin (candy/plugin-substrate) advertises its per-word traits over
+// Describe (ProvidedCapability.deploy_traits), the HOST resolves them by word through a
+// registry-backed `traitsFor` callback (deployTraitsFor), and StampDescent stamps them
+// here. Every consult site then reads the substrate behaviour off node.Descent BY TRAIT —
+// never by switching on the substrate kind word. The transport SET is the kernel's closed
+// nesting-boundary vocabulary (JumpKind); it is DERIVED from the declared traits by
+// DescentFromTraits, so no word→transport mapping lives in the kernel or kit.
 
-// StampDescent stamps node.Descent from node.Target and recurses into the whole
-// nested (Children) + peer (Members) subtree, so every node the deploy chain can
-// descend into carries a descriptor. Idempotent — re-stamping writes the same value.
-func StampDescent(node *spec.Deploy) {
+// StampDescent stamps node.Descent from the substrate's DECLARED traits (resolved by
+// `traitsFor(node.Target)`) and recurses into the whole nested (Children) + peer (Members)
+// subtree, so every node the deploy chain can descend into carries a descriptor. Idempotent —
+// re-stamping with the same traitsFor writes the same value. traitsFor must never be nil; it
+// returns nil for a word with no declared substrate traits (a targetless group / empty target),
+// which DescentFromTraits maps to the external-in-place default.
+func StampDescent(node *spec.Deploy, traitsFor func(word string) *spec.DeployTraits) {
 	if node == nil {
 		return
 	}
-	node.Descent = descentForTarget(node.Target)
+	node.Descent = DescentFromTraits(traitsFor(node.Target))
 	for _, child := range node.Children {
-		StampDescent(child)
+		StampDescent(child, traitsFor)
 	}
 	for _, member := range node.Members {
-		StampDescent(member)
+		StampDescent(member, traitsFor)
 	}
 }
 
-// descentForTarget maps a substrate word to its nesting transport.
-func descentForTarget(target string) *spec.DescentDescriptor {
-	switch target {
-	case "vm":
-		return &spec.DescentDescriptor{Transport: "ssh"}
-	case "k8s":
-		return &spec.DescentDescriptor{Transport: "reject"}
-	case "local":
-		// A local deploy's own ROOT executor runs host-side; it adds no hop.
-		return &spec.DescentDescriptor{Transport: "none", HostRooted: true}
-	case "android":
-		// Reached via adb over the parent pod's published port — no chain hop.
-		return &spec.DescentDescriptor{Transport: "none"}
-	default:
-		// pod (the default substrate) enters its container by name. A targetless
-		// group venue (Target=="") also lands here — its members are peers, never
-		// chain-descended, and the kernel's empty→pod default historically treated
-		// it as pod, so container-exec is the behavior-preserving default.
-		return &spec.DescentDescriptor{Transport: "container-exec"}
+// DescentFromTraits builds a #DescentDescriptor from a substrate's DECLARED #DeployTraits,
+// deriving the closed nesting-transport vocabulary GENERICALLY from the traits — never by
+// switching on a substrate kind word. It copies the declared traits verbatim (the consult
+// sites read them off node.Descent) and computes transport + host_rooted:
+//
+//	leaf_only            → reject          (k8s: a deploy-chain leaf, unreachable via exec)
+//	venue == container   → container-exec  (pod: podman/docker exec by name)
+//	venue == ssh         → ssh             (vm: an ssh hop into the guest)
+//	otherwise            → none            (shell/parent/none share the parent venue)
+//
+// nil traits (a targetless group / empty target / a word with no declared substrate traits)
+// map to the external-in-place default (container-exec) — behaviour-preserving for the former
+// descentForTarget default arm that covered pod and the empty/group target.
+func DescentFromTraits(t *spec.DeployTraits) *spec.DescentDescriptor {
+	d := &spec.DescentDescriptor{}
+	if t != nil {
+		d.Venue = t.Venue
+		d.ImageBacked = t.ImageBacked
+		d.ImageContext = t.ImageContext
+		d.MachineVenue = t.MachineVenue
+		d.ExclusiveVenue = t.ExclusiveVenue
+		d.LeafOnly = t.LeafOnly
 	}
+	switch {
+	case t == nil:
+		d.Transport = "container-exec"
+	case t.LeafOnly:
+		d.Transport = "reject"
+	case t.Venue == "container":
+		d.Transport = "container-exec"
+	case t.Venue == "ssh":
+		d.Transport = "ssh"
+	default:
+		d.Transport = "none"
+	}
+	// host_rooted: the substrate's own ROOT executor runs directly on the host (local:
+	// venue==shell, not a leaf). k8s (shell + leaf_only) is a chain leaf, never descended,
+	// so its host_rooted is irrelevant and left false.
+	d.HostRooted = t != nil && t.Venue == "shell" && !t.LeafOnly
+	return d
 }

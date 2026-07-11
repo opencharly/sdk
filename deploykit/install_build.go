@@ -31,13 +31,16 @@ import (
 // builder image to run user-scope builders in, (c) whether to gate
 // AUR-specific steps, etc. For the OCI target, the caller passes a
 // zero-value HostContext (the compiler ignores host-only choices when
-// Target is "oci").
+// MachineVenue is false).
 type HostContext struct {
-	// Target selects compilation mode. "" or "oci" means "compile for
-	// container build"; "host" means "compile for direct host execution".
-	// Primarily affects which steps get VenueSkip (container-only fields
-	// like ports:/volumes: are skipped on "host").
-	Target string
+	// MachineVenue selects compilation mode (P9): false (zero value) → compile for a
+	// CONTAINER image build (the pod overlay / OCI target); true → compile for a MACHINE
+	// venue with a system init (a target:local / target:vm deploy — services render as
+	// systemd units, home is deferred via {{.Home}}). detectHostContext sets it true for a
+	// host deploy; the OCI/pod-overlay compile passes the zero value. It replaced the former
+	// string Target ("host"/"vm"/"oci"), whose "vm" arm was dead (a vm deploy compiles with
+	// the host detectHostContext) — the machine-vs-container distinction IS the trait.
+	MachineVenue bool
 
 	// Distro is the resolved host distro tag, e.g. "fedora:43". Used to
 	// pick the right format section when compiling for a host target
@@ -350,10 +353,10 @@ func CompileShellHookStep(layer CandyModel, _ *ResolvedBox) *ShellHookStep {
 // write the snippet bytes verbatim.
 //
 // Destination resolution is target-aware:
-//   - Container build (hostCtx.Target empty / "oci"): system-wide
+//   - Container build (hostCtx.MachineVenue == false): system-wide
 //     drop-in (/etc/profile.d/charly-<candy>-<shell>.sh, /etc/fish/conf.d/
 //     charly-<candy>.fish). UseDropin=true.
-//   - target:local, target:vm (hostCtx.Target = "host" or "vm"):
+//   - target:local, target:vm (hostCtx.MachineVenue == true):
 //     bash/zsh/sh → managed-block append in the user's rc file (UseDropin
 //     =false); fish → per-candy drop-in in ~/.config/fish/conf.d/
 //     (UseDropin=true).
@@ -371,7 +374,7 @@ func CompileShellSnippetSteps(layer CandyModel, img *ResolvedBox, hostCtx HostCo
 	// container BUILD path (empty/oci target) keeps img.Home — there the
 	// image's resolved Home IS the runtime home. See InstallPlan.ResolveHome.
 	snippetHome := img.Home
-	if hostCtx.Target == "host" || hostCtx.Target == "vm" {
+	if hostCtx.MachineVenue {
 		snippetHome = HomeToken
 	}
 	// Stable iteration: walk the allowlist in fixed order so plan output
@@ -446,7 +449,7 @@ func ResolveShellSpec(cfg *ShellConfig, shell string) (*ShellSpec, string, []str
 // resolved path and a UseDropin discriminator (true: full-file write;
 // false: managed-block append).
 func shellSnippetDestination(candyName, shell string, hostCtx HostContext, home, pathOverride string) (string, bool) {
-	isHost := hostCtx.Target == "host" || hostCtx.Target == "vm"
+	isHost := hostCtx.MachineVenue
 	if pathOverride != "" {
 		expanded := ExpandPath(pathOverride, home)
 		// Author override implies they know what they want; fish + drop-in
@@ -887,7 +890,7 @@ func StringSliceFromYAML(v any) ([]string, bool) {
 // operator host's, ResolveBox the image's. Using hostCtx.Distro here was the
 // bug that made a vm deploy filter services against the OPERATOR's distro
 // (arch) instead of the guest's (debian) — detectHostContext defaults
-// hostCtx.Target to "host" + the operator distro even for a vm deploy, so a
+// hostCtx.MachineVenue=true + the operator distro even for a vm deploy, so a
 // hostCtx-wins rule mis-scoped every vm/pod service. For a host deploy
 // img.Distro is the operator's own tag chain (a SUPERSET of the single
 // PrimaryTag, so arch-derivative hosts like cachyos now also match `arch:`

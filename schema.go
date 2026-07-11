@@ -9,6 +9,7 @@ import (
 
 	pb "github.com/opencharly/sdk/proto"
 	"github.com/opencharly/sdk/schemaconcat"
+	"github.com/opencharly/sdk/spec"
 )
 
 // ProvidedCapability is one capability a plugin serves plus the CUE def that
@@ -53,6 +54,13 @@ type ProvidedCapability struct {
 	// additionally declares it in its candy manifest's plugin.primary map so the
 	// byte-gated prescan knows it BEFORE the provider connects).
 	Primary string
+	// DeployTraits is set ONLY for Class=="kind" on a SUBSTRATE kind (P9): the kind's
+	// DECLARED deploy behaviour (venue + image_backed/image_context/machine_venue/
+	// exclusive_venue/leaf_only). kit.StampDescent stamps it onto every node's
+	// spec.DescentDescriptor so the kernel consults the substrate behaviour BY TRAIT
+	// (off node.Descent) — never by switching on the kind word. nil for every other
+	// capability (the zero-value → external-in-place semantics).
+	DeployTraits *spec.DeployTraits
 }
 
 // StepContract is the SDK-facing form of the proto StepContract — a class="step" plugin's
@@ -114,6 +122,16 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary}
 		if c.StepContract != nil {
 			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope, Venue: int32(c.StepContract.Venue), Gate: c.StepContract.Gate, Emits: c.StepContract.Emits}
+		}
+		if c.DeployTraits != nil {
+			pc.DeployTraits = &pb.DeployTraits{
+				Venue:          c.DeployTraits.Venue,
+				ImageBacked:    c.DeployTraits.ImageBacked,
+				ImageContext:   c.DeployTraits.ImageContext,
+				MachineVenue:   c.DeployTraits.MachineVenue,
+				ExclusiveVenue: c.DeployTraits.ExclusiveVenue,
+				LeafOnly:       c.DeployTraits.LeafOnly,
+			}
 		}
 		out = append(out, pc)
 	}
