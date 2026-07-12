@@ -102,6 +102,27 @@ func TestOCIWireRoundTrip(t *testing.T) {
 	}
 }
 
+// TestStatusCollectRoundTrip locks the command:status collect-seam envelope: the
+// request carries the CLI selectors (box=""→fleet, else single) and the reply the
+// merged/nested-overlaid rows the candy renders.
+func TestStatusCollectRoundTrip(t *testing.T) {
+	in := StatusCollectInput{Box: "jupyter", Instance: "work", All: true, Nested: true}
+	var back StatusCollectInput
+	if err := json.Unmarshal(mustJSON(t, in), &back); err != nil || back != in {
+		t.Fatalf("StatusCollectInput round-trip: err=%v got=%+v want=%+v", err, back, in)
+	}
+	reply := StatusCollectReply{Rows: []DeploymentStatus{
+		{Kind: SubstratePod, Image: "jupyter", Status: "running", Container: "charly-jupyter", RunMode: "quadlet", Source: "podman"},
+	}}
+	var rb StatusCollectReply
+	if err := json.Unmarshal(mustJSON(t, reply), &rb); err != nil {
+		t.Fatalf("StatusCollectReply unmarshal: %v", err)
+	}
+	if len(rb.Rows) != 1 || rb.Rows[0].Image != "jupyter" || rb.Rows[0].Kind != SubstratePod {
+		t.Fatalf("StatusCollectReply round-trip drift: %+v", rb.Rows)
+	}
+}
+
 func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)

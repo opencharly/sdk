@@ -55,3 +55,23 @@
 	nested?: [...#DeploymentStatus] @go(Nested)
 	source?: string @go(Source)
 }
+
+// #StatusCollectInput — the host<->command:status collect-seam request. The command:status
+// candy owns the `charly status` CLI grammar + render; the fleet COLLECT (podman/libvirt/ledger/
+// adb/k8s enumeration) stays a host-side mechanism the candy reaches over the reverse channel
+// (HostBuild("status-collect")), mirroring command:vm's HostBuild("vm-build"). box="" → the
+// all-substrate fleet view (Collector.All); a non-empty box → the single-deployment detail
+// (Collector.Single). all mirrors --all, nested mirrors --nested.
+#StatusCollectInput: {
+	box?:      string @go(Box)
+	instance?: string @go(Instance)
+	all?:      bool   @go(All)
+	nested?:   bool   @go(Nested)
+}
+
+// #StatusCollectReply — the collected rows (already merged, nested-overlaid, and sorted host-side).
+// The candy renders them (table / json / detail) from spec.DeploymentStatus. A single-deployment
+// request returns exactly one row.
+#StatusCollectReply: {
+	rows?: [...#DeploymentStatus] @go(Rows)
+}

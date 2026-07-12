@@ -2139,6 +2139,29 @@ type DeploymentStatus struct {
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
+// #StatusCollectInput — the host<->command:status collect-seam request. The command:status
+// candy owns the `charly status` CLI grammar + render; the fleet COLLECT (podman/libvirt/ledger/
+// adb/k8s enumeration) stays a host-side mechanism the candy reaches over the reverse channel
+// (HostBuild("status-collect")), mirroring command:vm's HostBuild("vm-build"). box="" → the
+// all-substrate fleet view (Collector.All); a non-empty box → the single-deployment detail
+// (Collector.Single). all mirrors --all, nested mirrors --nested.
+type StatusCollectInput struct {
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	All bool `yaml:"all,omitempty" json:"all,omitempty"`
+
+	Nested bool `yaml:"nested,omitempty" json:"nested,omitempty"`
+}
+
+// #StatusCollectReply — the collected rows (already merged, nested-overlaid, and sorted host-side).
+// The candy renders them (table / json / detail) from spec.DeploymentStatus. A single-deployment
+// request returns exactly one row.
+type StatusCollectReply struct {
+	Rows []DeploymentStatus `yaml:"rows,omitempty" json:"rows,omitempty"`
+}
+
 type Vm struct {
 	Source VmSource `yaml:"source,omitempty" json:"source"`
 
