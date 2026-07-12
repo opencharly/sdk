@@ -94,3 +94,100 @@
 // #VmBuildReply is the "vm-build" host-builder reply — empty; the build prints its
 // own progress to the shared stdio and signals failure via the error return.
 #VmBuildReply: {}
+
+// #DeployAddRequest carries the `charly bundle add` command flags (the former
+// BundleAddCmd's authored fields). The command:bundle plugin (P13) owns the CLI
+// GRAMMAR but cannot drive the deploy KERNEL — the loader, the InstallPlan
+// compiler, ResolveTarget → externalDeployTarget, and the live-executor
+// composition (which threads host objects that cannot cross the process boundary)
+// are core Mechanisms. So the plugin's `charly bundle add` command is THIN — it
+// forwards these flags to HostBuild("deploy-add"), and the host runs the existing
+// add orchestration VERBATIM (Run → dispatchNode → compile → ResolveTarget → Add),
+// exactly as the box-build engine stayed core behind HostBuild("image") in P8 and
+// the VM-disk engine behind HostBuild("vm-build") in P10. The two per-node internal
+// fields (vmEntity, builderImageOverride) are NOT carried — the host derives them
+// during dispatch.
+#DeployAddRequest: {
+	name!:               string @go(Name)
+	ref?:                string @go(Ref)
+	add_candy?: [...string] @go(AddCandy)
+	tag?:                string @go(Tag)
+	dry_run?:            bool   @go(DryRun)
+	node_only?:          bool   @go(NodeOnly)
+	format?:             string @go(Format)
+	pull?:               bool   @go(Pull)
+	verify?:             bool   @go(Verify)
+	with_services?:      bool   @go(WithServices)
+	allow_repo_changes?: bool   @go(AllowRepoChanges)
+	allow_root_tasks?:   bool   @go(AllowRootTasks)
+	skip_incompatible?:  bool   @go(SkipIncompatible)
+	builder_image?:      string @go(BuilderImage)
+	assume_yes?:         bool   @go(AssumeYes)
+	disposable?:         bool   @go(Disposable)
+	lifecycle?:          string @go(Lifecycle)
+}
+
+// #DeployAddReply is the "deploy-add" host-builder reply — empty; the add prints its
+// own progress + dry-run output to the shared stdio (the compiled-in plugin's
+// HostBuild runs in charly's own process) and signals failure via the error return.
+#DeployAddReply: {}
+
+// #DeployDelRequest carries the `charly bundle del` command flags. The plugin's
+// `charly bundle del` forwards these to HostBuild("deploy-del"); the host runs the
+// existing del orchestration VERBATIM (resolveDelNode → ResolveTarget → Del,
+// replaying the recorded ReverseOps). The live ReverseRunner is NOT carried — a
+// programmatic teardown that needs a specific runner (the vm guest-SSH reverse
+// runner) is a host-side path, resolved during dispatch, never authored on the CLI.
+#DeployDelRequest: {
+	name!:              string @go(Name)
+	assume_yes?:        bool   @go(AssumeYes)
+	keep_repo_changes?: bool   @go(KeepRepoChanges)
+	keep_services?:     bool   @go(KeepServices)
+	keep_image?:        bool   @go(KeepImage)
+	dry_run?:           bool   @go(DryRun)
+}
+
+// #DeployDelReply is the "deploy-del" host-builder reply — empty (prints host-side,
+// errors via the return).
+#DeployDelReply: {}
+
+// #DeployFromBoxRequest carries the `charly bundle from-box` command flags (the
+// former BundleFromBoxCmd) — a SOURCE-LESS deploy driven entirely by an image's
+// baked OCI labels. The plugin forwards these to HostBuild("deploy-from-box"); the
+// host runs the existing from-box orchestration VERBATIM (the project-free runConfig
+// core via BoxConfigSetupCmd, or the K8s Kustomize path with --cluster).
+#DeployFromBoxRequest: {
+	ref!:       string @go(Ref)
+	name?:      string @go(Name)
+	instance?:  string @go(Instance)
+	env?: [...string] @go(Env)
+	port?: [...string] @go(Port)
+	cluster?:   string @go(Cluster)
+	namespace?: string @go(Namespace)
+}
+
+// #DeployFromBoxReply is the "deploy-from-box" host-builder reply — empty (prints
+// host-side, errors via the return).
+#DeployFromBoxReply: {}
+
+// #DeployConfigRequest carries a `charly bundle` CONFIG-MANAGEMENT subcommand
+// (show/export/import/reset/status) — the per-host deploy-overlay read/write ops
+// that consult LoadUnified (a core Mechanism the plugin cannot import). Op selects
+// the subcommand; the remaining fields carry that subcommand's authored inputs. The
+// plugin forwards these to HostBuild("deploy-config"); the host runs the existing
+// handler VERBATIM, printing to the shared stdio. (`path` is NOT here — it resolves
+// via kit.DefaultDeployConfigPath entirely plugin-side, no seam.)
+#DeployConfigRequest: {
+	op!:        string @go(Op) // show | export | import | reset | status
+	box?:       string @go(Box)
+	instance?:  string @go(Instance)
+	boxes?: [...string] @go(Boxes)
+	output?:    string @go(Output)
+	all?:       bool   @go(All)
+	files?: [...string] @go(Files)
+	replace?:   bool   @go(Replace)
+}
+
+// #DeployConfigReply is the "deploy-config" host-builder reply — empty (the handler
+// prints its output to the shared stdio, errors via the return).
+#DeployConfigReply: {}
