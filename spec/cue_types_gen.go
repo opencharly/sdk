@@ -673,59 +673,6 @@ type BuildResolveBox struct {
 	MergeMaxTotalMB int64 `yaml:"merge_max_total_mb,omitempty" json:"merge_max_total_mb,omitempty"`
 }
 
-// #BuildResolveReply is the host-resolved drive-model the candy's podman drive
-// consumes. Order is the filtered SEQUENTIAL build order (non-empty for a
-// `charly box build <name…>` selection); Levels is the level-PARALLEL order (the
-// full build) — exactly one is set, mirroring buildImages' two branches. Boxes
-// carries the per-image descriptors keyed by Name. Jobs/PodmanJobs/Cache are the
-// resolved build tunables (from Config.Defaults + flags/env). KeepImages rides
-// back for the host-side retention post-step. Written is the generate-only
-// result (the emitted Containerfile paths). Error carries a build FAILURE (the
-// reply-error convention; the RPC itself succeeds).
-// TRANSITIONAL — the shape below is T-P14a's finalized #MergeRequest/#MergeReply
-// (sdk PR opencharly/sdk#28, schema/oci.cue). It is DUPLICATED here ONLY so P8b
-// compiles + verifies BEFORE #28 merges into sdk main. When #28 lands, this sdk
-// branch REBASES onto it, these two defs are DELETED from buildresolve.cue, and the
-// consumers import spec.MergeRequest/MergeReply from oci.cue (same shape → zero code
-// change) — team-lead's "one home = P14a's oci.cue" ruling. Do NOT add fields here;
-// coordinate any change with T-P14a's oci.cue.
-//
-// The layer-merge seam: the candy's drive gates on a box's MergeAuto and, when set,
-// asks the host to merge the just-built image by REF via HostBuild("merge") — the
-// transitional seam that swaps to InvokeProvider("verb","oci",OpMerge,…) when P14a
-// lands (and this seam + charly/mergeImageRef delete). ImageRef is the resolved
-// <registry>/<name>:<tag> (P14a's pure engine cannot resolve box config → the candy
-// passes the resolved ref + Engine + the per-box MaxMB/MaxTotalMB from the
-// build-resolve model, 0 → host defaults). Class-generic action noun.
-type MergeRequest struct {
-	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
-
-	MaxMB int64 `yaml:"max_mb,omitempty" json:"max_mb,omitempty"`
-
-	MaxTotalMB int64 `yaml:"max_total_mb,omitempty" json:"max_total_mb,omitempty"`
-
-	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
-
-	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
-}
-
-// #MergeReply (TRANSITIONAL, == P14a's) — LayersBefore/LayersAfter give the
-// merged/kept summary (merged = before−after) for the drive log; Skipped when the
-// image was too large; Error carries a per-merge FAILURE (reply-error convention;
-// the image stays functional-but-unmerged, e.g. the known podman-load EEXIST case);
-// Notes carry any diagnostic lines.
-type MergeReply struct {
-	LayersBefore int64 `yaml:"layers_before,omitempty" json:"layers_before,omitempty"`
-
-	LayersAfter int64 `yaml:"layers_after,omitempty" json:"layers_after,omitempty"`
-
-	Skipped bool `yaml:"skipped,omitempty" json:"skipped,omitempty"`
-
-	Error string `yaml:"error,omitempty" json:"error,omitempty"`
-
-	Notes []string `yaml:"notes,omitempty" json:"notes,omitempty"`
-}
-
 type BuildResolveReply struct {
 	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
 

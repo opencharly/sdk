@@ -71,41 +71,10 @@
 // back for the host-side retention post-step. Written is the generate-only
 // result (the emitted Containerfile paths). Error carries a build FAILURE (the
 // reply-error convention; the RPC itself succeeds).
-// TRANSITIONAL — the shape below is T-P14a's finalized #MergeRequest/#MergeReply
-// (sdk PR opencharly/sdk#28, schema/oci.cue). It is DUPLICATED here ONLY so P8b
-// compiles + verifies BEFORE #28 merges into sdk main. When #28 lands, this sdk
-// branch REBASES onto it, these two defs are DELETED from buildresolve.cue, and the
-// consumers import spec.MergeRequest/MergeReply from oci.cue (same shape → zero code
-// change) — team-lead's "one home = P14a's oci.cue" ruling. Do NOT add fields here;
-// coordinate any change with T-P14a's oci.cue.
-//
-// The layer-merge seam: the candy's drive gates on a box's MergeAuto and, when set,
-// asks the host to merge the just-built image by REF via HostBuild("merge") — the
-// transitional seam that swaps to InvokeProvider("verb","oci",OpMerge,…) when P14a
-// lands (and this seam + charly/mergeImageRef delete). ImageRef is the resolved
-// <registry>/<name>:<tag> (P14a's pure engine cannot resolve box config → the candy
-// passes the resolved ref + Engine + the per-box MaxMB/MaxTotalMB from the
-// build-resolve model, 0 → host defaults). Class-generic action noun.
-#MergeRequest: {
-	image_ref!:    string @go(ImageRef)
-	max_mb?:       int    @go(MaxMB)
-	max_total_mb?: int    @go(MaxTotalMB)
-	engine?:       string @go(Engine)
-	dry_run?:      bool   @go(DryRun)
-}
-
-// #MergeReply (TRANSITIONAL, == P14a's) — LayersBefore/LayersAfter give the
-// merged/kept summary (merged = before−after) for the drive log; Skipped when the
-// image was too large; Error carries a per-merge FAILURE (reply-error convention;
-// the image stays functional-but-unmerged, e.g. the known podman-load EEXIST case);
-// Notes carry any diagnostic lines.
-#MergeReply: {
-	layers_before?: int    @go(LayersBefore)
-	layers_after?:  int    @go(LayersAfter)
-	skipped?:       bool   @go(Skipped)
-	error?:         string @go(Error)
-	notes?: [...string] @go(Notes)
-}
+// The layer-merge seam types (#MergeRequest / #MergeReply) live in schema/oci.cue
+// (owned by P14a's OCI cutover) — the ONE home (team-lead ruling). The candy's
+// HostBuild("merge") seam + charly/mergeImageRef import spec.MergeRequest/MergeReply
+// from there; this file defines only the BuildResolve* family.
 
 #BuildResolveReply: {
 	engine?:      string @go(Engine)
