@@ -3,6 +3,7 @@ package kit
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -100,6 +101,20 @@ func setNodeByPath(node *yaml.Node, parts []string, newValue *yaml.Node) error {
 		newChild,
 	)
 	return setNodeByPath(newChild, rest, newValue)
+}
+
+// SaveYAMLNodeFile marshals a node tree back to an arbitrary file path, preserving comments + key
+// order (the yaml.v3 Node round-trip). Shared by the scaffold/authoring engine (kit.AddBox) and
+// charly core's box add-candy/rm-candy verbs — ONE marshal-to-file home (R3).
+func SaveYAMLNodeFile(path string, root *yaml.Node) error {
+	data, err := yaml.Marshal(root)
+	if err != nil {
+		return fmt.Errorf("marshalling %s: %w", filepath.Base(path), err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 // MappingChild looks up a key in a mapping node. Returns the value node or nil if missing. yaml mapping
