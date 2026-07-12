@@ -589,16 +589,18 @@ type BuilderResolveInput struct {
 	Inline           bool     `json:"inline,omitempty"`
 }
 
-// BuildRequest is the BUILD-ENGINE DISPATCH envelope (F10 HostBuild seam): what `charly box
-// build` / `charly box generate` marshal into a build:box / build:generate plugin's Invoke
-// (op.Params), which the plugin forwards VERBATIM to the host via Executor.HostBuild. The heavy
-// engine (Generator / OCITarget / the runtime Candy graph) STAYS host-side in-proc — only this
-// small envelope crosses the seam. Everything the engine reads (Config / ResolvedBox / Candy) is
-// reconstructed HOST-SIDE from Dir inside the registered host-builder (exactly as
-// pod_deploy_lifecycle re-runs NewGenerator(dir,…)); the fields here are the CLI-supplied inputs
-// that are NOT reconstructable from Dir alone. The generate path reads only Boxes/Tag/Dir/
-// IncludeDisabled; the build path additionally reads DevLocalPkg + the buildImages knobs
-// (Push/Platform/Cache/NoCache/Jobs/PodmanJobs).
+// BuildRequest is the CLI→DRIVE envelope: what `charly box build` / `charly box generate`
+// marshal into the compiled-in candy/plugin-build's Invoke (op.Params). P8b moved the podman
+// DRIVE (build/push/merge loop, per-image lock) INTO the candy — reversing the P8 "permanent
+// facade"; the candy consumes this envelope, then reaches the host RESOLVE/RENDER seam via
+// HostBuild("build-resolve", BuildResolveRequest) for the loader-render drive-model. The RESOLVE
+// (loader + Containerfile render + privileged builder-bootstrap) STAYS host-side — Config /
+// ResolvedBox / the runtime Candy graph are reconstructed from Dir inside the build-resolve
+// host-builder (exactly as pod_deploy_lifecycle re-runs NewGenerator(dir,…)) because a candy
+// importing only sdk cannot run the loader. The fields here are the CLI-supplied inputs not
+// reconstructable from Dir alone: the generate path reads Boxes/Tag/Dir/IncludeDisabled; the build
+// path additionally reads DevLocalPkg + the drive knobs (Push/Platform/Cache/NoCache/Jobs/PodmanJobs).
+// They map 1:1 into BuildResolveRequest (+ GenerateOnly) for the seam.
 type BuildRequest struct {
 	Boxes           []string `json:"boxes,omitempty"`            // positional box selection ("" → all enabled)
 	Tag             string   `json:"tag,omitempty"`              // --tag override (empty → CalVer)

@@ -617,6 +617,141 @@ type Copy struct {
 	Chown bool `yaml:"chown,omitempty" json:"chown,omitempty"`
 }
 
+// #BuildResolveRequest carries the CLI-supplied build inputs (the former
+// BuildRequest fields) the host cannot reconstruct from Dir alone. The host runs
+// NewGenerator (loader) + Generate (render → .build/), the privileged
+// builder-bootstrap, and the builder-image ensure host-side, then returns the
+// drive-model. GenerateOnly (the `charly box generate` path) renders + returns
+// the written Containerfile paths WITHOUT bootstrap/ensure/build-prep.
+type BuildResolveRequest struct {
+	Boxes []string `yaml:"boxes,omitempty" json:"boxes,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	IncludeDisabled bool `yaml:"include_disabled,omitempty" json:"include_disabled,omitempty"`
+
+	DevLocalPkg bool `yaml:"dev_local_pkg,omitempty" json:"dev_local_pkg,omitempty"`
+
+	Push bool `yaml:"push,omitempty" json:"push,omitempty"`
+
+	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"`
+
+	Cache string `yaml:"cache,omitempty" json:"cache,omitempty"`
+
+	NoCache bool `yaml:"no_cache,omitempty" json:"no_cache,omitempty"`
+
+	Jobs int64 `yaml:"jobs,omitempty" json:"jobs,omitempty"`
+
+	PodmanJobs int64 `yaml:"podman_jobs,omitempty" json:"podman_jobs,omitempty"`
+
+	GenerateOnly bool `yaml:"generate_only,omitempty" json:"generate_only,omitempty"`
+}
+
+// #BuildResolveBox is one image's drive descriptor: the tag to build, the
+// rendered Containerfile CONTENT (piped to `podman build -f -` — shipped in the
+// reply, NOT read from disk, to preserve the race-safety vs a concurrent
+// generate overwrite), and whether merge.auto fires for it (the candy gates the
+// HostBuild("merge") call on this bool; the host merge seam resolves the size
+// knobs from config).
+type BuildResolveBox struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	FullTag string `yaml:"full_tag,omitempty" json:"full_tag,omitempty"`
+
+	Containerfile string `yaml:"containerfile,omitempty" json:"containerfile,omitempty"`
+
+	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
+
+	Platforms []string `yaml:"platforms,omitempty" json:"platforms,omitempty"`
+
+	MergeAuto bool `yaml:"merge_auto,omitempty" json:"merge_auto,omitempty"`
+
+	MergeMaxMB int64 `yaml:"merge_max_mb,omitempty" json:"merge_max_mb,omitempty"`
+
+	MergeMaxTotalMB int64 `yaml:"merge_max_total_mb,omitempty" json:"merge_max_total_mb,omitempty"`
+}
+
+// #BuildResolveReply is the host-resolved drive-model the candy's podman drive
+// consumes. Order is the filtered SEQUENTIAL build order (non-empty for a
+// `charly box build <name…>` selection); Levels is the level-PARALLEL order (the
+// full build) — exactly one is set, mirroring buildImages' two branches. Boxes
+// carries the per-image descriptors keyed by Name. Jobs/PodmanJobs/Cache are the
+// resolved build tunables (from Config.Defaults + flags/env). KeepImages rides
+// back for the host-side retention post-step. Written is the generate-only
+// result (the emitted Containerfile paths). Error carries a build FAILURE (the
+// reply-error convention; the RPC itself succeeds).
+// TRANSITIONAL — the shape below is T-P14a's finalized #MergeRequest/#MergeReply
+// (sdk PR opencharly/sdk#28, schema/oci.cue). It is DUPLICATED here ONLY so P8b
+// compiles + verifies BEFORE #28 merges into sdk main. When #28 lands, this sdk
+// branch REBASES onto it, these two defs are DELETED from buildresolve.cue, and the
+// consumers import spec.MergeRequest/MergeReply from oci.cue (same shape → zero code
+// change) — team-lead's "one home = P14a's oci.cue" ruling. Do NOT add fields here;
+// coordinate any change with T-P14a's oci.cue.
+//
+// The layer-merge seam: the candy's drive gates on a box's MergeAuto and, when set,
+// asks the host to merge the just-built image by REF via HostBuild("merge") — the
+// transitional seam that swaps to InvokeProvider("verb","oci",OpMerge,…) when P14a
+// lands (and this seam + charly/mergeImageRef delete). ImageRef is the resolved
+// <registry>/<name>:<tag> (P14a's pure engine cannot resolve box config → the candy
+// passes the resolved ref + Engine + the per-box MaxMB/MaxTotalMB from the
+// build-resolve model, 0 → host defaults). Class-generic action noun.
+type MergeRequest struct {
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
+
+	MaxMB int64 `yaml:"max_mb,omitempty" json:"max_mb,omitempty"`
+
+	MaxTotalMB int64 `yaml:"max_total_mb,omitempty" json:"max_total_mb,omitempty"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+}
+
+// #MergeReply (TRANSITIONAL, == P14a's) — LayersBefore/LayersAfter give the
+// merged/kept summary (merged = before−after) for the drive log; Skipped when the
+// image was too large; Error carries a per-merge FAILURE (reply-error convention;
+// the image stays functional-but-unmerged, e.g. the known podman-load EEXIST case);
+// Notes carry any diagnostic lines.
+type MergeReply struct {
+	LayersBefore int64 `yaml:"layers_before,omitempty" json:"layers_before,omitempty"`
+
+	LayersAfter int64 `yaml:"layers_after,omitempty" json:"layers_after,omitempty"`
+
+	Skipped bool `yaml:"skipped,omitempty" json:"skipped,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+
+	Notes []string `yaml:"notes,omitempty" json:"notes,omitempty"`
+}
+
+type BuildResolveReply struct {
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	EngineName string `yaml:"engine_name,omitempty" json:"engine_name,omitempty"`
+
+	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"`
+
+	Order []string `yaml:"order,omitempty" json:"order,omitempty"`
+
+	Levels [][]string `yaml:"levels,omitempty" json:"levels,omitempty"`
+
+	Boxes []BuildResolveBox `yaml:"boxes,omitempty" json:"boxes,omitempty"`
+
+	Jobs int64 `yaml:"jobs,omitempty" json:"jobs,omitempty"`
+
+	PodmanJobs int64 `yaml:"podman_jobs,omitempty" json:"podman_jobs,omitempty"`
+
+	Cache string `yaml:"cache,omitempty" json:"cache,omitempty"`
+
+	KeepImages int64 `yaml:"keep_images,omitempty" json:"keep_images,omitempty"`
+
+	Written []string `yaml:"written,omitempty" json:"written,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
 type Candy struct {
 	// --- identity (required: ADE mandates version+name+description+plan) ---
 	Version CalVer `yaml:"version,omitempty" json:"version"`

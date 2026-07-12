@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -54,6 +55,38 @@ func AcquireFileLock(path string, blocking bool) (release func() error, err erro
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		return f.Close()
 	}, nil
+}
+
+// ImageBuildLockPath is the pure per-image build-lock key derivation: the
+// user-cache lock file for an image ref, with the :tag stripped (preserving any
+// registry:port colon) so every CalVer build of one image shares ONE lock — a
+// shared intermediate built COLD once while distinct leaves fan out in parallel.
+// Shared across the module boundary (R3) so charly core's acquireImageBuildLock
+// AND the compiled-in candy/plugin-build DRIVE derive the byte-identical path.
+func ImageBuildLockPath(fullTag string) (string, error) {
+	ref := fullTag
+	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
+		ref = ref[:i] // strip :<tag>, preserving any registry:port colon
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("image build lock: %w", err)
+	}
+	dir := filepath.Join(cache, "charly", "locks")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("image build lock dir: %w", err)
+	}
+	sum := sha256.Sum256([]byte(ref))
+	return filepath.Join(dir, "image-"+hex.EncodeToString(sum[:8])+".lock"), nil
+}
+
+// AcquireImageBuildLock takes the blocking per-image build lock for fullTag.
+func AcquireImageBuildLock(fullTag string) (func() error, error) {
+	path, err := ImageBuildLockPath(fullTag)
+	if err != nil {
+		return nil, err
+	}
+	return AcquireFileLock(path, true)
 }
 
 // AcquireLocalPkgBuildLock serializes concurrent localpkg builds sharing a source dir.
