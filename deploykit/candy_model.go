@@ -31,6 +31,7 @@ type CandyModel interface {
 	GetIncludedCandy() []CandyRef // candy: composition refs (splicing)
 	GetRequire() []CandyRef       // require: deps (ordering + resolution)
 	HasContent() bool
+	HasInstallFiles() bool // at least one install file (drives pixi-bound detection)
 	PixiManifest() string
 	GetHasPackageJson() bool
 	GetHasCargoToml() bool
