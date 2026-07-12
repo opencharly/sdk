@@ -617,6 +617,88 @@ type Copy struct {
 	Chown bool `yaml:"chown,omitempty" json:"chown,omitempty"`
 }
 
+// #BuildResolveRequest carries the CLI-supplied build inputs (the former
+// BuildRequest fields) the host cannot reconstruct from Dir alone. The host runs
+// NewGenerator (loader) + Generate (render → .build/), the privileged
+// builder-bootstrap, and the builder-image ensure host-side, then returns the
+// drive-model. GenerateOnly (the `charly box generate` path) renders + returns
+// the written Containerfile paths WITHOUT bootstrap/ensure/build-prep.
+type BuildResolveRequest struct {
+	Boxes []string `yaml:"boxes,omitempty" json:"boxes,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	IncludeDisabled bool `yaml:"include_disabled,omitempty" json:"include_disabled,omitempty"`
+
+	DevLocalPkg bool `yaml:"dev_local_pkg,omitempty" json:"dev_local_pkg,omitempty"`
+
+	Push bool `yaml:"push,omitempty" json:"push,omitempty"`
+
+	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"`
+
+	Cache string `yaml:"cache,omitempty" json:"cache,omitempty"`
+
+	NoCache bool `yaml:"no_cache,omitempty" json:"no_cache,omitempty"`
+
+	Jobs int64 `yaml:"jobs,omitempty" json:"jobs,omitempty"`
+
+	PodmanJobs int64 `yaml:"podman_jobs,omitempty" json:"podman_jobs,omitempty"`
+
+	GenerateOnly bool `yaml:"generate_only,omitempty" json:"generate_only,omitempty"`
+}
+
+// #BuildResolveBox is one image's drive descriptor: the tag to build, the
+// rendered Containerfile CONTENT (piped to `podman build -f -` — shipped in the
+// reply, NOT read from disk, to preserve the race-safety vs a concurrent
+// generate overwrite), and whether merge.auto fires for it (the candy gates the
+// HostBuild("merge") call on this bool; the host merge seam resolves the size
+// knobs from config).
+type BuildResolveBox struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	FullTag string `yaml:"full_tag,omitempty" json:"full_tag,omitempty"`
+
+	Containerfile string `yaml:"containerfile,omitempty" json:"containerfile,omitempty"`
+
+	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
+
+	Platforms []string `yaml:"platforms,omitempty" json:"platforms,omitempty"`
+
+	MergeAuto bool `yaml:"merge_auto,omitempty" json:"merge_auto,omitempty"`
+
+	MergeMaxMB int64 `yaml:"merge_max_mb,omitempty" json:"merge_max_mb,omitempty"`
+
+	MergeMaxTotalMB int64 `yaml:"merge_max_total_mb,omitempty" json:"merge_max_total_mb,omitempty"`
+}
+
+type BuildResolveReply struct {
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	EngineName string `yaml:"engine_name,omitempty" json:"engine_name,omitempty"`
+
+	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"`
+
+	Order []string `yaml:"order,omitempty" json:"order,omitempty"`
+
+	Levels [][]string `yaml:"levels,omitempty" json:"levels,omitempty"`
+
+	Boxes []BuildResolveBox `yaml:"boxes,omitempty" json:"boxes,omitempty"`
+
+	Jobs int64 `yaml:"jobs,omitempty" json:"jobs,omitempty"`
+
+	PodmanJobs int64 `yaml:"podman_jobs,omitempty" json:"podman_jobs,omitempty"`
+
+	Cache string `yaml:"cache,omitempty" json:"cache,omitempty"`
+
+	KeepImages int64 `yaml:"keep_images,omitempty" json:"keep_images,omitempty"`
+
+	Written []string `yaml:"written,omitempty" json:"written,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
 type Candy struct {
 	// --- identity (required: ADE mandates version+name+description+plan) ---
 	Version CalVer `yaml:"version,omitempty" json:"version"`
