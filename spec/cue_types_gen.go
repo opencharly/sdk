@@ -1939,6 +1939,141 @@ type VmBuildRequest struct {
 type VmBuildReply struct {
 }
 
+// #DeployAddRequest carries the `charly bundle add` command flags (the former
+// BundleAddCmd's authored fields). The command:bundle plugin (P13) owns the CLI
+// GRAMMAR but cannot drive the deploy KERNEL — the loader, the InstallPlan
+// compiler, ResolveTarget → externalDeployTarget, and the live-executor
+// composition (which threads host objects that cannot cross the process boundary)
+// are core Mechanisms. So the plugin's `charly bundle add` command is THIN — it
+// forwards these flags to HostBuild("deploy-add"), and the host runs the existing
+// add orchestration VERBATIM (Run → dispatchNode → compile → ResolveTarget → Add),
+// exactly as the box-build engine stayed core behind HostBuild("image") in P8 and
+// the VM-disk engine behind HostBuild("vm-build") in P10. The two per-node internal
+// fields (vmEntity, builderImageOverride) are NOT carried — the host derives them
+// during dispatch.
+type DeployAddRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Ref string `yaml:"ref,omitempty" json:"ref,omitempty"`
+
+	AddCandy []string `yaml:"add_candy,omitempty" json:"add_candy,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+
+	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
+
+	Format string `yaml:"format,omitempty" json:"format,omitempty"`
+
+	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
+
+	Verify bool `yaml:"verify,omitempty" json:"verify,omitempty"`
+
+	WithServices bool `yaml:"with_services,omitempty" json:"with_services,omitempty"`
+
+	AllowRepoChanges bool `yaml:"allow_repo_changes,omitempty" json:"allow_repo_changes,omitempty"`
+
+	AllowRootTasks bool `yaml:"allow_root_tasks,omitempty" json:"allow_root_tasks,omitempty"`
+
+	SkipIncompatible bool `yaml:"skip_incompatible,omitempty" json:"skip_incompatible,omitempty"`
+
+	BuilderImage string `yaml:"builder_image,omitempty" json:"builder_image,omitempty"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	Disposable bool `yaml:"disposable,omitempty" json:"disposable,omitempty"`
+
+	Lifecycle string `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+}
+
+// #DeployAddReply is the "deploy-add" host-builder reply — empty; the add prints its
+// own progress + dry-run output to the shared stdio (the compiled-in plugin's
+// HostBuild runs in charly's own process) and signals failure via the error return.
+type DeployAddReply struct {
+}
+
+// #DeployDelRequest carries the `charly bundle del` command flags. The plugin's
+// `charly bundle del` forwards these to HostBuild("deploy-del"); the host runs the
+// existing del orchestration VERBATIM (resolveDelNode → ResolveTarget → Del,
+// replaying the recorded ReverseOps). The live ReverseRunner is NOT carried — a
+// programmatic teardown that needs a specific runner (the vm guest-SSH reverse
+// runner) is a host-side path, resolved during dispatch, never authored on the CLI.
+type DeployDelRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	KeepRepoChanges bool `yaml:"keep_repo_changes,omitempty" json:"keep_repo_changes,omitempty"`
+
+	KeepServices bool `yaml:"keep_services,omitempty" json:"keep_services,omitempty"`
+
+	KeepImage bool `yaml:"keep_image,omitempty" json:"keep_image,omitempty"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+}
+
+// #DeployDelReply is the "deploy-del" host-builder reply — empty (prints host-side,
+// errors via the return).
+type DeployDelReply struct {
+}
+
+// #DeployFromBoxRequest carries the `charly bundle from-box` command flags (the
+// former BundleFromBoxCmd) — a SOURCE-LESS deploy driven entirely by an image's
+// baked OCI labels. The plugin forwards these to HostBuild("deploy-from-box"); the
+// host runs the existing from-box orchestration VERBATIM (the project-free runConfig
+// core via BoxConfigSetupCmd, or the K8s Kustomize path with --cluster).
+type DeployFromBoxRequest struct {
+	Ref string `yaml:"ref,omitempty" json:"ref"`
+
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Port []string `yaml:"port,omitempty" json:"port,omitempty"`
+
+	Cluster string `yaml:"cluster,omitempty" json:"cluster,omitempty"`
+
+	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// #DeployFromBoxReply is the "deploy-from-box" host-builder reply — empty (prints
+// host-side, errors via the return).
+type DeployFromBoxReply struct {
+}
+
+// #DeployConfigRequest carries a `charly bundle` CONFIG-MANAGEMENT subcommand
+// (show/export/import/reset/status) — the per-host deploy-overlay read/write ops
+// that consult LoadUnified (a core Mechanism the plugin cannot import). Op selects
+// the subcommand; the remaining fields carry that subcommand's authored inputs. The
+// plugin forwards these to HostBuild("deploy-config"); the host runs the existing
+// handler VERBATIM, printing to the shared stdio. (`path` is NOT here — it resolves
+// via kit.DefaultDeployConfigPath entirely plugin-side, no seam.)
+type DeployConfigRequest struct {
+	Op string `yaml:"op,omitempty" json:"op"`
+
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Boxes []string `yaml:"boxes,omitempty" json:"boxes,omitempty"`
+
+	Output string `yaml:"output,omitempty" json:"output,omitempty"`
+
+	All bool `yaml:"all,omitempty" json:"all,omitempty"`
+
+	Files []string `yaml:"files,omitempty" json:"files,omitempty"`
+
+	Replace bool `yaml:"replace,omitempty" json:"replace,omitempty"`
+}
+
+// #DeployConfigReply is the "deploy-config" host-builder reply — empty (the handler
+// prints its output to the shared stdio, errors via the return).
+type DeployConfigReply struct {
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
