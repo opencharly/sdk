@@ -1697,6 +1697,60 @@ type Local struct {
 	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
 }
 
+// #MergeRequest — the host resolves the box (image ref + merge limits + engine) and
+// hands the OCI plugin everything it needs to run the go-containerregistry layer
+// merge, so the plugin never imports charly core config-loading.
+type MergeRequest struct {
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
+
+	MaxMB int `yaml:"max_mb,omitempty" json:"max_mb"`
+
+	MaxTotalMB int `yaml:"max_total_mb,omitempty" json:"max_total_mb"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+}
+
+// #MergeReply — the OCI plugin's merge outcome. layers_before/layers_after report the
+// layer-count reduction; skipped is true when the image was too large or had nothing
+// to merge; error carries a per-merge failure (the reply-error convention — e.g. the
+// known podman-load EEXIST case — distinct from an infra Go error on Invoke); notes
+// carries the human progress lines the host prints.
+type MergeReply struct {
+	LayersBefore int `yaml:"layers_before,omitempty" json:"layers_before,omitempty"`
+
+	LayersAfter int `yaml:"layers_after,omitempty" json:"layers_after,omitempty"`
+
+	Skipped bool `yaml:"skipped,omitempty" json:"skipped,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+
+	Notes []string `yaml:"notes,omitempty" json:"notes,omitempty"`
+}
+
+// #ImageUserInput — inspect a remote image's /etc/passwd for the user with the given
+// uid (the build engine's base-image adopt-user probe).
+type ImageUserInput struct {
+	Ref string `yaml:"ref,omitempty" json:"ref"`
+
+	UID int `yaml:"uid,omitempty" json:"uid"`
+}
+
+// #UserInfo — one /etc/passwd entry (name:uid:gid:...:home). Empty reply (found=false)
+// when no user with the requested uid exists in the image.
+type UserInfo struct {
+	Found bool `yaml:"found,omitempty" json:"found"`
+
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	UID int `yaml:"uid,omitempty" json:"uid,omitempty"`
+
+	GID int `yaml:"gid,omitempty" json:"gid,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+}
+
 // #ParsedNode — one decomposed reserved-word node: its name, kind discriminator, the opaque
 // entity body (the complete kind value as JSON, materialized per-kind by the host), and any
 // sub-entity member children (deployable kinds only). The recursive Children mirror the
@@ -1883,6 +1937,71 @@ type VmBuildRequest struct {
 // #VmBuildReply is the "vm-build" host-builder reply — empty; the build prints its
 // own progress to the shared stdio and signals failure via the error return.
 type VmBuildReply struct {
+}
+
+// #PortMapping — one published port's structured runtime mapping (host IP/port ->
+// container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
+// consume it without re-parsing.
+type PortMapping struct {
+	HostIP string `yaml:"host_ip,omitempty" json:"host_ip,omitempty"`
+
+	HostPort int `yaml:"host_port,omitempty" json:"host_port"`
+
+	CtrPort int `yaml:"container_port,omitempty" json:"container_port"`
+
+	Proto string `yaml:"protocol,omitempty" json:"protocol"`
+}
+
+// #ToolStatus — one live tool-probe result row. status "-" means the tool is not
+// configured in this deployment; it is filtered before render.
+type ToolStatus struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Status string `yaml:"status,omitempty" json:"status"`
+
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+
+	Detail string `yaml:"detail,omitempty" json:"detail,omitempty"`
+}
+
+// #DeploymentStatus — the rendered shape for the table + JSON outputs across every
+// deployment substrate (pod / vm / k8s / local / android). kind discriminates the
+// substrate; nested carries multi-hop children (RECURSIVE self-reference, populated
+// by the nested overlay); source records provenance (libvirt|ledger|adb|tree|podman).
+type DeploymentStatus struct {
+	Kind SubstrateKind `yaml:"kind,omitempty" json:"kind"`
+
+	Image string `yaml:"image,omitempty" json:"image"`
+
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status"`
+
+	Uptime string `yaml:"uptime,omitempty" json:"uptime,omitempty"`
+
+	Container string `yaml:"container,omitempty" json:"container"`
+
+	Ports []PortMapping `yaml:"ports,omitempty" json:"ports,omitempty"`
+
+	Devices []string `yaml:"devices,omitempty" json:"devices,omitempty"`
+
+	Tools []ToolStatus `yaml:"tools,omitempty" json:"tools,omitempty"`
+
+	Volumes []string `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+
+	Network string `yaml:"network,omitempty" json:"network,omitempty"`
+
+	Tunnel string `yaml:"tunnel,omitempty" json:"tunnel,omitempty"`
+
+	Secrets []string `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+
+	RunMode string `yaml:"run_mode,omitempty" json:"run_mode"`
+
+	Nested []*DeploymentStatus `yaml:"nested,omitempty" json:"nested,omitempty"`
+
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
 type Vm struct {
