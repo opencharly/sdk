@@ -2166,6 +2166,53 @@ type ConfigResolveReply struct {
 	VmEntities []string `yaml:"vm_entities,omitempty" json:"vm_entities,omitempty"`
 }
 
+// #CheckConfigRequest asks the host for the AI-harness's project-config PROJECTION for one entity
+// (P12 Wave-2). A DEDICATED check-family seam (a sibling of #CheckBedRequest — NOT bloating the
+// generic #ConfigResolveReply with check-specifics): the compiled-in command:check harness cannot
+// LoadUnified, so the host resolves the check-project reads (CheckBeds / ResolveIterateSandbox /
+// ScanCandy / ExpandPlanIncludes + the kind:agent catalog) and ships the projection back. Class-
+// generic action noun "check-config" (F11 — never a substrate word). TRANSITIONAL: dies at K1
+// (post-loaderkit the plugin self-loads the project). Retention (keep_check_runs) is deliberately
+// NOT here — it rides the existing HostBuild("retention") seam (R3, the landed engine).
+type CheckConfigRequest struct {
+	Entity string `yaml:"entity,omitempty" json:"entity"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+}
+
+// #CheckConfigReply is the resolved check-project projection. IsBed/HasNode/HasIterate classify
+// `charly check run <name>` into the deterministic bed path vs the AI iterate loop (the dispatcher's
+// `(!HasNode || !HasIterate) && IsBed` test — HasIterate is the discriminator: an iterate entity is
+// ALSO a bed). SandboxKind/SandboxName are ResolveIterateSandbox's result ("pod"|"vm"|"host");
+// PodTargetDisposable is scorePodTargetEntry().IsDisposable() (the per-run pod-restart gate). The
+// iterate orchestration inputs populate only for an iterate entity: IterateJSON is the resolved
+// *IterateConfig (opaque hand-written runtime type, the VmJSON RawBody-envelope pattern), Plan is the
+// include-expanded scored plan (ExpandPlanIncludes over the project candies), ReadinessJSON is the
+// loadedReadiness() cap set the bed-runner's stepReady poll uses (opaque; a kit-default fallback
+// covers its absence). AgentBodies is the opaque kind:agent catalog (uf.PluginKinds["agent"]) the
+// harness decodes to pick the AI CLI. Fields absent for a non-iterate entity / no-project stay zero.
+type CheckConfigReply struct {
+	IsBed bool `yaml:"is_bed,omitempty" json:"is_bed,omitempty"`
+
+	HasNode bool `yaml:"has_node,omitempty" json:"has_node,omitempty"`
+
+	HasIterate bool `yaml:"has_iterate,omitempty" json:"has_iterate,omitempty"`
+
+	SandboxKind string `yaml:"sandbox_kind,omitempty" json:"sandbox_kind,omitempty"`
+
+	SandboxName string `yaml:"sandbox_name,omitempty" json:"sandbox_name,omitempty"`
+
+	PodTargetDisposable bool `yaml:"pod_target_disposable,omitempty" json:"pod_target_disposable,omitempty"`
+
+	IterateJSON RawBody `yaml:"iterate_json,omitempty" json:"iterate_json,omitempty"`
+
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	ReadinessJSON RawBody `yaml:"readiness_json,omitempty" json:"readiness_json,omitempty"`
+
+	AgentBodies map[string]RawBody `yaml:"agent_bodies,omitempty" json:"agent_bodies,omitempty"`
+}
+
 // #ConfigPersistRequest is the WRITE twin of config-resolve: a command plugin
 // asks the host to persist (or remove) an entity's deploy-ledger entry. The host
 // owns the ledger + its blocking acquireDeployConfigLock (a core Mechanism — the
@@ -2383,6 +2430,212 @@ type PodConfigWriteRequest struct {
 // already knows them — used for the byte-parity assertion + teardown provenance).
 type PodConfigWriteReply struct {
 	WrittenPaths []string `yaml:"written_paths,omitempty" json:"written_paths,omitempty"`
+}
+
+// #CheckRunRequest asks the host to RUN a check plan against a venue and return the
+// per-step results (P12). command:check (candy/plugin-check) owns the `charly check`
+// CLI + output formatting, but RUNNING a plan is a composite of core host-serving
+// Mechanisms a plugin (a separate module importing only sdk) cannot perform: the
+// venue→executor construction, the OCI-label plan extraction, and the plan-walk's verb
+// dispatch through the provider registry. So the plugin resolves its intent into this
+// envelope and the host builds the venue + runs the kit-Runner through the in-core
+// registry VerbResolver, exactly as command:vm forwards `vm build` to
+// HostBuild("vm-build"). The action noun "check-run" is class-generic (F11).
+//
+// Mode selects the run shape (discriminated union): "box" — a pure-box run against a
+// disposable container built from Image (RunModeBox, build-scope steps only, the CheckBoxCmd
+// engine); "live" — a full-stack run against a running deployment resolved by Name (the host
+// classifies vm/pod/local/group internally, so the plugin stays kind-blind), applying the
+// Instance/Section/Filter selectors; "feature-box" / "feature-live" — the ADE acceptance run
+// (SkipDeterministicRun) over Image (build scope) or the live deployment Name (deploy scope,
+// the host-side agent grader wiring, gated by NoAgent/Agent/Timeout), scoped by Tag/Strict.
+// Dir is the project dir (empty → the host uses its own cwd), matching LoadUnified(dir).
+// `format` is deliberately NOT a field — the plugin formats the returned Steps itself.
+// run-bed + iterate are NOT seam modes: the plugin drives them over HostBuild("cli").
+//
+// The REPLY is NOT a CUE wire type: it is kit.CheckRunReply (sdk/kit/checkrun_seam.go),
+// which carries []kit.StepResult verbatim so the plugin reuses the kit formatters
+// (FormatStepResults*) with byte-parity across every --format (json marshals the full
+// StepResult incl. *spec.Op). A live `cue exp gengotypes` spike proved kit.CheckResult
+// is genuinely inexpressible in CUE — its engine-internal `DeadlineExceeded bool
+// json:"-"` field has no gengotypes construct — so the reply rides with the engine's
+// hand-written result model in kit (the wire-mandate's spike-proven exception path).
+//
+// P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan the
+// host walks via RunCheckLive (NOT the OCI-baked plan the "live" mode extracts). Its per-step
+// scoring verdicts ride the kit.CheckRunReply.Score field (a *CheckRunResults, below).
+type CheckRunRequest struct {
+	Mode string `yaml:"mode,omitempty" json:"mode"`
+
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	Section string `yaml:"section,omitempty" json:"section,omitempty"`
+
+	Filter []string `yaml:"filter,omitempty" json:"filter,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Strict bool `yaml:"strict,omitempty" json:"strict,omitempty"`
+
+	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
+
+	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+
+	NoAgent bool `yaml:"no_agent,omitempty" json:"no_agent,omitempty"`
+
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+}
+
+// #CheckRunResults / #StepScore / #ScoreSummary — the AI-harness SCORING result model (P12
+// Wave-2). RunCheckLive returns a *CheckRunResults (the scored check:/agent-check: verdicts,
+// keyed by step id for plateau tracking); it doubles as the `charly check box --format yaml`
+// payload the harness scorer parses (ParseCharlyTestOutput). These are plain structs — the
+// gengotypes workhorse — CUE-sourced so BOTH core (RunCheckLive, the "score"-mode reply's
+// Score field) and the relocated plugin scorer import ONE definition (SDD; no alias). Every
+// field mirrors the former hand-written Go tag set: required (!) fields carry no json-omitempty
+// (json wire byte-identical for the seam reply); optional (?) fields carry it. The retag pass
+// adds ,omitempty to every YAML tag uniformly — inert here since ID/Status are always set and a
+// zero Summary block only elides on an empty (0-step) result ParseCharlyTestOutput tolerates.
+type CheckRunResults struct {
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	Step []StepScore `yaml:"step,omitempty" json:"step,omitempty"`
+
+	Summary ScoreSummary `yaml:"summary,omitempty" json:"summary"`
+}
+
+// #StepScore — the scorer's verdict for one check:/agent-check: step, keyed by step id.
+type StepScore struct {
+	ID string `yaml:"id,omitempty" json:"id"`
+
+	Origin string `yaml:"origin,omitempty" json:"origin,omitempty"`
+
+	Text string `yaml:"text,omitempty" json:"text,omitempty"`
+
+	Tag []string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Keyword string `yaml:"keyword,omitempty" json:"keyword,omitempty"`
+
+	Verb string `yaml:"verb,omitempty" json:"verb,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status"`
+
+	SkippedReason string `yaml:"skipped_reason,omitempty" json:"skipped_reason,omitempty"`
+}
+
+// #ScoreSummary — the pass/fail/skip tally block (the former hand-written TestRunSummary). The
+// counts are Go `int` (type=int override — the former hand type; CUE `int` defaults to int64),
+// so every existing ++/compare call site compiles unchanged.
+type ScoreSummary struct {
+	Total int `yaml:"total,omitempty" json:"total"`
+
+	Pass int `yaml:"pass,omitempty" json:"pass"`
+
+	Fail int `yaml:"fail,omitempty" json:"fail"`
+
+	Skip int `yaml:"skip,omitempty" json:"skip"`
+}
+
+// #CheckBedRequest — the transitional check-bed host-session seam (P12 Wave-2, K5-mortal).
+// A compiled-in plugin-check drives the R10 bed sequence over HostBuild("cli"), but the
+// lock/lease/env lifecycle + the node-derived bed shape are core state a separate module
+// cannot hold: this op-discriminated envelope opens/drives/closes a host-side session keyed by
+// Bed. Class-generic action noun "check-bed" (F11 — never a substrate/provider word). The
+// setup/teardown pair are two of its ops; members-up/members-down/wait-ready are the
+// mid-sequence host-coupled helpers (they run AFTER the substrate deploys, so cannot fold into
+// setup, and call saveDeployState+libvirt+SSHExecutor/podman polls with no `charly` verb, so
+// cannot be cli-reentry). DIES at K5 (post-loaderkit the plugin self-orchestrates its own flock
+// via statekit, computes the repo-override itself, and calls the arbiter over InvokeProvider).
+type CheckBedRequest struct {
+	Op string `yaml:"op,omitempty" json:"op"`
+
+	Bed string `yaml:"bed,omitempty" json:"bed"`
+
+	OK bool `yaml:"ok,omitempty" json:"ok,omitempty"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+}
+
+// #CheckBedReply — the setup op returns the BedDescriptor (the node-derived shape the kind-blind
+// plugin drives the sequence from — the substrate analogue of OpPrepareVenue's VenueDescriptor).
+// All other ops return {} (errors ride the host-builder error return). PrereqSkip set ⇒ the bed
+// is a clean SKIP (exit 3): the plugin writes the prereq-skip summary + returns CheckSkippedError,
+// running NO other op (not even teardown — setup acquired nothing on the skip path).
+type CheckBedReply struct {
+	Calver string `yaml:"calver,omitempty" json:"calver,omitempty"`
+
+	LogDir string `yaml:"log_dir,omitempty" json:"log_dir,omitempty"`
+
+	PrereqSkip *CheckBedPrereqSkip `yaml:"prereq_skip,omitempty" json:"prereq_skip,omitempty"`
+
+	// BedDescriptor — the substrate classification + refs the plugin drives from.
+	IsVM bool `yaml:"is_vm,omitempty" json:"is_vm,omitempty"`
+
+	IsLocal bool `yaml:"is_local,omitempty" json:"is_local,omitempty"`
+
+	IsGroup bool `yaml:"is_group,omitempty" json:"is_group,omitempty"`
+
+	IsExternal bool `yaml:"is_external,omitempty" json:"is_external,omitempty"`
+
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+
+	VMTemplate string `yaml:"vm_template,omitempty" json:"vm_template,omitempty"`
+
+	BedDomain string `yaml:"bed_domain,omitempty" json:"bed_domain,omitempty"`
+
+	LocalRef string `yaml:"local_ref,omitempty" json:"local_ref,omitempty"`
+
+	VMDomains []string `yaml:"vm_domains,omitempty" json:"vm_domains,omitempty"`
+
+	CheckLiveRefs []string `yaml:"check_live_refs,omitempty" json:"check_live_refs,omitempty"`
+
+	ChildKeys []string `yaml:"child_keys,omitempty" json:"child_keys,omitempty"`
+
+	// local_child_keys is the HOST-ROOTED (kind:local) subset of child_keys, in the same order. A VM
+	// root deploys ONLY these host-side (mirroring the core deployNestedLocalChildren): a VM's
+	// nested CONTAINER children are deployed in-guest by plugin-deploy-vm's PostApply, so a host-side
+	// re-deploy would be wrong. The pod path uses child_keys (all); the vm path uses local_child_keys.
+	LocalChildKeys []string `yaml:"local_child_keys,omitempty" json:"local_child_keys,omitempty"`
+
+	// members carries each sibling member's build coordinates so a GROUP bed's plugin can drive the
+	// per-member image build loop (`charly vm build <from>` / `charly box build <image>` + check box)
+	// BEFORE the host `members-up` op deploys them (bringUpMembers assumes pre-built images).
+	Members []CheckBedMember `yaml:"members,omitempty" json:"members,omitempty"`
+
+	RunBuild bool `yaml:"run_build,omitempty" json:"run_build,omitempty"`
+
+	RunRuntime bool `yaml:"run_runtime,omitempty" json:"run_runtime,omitempty"`
+
+	RunAgent bool `yaml:"run_agent,omitempty" json:"run_agent,omitempty"`
+}
+
+// #CheckBedPrereqSkip — a bed the host skips for an absent HOST prerequisite (a GPU resource
+// whose vendor has no matching card): a clean SKIP (exit 3), not a failure.
+type CheckBedPrereqSkip struct {
+	Token string `yaml:"token,omitempty" json:"token"`
+
+	Vendor string `yaml:"vendor,omitempty" json:"vendor"`
+
+	Reason string `yaml:"reason,omitempty" json:"reason"`
+}
+
+// #CheckBedMember — one sibling member's build coordinates (the group-bed member build loop).
+type CheckBedMember struct {
+	Key string `yaml:"key,omitempty" json:"key"`
+
+	IsVM bool `yaml:"is_vm,omitempty" json:"is_vm,omitempty"`
+
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+
+	From string `yaml:"from,omitempty" json:"from,omitempty"`
 }
 
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
