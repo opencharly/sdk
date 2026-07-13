@@ -2256,6 +2256,54 @@ type DeploymentStatus struct {
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
+// #StatusSubstrateRequest — the host-collection request the command:status plugin sends over
+// HostBuild("status-substrate"). single=true selects the pod-scoped detail path (box+instance);
+// otherwise the full multi-substrate fan-out (include_all mirrors --all, nested mirrors --nested).
+type StatusSubstrateRequest struct {
+	Single bool `yaml:"single,omitempty" json:"single,omitempty"`
+
+	IncludeAll bool `yaml:"include_all,omitempty" json:"include_all,omitempty"`
+
+	Nested bool `yaml:"nested,omitempty" json:"nested,omitempty"`
+
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #StatusNestedNode — one pre-resolved node of the DECLARED nested tree. The host resolves
+// everything the candy's PURE overlay needs (kind via classifyTarget, the flat-row match keys via
+// [dotted-path, NestedContainerName(dotted-path)], and — when nested was requested — the live
+// probe result), so the candy folds WITHOUT any core type / ResolveDeployChain / classifyTarget.
+// key is the declared child key (the Image cell). match_keys index the flat rows; for a ROOT node
+// key itself is the flat match. RECURSIVE self-reference mirrors the deploy tree nesting.
+type StatusNestedNode struct {
+	Key string `yaml:"key,omitempty" json:"key"`
+
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	Kind SubstrateKind `yaml:"kind,omitempty" json:"kind"`
+
+	HasChildren bool `yaml:"has_children,omitempty" json:"has_children"`
+
+	MatchKeys []string `yaml:"match_keys,omitempty" json:"match_keys,omitempty"`
+
+	LiveStatus string `yaml:"live_status,omitempty" json:"live_status,omitempty"`
+
+	Children []*StatusNestedNode `yaml:"children,omitempty" json:"children,omitempty"`
+}
+
+// #StatusSubstrateReply — the host-collection result: the flat rows (all substrates, already
+// probed), the pre-resolved declared roots (only roots with children matter), and — on the single
+// path — the one detail row. The candy applies the PURE overlay(rows, roots) then renders.
+type StatusSubstrateReply struct {
+	Rows []DeploymentStatus `yaml:"rows,omitempty" json:"rows,omitempty"`
+
+	Roots []StatusNestedNode `yaml:"roots,omitempty" json:"roots,omitempty"`
+
+	Single DeploymentStatus `yaml:"single,omitempty" json:"single,omitempty"`
+}
+
 // #TunnelConfig — the resolved, ready-to-execute tunnel configuration.
 type TunnelConfig struct {
 	// provider — "tailscale" or "cloudflare".
