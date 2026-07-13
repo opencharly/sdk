@@ -35,6 +35,7 @@ type CandyModel interface {
 	PixiManifest() string
 	GetHasPackageJson() bool
 	GetHasCargoToml() bool
+	GetExternalBuilder() string // external_builder: word (the out-of-tree builder plugin this candy selects)
 	HasFormatPackages() bool
 	GetRemote() bool // true if the candy came from a remote repo
 	HasExtract() bool
