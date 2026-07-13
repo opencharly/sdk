@@ -39,6 +39,16 @@ const (
 	OpShell            = "shell"             // lifecycle: open a venue shell
 	OpRebuild          = "rebuild"           // lifecycle: rebuild the venue (charly update)
 
+	// OpConfigWrite is the POD config-WRITE selector (P11, Q1=(a)): the HOST `charly config`
+	// command resolves the full QuadletConfig + the host-side target paths and Invokes the
+	// deploy:pod plugin's OpConfigWrite with a spec.PodConfigWriteRequest; the plugin renders the
+	// .container/.pod/sidecar/tunnel file CONTENTS (deploykit.GenerateQuadlet + the pod/sidecar/
+	// tunnel generators) and os.WriteFiles them at the exact modes (same-host, compiled-in),
+	// returning the written paths. RESOLVE + host side-effects (secret provisioning, saveDeployState,
+	// enc-mount, data-seed, systemctl) stay in the host command — the plugin owns only the
+	// config-WRITE (Ruling C). Distinct from the venue-lifecycle Ops: host-initiated, not a deploy.
+	OpConfigWrite = "config-write"
+
 	// OpPreresolve is the generalized host-side deploy preresolver (F6): a substrate plugin
 	// declares a preresolve step the host runs BEFORE apply, returning the opaque JSON the host
 	// ships in DeployVenue.Substrate (the wire-backed generalization of the in-core k8s/android

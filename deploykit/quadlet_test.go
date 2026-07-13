@@ -1,0 +1,675 @@
+package deploykit
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/sdk/vmshared"
+)
+
+func quadletContainsLine(content, line string) bool {
+	for _, l := range strings.Split(content, "\n") {
+		if l == line {
+			return true
+		}
+	}
+	return false
+}
+
+// Golden assertions ported from charly/security_test.go — the relocated
+// GenerateQuadlet must reproduce them byte-for-byte (S4 parity).
+func TestGenerateQuadletWithMemoryCaps(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:  "selkies-desktop",
+		ImageRef: "ghcr.io/test/selkies-desktop:latest",
+		Home:     "/home/user",
+		Security: vmshared.SecurityConfig{
+			ShmSize: "1g", MemoryMax: "6g", MemoryHigh: "5g", MemorySwapMax: "2g", Cpus: "4",
+		},
+	}
+	content := GenerateQuadlet(cfg)
+	for _, want := range []string{"ShmSize=1g", "MemoryMax=6G", "MemoryHigh=5G", "MemorySwapMax=2G", "CPUQuota=400%"} {
+		if !quadletContainsLine(content, want) {
+			t.Errorf("expected %q in quadlet:\n%s", want, content)
+		}
+	}
+}
+
+func TestGenerateQuadletWithPrivileged(t *testing.T) {
+	cfg := QuadletConfig{BoxName: "runner", ImageRef: "ghcr.io/test/runner:latest", Home: "/workspace",
+		Security: vmshared.SecurityConfig{Privileged: true}}
+	content := GenerateQuadlet(cfg)
+	if !quadletContainsLine(content, "PodmanArgs=--privileged") {
+		t.Error("expected PodmanArgs=--privileged")
+	}
+	if !quadletContainsLine(content, "SecurityLabelDisable=true") {
+		t.Error("expected SecurityLabelDisable=true")
+	}
+}
+
+func TestGenerateQuadletWithCapAdd(t *testing.T) {
+	cfg := QuadletConfig{BoxName: "builder", ImageRef: "ghcr.io/test/builder:latest", Home: "/workspace",
+		Security: vmshared.SecurityConfig{CapAdd: []string{"SYS_ADMIN"}, Devices: []string{"/dev/fuse"}, SecurityOpt: []string{"label=disable"}}}
+	content := GenerateQuadlet(cfg)
+	if !quadletContainsLine(content, "AddCapability=SYS_ADMIN") {
+		t.Errorf("expected AddCapability=SYS_ADMIN:\n%s", content)
+	}
+	if !quadletContainsLine(content, "AddDevice=/dev/fuse") {
+		t.Errorf("expected AddDevice=/dev/fuse:\n%s", content)
+	}
+}
+
+func TestNormalizeCgroupSize(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"", ""}, {"6g", "6G"}, {"512m", "512M"}, {"64k", "64K"}, {"1t", "1T"},
+		{"6G", "6G"}, {"512M", "512M"}, {"1024", "1024"}, {"  2g  ", "2G"},
+	} {
+		if got := NormalizeCgroupSize(tt.in); got != tt.want {
+			t.Errorf("NormalizeCgroupSize(%q)=%q want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestFormatCPUQuota(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"", ""}, {"0", ""}, {"-1", ""}, {"bogus", ""}, {"1", "100%"}, {"2.5", "250%"}, {"0.5", "50%"}, {"4", "400%"}, {"  2  ", "200%"},
+	} {
+		if got := FormatCPUQuota(tt.in); got != tt.want {
+			t.Errorf("FormatCPUQuota(%q)=%q want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// Full-file: sidecar+tunnel+volume+secret+env, exercising the spec.TunnelConfig
+// wire type (Task A) + spec.TunnelPort.Backend().
+func TestGenerateQuadletFull(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName: "openclaw", ImageRef: "ghcr.io/opencharly/openclaw:2026.150.1", Home: "/home/user",
+		Version: "2026.150.1", Status: "working", Network: "charly",
+		Ports:      []string{"8080:8080"},
+		Volumes:    []VolumeMount{{VolumeName: "charly-openclaw-data", ContainerPath: "/home/user/.openclaw"}},
+		BindMounts: []ResolvedBindMount{{Name: "workspace", HostPath: "/srv/ws", ContPath: "/workspace"}},
+		UID:        1000, GID: 1000, Env: []string{"MSG=hello world"},
+		Security:   vmshared.SecurityConfig{CapAdd: []string{"NET_ADMIN"}},
+		Secrets:    []CollectedSecret{{Name: "charly-openclaw-ts", Env: "TS_AUTHKEY"}},
+		Tunnel:     &spec.TunnelConfig{Provider: "tailscale", Ports: []spec.TunnelPort{{Port: 8080, Protocol: "https"}}},
+		Entrypoint: []string{"supervisord", "-n"},
+	}
+	content := GenerateQuadlet(cfg)
+	for _, want := range []string{
+		"WorkingDir=/workspace",
+		"Volume=charly-openclaw-data:/home/user/.openclaw",
+		"Volume=/srv/ws:/workspace",
+		"Secret=charly-openclaw-ts,type=env,target=TS_AUTHKEY",
+		"AddCapability=NET_ADMIN",
+		`Environment=MSG="hello world"`,
+		"UserNS=keep-id:uid=1000,gid=1000",
+		"ExecStartPost=tailscale serve --bg --https=8080 https://127.0.0.1:8080",
+	} {
+		if !quadletContainsLine(content, want) {
+			t.Errorf("expected %q in quadlet:\n%s", want, content)
+		}
+	}
+}
+
+// Emission tests relocated from charly/quadlet_test.go (P11b): they feed literal
+// QuadletConfig{} into the relocated GenerateQuadlet engine and assert its output,
+// so they live WITH the engine (R5).
+
+func TestGenerateQuadlet(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "fedora-test",
+		ImageRef:    "ghcr.io/opencharly/fedora-test:latest",
+		Home:        "/home/user",
+		Ports:       []string{"8000:8000", "8080:8080"},
+		BindAddress: "127.0.0.1",
+		Entrypoint:  []string{"supervisord", "-n", "-c", "/etc/supervisord.conf"},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	want := `# charly-fedora-test.container (generated by charly config)
+# Status: testing
+[Unit]
+Description=OpenCharly fedora-test
+After=network-online.target
+
+[Container]
+Image=ghcr.io/opencharly/fedora-test:latest
+ContainerName=charly-fedora-test
+WorkingDir=/home/user
+PublishPort=127.0.0.1:8000:8000
+PublishPort=127.0.0.1:8080:8080
+Exec=supervisord -n -c /etc/supervisord.conf
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target
+`
+
+	if got != want {
+		t.Errorf("GenerateQuadlet() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestGenerateQuadletNoPorts(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "fedora",
+		ImageRef:    "ghcr.io/opencharly/fedora:latest",
+		Home:        "/tmp",
+		Ports:       nil,
+		BindAddress: "127.0.0.1",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if strings.Contains(got, "PublishPort") {
+		t.Error("expected no PublishPort lines when ports are nil")
+	}
+	if !strings.Contains(got, "ContainerName=charly-fedora") {
+		t.Error("expected ContainerName=charly-fedora")
+	}
+	if !strings.Contains(got, "WorkingDir=/tmp") {
+		t.Error("expected WorkingDir with home path")
+	}
+}
+
+func TestGenerateQuadletSinglePort(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "myapp:latest",
+		Home:        "/home/user",
+		Ports:       []string{"9090"},
+		BindAddress: "127.0.0.1",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "PublishPort=127.0.0.1:9090:9090") {
+		t.Errorf("expected single port to expand to 127.0.0.1:9090:9090, got:\n%s", got)
+	}
+	count := strings.Count(got, "PublishPort=")
+	if count != 1 {
+		t.Errorf("expected 1 PublishPort line, got %d", count)
+	}
+}
+
+func TestGenerateQuadletWithVolumes(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "openclaw",
+		ImageRef:    "ghcr.io/opencharly/openclaw:latest",
+		Home:        "/home/user",
+		Ports:       []string{"18789:18789"},
+		BindAddress: "127.0.0.1",
+		Volumes: []VolumeMount{
+			{VolumeName: "charly-openclaw-data", ContainerPath: "/home/user/.openclaw"},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "Volume=charly-openclaw-data:/home/user/.openclaw") {
+		t.Errorf("expected Volume line for openclaw data, got:\n%s", got)
+	}
+	if !strings.Contains(got, "WorkingDir=/home/user") {
+		t.Error("expected WorkingDir line")
+	}
+	if !strings.Contains(got, "PublishPort=127.0.0.1:18789:18789") {
+		t.Error("expected PublishPort line")
+	}
+}
+
+func TestGenerateQuadletWithGPU(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "ollama",
+		ImageRef:    "ghcr.io/opencharly/ollama:latest",
+		Home:        "/home/user",
+		GPU:         true,
+		BindAddress: "127.0.0.1",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "AddDevice=nvidia.com/gpu=all") {
+		t.Errorf("expected AddDevice=nvidia.com/gpu=all when GPU=true, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithoutGPU(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "fedora",
+		ImageRef:    "ghcr.io/opencharly/fedora:latest",
+		Home:        "/home/user",
+		GPU:         false,
+		BindAddress: "127.0.0.1",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if strings.Contains(got, "AddDevice") {
+		t.Errorf("expected no AddDevice when GPU=false, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithLANBindAddress(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "fedora-test",
+		ImageRef:    "ghcr.io/opencharly/fedora-test:latest",
+		Home:        "/home/user",
+		Ports:       []string{"8000:8000", "8080"},
+		BindAddress: "0.0.0.0",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "PublishPort=0.0.0.0:8000:8000") {
+		t.Errorf("expected PublishPort with 0.0.0.0 bind address, got:\n%s", got)
+	}
+	if !strings.Contains(got, "PublishPort=0.0.0.0:8080:8080") {
+		t.Errorf("expected single port expanded with 0.0.0.0, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithTailscalePublic(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "ghcr.io/test/myapp:latest",
+		Home:        "/home/user",
+		Ports:       []string{"443:8080"},
+		BindAddress: "127.0.0.1",
+		Tunnel: &spec.TunnelConfig{
+			Provider: "tailscale",
+			Ports: []spec.TunnelPort{
+				{Port: 443, Protocol: "http", Public: true},
+			},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "ExecStartPost=tailscale funnel --bg --https=443 http://127.0.0.1:443") {
+		t.Errorf("expected ExecStartPost for public port, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ExecStopPost=-tailscale funnel --https=443 off") {
+		t.Errorf("expected ExecStopPost for public port, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithTailscalePublicCustomPort(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "ghcr.io/test/myapp:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		Tunnel: &spec.TunnelConfig{
+			Provider: "tailscale",
+			Ports: []spec.TunnelPort{
+				{Port: 8443, Protocol: "http", Public: true},
+			},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "ExecStartPost=tailscale funnel --bg --https=8443 http://127.0.0.1:8443") {
+		t.Errorf("expected ExecStartPost with port 8443, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ExecStopPost=-tailscale funnel --https=8443 off") {
+		t.Errorf("expected ExecStopPost with port 8443, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithTailscalePrivate(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "immich-ml",
+		ImageRef:    "ghcr.io/opencharly/immich-ml:latest",
+		Home:        "/home/user",
+		Ports:       []string{"2283:2283"},
+		BindAddress: "127.0.0.1",
+		Tunnel: &spec.TunnelConfig{
+			Provider: "tailscale",
+			Ports: []spec.TunnelPort{
+				{Port: 2283, BackendPort: 2283, Protocol: "http", Public: false},
+			},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "ExecStartPost=tailscale serve --bg --https=2283 http://127.0.0.1:2283") {
+		t.Errorf("expected ExecStartPost for private port 2283, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ExecStopPost=-tailscale serve --https=2283 off") {
+		t.Errorf("expected ExecStopPost for port 2283, got:\n%s", got)
+	}
+	if strings.Contains(got, "tailscale funnel") {
+		t.Errorf("private mode should not contain 'tailscale funnel', got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithTailscaleExplicitRemap(t *testing.T) {
+	// Explicit BackendPort: listen on 443, proxy to 2283.
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "ghcr.io/test/myapp:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		Tunnel: &spec.TunnelConfig{
+			Provider: "tailscale",
+			Ports: []spec.TunnelPort{
+				{Port: 443, BackendPort: 2283, Protocol: "http", Public: false},
+			},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "ExecStartPost=tailscale serve --bg --https=443 http://127.0.0.1:2283") {
+		t.Errorf("expected remapped ExecStartPost (--https=443, backend 2283), got:\n%s", got)
+	}
+	if !strings.Contains(got, "ExecStopPost=-tailscale serve --https=443 off") {
+		t.Errorf("expected ExecStopPost with listen port 443, got:\n%s", got)
+	}
+}
+
+// TestGenerateQuadletPublishPortPreservesIPPrefix is the integration regression
+// for the 2026-04-29 cutover: when deploy.yml carried ports as
+// "127.0.0.1:8888:8888" (an explicit bind prefix that charly config also adds for
+// tunneled ports), the legacy localizePort double-prepended and produced
+// PublishPort=127.0.0.1:127.0.0.1:8888:8888 — a malformed mapping podman
+// rejects at start time. The fix routes localizePort through the canonical
+// ParsePortMapping; either input form (bare or IP-prefixed) is now normalized
+// to a single-prefixed line.
+func TestGenerateQuadletPublishPortPreservesIPPrefix(t *testing.T) {
+	tests := []struct {
+		name        string
+		ports       []string
+		bindAddress string
+		want        string
+		notWant     string
+	}{
+		{
+			name:        "bare 8888:8888 gets bind prepended (existing behavior)",
+			ports:       []string{"8888:8888"},
+			bindAddress: "127.0.0.1",
+			want:        "PublishPort=127.0.0.1:8888:8888\n",
+			notWant:     "PublishPort=127.0.0.1:127.0.0.1:8888:8888",
+		},
+		{
+			name:        "IP-prefixed 127.0.0.1:8888:8888 is preserved verbatim (regression)",
+			ports:       []string{"127.0.0.1:8888:8888"},
+			bindAddress: "127.0.0.1",
+			want:        "PublishPort=127.0.0.1:8888:8888\n",
+			notWant:     "PublishPort=127.0.0.1:127.0.0.1:8888:8888",
+		},
+		{
+			name:        "IPv6 bracket form is preserved verbatim",
+			ports:       []string{"[::1]:8080:80"},
+			bindAddress: "127.0.0.1",
+			want:        "PublishPort=[::1]:8080:80\n",
+			notWant:     "PublishPort=127.0.0.1:[::1]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := QuadletConfig{
+				BoxName:     "myapp",
+				ImageRef:    "ghcr.io/test/myapp:latest",
+				Home:        "/home/user",
+				Ports:       tt.ports,
+				BindAddress: tt.bindAddress,
+			}
+			got := GenerateQuadlet(cfg)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("expected %q in quadlet, got:\n%s", tt.want, got)
+			}
+			if strings.Contains(got, tt.notWant) {
+				t.Errorf("unexpected double-prefix %q in quadlet, got:\n%s", tt.notWant, got)
+			}
+		})
+	}
+}
+
+func TestGenerateQuadletWithHTTPSInsecureBackend(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "selkies-app",
+		ImageRef:    "ghcr.io/test/selkies:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		Tunnel: &spec.TunnelConfig{
+			Provider: "tailscale",
+			Ports: []spec.TunnelPort{
+				{Port: 3000, Protocol: "https+insecure"},
+				{Port: 8888, Protocol: "http"},
+			},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "ExecStartPost=tailscale serve --bg --https=3000 https+insecure://127.0.0.1:3000") {
+		t.Errorf("expected https+insecure serve command for port 3000, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ExecStartPost=tailscale serve --bg --https=8888 http://127.0.0.1:8888") {
+		t.Errorf("expected http serve command for port 8888, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ExecStopPost=-tailscale serve --https=3000 off") {
+		t.Errorf("expected ExecStopPost for port 3000, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithTLSTerminatedTCP(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "ssh-server",
+		ImageRef:    "ghcr.io/test/ssh:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		Tunnel: &spec.TunnelConfig{
+			Provider: "tailscale",
+			Ports: []spec.TunnelPort{
+				{Port: 22, Protocol: "tls-terminated-tcp"},
+			},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "ExecStartPost=tailscale serve --bg --tls-terminated-tcp=22 tcp://127.0.0.1:22") {
+		t.Errorf("expected tls-terminated-tcp serve command, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ExecStopPost=-tailscale serve --tls-terminated-tcp=22 off") {
+		t.Errorf("expected tls-terminated-tcp stop command, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithCloudflareTunnelNoExecPost(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "ghcr.io/test/myapp:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		Tunnel: &spec.TunnelConfig{
+			Provider:   "cloudflare",
+			TunnelName: "charly-myapp",
+			Hostname:   "app.example.com",
+			Ports: []spec.TunnelPort{
+				{Port: 3001, Protocol: "http", Public: true},
+			},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	// Cloudflare uses a companion service, not ExecStartPost
+	if strings.Contains(got, "ExecStartPost") {
+		t.Errorf("cloudflare tunnel should not have ExecStartPost in container file, got:\n%s", got)
+	}
+}
+
+func TestTunnelServiceFilename(t *testing.T) {
+	tests := []struct {
+		image string
+		want  string
+	}{
+		{"myapp", "charly-myapp-tunnel.service"},
+		{"immich", "charly-immich-tunnel.service"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			got := TunnelServiceFilename(tt.image)
+			if got != tt.want {
+				t.Errorf("TunnelServiceFilename(%q) = %q, want %q", tt.image, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenerateQuadletWithNetwork(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "githubrunner",
+		ImageRef:    "ghcr.io/opencharly/githubrunner:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		Network:     "host",
+		Security:    vmshared.SecurityConfig{Privileged: true},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "Network=host\n") {
+		t.Errorf("expected Network=host, got:\n%s", got)
+	}
+	if !strings.Contains(got, "PodmanArgs=--privileged") {
+		t.Errorf("expected PodmanArgs=--privileged, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithoutNetwork(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "fedora",
+		ImageRef:    "ghcr.io/opencharly/fedora:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if strings.Contains(got, "Network=") {
+		t.Errorf("expected no Network= when network is empty, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithEnvVars(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "githubrunner",
+		ImageRef:    "ghcr.io/opencharly/githubrunner:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		Env:         []string{"RUNNER_TOKEN=abc123", "RUNNER_NAME=r1"},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "Environment=RUNNER_TOKEN=abc123") {
+		t.Errorf("expected Environment=RUNNER_TOKEN=abc123, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Environment=RUNNER_NAME=r1") {
+		t.Errorf("expected Environment=RUNNER_NAME=r1, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithEnvFile(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "githubrunner",
+		ImageRef:    "ghcr.io/opencharly/githubrunner:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		EnvFile:     "/home/user/.config/charly/githubrunner.env",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "EnvironmentFile=/home/user/.config/charly/githubrunner.env") {
+		t.Errorf("expected EnvironmentFile line, got:\n%s", got)
+	}
+}
+
+func TestGenerateQuadletWithInstance(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "githubrunner",
+		ImageRef:    "ghcr.io/opencharly/githubrunner:latest",
+		Home:        "/home/user",
+		BindAddress: "127.0.0.1",
+		Instance:    "runner-1",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "ContainerName=charly-githubrunner-runner-1") {
+		t.Errorf("expected instance container name, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Description=OpenCharly githubrunner (runner-1)") {
+		t.Errorf("expected instance description, got:\n%s", got)
+	}
+	if !strings.Contains(got, "# charly-githubrunner-runner-1.container") {
+		t.Errorf("expected instance filename in comment, got:\n%s", got)
+	}
+}
+
+// Tunnel-unit emission tests relocated from charly/quadlet_test.go (P11b): they feed
+// a literal QuadletConfig{} into the relocated GenerateTunnelUnit engine (cfgPath is
+// passed in by the host, so any non-empty value drives the substring assertions), so
+// they live WITH the engine (R5).
+
+func TestGenerateTunnelUnit(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:  "immich",
+		ImageRef: "ghcr.io/test/immich:latest",
+		Home:     "/home/user",
+		Tunnel: &spec.TunnelConfig{
+			Provider:   "cloudflare",
+			TunnelName: "charly-immich",
+			Hostname:   "im.example.com",
+			Ports: []spec.TunnelPort{
+				{Port: 3001, Protocol: "http", Public: true},
+			},
+		},
+	}
+
+	got := GenerateTunnelUnit(cfg, "/tmp/charly-immich.yml")
+
+	if !strings.Contains(got, "charly-immich-tunnel.service") {
+		t.Errorf("expected filename in comment, got:\n%s", got)
+	}
+	if !strings.Contains(got, "BindsTo=charly-immich.service") {
+		t.Errorf("expected BindsTo, got:\n%s", got)
+	}
+	if !strings.Contains(got, "After=charly-immich.service") {
+		t.Errorf("expected After, got:\n%s", got)
+	}
+	if !strings.Contains(got, "cloudflared tunnel --config") {
+		t.Errorf("expected cloudflared ExecStart, got:\n%s", got)
+	}
+	if !strings.Contains(got, "run charly-immich") {
+		t.Errorf("expected tunnel name in ExecStart, got:\n%s", got)
+	}
+	if !strings.Contains(got, "WantedBy=default.target") {
+		t.Errorf("expected WantedBy, got:\n%s", got)
+	}
+}
+
+func TestGenerateTunnelUnitNilTunnel(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName: "myapp",
+		Tunnel:  nil,
+	}
+
+	got := GenerateTunnelUnit(cfg, "")
+	if got != "" {
+		t.Errorf("expected empty string for nil tunnel, got: %s", got)
+	}
+}
