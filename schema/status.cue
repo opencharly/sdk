@@ -55,3 +55,39 @@
 	nested?: [...#DeploymentStatus] @go(Nested)
 	source?: string @go(Source)
 }
+
+// #StatusSubstrateRequest — the host-collection request the command:status plugin sends over
+// HostBuild("status-substrate"). single=true selects the pod-scoped detail path (box+instance);
+// otherwise the full multi-substrate fan-out (include_all mirrors --all, nested mirrors --nested).
+#StatusSubstrateRequest: {
+	single?:      bool   @go(Single)
+	include_all?: bool   @go(IncludeAll)
+	nested?:      bool   @go(Nested)
+	box?:         string @go(Box)
+	instance?:    string @go(Instance)
+}
+
+// #StatusNestedNode — one pre-resolved node of the DECLARED nested tree. The host resolves
+// everything the candy's PURE overlay needs (kind via classifyTarget, the flat-row match keys via
+// [dotted-path, NestedContainerName(dotted-path)], and — when nested was requested — the live
+// probe result), so the candy folds WITHOUT any core type / ResolveDeployChain / classifyTarget.
+// key is the declared child key (the Image cell). match_keys index the flat rows; for a ROOT node
+// key itself is the flat match. RECURSIVE self-reference mirrors the deploy tree nesting.
+#StatusNestedNode: {
+	key:          string          @go(Key)
+	path:         string          @go(Path)
+	kind:         #SubstrateKind  @go(Kind,type=SubstrateKind)
+	has_children: bool            @go(HasChildren)
+	match_keys?: [...string]      @go(MatchKeys)
+	live_status?: string          @go(LiveStatus)
+	children?: [...#StatusNestedNode] @go(Children)
+}
+
+// #StatusSubstrateReply — the host-collection result: the flat rows (all substrates, already
+// probed), the pre-resolved declared roots (only roots with children matter), and — on the single
+// path — the one detail row. The candy applies the PURE overlay(rows, roots) then renders.
+#StatusSubstrateReply: {
+	rows?: [...#DeploymentStatus]   @go(Rows)
+	roots?: [...#StatusNestedNode]  @go(Roots)
+	single?: #DeploymentStatus      @go(Single)
+}

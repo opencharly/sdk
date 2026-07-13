@@ -49,6 +49,8 @@ const (
 	// config-WRITE (Ruling C). Distinct from the venue-lifecycle Ops: host-initiated, not a deploy.
 	OpConfigWrite = "config-write"
 
+	OpStatusCollect = "status-collect" // command:status: programmatic status collection → []spec.DeploymentStatus (distinct from lifecycle OpStatus)
+
 	// OpPreresolve is the generalized host-side deploy preresolver (F6): a substrate plugin
 	// declares a preresolve step the host runs BEFORE apply, returning the opaque JSON the host
 	// ships in DeployVenue.Substrate (the wire-backed generalization of the in-core k8s/android
