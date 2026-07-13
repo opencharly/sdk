@@ -106,6 +106,28 @@ type Generator struct {
 	// registry-coupled, stays core), preserving its per-failure error strings. Used by
 	// WriteCandySteps.
 	ResolveInlineBuilder func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx *spec.BuildStageContext, img *buildkit.ResolvedBox) (inlineFragment string, err error)
+
+	// EnsureBuildersConnected connects the EXTERNALIZED detection-builder plugins an
+	// image triggers (on-demand, scoped — the SAME machinery the deploy build PRE-PASS
+	// uses, R3), so their OpResolve build leg can be Invoked. Wraps core
+	// ensureBuildersConnected(ctx, cfg, dir, detected) (registry-coupled, stays core).
+	// Used by EmitBuilderStages.
+	EnsureBuildersConnected func(detected []string) error
+
+	// ResolveDetectionBuilderStage resolves + Invokes an externalized DETECTION-builder
+	// plugin's OpResolve build leg for one (candy, builder), returning the rendered
+	// BuilderResolveReply. deploykit builds the render context (BuildStageContext +
+	// builderResolveInputFrom) and passes the serializable input; the seam does the
+	// registry ResolveBuilder + OpResolve Invoke (its "not connected" error preserved
+	// byte-exact). Wraps core resolveDetectionBuilder's registry half. Used by EmitBuilderStages.
+	ResolveDetectionBuilderStage func(builderName string, in spec.BuilderResolveInput, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error)
+
+	// ResolveExternalBuilderStage resolves + Invokes an `external_builder:`-selected
+	// out-of-tree builder provider's OpResolve, returning the reply (non-empty Stage
+	// required). The seam does registry ResolveBuilder + the *grpcProvider assertion +
+	// the minimal-input Invoke (all its error strings preserved byte-exact). Wraps core
+	// resolveExternalBuilder + its provider resolution. Used by EmitExternalBuilderStages.
+	ResolveExternalBuilderStage func(word, candyName string, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error)
 }
 
 // NewRenderGenerator constructs a render Generator with its unexported per-image
