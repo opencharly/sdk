@@ -1981,6 +1981,133 @@ type SidecarVolume struct {
 	Path string `yaml:"path,omitempty" json:"path"`
 }
 
+// #ResolvedBoxView — the resolved box METADATA a consumer reads: EXACTLY the non-json:"-" fields of
+// buildkit.ResolvedBox, in declaration order, so this view is the wire-safe half of what
+// `charly box inspect` already serializes (json.MarshalIndent(*ResolvedBox) — which never reaches the
+// 6 json:"-" compute-cache pointers). Field order mirrors ResolvedBox so a future inspect relocation
+// projects into this view byte-faithfully. Every field optional (a projection envelope); name is the
+// stable key.
+type ResolvedBoxView struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	EffectiveVersion string `yaml:"effective_version,omitempty" json:"effective_version,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
+
+	Info string `yaml:"info,omitempty" json:"info,omitempty"`
+
+	CheckLevel string `yaml:"check_level,omitempty" json:"check_level,omitempty"`
+
+	Base string `yaml:"base,omitempty" json:"base,omitempty"`
+
+	From string `yaml:"from,omitempty" json:"from,omitempty"`
+
+	BootstrapBuilderImage string `yaml:"bootstrap_builder_image,omitempty" json:"bootstrap_builder_image,omitempty"`
+
+	Platforms []string `yaml:"platforms,omitempty" json:"platforms,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
+
+	Pkg string `yaml:"pkg,omitempty" json:"pkg,omitempty"`
+
+	Distro []string `yaml:"distro,omitempty" json:"distro,omitempty"`
+
+	BuildFormats []string `yaml:"build_formats,omitempty" json:"build_formats,omitempty"`
+
+	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+
+	Candy []string `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	UID int64 `yaml:"uid,omitempty" json:"uid,omitempty"`
+
+	GID int64 `yaml:"gid,omitempty" json:"gid,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+
+	UserAdopted bool `yaml:"user_adopted,omitempty" json:"user_adopted,omitempty"`
+
+	Merge *BoxMerge `yaml:"merge,omitempty" json:"merge,omitempty"`
+
+	Builder map[string]string `yaml:"builder,omitempty" json:"builder,omitempty"`
+
+	BuilderCapabilities []string `yaml:"builder_capabilities,omitempty" json:"builder_capabilities,omitempty"`
+
+	Auto bool `yaml:"auto,omitempty" json:"auto,omitempty"`
+
+	Network string `yaml:"network,omitempty" json:"network,omitempty"`
+
+	DataImage bool `yaml:"data_image,omitempty" json:"data_image,omitempty"`
+
+	IsExternalBase bool `yaml:"is_external_base,omitempty" json:"is_external_base,omitempty"`
+
+	FullTag string `yaml:"full_tag,omitempty" json:"full_tag,omitempty"`
+}
+
+// #CandyView — the resolved candy GRAPH node a consumer reads: identity + dep-graph + provides +
+// ports/services (the exported surface of the runtime Candy). The Has* filesystem probes, the
+// unexported package/service sections, and the *CandyPluginDecl stay host — this is NOT the candy
+// BUILD model (plan-steps / package-format sections), which is the CandyModel / S-CM concern (K3-D),
+// distinct by design. require / candy pin to the bare map-key ref form (#CandyRef is @go(-), so a
+// list of it generates []string). name is the stable key.
+type CandyView struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
+
+	Info string `yaml:"info,omitempty" json:"info,omitempty"`
+
+	Remote bool `yaml:"remote,omitempty" json:"remote,omitempty"`
+
+	RepoPath string `yaml:"repo_path,omitempty" json:"repo_path,omitempty"`
+
+	IsPlugin bool `yaml:"is_plugin,omitempty" json:"is_plugin,omitempty"`
+
+	Require []CandyRef `yaml:"require,omitempty" json:"require,omitempty"`
+
+	IncludedCandy []CandyRef `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	EnvProvides map[string]string `yaml:"env_provide,omitempty" json:"env_provide,omitempty"`
+
+	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
+
+	Ports []int64 `yaml:"port,omitempty" json:"port,omitempty"`
+
+	ServiceNames []string `yaml:"service_name,omitempty" json:"service_name,omitempty"`
+}
+
+// #ResolvedProject — the whole resolved projection: the schema version, the resolved boxes keyed by
+// name, the resolved candy graph keyed by name, and the deploy tree (uf.Bundle verbatim — already
+// map[string]spec.Deploy). The deploy map is @go-pinned to a pointer map so `cue exp gengotypes`
+// generates map[string]*Deploy (recursive tree, faithful). provides/sidecar are additive later
+// members of this same envelope (added by the consumer unit that first needs them).
+type ResolvedProject struct {
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Boxes map[string]ResolvedBoxView `yaml:"boxes,omitempty" json:"boxes,omitempty"`
+
+	Candies map[string]CandyView `yaml:"candies,omitempty" json:"candies,omitempty"`
+
+	Deploy map[string]*Deploy `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+}
+
+// #ResolvedProjectRequest — the `resolved-project` HostBuild request: which project dir to resolve
+// (empty = the host's cwd) and whether to include enabled:false boxes. The reply is #ResolvedProject.
+type ResolvedProjectRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	IncludeDisabled bool `yaml:"include_disabled,omitempty" json:"include_disabled,omitempty"`
+}
+
 type Resource struct {
 	Gpu *GpuSelector `yaml:"gpu,omitempty" json:"gpu,omitempty"`
 }
