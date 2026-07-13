@@ -145,7 +145,7 @@ func MapValue(m *yaml.Node, key string) *yaml.Node {
 // factory to a plugin (candy is in NEITHER KindWords — now EMPTY — NOR ResourceKinds, since it
 // nests no deploy members), yet a `{candy: …}` value must still be recognized as node-shaped —
 // without it, `charly migrate` re-migrates an already-node-form entity named after `candy` and
-// classifyDoc mis-reads a node-form candy doc (idempotency + classification regression).
+// ClassifyDoc mis-reads a node-form candy doc (idempotency + classification regression).
 var kindWordSet = func() map[string]bool {
 	m := make(map[string]bool, len(spec.KindWords)+len(spec.ResourceKinds)+1)
 	for _, k := range spec.KindWords {

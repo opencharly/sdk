@@ -1765,6 +1765,98 @@ type K8sResourceDefaults struct {
 	Annotations map[string]string `yaml:"annotations,omitempty" json:"annotations,omitempty"`
 }
 
+// #LoadedDoc — one parsed document of a namespace's flattened file tree (root file OR a flat
+// import), in merge order. `directives` is the RAW reserved-directive mapping bytes
+// (version/repo/defaults/provides/discover) the host yaml-decodes into a sub *UnifiedFile before
+// merging (import is consumed by the walk); `project` is the document's decomposed entity nodes;
+// `srcDir` anchors the document's discover paths + labels diagnostics.
+type LoadedDoc struct {
+	// directives is the RAW reserved-directive mapping serialized as YAML bytes (NOT the RawBody
+	// JSON the entity bodies use) — so the host replays the ORIGINAL mergeUnifiedDocs decode exactly
+	// (`yaml.Unmarshal(directives, &sub)`), honoring the custom YAML unmarshalers on import/discover.
+	Directives []byte `yaml:"directives,omitempty" json:"directives,omitempty"`
+
+	Project ParsedProject `yaml:"project,omitempty" json:"project,omitempty"`
+
+	SrcDir string `yaml:"srcDir,omitempty" json:"srcDir,omitempty"`
+
+	SrcLabel string `yaml:"srcLabel,omitempty" json:"srcLabel,omitempty"`
+}
+
+// #ParsedProject — the whole parse result: the schema version (for the post-parse gate), the
+// decomposed reserved-word nodes, and the resolved import refs (already fetched + merged by
+// the plugin's import walk). Discover results are decomposed into the same nodes list.
+type ParsedProject struct {
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Nodes []ParsedNode `yaml:"nodes,omitempty" json:"nodes,omitempty"`
+
+	Imports []string `yaml:"imports,omitempty" json:"imports,omitempty"`
+}
+
+// #ParsedNode — one decomposed reserved-word node: its name, kind discriminator, the opaque
+// entity body (the complete kind value as JSON, materialized per-kind by the host), and any
+// sub-entity member children (deployable kinds only). The recursive Children mirror the
+// deploy tree's member nesting the host folds into uf.Bundle.
+type ParsedNode struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Disc string `yaml:"disc,omitempty" json:"disc"`
+
+	Body RawBody `yaml:"body,omitempty" json:"body,omitempty"`
+
+	Children []*ParsedNode `yaml:"children,omitempty" json:"children,omitempty"`
+}
+
+// #DiscoveredManifest — one discovered entity directory's manifest (a `discover:` walk hit),
+// applied by the host AFTER the docs (explicit-entry-wins). `dir`/`rootDir`/`manifest` let the
+// host register a lazy candy `From:` reference (a LAYER candy) or materialize the node (any
+// other kind); `docs` are the manifest's parsed documents.
+type DiscoveredManifest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	Manifest string `yaml:"manifest,omitempty" json:"manifest,omitempty"`
+
+	RootDir string `yaml:"rootDir,omitempty" json:"rootDir,omitempty"`
+
+	Docs []ParsedProject `yaml:"docs,omitempty" json:"docs,omitempty"`
+}
+
+// #NamespaceMount — one namespaced `import:` (alias → an isolated child project). Two shapes:
+//   - a DEFINITION (ref=false): the mount carries the child project inline (project), whose own
+//     `id` the host registers so a later reference to it shares the SAME materialized *UnifiedFile;
+//   - a REFERENCE (ref=true): a repo-identity cycle-break or a diamond re-import — the child was
+//     already walked, so the mount carries NO inline project, only refID (the target project's id).
+//
+// The host materialize resolves a reference to the pointer it registered for that id (register-
+// before-recurse), preserving the original loader's pointer identity across the mutual-import cycle
+// (main↔cachyos). Modeled as a LIST entry (not a self-recursive map) so `cue exp gengotypes`
+// generates faithfully — the pointer slice `[]*NamespaceMount` on #LoadedProject breaks recursion.
+type NamespaceMount struct {
+	Alias string `yaml:"alias,omitempty" json:"alias,omitempty"`
+
+	Ref bool `yaml:"ref,omitempty" json:"ref,omitempty"`
+
+	RefID int64 `yaml:"refID,omitempty" json:"refID,omitempty"`
+
+	Project LoadedProject `yaml:"project,omitempty" json:"project,omitempty"`
+}
+
+// #LoadedProject — the whole WALK result of one project (root OR a mounted namespace): a stable
+// per-walk id (so a namespaced cycle/diamond back-reference resolves to the SAME materialized
+// *UnifiedFile), the ordered documents, the discovered manifests, and the mounted namespace
+// subtrees. The host replays materialize+merge over this to reconstruct the typed *UnifiedFile
+// (identical to the former in-line loadUnifiedInto), then applies the binary-embedded default vocab.
+type LoadedProject struct {
+	ID int64 `yaml:"id,omitempty" json:"id,omitempty"`
+
+	Docs []LoadedDoc `yaml:"docs,omitempty" json:"docs,omitempty"`
+
+	Discovered []DiscoveredManifest `yaml:"discovered,omitempty" json:"discovered,omitempty"`
+
+	Namespaces []*NamespaceMount `yaml:"namespaces,omitempty" json:"namespaces,omitempty"`
+}
+
 type Local struct {
 	// Ordered candy stack applied to the host. Required (empty list permitted —
 	// a staged name-reservation stub; the loader warns, not errors).
@@ -1831,31 +1923,6 @@ type UserInfo struct {
 	GID int `yaml:"gid,omitempty" json:"gid,omitempty"`
 
 	Home string `yaml:"home,omitempty" json:"home,omitempty"`
-}
-
-// #ParsedNode — one decomposed reserved-word node: its name, kind discriminator, the opaque
-// entity body (the complete kind value as JSON, materialized per-kind by the host), and any
-// sub-entity member children (deployable kinds only). The recursive Children mirror the
-// deploy tree's member nesting the host folds into uf.Bundle.
-type ParsedNode struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Disc string `yaml:"disc,omitempty" json:"disc"`
-
-	Body RawBody `yaml:"body,omitempty" json:"body,omitempty"`
-
-	Children []*ParsedNode `yaml:"children,omitempty" json:"children,omitempty"`
-}
-
-// #ParsedProject — the whole parse result: the schema version (for the post-parse gate), the
-// decomposed reserved-word nodes, and the resolved import refs (already fetched + merged by
-// the plugin's import walk). Discover results are decomposed into the same nodes list.
-type ParsedProject struct {
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-
-	Nodes []ParsedNode `yaml:"nodes,omitempty" json:"nodes,omitempty"`
-
-	Imports []string `yaml:"imports,omitempty" json:"imports,omitempty"`
 }
 
 type Pod struct {

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/spec"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,7 +21,7 @@ func docFrom(t *testing.T, s string) *yaml.Node {
 
 // podThreaded recognizes `pod` as a kind that nests members and `http` as a sugar verb whose
 // scalar-shorthand primary is `http` — enough to exercise classify + desugar + member nesting.
-var podThreaded = Threaded{
+var podThreaded = spec.Threaded{
 	Kinds:            map[string]bool{"pod": true},
 	DeploySubstrates: map[string]bool{},
 	StructuralKinds:  map[string]bool{"pod": true},
