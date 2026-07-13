@@ -191,3 +191,33 @@
 // #DeployConfigReply is the "deploy-config" host-builder reply — empty (the handler
 // prints its output to the shared stdio, errors via the return).
 #DeployConfigReply: {}
+
+// #PodConfigWriteRequest carries the POD config-WRITE (P11). Under Ruling C the config-WRITE
+// (the quadlet/.pod/sidecar/tunnel file generation) moved to the deploy:pod plugin, while the
+// RESOLVE + host side-effects (secret provisioning, saveDeployState, enc-mount, data-seed,
+// systemctl) stay in the HOST `charly config` command (Q1=(a)). So this is HOST→PLUGIN: for a
+// pod deploy, `charly config` resolves the full QuadletConfig + computes the exact target
+// PATHS (the core filename helpers, unchanged) and PUSHES them to the plugin's config-write Op,
+// which generates the file contents (deploykit.GenerateQuadlet + the pod/sidecar/tunnel
+// generators) and os.WriteFiles them — byte-identical to the former core write phase (same
+// paths, same content, same modes: .container/.pod/sidecar 0600, tunnel .service 0644).
+//
+// PodConfigJSON is the resolved deploykit.QuadletConfig — a hand-written runtime type with no
+// CUE def, so it travels as an opaque RawBody envelope (the VmJSON pattern; no new CUE wire
+// struct). An optional path field being SET is the host's signal to write that file kind
+// (pod_path/sidecar_paths present ⇒ sidecars configured; tunnel_path present ⇒ cloudflare
+// tunnel) — the host owns the write conditionals, the plugin writes what it is told.
+#PodConfigWriteRequest: {
+	pod_config_json!:      bytes             @go(PodConfigJSON, type=RawBody) // resolved deploykit.QuadletConfig
+	container_path!:       string            @go(ContainerPath)              // full path for the .container quadlet
+	pod_path?:             string            @go(PodPath)                    // full path for the .pod (set iff sidecars present)
+	sidecar_paths?: {[string]: string}       @go(SidecarPaths)               // sidecar name → full .container path
+	tunnel_path?:          string            @go(TunnelPath)                 // full path for the cloudflare tunnel .service
+	cloudflared_cfg_path?: string            @go(CloudflaredCfgPath)         // cloudflared config path for GenerateTunnelUnit's ExecStart
+}
+
+// #PodConfigWriteReply returns the paths the plugin actually wrote (deterministic; the host
+// already knows them — used for the byte-parity assertion + teardown provenance).
+#PodConfigWriteReply: {
+	written_paths?: [...string] @go(WrittenPaths)
+}

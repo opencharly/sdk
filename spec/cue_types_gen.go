@@ -2156,6 +2156,41 @@ type DeployConfigRequest struct {
 type DeployConfigReply struct {
 }
 
+// #PodConfigWriteRequest carries the POD config-WRITE (P11). Under Ruling C the config-WRITE
+// (the quadlet/.pod/sidecar/tunnel file generation) moved to the deploy:pod plugin, while the
+// RESOLVE + host side-effects (secret provisioning, saveDeployState, enc-mount, data-seed,
+// systemctl) stay in the HOST `charly config` command (Q1=(a)). So this is HOST→PLUGIN: for a
+// pod deploy, `charly config` resolves the full QuadletConfig + computes the exact target
+// PATHS (the core filename helpers, unchanged) and PUSHES them to the plugin's config-write Op,
+// which generates the file contents (deploykit.GenerateQuadlet + the pod/sidecar/tunnel
+// generators) and os.WriteFiles them — byte-identical to the former core write phase (same
+// paths, same content, same modes: .container/.pod/sidecar 0600, tunnel .service 0644).
+//
+// PodConfigJSON is the resolved deploykit.QuadletConfig — a hand-written runtime type with no
+// CUE def, so it travels as an opaque RawBody envelope (the VmJSON pattern; no new CUE wire
+// struct). An optional path field being SET is the host's signal to write that file kind
+// (pod_path/sidecar_paths present ⇒ sidecars configured; tunnel_path present ⇒ cloudflare
+// tunnel) — the host owns the write conditionals, the plugin writes what it is told.
+type PodConfigWriteRequest struct {
+	PodConfigJSON RawBody `yaml:"pod_config_json,omitempty" json:"pod_config_json"`
+
+	ContainerPath string `yaml:"container_path,omitempty" json:"container_path"`
+
+	PodPath string `yaml:"pod_path,omitempty" json:"pod_path,omitempty"`
+
+	SidecarPaths map[string]string `yaml:"sidecar_paths,omitempty" json:"sidecar_paths,omitempty"`
+
+	TunnelPath string `yaml:"tunnel_path,omitempty" json:"tunnel_path,omitempty"`
+
+	CloudflaredCfgPath string `yaml:"cloudflared_cfg_path,omitempty" json:"cloudflared_cfg_path,omitempty"`
+}
+
+// #PodConfigWriteReply returns the paths the plugin actually wrote (deterministic; the host
+// already knows them — used for the byte-parity assertion + teardown provenance).
+type PodConfigWriteReply struct {
+	WrittenPaths []string `yaml:"written_paths,omitempty" json:"written_paths,omitempty"`
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
@@ -2219,6 +2254,43 @@ type DeploymentStatus struct {
 	Nested []*DeploymentStatus `yaml:"nested,omitempty" json:"nested,omitempty"`
 
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+}
+
+// #TunnelConfig — the resolved, ready-to-execute tunnel configuration.
+type TunnelConfig struct {
+	// provider — "tailscale" or "cloudflare".
+	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
+
+	// tunnel_name — cloudflare: tunnel name.
+	TunnelName string `yaml:"tunnel_name,omitempty" json:"tunnel_name,omitempty"`
+
+	// hostname — cloudflare: default hostname (from the image dns field).
+	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
+
+	// box_name — for PID file naming / cloudflare tunnel-name default.
+	BoxName string `yaml:"box_name,omitempty" json:"box_name,omitempty"`
+
+	// ports — all tunneled ports with their access scope.
+	Ports []TunnelPort `yaml:"ports,omitempty" json:"ports,omitempty"`
+}
+
+// #TunnelPort — a single port to tunnel with its protocol and access scope.
+type TunnelPort struct {
+	// port — the tailscale HTTPS listen port (must be a valid serve/funnel port).
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+
+	// backend_port — the localhost backend port (0 means same as port).
+	BackendPort int `yaml:"backend_port,omitempty" json:"backend_port,omitempty"`
+
+	// protocol — backend scheme: http | https | https+insecure | tcp |
+	// tls-terminated-tcp | ssh | rdp | smb (udp is skipped, never tunneled).
+	Protocol string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
+
+	// public — true = internet-accessible (funnel), false = private (serve).
+	Public bool `yaml:"public,omitempty" json:"public,omitempty"`
+
+	// hostname — cloudflare: per-port hostname (from the map form).
+	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 }
 
 type Vm struct {
