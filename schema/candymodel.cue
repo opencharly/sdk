@@ -1,0 +1,90 @@
+// CUE schema for the serializable candy BUILD model (S-CM, Collection A). #CandyModel is the
+// wire form of a runtime candy's build model — the plan steps + resolved package/service/env/route
+// sections a plugin (validate, check-include, the K3-D deploy-plan compiler) reads WITHOUT holding
+// the live *Candy. It is DISTINCT from #CandyView (identity + dep-graph only, resolvedproject.cue):
+// #CandyView is what inspect/list/status read; #CandyModel is what validate + the plan-include
+// splicer + K3-D read. The host projects the runtime *Candy into it (charly/resolved_project_host.go
+// projectCandyModel); a plugin reconstructs it off the resolved-project envelope's CandyModels map.
+//
+// The four package/env/route sub-shapes (#PackageSection/#TagPkgConfig/#EnvConfig/#RouteConfig) were
+// hand structs in sdk/deploykit (layer_model.go) + sdk/kit (env.go); they are CUE-sourced here and
+// those homes alias onto spec (SDD: wire types are CUE-sourced). Composed sub-defs #Step/#Op/
+// #CandyService/#CandyExtract/#CandyData/#CandyVolume/#CandyAlias/#Shell/#EnvDependency/#CandyApk
+// come from _common.cue / candy.cue. Package-less; concatenated into the spec compilation unit.
+// S-CM spike PROVEN live (scratchpad/k5-scm-spike-verdict.md + k5a-buildvocab-spike-verdict.md).
+
+// #PackageSection — a generic format-specific package section (rpm/deb/pac/aur). Raw carries the
+// full YAML map for template rendering. Mirrors deploykit.PackageSection (which now aliases this).
+#PackageSection: {
+	format_name?: string @go(FormatName)
+	packages?: [...string] @go(Packages)
+	raw?: {...} @go(Raw,type=map[string]any)
+}
+
+// #TagPkgConfig — a distro/version-specific package section (debian:13, ubuntu:24.04, fedora:43…).
+// Raw captures the full YAML so tag sections carry repos:/options:/keys:. Mirrors deploykit.TagPkgConfig.
+#TagPkgConfig: {
+	package?: [...string] @go(Package)
+	raw?: {...} @go(Raw,type=map[string]any)
+}
+
+// #EnvConfig — resolved candy env (KEY=value vars + PATH-append entries). Mirrors kit.EnvConfig.
+#EnvConfig: {
+	vars?: {[string]: string} @go(Vars)
+	path_append?: [...string] @go(PathAppend)
+}
+
+// #RouteConfig — a resolved route declaration (host + port-as-string). Mirrors deploykit.RouteConfig.
+// Port is a STRING here (the resolved form), distinct from #CandyRoute.port (authored int).
+#RouteConfig: {
+	host?: string @go(Host)
+	port?: string @go(Port)
+}
+
+// #CandyModel — the serializable candy build model. Every field optional (a projection). name is the
+// stable key. Field order mirrors the runtime *Candy accessors (deploykit.CandyModel interface).
+#CandyModel: {
+	// --- identity ---
+	name?:       string @go(Name)
+	version?:    string @go(Version)
+	source_dir?: string @go(SourceDir)
+	reboot?:     bool   @go(Reboot)
+
+	// --- plan + lowered ops ---
+	plan?: [...#Step] @go(Plan)
+	run_ops?: [...#Op] @go(RunOps)
+
+	// --- services / extract / data / apk ---
+	service?: [...#CandyService] @go(Service)
+	extract?: [...#CandyExtract] @go(Extract)
+	data?: [...#CandyData] @go(Data)
+	apk?: [...#CandyApk] @go(Apk,type=[]ApkPackageSpec)
+
+	// --- package surface (resolved) ---
+	top_packages?: [...string] @go(TopPackages)
+	localpkg?: {[string]: string} @go(LocalPkg)
+	format_sections?: {[string]: #PackageSection} @go(FormatSections)
+	tag_sections?: {[string]: #TagPkgConfig} @go(TagSections)
+
+	// --- env / vars / route / shell ---
+	vars?: {[string]: string} @go(Vars)
+	env?:   #EnvConfig   @go(Env,optional=nillable)
+	route?: #RouteConfig @go(Route,optional=nillable)
+	shell?: #Shell       @go(Shell,optional=nillable)
+
+	// --- volumes / aliases ---
+	volumes?: [...#CandyVolume] @go(Volumes)
+	aliases?: [...#CandyAlias] @go(Aliases)
+
+	// --- validate read-surface (candy-local config the validate ENGINE checks) ---
+	libvirt?: [...string] @go(Libvirt)
+	engine?:  string @go(Engine)
+	port_relay?: [...int] @go(PortRelayPorts,type=[]int)
+	service_files?: [...string] @go(ServiceFiles)
+	env_require?: [...#EnvDependency] @go(EnvRequire)
+	env_accept?: [...#EnvDependency] @go(EnvAccept)
+	secret_require?: [...#EnvDependency] @go(SecretRequire)
+	secret_accept?: [...#EnvDependency] @go(SecretAccept)
+	mcp_require?: [...#EnvDependency] @go(MCPRequire)
+	mcp_accept?: [...#EnvDependency] @go(MCPAccept)
+}

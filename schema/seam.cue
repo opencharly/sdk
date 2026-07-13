@@ -57,41 +57,23 @@
 	vm_entities?: [...string] @go(VmEntities)
 }
 
-// #CheckConfigRequest asks the host for the AI-harness's project-config PROJECTION for one entity
-// (P12 Wave-2). A DEDICATED check-family seam (a sibling of #CheckBedRequest — NOT bloating the
-// generic #ConfigResolveReply with check-specifics): the compiled-in command:check harness cannot
-// LoadUnified, so the host resolves the check-project reads (CheckBeds / ResolveIterateSandbox /
-// ScanCandy / ExpandPlanIncludes + the kind:agent catalog) and ships the projection back. Class-
-// generic action noun "check-config" (F11 — never a substrate word). TRANSITIONAL: dies at K1
-// (post-loaderkit the plugin self-loads the project). Retention (keep_check_runs) is deliberately
-// NOT here — it rides the existing HostBuild("retention") seam (R3, the landed engine).
-#CheckConfigRequest: {
-	entity!: string @go(Entity) // the `charly check run <entity>` name (a bed or an iterate entity)
-	dir?:    string @go(Dir)     // project dir (empty → host cwd), matching LoadUnified(dir)
+// #PodDisposableRequest asks the host whether a per-host POD deploy overlay entry is disposable
+// (K5-U2/3). This is the ONE AI-harness check-project fact the resolved-project envelope cannot
+// carry: the harness's iterate sandbox is an OPERATOR-provisioned per-host deploy (`charly bundle
+// add <sandbox> <ref> --disposable`), so its disposability lives in the per-host overlay
+// (LoadBundleConfig → ~/.config/charly/charly.yml), NOT the project charly.yml the resolved-project
+// envelope projects (Mode Purity keeps the overlay out of the build-mode projection). The overlay
+// read needs the core loader a plugin cannot import, and no deploy/status provider serves it, so it
+// rides this THIN retained host seam. The host returns Bundle[Name].IsDisposable() (false when the
+// sandbox has no entry — the harness then skips its fresh-per-run restart). Class-generic action
+// noun "pod-disposable" (F11 — never a substrate word).
+#PodDisposableRequest: {
+	name!: string @go(Name) // the per-host pod deploy name (the iterate sandbox)
 }
 
-// #CheckConfigReply is the resolved check-project projection. IsBed/HasNode/HasIterate classify
-// `charly check run <name>` into the deterministic bed path vs the AI iterate loop (the dispatcher's
-// `(!HasNode || !HasIterate) && IsBed` test — HasIterate is the discriminator: an iterate entity is
-// ALSO a bed). SandboxKind/SandboxName are ResolveIterateSandbox's result ("pod"|"vm"|"host");
-// PodTargetDisposable is scorePodTargetEntry().IsDisposable() (the per-run pod-restart gate). The
-// iterate orchestration inputs populate only for an iterate entity: IterateJSON is the resolved
-// *IterateConfig (opaque hand-written runtime type, the VmJSON RawBody-envelope pattern), Plan is the
-// include-expanded scored plan (ExpandPlanIncludes over the project candies), ReadinessJSON is the
-// loadedReadiness() cap set the bed-runner's stepReady poll uses (opaque; a kit-default fallback
-// covers its absence). AgentBodies is the opaque kind:agent catalog (uf.PluginKinds["agent"]) the
-// harness decodes to pick the AI CLI. Fields absent for a non-iterate entity / no-project stay zero.
-#CheckConfigReply: {
-	is_bed?:                bool   @go(IsBed)
-	has_node?:              bool   @go(HasNode)
-	has_iterate?:           bool   @go(HasIterate)
-	sandbox_kind?:          string @go(SandboxKind)
-	sandbox_name?:          string @go(SandboxName)
-	pod_target_disposable?: bool   @go(PodTargetDisposable)
-	iterate_json?:          bytes  @go(IterateJSON, type=RawBody)
-	plan?: [...#Step] @go(Plan)
-	readiness_json?: bytes           @go(ReadinessJSON, type=RawBody)
-	agent_bodies?: {[string]: bytes} @go(AgentBodies, type=map[string]RawBody)
+// #PodDisposableReply carries the single overlay-disposability bit.
+#PodDisposableReply: {
+	disposable?: bool @go(Disposable)
 }
 
 // #ConfigPersistRequest is the WRITE twin of config-resolve: a command plugin

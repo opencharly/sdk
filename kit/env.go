@@ -4,13 +4,14 @@ import (
 	"maps"
 	"sort"
 	"strings"
+
+	"github.com/opencharly/sdk/spec"
 )
 
-// EnvConfig represents environment variables from a candy's manifest
-type EnvConfig struct {
-	Vars       map[string]string // KEY=value pairs (from env field)
-	PathAppend []string          // PATH append entries (from path_append field)
-}
+// EnvConfig — resolved candy env (KEY=value vars + PATH-append entries). CUE-SOURCED in spec now
+// (sdk/schema/candymodel.cue, the S-CM enabler) so #CandyModel can compose it; this ALIASES onto
+// spec (SDD). The helper functions below operate on it unchanged.
+type EnvConfig = spec.EnvConfig
 
 // ExpandPath expands ~, ${HOME} and $HOME in a path string to the given home
 // directory. ${HOME} is replaced before bare $HOME so the braced form is

@@ -1,29 +1,19 @@
 package deploykit
 
-// layer_model.go — the pure candy/layer package-config field types that the runtime
-// Candy graph carries. Moved to sdk/deploykit in P4 (with Candy + the compiler); the
-// charly loader populates them, the compiler reads them.
+import "github.com/opencharly/sdk/spec"
 
-// PackageSection represents a generic format-specific package config in the candy manifest.
-// All fields from the YAML section are available in Raw for template rendering.
-type PackageSection struct {
-	FormatName string         // "rpm", "deb", "pac", "aur", etc.
-	Packages   []string       // extracted from Raw["package"] for quick access
-	Raw        map[string]any // all fields from YAML, passed to templates
-}
+// layer_model.go — the pure candy/layer package-config field types the runtime Candy graph
+// carries. CUE-SOURCED in spec now (sdk/schema/candymodel.cue, the S-CM enabler) so #CandyModel
+// can compose them; these ALIAS onto spec (SDD: wire types are CUE-sourced, one source). The
+// charly loader populates them, the compiler + validate read them.
 
-// TagPkgConfig is a distro/version-specific package config (e.g. `debian:13:`,
-// `ubuntu:24.04:`, `fedora:43:`). Packages are installed using the primary
-// format's tool (dnf, apt, pacman). Raw captures the full YAML so that tag
-// sections can carry `repos:`, `options:`, `keys:` — the same schema as the
-// generic format section — for version-specific upstream repo configurations.
-type TagPkgConfig struct {
-	Package []string       `yaml:"package,omitempty" json:"package,omitempty"`
-	Raw     map[string]any `yaml:"-"`
-}
+// PackageSection — a generic format-specific package section (rpm/deb/pac/aur). Raw carries the
+// full YAML map for template rendering.
+type PackageSection = spec.PackageSection
 
-// RouteConfig represents a route file declaration.
-type RouteConfig struct {
-	Host string
-	Port string
-}
+// TagPkgConfig — a distro/version-specific package section (debian:13, ubuntu:24.04, fedora:43…).
+// Raw captures the full YAML so tag sections carry repos:/options:/keys:.
+type TagPkgConfig = spec.TagPkgConfig
+
+// RouteConfig — a resolved route file declaration (host + port-as-string).
+type RouteConfig = spec.RouteConfig

@@ -54,6 +54,23 @@
 	data_image?:       bool @go(DataImage)
 	is_external_base?: bool @go(IsExternalBase)
 	full_tag?:         string @go(FullTag)
+
+	// box-AGGREGATES — the cross-candy effective values `charly box inspect --format
+	// ports|volumes|aliases|engine` prints (the host projector runs CollectBoxPorts /
+	// CollectBoxVolume / CollectBoxAlias / ResolveBoxEngine into these). engine is the raw
+	// resolver result ("" → the command body renders "(global default)").
+	ports?: [...string] @go(Ports)
+	volumes?: [...#ResolvedVolumeMount] @go(Volumes)
+	aliases?: [...#CandyAlias] @go(Aliases)
+	engine?: string @go(Engine)
+}
+
+// #ResolvedVolumeMount — one entry of the box-aggregate volume list (CollectBoxVolume): the
+// charly-<box>-<name> volume name + the home-expanded container path. Mirrors deploykit.VolumeMount
+// (a permanent deploykit home, never wire-marshaled there — spec carries the envelope copy).
+#ResolvedVolumeMount: {
+	volume_name?:    string @go(VolumeName)
+	container_path?: string @go(ContainerPath)
 }
 
 // #CandyView — the resolved candy GRAPH node a consumer reads: identity + dep-graph + provides +
@@ -77,6 +94,16 @@
 	mcp_provide?: [...#CandyMCPProvide] @go(MCPProvide)
 	port?: [...int] @go(Ports)
 	service_name?: [...string] @go(ServiceNames)
+
+	// per-candy list-subcommand sources: `charly box list routes|volumes|aliases|services`.
+	// route/volumes/aliases carry the authored detail each subcommand prints (their presence IS
+	// the RouteCandy/VolumeCandy/AliasCandy predicate). has_init + port_relay reconstruct the
+	// InitCandy predicate (HasAnyInit() || PortRelayPorts>0) for `list services`.
+	route?:    #RouteConfig @go(Route,optional=nillable)
+	volumes?: [...#CandyVolume] @go(Volumes)
+	aliases?: [...#CandyAlias] @go(Aliases)
+	has_init?: bool @go(HasInit)
+	port_relay?: [...int] @go(PortRelayPorts,type=[]int)
 }
 
 // #ResolvedProject — the whole resolved projection: the schema version, the resolved boxes keyed by
@@ -88,7 +115,52 @@
 	version?: string
 	boxes?: {[string]: #ResolvedBoxView}
 	candies?: {[string]: #CandyView}
+	// candy_models — the serializable candy BUILD models (validate, the plan-include splicer, K3-D)
+	// keyed by name, distinct from candies (identity/graph). See candymodel.cue.
+	candy_models?: {[string]: #CandyModel} @go(CandyModels)
 	deploy?: {[string]: #Deploy} @go(Deploy,type=map[string]*Deploy)
+	// build vocabulary (the validate ENGINE consumer): distro/init PIN the hand wire structs
+	// (spec.ResolvedDistro/ResolvedInit — the distro/init de-type OpResolve envelopes, no #CUE def);
+	// #Builder is a clean def. Pointer maps for parity with DistroConfig/BuilderConfig/InitConfig.Init.
+	distro?:  {[string]: _} @go(Distro,type=map[string]*ResolvedDistro)
+	builder?: {[string]: _} @go(Builder,type=map[string]*Builder)
+	init?:    {[string]: _} @go(Init,type=map[string]*ResolvedInit)
+	// kind templates (validate localtemplates + check-include pod/vm arms + status k8s/adb enumeration).
+	templates?: #ProjectTemplates @go(Templates,optional=nillable)
+	// kind:agent catalog (the harness AI-CLI pick — plugin-check reads it off this envelope; charly feature list-agent).
+	agent_bodies?: {[string]: bytes} @go(AgentBodies,type=map[string]RawBody)
+	// build order + auto-intermediates (charly box list targets).
+	build_targets?: [...#BuildTarget] @go(BuildTargets)
+	// box_plans — the include-ready FLATTENED acceptance plan per box (the `include: box:<name>`
+	// arm of the plan-composition splicer). The host projector runs the SAME base-chain walk
+	// CollectDescriptions uses (candy-chain bakeable steps + the box-level bakeable plan) and
+	// flattens the three sections into one ordered []Step, keyed by the QUALIFIED box name
+	// (namespaced boxes like `fedora.jupyter` included) — the exact result the former in-core
+	// box arm produced. A plugin cannot recompute it (base-chain + candy-order + bakeable filter
+	// are host resolve Mechanisms over the runtime Candy), so the resolve engine ships it. Only
+	// boxes with a non-empty flattened plan appear.
+	box_plans?: {[string]: [...#Step]} @go(BoxPlans)
+}
+
+// #ProjectTemplates — the bare pod:/vm:/local:/k8s:/android: template maps carried as OPAQUE payloads
+// (the uf.Pod/VM/Local/K8s/Android raw bytes, verbatim). The host projector stays KIND-BLIND — it
+// copies the raw template bytes with NO concrete-kind decode (a kernel that read spec.Local/#Pod/…
+// would violate the boundary law + trip TestNoConcreteKindInKernel). The CONSUMING PLUGINS
+// (validate localtemplates, check-include pod/vm arms, status k8s/adb) decode a RawBody into the
+// concrete spec kind type themselves — a plugin MAY know kinds, the kernel may not.
+#ProjectTemplates: {
+	local?:   {[string]: bytes} @go(Local,type=map[string]RawBody)
+	k8s?:     {[string]: bytes} @go(K8s,type=map[string]RawBody)
+	pod?:     {[string]: bytes} @go(Pod,type=map[string]RawBody)
+	vm?:      {[string]: bytes} @go(VM,type=map[string]RawBody)
+	android?: {[string]: bytes} @go(Android,type=map[string]RawBody)
+}
+
+// #BuildTarget — a build-order entry (charly box list targets): the box/intermediate name + whether
+// it is an auto-computed intermediate (the `name [auto]` output).
+#BuildTarget: {
+	name?: string @go(Name)
+	auto?: bool   @go(Auto)
 }
 
 // #ResolvedProjectRequest — the `resolved-project` HostBuild request: which project dir to resolve
