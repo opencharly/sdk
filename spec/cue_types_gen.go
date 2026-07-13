@@ -1067,6 +1067,110 @@ type CandyArtifactRewrite struct {
 	Replace string `yaml:"replace,omitempty" json:"replace,omitempty"`
 }
 
+// #PackageSection — a generic format-specific package section (rpm/deb/pac/aur). Raw carries the
+// full YAML map for template rendering. Mirrors deploykit.PackageSection (which now aliases this).
+type PackageSection struct {
+	FormatName string `yaml:"format_name,omitempty" json:"format_name,omitempty"`
+
+	Packages []string `yaml:"packages,omitempty" json:"packages,omitempty"`
+
+	Raw map[string]any `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #TagPkgConfig — a distro/version-specific package section (debian:13, ubuntu:24.04, fedora:43…).
+// Raw captures the full YAML so tag sections carry repos:/options:/keys:. Mirrors deploykit.TagPkgConfig.
+type TagPkgConfig struct {
+	Package []string `yaml:"package,omitempty" json:"package,omitempty"`
+
+	Raw map[string]any `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #EnvConfig — resolved candy env (KEY=value vars + PATH-append entries). Mirrors kit.EnvConfig.
+type EnvConfig struct {
+	Vars map[string]string `yaml:"vars,omitempty" json:"vars,omitempty"`
+
+	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
+}
+
+// #RouteConfig — a resolved route declaration (host + port-as-string). Mirrors deploykit.RouteConfig.
+// Port is a STRING here (the resolved form), distinct from #CandyRoute.port (authored int).
+type RouteConfig struct {
+	Host string `yaml:"host,omitempty" json:"host,omitempty"`
+
+	Port string `yaml:"port,omitempty" json:"port,omitempty"`
+}
+
+// #CandyModel — the serializable candy build model. Every field optional (a projection). name is the
+// stable key. Field order mirrors the runtime *Candy accessors (deploykit.CandyModel interface).
+type CandyModel struct {
+	// --- identity ---
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	SourceDir string `yaml:"source_dir,omitempty" json:"source_dir,omitempty"`
+
+	Reboot bool `yaml:"reboot,omitempty" json:"reboot,omitempty"`
+
+	// --- plan + lowered ops ---
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	RunOps []Op `yaml:"run_ops,omitempty" json:"run_ops,omitempty"`
+
+	// --- services / extract / data / apk ---
+	Service []CandyService `yaml:"service,omitempty" json:"service,omitempty"`
+
+	Extract []CandyExtract `yaml:"extract,omitempty" json:"extract,omitempty"`
+
+	Data []CandyData `yaml:"data,omitempty" json:"data,omitempty"`
+
+	Apk []ApkPackageSpec `yaml:"apk,omitempty" json:"apk,omitempty"`
+
+	// --- package surface (resolved) ---
+	TopPackages []string `yaml:"top_packages,omitempty" json:"top_packages,omitempty"`
+
+	LocalPkg map[string]string `yaml:"localpkg,omitempty" json:"localpkg,omitempty"`
+
+	FormatSections map[string]PackageSection `yaml:"format_sections,omitempty" json:"format_sections,omitempty"`
+
+	TagSections map[string]TagPkgConfig `yaml:"tag_sections,omitempty" json:"tag_sections,omitempty"`
+
+	// --- env / vars / route / shell ---
+	Vars map[string]string `yaml:"vars,omitempty" json:"vars,omitempty"`
+
+	Env *EnvConfig `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Route *RouteConfig `yaml:"route,omitempty" json:"route,omitempty"`
+
+	Shell *Shell `yaml:"shell,omitempty" json:"shell,omitempty"`
+
+	// --- volumes / aliases ---
+	Volumes []CandyVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+
+	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+
+	// --- validate read-surface (candy-local config the validate ENGINE checks) ---
+	Libvirt []string `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
+
+	ServiceFiles []string `yaml:"service_files,omitempty" json:"service_files,omitempty"`
+
+	EnvRequire []EnvDependency `yaml:"env_require,omitempty" json:"env_require,omitempty"`
+
+	EnvAccept []EnvDependency `yaml:"env_accept,omitempty" json:"env_accept,omitempty"`
+
+	SecretRequire []EnvDependency `yaml:"secret_require,omitempty" json:"secret_require,omitempty"`
+
+	SecretAccept []EnvDependency `yaml:"secret_accept,omitempty" json:"secret_accept,omitempty"`
+
+	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
+
+	MCPAccept []EnvDependency `yaml:"mcp_accept,omitempty" json:"mcp_accept,omitempty"`
+}
+
 // #DeployTraits is a SUBSTRATE kind's DECLARED deploy behaviour (P9): a substrate plugin
 // advertises it per word over Describe (ProvidedCapability.deploy_traits), and kit.StampDescent
 // stamps it onto every node's #DescentDescriptor. It is the SINGLE plugin-declared source for
@@ -2047,6 +2151,27 @@ type ResolvedBoxView struct {
 	IsExternalBase bool `yaml:"is_external_base,omitempty" json:"is_external_base,omitempty"`
 
 	FullTag string `yaml:"full_tag,omitempty" json:"full_tag,omitempty"`
+
+	// box-AGGREGATES — the cross-candy effective values `charly box inspect --format
+	// ports|volumes|aliases|engine` prints (the host projector runs CollectBoxPorts /
+	// CollectBoxVolume / CollectBoxAlias / ResolveBoxEngine into these). engine is the raw
+	// resolver result ("" → the command body renders "(global default)").
+	Ports []string `yaml:"ports,omitempty" json:"ports,omitempty"`
+
+	Volumes []ResolvedVolumeMount `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+
+	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+}
+
+// #ResolvedVolumeMount — one entry of the box-aggregate volume list (CollectBoxVolume): the
+// charly-<box>-<name> volume name + the home-expanded container path. Mirrors deploykit.VolumeMount
+// (a permanent deploykit home, never wire-marshaled there — spec carries the envelope copy).
+type ResolvedVolumeMount struct {
+	VolumeName string `yaml:"volume_name,omitempty" json:"volume_name,omitempty"`
+
+	ContainerPath string `yaml:"container_path,omitempty" json:"container_path,omitempty"`
 }
 
 // #CandyView — the resolved candy GRAPH node a consumer reads: identity + dep-graph + provides +
@@ -2083,6 +2208,20 @@ type CandyView struct {
 	Ports []int64 `yaml:"port,omitempty" json:"port,omitempty"`
 
 	ServiceNames []string `yaml:"service_name,omitempty" json:"service_name,omitempty"`
+
+	// per-candy list-subcommand sources: `charly box list routes|volumes|aliases|services`.
+	// route/volumes/aliases carry the authored detail each subcommand prints (their presence IS
+	// the RouteCandy/VolumeCandy/AliasCandy predicate). has_init + port_relay reconstruct the
+	// InitCandy predicate (HasAnyInit() || PortRelayPorts>0) for `list services`.
+	Route *RouteConfig `yaml:"route,omitempty" json:"route,omitempty"`
+
+	Volumes []CandyVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+
+	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+
+	HasInit bool `yaml:"has_init,omitempty" json:"has_init,omitempty"`
+
+	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
 }
 
 // #ResolvedProject — the whole resolved projection: the schema version, the resolved boxes keyed by
@@ -2097,7 +2236,65 @@ type ResolvedProject struct {
 
 	Candies map[string]CandyView `yaml:"candies,omitempty" json:"candies,omitempty"`
 
+	// candy_models — the serializable candy BUILD models (validate, the plan-include splicer, K3-D)
+	// keyed by name, distinct from candies (identity/graph). See candymodel.cue.
+	CandyModels map[string]CandyModel `yaml:"candy_models,omitempty" json:"candy_models,omitempty"`
+
 	Deploy map[string]*Deploy `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+
+	// build vocabulary (the validate ENGINE consumer): distro/init PIN the hand wire structs
+	// (spec.ResolvedDistro/ResolvedInit — the distro/init de-type OpResolve envelopes, no #CUE def);
+	// #Builder is a clean def. Pointer maps for parity with DistroConfig/BuilderConfig/InitConfig.Init.
+	Distro map[string]*ResolvedDistro `yaml:"distro,omitempty" json:"distro,omitempty"`
+
+	Builder map[string]*Builder `yaml:"builder,omitempty" json:"builder,omitempty"`
+
+	Init map[string]*ResolvedInit `yaml:"init,omitempty" json:"init,omitempty"`
+
+	// kind templates (validate localtemplates + check-include pod/vm arms + status k8s/adb enumeration).
+	Templates *ProjectTemplates `yaml:"templates,omitempty" json:"templates,omitempty"`
+
+	// kind:agent catalog (the harness AI-CLI pick — plugin-check reads it off this envelope; charly feature list-agent).
+	AgentBodies map[string]RawBody `yaml:"agent_bodies,omitempty" json:"agent_bodies,omitempty"`
+
+	// build order + auto-intermediates (charly box list targets).
+	BuildTargets []BuildTarget `yaml:"build_targets,omitempty" json:"build_targets,omitempty"`
+
+	// box_plans — the include-ready FLATTENED acceptance plan per box (the `include: box:<name>`
+	// arm of the plan-composition splicer). The host projector runs the SAME base-chain walk
+	// CollectDescriptions uses (candy-chain bakeable steps + the box-level bakeable plan) and
+	// flattens the three sections into one ordered []Step, keyed by the QUALIFIED box name
+	// (namespaced boxes like `fedora.jupyter` included) — the exact result the former in-core
+	// box arm produced. A plugin cannot recompute it (base-chain + candy-order + bakeable filter
+	// are host resolve Mechanisms over the runtime Candy), so the resolve engine ships it. Only
+	// boxes with a non-empty flattened plan appear.
+	BoxPlans map[string][]Step `yaml:"box_plans,omitempty" json:"box_plans,omitempty"`
+}
+
+// #ProjectTemplates — the bare pod:/vm:/local:/k8s:/android: template maps carried as OPAQUE payloads
+// (the uf.Pod/VM/Local/K8s/Android raw bytes, verbatim). The host projector stays KIND-BLIND — it
+// copies the raw template bytes with NO concrete-kind decode (a kernel that read spec.Local/#Pod/…
+// would violate the boundary law + trip TestNoConcreteKindInKernel). The CONSUMING PLUGINS
+// (validate localtemplates, check-include pod/vm arms, status k8s/adb) decode a RawBody into the
+// concrete spec kind type themselves — a plugin MAY know kinds, the kernel may not.
+type ProjectTemplates struct {
+	Local map[string]RawBody `yaml:"local,omitempty" json:"local,omitempty"`
+
+	K8s map[string]RawBody `yaml:"k8s,omitempty" json:"k8s,omitempty"`
+
+	Pod map[string]RawBody `yaml:"pod,omitempty" json:"pod,omitempty"`
+
+	VM map[string]RawBody `yaml:"vm,omitempty" json:"vm,omitempty"`
+
+	Android map[string]RawBody `yaml:"android,omitempty" json:"android,omitempty"`
+}
+
+// #BuildTarget — a build-order entry (charly box list targets): the box/intermediate name + whether
+// it is an auto-computed intermediate (the `name [auto]` output).
+type BuildTarget struct {
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	Auto bool `yaml:"auto,omitempty" json:"auto,omitempty"`
 }
 
 // #ResolvedProjectRequest — the `resolved-project` HostBuild request: which project dir to resolve
@@ -2166,51 +2363,23 @@ type ConfigResolveReply struct {
 	VmEntities []string `yaml:"vm_entities,omitempty" json:"vm_entities,omitempty"`
 }
 
-// #CheckConfigRequest asks the host for the AI-harness's project-config PROJECTION for one entity
-// (P12 Wave-2). A DEDICATED check-family seam (a sibling of #CheckBedRequest — NOT bloating the
-// generic #ConfigResolveReply with check-specifics): the compiled-in command:check harness cannot
-// LoadUnified, so the host resolves the check-project reads (CheckBeds / ResolveIterateSandbox /
-// ScanCandy / ExpandPlanIncludes + the kind:agent catalog) and ships the projection back. Class-
-// generic action noun "check-config" (F11 — never a substrate word). TRANSITIONAL: dies at K1
-// (post-loaderkit the plugin self-loads the project). Retention (keep_check_runs) is deliberately
-// NOT here — it rides the existing HostBuild("retention") seam (R3, the landed engine).
-type CheckConfigRequest struct {
-	Entity string `yaml:"entity,omitempty" json:"entity"`
-
-	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+// #PodDisposableRequest asks the host whether a per-host POD deploy overlay entry is disposable
+// (K5-U2/3). This is the ONE AI-harness check-project fact the resolved-project envelope cannot
+// carry: the harness's iterate sandbox is an OPERATOR-provisioned per-host deploy (`charly bundle
+// add <sandbox> <ref> --disposable`), so its disposability lives in the per-host overlay
+// (LoadBundleConfig → ~/.config/charly/charly.yml), NOT the project charly.yml the resolved-project
+// envelope projects (Mode Purity keeps the overlay out of the build-mode projection). The overlay
+// read needs the core loader a plugin cannot import, and no deploy/status provider serves it, so it
+// rides this THIN retained host seam. The host returns Bundle[Name].IsDisposable() (false when the
+// sandbox has no entry — the harness then skips its fresh-per-run restart). Class-generic action
+// noun "pod-disposable" (F11 — never a substrate word).
+type PodDisposableRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
 }
 
-// #CheckConfigReply is the resolved check-project projection. IsBed/HasNode/HasIterate classify
-// `charly check run <name>` into the deterministic bed path vs the AI iterate loop (the dispatcher's
-// `(!HasNode || !HasIterate) && IsBed` test — HasIterate is the discriminator: an iterate entity is
-// ALSO a bed). SandboxKind/SandboxName are ResolveIterateSandbox's result ("pod"|"vm"|"host");
-// PodTargetDisposable is scorePodTargetEntry().IsDisposable() (the per-run pod-restart gate). The
-// iterate orchestration inputs populate only for an iterate entity: IterateJSON is the resolved
-// *IterateConfig (opaque hand-written runtime type, the VmJSON RawBody-envelope pattern), Plan is the
-// include-expanded scored plan (ExpandPlanIncludes over the project candies), ReadinessJSON is the
-// loadedReadiness() cap set the bed-runner's stepReady poll uses (opaque; a kit-default fallback
-// covers its absence). AgentBodies is the opaque kind:agent catalog (uf.PluginKinds["agent"]) the
-// harness decodes to pick the AI CLI. Fields absent for a non-iterate entity / no-project stay zero.
-type CheckConfigReply struct {
-	IsBed bool `yaml:"is_bed,omitempty" json:"is_bed,omitempty"`
-
-	HasNode bool `yaml:"has_node,omitempty" json:"has_node,omitempty"`
-
-	HasIterate bool `yaml:"has_iterate,omitempty" json:"has_iterate,omitempty"`
-
-	SandboxKind string `yaml:"sandbox_kind,omitempty" json:"sandbox_kind,omitempty"`
-
-	SandboxName string `yaml:"sandbox_name,omitempty" json:"sandbox_name,omitempty"`
-
-	PodTargetDisposable bool `yaml:"pod_target_disposable,omitempty" json:"pod_target_disposable,omitempty"`
-
-	IterateJSON RawBody `yaml:"iterate_json,omitempty" json:"iterate_json,omitempty"`
-
-	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
-
-	ReadinessJSON RawBody `yaml:"readiness_json,omitempty" json:"readiness_json,omitempty"`
-
-	AgentBodies map[string]RawBody `yaml:"agent_bodies,omitempty" json:"agent_bodies,omitempty"`
+// #PodDisposableReply carries the single overlay-disposability bit.
+type PodDisposableReply struct {
+	Disposable bool `yaml:"disposable,omitempty" json:"disposable,omitempty"`
 }
 
 // #ConfigPersistRequest is the WRITE twin of config-resolve: a command plugin
