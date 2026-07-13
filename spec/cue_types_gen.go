@@ -1765,6 +1765,98 @@ type K8sResourceDefaults struct {
 	Annotations map[string]string `yaml:"annotations,omitempty" json:"annotations,omitempty"`
 }
 
+// #LoadedDoc — one parsed document of a namespace's flattened file tree (root file OR a flat
+// import), in merge order. `directives` is the RAW reserved-directive mapping bytes
+// (version/repo/defaults/provides/discover) the host yaml-decodes into a sub *UnifiedFile before
+// merging (import is consumed by the walk); `project` is the document's decomposed entity nodes;
+// `srcDir` anchors the document's discover paths + labels diagnostics.
+type LoadedDoc struct {
+	// directives is the RAW reserved-directive mapping serialized as YAML bytes (NOT the RawBody
+	// JSON the entity bodies use) — so the host replays the ORIGINAL mergeUnifiedDocs decode exactly
+	// (`yaml.Unmarshal(directives, &sub)`), honoring the custom YAML unmarshalers on import/discover.
+	Directives []byte `yaml:"directives,omitempty" json:"directives,omitempty"`
+
+	Project ParsedProject `yaml:"project,omitempty" json:"project,omitempty"`
+
+	SrcDir string `yaml:"srcDir,omitempty" json:"srcDir,omitempty"`
+
+	SrcLabel string `yaml:"srcLabel,omitempty" json:"srcLabel,omitempty"`
+}
+
+// #ParsedProject — the whole parse result: the schema version (for the post-parse gate), the
+// decomposed reserved-word nodes, and the resolved import refs (already fetched + merged by
+// the plugin's import walk). Discover results are decomposed into the same nodes list.
+type ParsedProject struct {
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Nodes []ParsedNode `yaml:"nodes,omitempty" json:"nodes,omitempty"`
+
+	Imports []string `yaml:"imports,omitempty" json:"imports,omitempty"`
+}
+
+// #ParsedNode — one decomposed reserved-word node: its name, kind discriminator, the opaque
+// entity body (the complete kind value as JSON, materialized per-kind by the host), and any
+// sub-entity member children (deployable kinds only). The recursive Children mirror the
+// deploy tree's member nesting the host folds into uf.Bundle.
+type ParsedNode struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Disc string `yaml:"disc,omitempty" json:"disc"`
+
+	Body RawBody `yaml:"body,omitempty" json:"body,omitempty"`
+
+	Children []*ParsedNode `yaml:"children,omitempty" json:"children,omitempty"`
+}
+
+// #DiscoveredManifest — one discovered entity directory's manifest (a `discover:` walk hit),
+// applied by the host AFTER the docs (explicit-entry-wins). `dir`/`rootDir`/`manifest` let the
+// host register a lazy candy `From:` reference (a LAYER candy) or materialize the node (any
+// other kind); `docs` are the manifest's parsed documents.
+type DiscoveredManifest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	Manifest string `yaml:"manifest,omitempty" json:"manifest,omitempty"`
+
+	RootDir string `yaml:"rootDir,omitempty" json:"rootDir,omitempty"`
+
+	Docs []ParsedProject `yaml:"docs,omitempty" json:"docs,omitempty"`
+}
+
+// #NamespaceMount — one namespaced `import:` (alias → an isolated child project). Two shapes:
+//   - a DEFINITION (ref=false): the mount carries the child project inline (project), whose own
+//     `id` the host registers so a later reference to it shares the SAME materialized *UnifiedFile;
+//   - a REFERENCE (ref=true): a repo-identity cycle-break or a diamond re-import — the child was
+//     already walked, so the mount carries NO inline project, only refID (the target project's id).
+//
+// The host materialize resolves a reference to the pointer it registered for that id (register-
+// before-recurse), preserving the original loader's pointer identity across the mutual-import cycle
+// (main↔cachyos). Modeled as a LIST entry (not a self-recursive map) so `cue exp gengotypes`
+// generates faithfully — the pointer slice `[]*NamespaceMount` on #LoadedProject breaks recursion.
+type NamespaceMount struct {
+	Alias string `yaml:"alias,omitempty" json:"alias,omitempty"`
+
+	Ref bool `yaml:"ref,omitempty" json:"ref,omitempty"`
+
+	RefID int64 `yaml:"refID,omitempty" json:"refID,omitempty"`
+
+	Project LoadedProject `yaml:"project,omitempty" json:"project,omitempty"`
+}
+
+// #LoadedProject — the whole WALK result of one project (root OR a mounted namespace): a stable
+// per-walk id (so a namespaced cycle/diamond back-reference resolves to the SAME materialized
+// *UnifiedFile), the ordered documents, the discovered manifests, and the mounted namespace
+// subtrees. The host replays materialize+merge over this to reconstruct the typed *UnifiedFile
+// (identical to the former in-line loadUnifiedInto), then applies the binary-embedded default vocab.
+type LoadedProject struct {
+	ID int64 `yaml:"id,omitempty" json:"id,omitempty"`
+
+	Docs []LoadedDoc `yaml:"docs,omitempty" json:"docs,omitempty"`
+
+	Discovered []DiscoveredManifest `yaml:"discovered,omitempty" json:"discovered,omitempty"`
+
+	Namespaces []*NamespaceMount `yaml:"namespaces,omitempty" json:"namespaces,omitempty"`
+}
+
 type Local struct {
 	// Ordered candy stack applied to the host. Required (empty list permitted —
 	// a staged name-reservation stub; the loader warns, not errors).
@@ -1831,31 +1923,6 @@ type UserInfo struct {
 	GID int `yaml:"gid,omitempty" json:"gid,omitempty"`
 
 	Home string `yaml:"home,omitempty" json:"home,omitempty"`
-}
-
-// #ParsedNode — one decomposed reserved-word node: its name, kind discriminator, the opaque
-// entity body (the complete kind value as JSON, materialized per-kind by the host), and any
-// sub-entity member children (deployable kinds only). The recursive Children mirror the
-// deploy tree's member nesting the host folds into uf.Bundle.
-type ParsedNode struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Disc string `yaml:"disc,omitempty" json:"disc"`
-
-	Body RawBody `yaml:"body,omitempty" json:"body,omitempty"`
-
-	Children []*ParsedNode `yaml:"children,omitempty" json:"children,omitempty"`
-}
-
-// #ParsedProject — the whole parse result: the schema version (for the post-parse gate), the
-// decomposed reserved-word nodes, and the resolved import refs (already fetched + merged by
-// the plugin's import walk). Discover results are decomposed into the same nodes list.
-type ParsedProject struct {
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-
-	Nodes []ParsedNode `yaml:"nodes,omitempty" json:"nodes,omitempty"`
-
-	Imports []string `yaml:"imports,omitempty" json:"imports,omitempty"`
 }
 
 type Pod struct {
@@ -2156,6 +2223,41 @@ type DeployConfigRequest struct {
 type DeployConfigReply struct {
 }
 
+// #PodConfigWriteRequest carries the POD config-WRITE (P11). Under Ruling C the config-WRITE
+// (the quadlet/.pod/sidecar/tunnel file generation) moved to the deploy:pod plugin, while the
+// RESOLVE + host side-effects (secret provisioning, saveDeployState, enc-mount, data-seed,
+// systemctl) stay in the HOST `charly config` command (Q1=(a)). So this is HOST→PLUGIN: for a
+// pod deploy, `charly config` resolves the full QuadletConfig + computes the exact target
+// PATHS (the core filename helpers, unchanged) and PUSHES them to the plugin's config-write Op,
+// which generates the file contents (deploykit.GenerateQuadlet + the pod/sidecar/tunnel
+// generators) and os.WriteFiles them — byte-identical to the former core write phase (same
+// paths, same content, same modes: .container/.pod/sidecar 0600, tunnel .service 0644).
+//
+// PodConfigJSON is the resolved deploykit.QuadletConfig — a hand-written runtime type with no
+// CUE def, so it travels as an opaque RawBody envelope (the VmJSON pattern; no new CUE wire
+// struct). An optional path field being SET is the host's signal to write that file kind
+// (pod_path/sidecar_paths present ⇒ sidecars configured; tunnel_path present ⇒ cloudflare
+// tunnel) — the host owns the write conditionals, the plugin writes what it is told.
+type PodConfigWriteRequest struct {
+	PodConfigJSON RawBody `yaml:"pod_config_json,omitempty" json:"pod_config_json"`
+
+	ContainerPath string `yaml:"container_path,omitempty" json:"container_path"`
+
+	PodPath string `yaml:"pod_path,omitempty" json:"pod_path,omitempty"`
+
+	SidecarPaths map[string]string `yaml:"sidecar_paths,omitempty" json:"sidecar_paths,omitempty"`
+
+	TunnelPath string `yaml:"tunnel_path,omitempty" json:"tunnel_path,omitempty"`
+
+	CloudflaredCfgPath string `yaml:"cloudflared_cfg_path,omitempty" json:"cloudflared_cfg_path,omitempty"`
+}
+
+// #PodConfigWriteReply returns the paths the plugin actually wrote (deterministic; the host
+// already knows them — used for the byte-parity assertion + teardown provenance).
+type PodConfigWriteReply struct {
+	WrittenPaths []string `yaml:"written_paths,omitempty" json:"written_paths,omitempty"`
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
@@ -2219,6 +2321,91 @@ type DeploymentStatus struct {
 	Nested []*DeploymentStatus `yaml:"nested,omitempty" json:"nested,omitempty"`
 
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+}
+
+// #StatusSubstrateRequest — the host-collection request the command:status plugin sends over
+// HostBuild("status-substrate"). single=true selects the pod-scoped detail path (box+instance);
+// otherwise the full multi-substrate fan-out (include_all mirrors --all, nested mirrors --nested).
+type StatusSubstrateRequest struct {
+	Single bool `yaml:"single,omitempty" json:"single,omitempty"`
+
+	IncludeAll bool `yaml:"include_all,omitempty" json:"include_all,omitempty"`
+
+	Nested bool `yaml:"nested,omitempty" json:"nested,omitempty"`
+
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #StatusNestedNode — one pre-resolved node of the DECLARED nested tree. The host resolves
+// everything the candy's PURE overlay needs (kind via classifyTarget, the flat-row match keys via
+// [dotted-path, NestedContainerName(dotted-path)], and — when nested was requested — the live
+// probe result), so the candy folds WITHOUT any core type / ResolveDeployChain / classifyTarget.
+// key is the declared child key (the Image cell). match_keys index the flat rows; for a ROOT node
+// key itself is the flat match. RECURSIVE self-reference mirrors the deploy tree nesting.
+type StatusNestedNode struct {
+	Key string `yaml:"key,omitempty" json:"key"`
+
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	Kind SubstrateKind `yaml:"kind,omitempty" json:"kind"`
+
+	HasChildren bool `yaml:"has_children,omitempty" json:"has_children"`
+
+	MatchKeys []string `yaml:"match_keys,omitempty" json:"match_keys,omitempty"`
+
+	LiveStatus string `yaml:"live_status,omitempty" json:"live_status,omitempty"`
+
+	Children []*StatusNestedNode `yaml:"children,omitempty" json:"children,omitempty"`
+}
+
+// #StatusSubstrateReply — the host-collection result: the flat rows (all substrates, already
+// probed), the pre-resolved declared roots (only roots with children matter), and — on the single
+// path — the one detail row. The candy applies the PURE overlay(rows, roots) then renders.
+type StatusSubstrateReply struct {
+	Rows []DeploymentStatus `yaml:"rows,omitempty" json:"rows,omitempty"`
+
+	Roots []StatusNestedNode `yaml:"roots,omitempty" json:"roots,omitempty"`
+
+	Single DeploymentStatus `yaml:"single,omitempty" json:"single,omitempty"`
+}
+
+// #TunnelConfig — the resolved, ready-to-execute tunnel configuration.
+type TunnelConfig struct {
+	// provider — "tailscale" or "cloudflare".
+	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
+
+	// tunnel_name — cloudflare: tunnel name.
+	TunnelName string `yaml:"tunnel_name,omitempty" json:"tunnel_name,omitempty"`
+
+	// hostname — cloudflare: default hostname (from the image dns field).
+	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
+
+	// box_name — for PID file naming / cloudflare tunnel-name default.
+	BoxName string `yaml:"box_name,omitempty" json:"box_name,omitempty"`
+
+	// ports — all tunneled ports with their access scope.
+	Ports []TunnelPort `yaml:"ports,omitempty" json:"ports,omitempty"`
+}
+
+// #TunnelPort — a single port to tunnel with its protocol and access scope.
+type TunnelPort struct {
+	// port — the tailscale HTTPS listen port (must be a valid serve/funnel port).
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+
+	// backend_port — the localhost backend port (0 means same as port).
+	BackendPort int `yaml:"backend_port,omitempty" json:"backend_port,omitempty"`
+
+	// protocol — backend scheme: http | https | https+insecure | tcp |
+	// tls-terminated-tcp | ssh | rdp | smb (udp is skipped, never tunneled).
+	Protocol string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
+
+	// public — true = internet-accessible (funnel), false = private (serve).
+	Public bool `yaml:"public,omitempty" json:"public,omitempty"`
+
+	// hostname — cloudflare: per-port hostname (from the map form).
+	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 }
 
 type Vm struct {

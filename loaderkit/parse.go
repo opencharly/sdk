@@ -22,32 +22,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DocParser is the swappable per-document PARSE seam (P6): the loader plugin candy implements it
-// (the default via the package ParseDoc), and the host resolves the registered loader provider to
-// it and calls it for every document — so an alternative loader plugin serves a different config
-// front-end by implementing this. Typed (no wire envelope) since it runs on every document load.
-type DocParser interface {
-	ParseDoc(doc *yaml.Node, t Threaded) (directives map[string]*yaml.Node, pp spec.ParsedProject, err error)
-}
-
-// DefaultParser is the built-in node-form DocParser — the package ParseDoc. It is what
-// candy/plugin-loader serves and the host's fallback before any loader plugin registers.
-type DefaultParser struct{}
-
-// ParseDoc implements DocParser via the package parse.
-func (DefaultParser) ParseDoc(doc *yaml.Node, t Threaded) (map[string]*yaml.Node, spec.ParsedProject, error) {
-	return ParseDoc(doc, t)
-}
-
-// Threaded is the host-computed, registry-derived DATA the parse consults instead of querying
-// the provider registry: which words are recognized kinds / deploy substrates, which external
-// kinds may nest sub-entity members, and each plugin verb's scalar-sugar primary field.
-type Threaded struct {
-	Kinds            map[string]bool   // recognizedKind
-	DeploySubstrates map[string]bool   // recognizedDeploySubstrate
-	StructuralKinds  map[string]bool   // externalKindMayNestMembers
-	Primaries        map[string]string // pluginPrimaryFor: verb word → scalar-sugar primary field
-}
+// The per-document PARSE seam interface (spec.DocParser) + the host-threaded kind-recognition
+// DATA (spec.Threaded) are the CONTRACT — they live in sdk/spec (alongside the generated
+// #ParsedProject / #LoadedProject wire types) so the host and the loader plugin reference them
+// without importing each other. loaderkit is the ONE implementation of the parse. The former
+// in-loaderkit DefaultParser died in K1 (the compiled-in candy/plugin-loader is the sole parser,
+// registered at init before any load; a nil parser is a FATAL host-side, never a silent fallback).
 
 // reserved-word sets, CUE-sourced spec vocab (never a registry query).
 var (
@@ -69,7 +49,7 @@ func sliceSet(ss []string) map[string]bool {
 // classifyKind reports whether k is a recognized KIND word in this position. At the top level
 // every registered/threaded kind + external deploy substrate classifies; as a member child only
 // the deployable resource kinds do.
-func classifyKind(k string, asChild bool, t Threaded) bool {
+func classifyKind(k string, asChild bool, t spec.Threaded) bool {
 	if asChild {
 		return resourceKindSet[k]
 	}
@@ -85,7 +65,7 @@ func classifyKind(k string, asChild bool, t Threaded) bool {
 // ParseDoc decomposes a node-form document mapping into its reserved directives + the generic
 // spec.ParsedProject (its top-level entity nodes, each with the opaque JSON body the host
 // materializes). Faithful port of core's parseNodeTree + genericNodeToParsed.
-func ParseDoc(doc *yaml.Node, t Threaded) (directives map[string]*yaml.Node, pp spec.ParsedProject, err error) {
+func ParseDoc(doc *yaml.Node, t spec.Threaded) (directives map[string]*yaml.Node, pp spec.ParsedProject, err error) {
 	if doc.Kind == yaml.DocumentNode && len(doc.Content) == 1 {
 		doc = doc.Content[0]
 	}
@@ -116,7 +96,7 @@ func ParseDoc(doc *yaml.Node, t Threaded) (directives map[string]*yaml.Node, pp 
 
 // parseNode builds a spec.ParsedNode from a node mapping (the value under `name:`). asChild is
 // true when the node is a member of another node (vs top-level).
-func parseNode(name string, m *yaml.Node, asChild bool, t Threaded) (spec.ParsedNode, error) {
+func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.ParsedNode, error) {
 	if m.Kind == yaml.DocumentNode && len(m.Content) == 1 {
 		m = m.Content[0]
 	}
@@ -189,7 +169,7 @@ func entityBodyJSON(name string, discValue *yaml.Node) (json.RawMessage, error) 
 }
 
 // desugarEntityPlan desugars every `plan:` step of an entity body in place.
-func desugarEntityPlan(entity string, body *yaml.Node, t Threaded) error {
+func desugarEntityPlan(entity string, body *yaml.Node, t spec.Threaded) error {
 	plan := mapValue(body, "plan")
 	if plan == nil {
 		return nil
@@ -207,7 +187,7 @@ func desugarEntityPlan(entity string, body *yaml.Node, t Threaded) error {
 
 // desugarStep rewrites one plan step's `<word>: <input>` plugin-verb sugar into the internal
 // plugin/plugin_input pair. Faithful port of core's desugarStep.
-func desugarStep(entity string, idx int, st *yaml.Node, t Threaded) error {
+func desugarStep(entity string, idx int, st *yaml.Node, t spec.Threaded) error {
 	if st.Kind != yaml.MappingNode {
 		return fmt.Errorf("node %q: plan[%d] must be a mapping step", entity, idx)
 	}

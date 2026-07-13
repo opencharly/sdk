@@ -753,14 +753,14 @@ type HostEnv struct {
 // NOT a hollow forward — the plugin does the full venue lifecycle (ssh-config, auto-boot, the guest
 // waits, charly delivery, nested pods) itself over generic seams, consuming only this resolved data.
 type LifecyclePrepareInput struct {
-	Entity         string         `json:"entity"`                // the kind:vm entity name (node.From-resolved)
+	Entity         string         `json:"entity"`                // the kind:vm ENTITY = disk/spec source (node.From-resolved)
 	VM             *ResolvedVm    `json:"vm,omitempty"`          // the resolved vm value envelope (uf.VM[entity] via the plugin)
 	SSHUser        string         `json:"ssh_user"`              // resolveVmSshUser(spec)
-	SSHPort        int            `json:"ssh_port"`              // resolveVmSshPort(spec, entity) — auto-alloc + persisted-port idempotency
-	Alias          string         `json:"alias"`                 // VmSshAlias(entity)
+	SSHPort        int            `json:"ssh_port"`              // resolveVmSshPort(spec, domainIdentity) — per-deploy auto-alloc + persisted-port idempotency
+	Alias          string         `json:"alias"`                 // VmSshAlias(domainIdentity) = charly-<deploy>
 	SSHKeyPath     string         `json:"ssh_key_path"`          // <stateDir>/id_ed25519
 	KnownHostsPath string         `json:"known_hosts_path"`      // <stateDir>/known_hosts
-	StateDir       string         `json:"state_dir"`             // ~/.local/share/charly/vm/charly-<entity>
+	StateDir       string         `json:"state_dir"`             // ~/.local/share/charly/vm/charly-<domainIdentity>
 	PriorState     *VmDeployState `json:"prior_state,omitempty"` // the persisted VmDeployState (nil on first apply)
 }
 
