@@ -174,15 +174,12 @@ func AppendHopForFlatPath(chain DeployExecutor, node *BundleNode, flatPath, leaf
 		}, nil
 
 	case "ssh":
-		// VM SSH alias keys off node.From (the kind:vm entity name) which
-		// matches the stanza written by `charly vm create`. Falling back to
-		// flatPath (the deploy bed name) would produce an charly-<bed> alias
-		// for which no stanza exists.
-		vmName := node.From
-		if vmName == "" {
-			vmName = flatPath
-		}
-		ssh := SSHParamsForVm(vmName)
+		// VM SSH alias keys off the per-deploy DOMAIN IDENTITY
+		// (charly-<VmDomainIdentity(flatPath)>), NOT node.From (the shared kind:vm
+		// entity) — `charly vm create <entity> --domain <deploy>` writes the stanza
+		// under charly-<deploy> (P33), so sibling beds sharing one entity get
+		// distinct, non-colliding aliases matching what vm create actually wrote.
+		ssh := SSHParamsForVm(vmshared.VmDomainIdentity(flatPath))
 		// If the parent chain is just ShellExecutor, return a
 		// plain SSHExecutor — no NestedExecutor wrapper needed.
 		if _, isLocal := chain.(ShellExecutor); isLocal {

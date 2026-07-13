@@ -72,12 +72,33 @@ func QemuSystemBinary() string {
 }
 
 // VmDiskDir returns the per-VM directory holding a built disk image (disk.qcow2) and, for
-// cloud_image/bootstrap/clone sources, its NoCloud seed.iso. The path is namespaced by VM name so
-// building or creating one VM never reuses a SIBLING VM's disk or — critically — its stale seed.iso,
-// whose embedded SSH key would mismatch this VM's own id_ed25519 and silently break the deploy's
-// authentication.
+// cloud_image/bootstrap/clone sources, its NoCloud seed.iso. The path is namespaced by the DISK
+// SOURCE (the kind:vm ENTITY), so it is the shared read-only BASE every per-deploy overlay backs
+// onto — building or creating one entity never reuses a SIBLING entity's disk or — critically — its
+// stale seed.iso, whose embedded SSH key would mismatch this VM's own id_ed25519 and silently break
+// the deploy's authentication.
 func VmDiskDir(vmName string) string {
 	return filepath.Join("output", "qcow2", vmName)
+}
+
+// VmDomainIdentity normalizes a deploy/bundle name into the per-deploy VM DOMAIN IDENTITY — the
+// token that keys the libvirt domain (charly-<identity>), the per-domain state dir, the managed
+// ssh-config alias, and the ssh-port ledger entry (vm:<identity>). It is DISTINCT from the kind:vm
+// ENTITY (the disk/spec source, resolved via the deploy's `from:` cross-ref): several distinct beds
+// may share one entity, so keying the domain by the ENTITY collided them on one libvirt domain +
+// one disk + one host SSH port. Keying by the DEPLOY NAME instead makes distinct beds collision-free
+// by construction (each gets its own domain, per-deploy disk overlay, and auto-allocated port).
+//
+// The normalization strips a leading "vm:" prefix and flattens the instance ("/") and nested-path
+// (".") separators to "-", so a bare bed name maps to itself (check-builder-vm → check-builder-vm),
+// a bundle ref maps to its VM token (vm:arch → arch), and a direct `charly vm create <entity>` (whose
+// domain identity IS the entity) is unchanged. Both the host preresolver and candy/plugin-deploy-vm
+// call this on the SAME deploy name, so the domain they derive always agrees.
+func VmDomainIdentity(deployName string) string {
+	id := strings.TrimPrefix(deployName, "vm:")
+	id = strings.ReplaceAll(id, "/", "-")
+	id = strings.ReplaceAll(id, ".", "-")
+	return id
 }
 
 // KillQemuByPID force-kills a direct-QEMU VM by the PID recorded in its state dir (the last-resort

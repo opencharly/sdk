@@ -2,6 +2,8 @@ package deploykit
 
 import (
 	"sort"
+
+	"github.com/opencharly/sdk/vmshared"
 )
 
 // DeployTreePhase indicates which lifecycle phase the walker is in.
@@ -69,18 +71,18 @@ func WalkDeploymentTree(rootPath string, root *BundleNode, parentExec DeployExec
 // ShellExecutor), the child gets a plain SSHExecutor — no
 // nesting overhead for the common case of a VM on localhost.
 //
-// The SSH alias keys off node.From (the kind:vm entity name), NOT
-// deployName (the bed name) — `charly vm create <vm>` writes the managed
-// stanza for `charly-<vm>`. Falling back to deployName here would produce
-// a `charly-<bed>` alias with no matching stanza (e.g., bed `arch-vm` →
-// `charly-arch-vm`, but the stanza is `charly-arch`). deployName is kept for
-// log messages where the deployment identity matters.
-func VmChildExecutor(node *BundleNode, parentExec DeployExecutor, deployName string) (DeployExecutor, error) {
-	vmName := node.From
-	if vmName == "" {
-		vmName = deployName // fallback for legacy nodes without `vm:` set
-	}
-	ssh := SSHParamsForVm(vmName)
+// The SSH alias keys off the per-deploy DOMAIN IDENTITY
+// (charly-<VmDomainIdentity(deployName)>), NOT node.From (the shared kind:vm
+// entity) — `charly vm create <entity> --domain <deploy>` writes the managed
+// stanza under `charly-<deploy>` (P33). Several beds may share one entity via
+// `from:`, so an entity-keyed alias collides them on ONE stanza (the R10 defect
+// where sibling beds both derived `charly-eval-vm`); keying by the deploy makes
+// the alias distinct per bed and matches the stanza vm create actually wrote. A
+// direct create (deploy == entity) resolves to `charly-<entity>` naturally, and
+// VmDomainIdentity flattens a dotted member path consistently with the domain the
+// lifecycle named (bundle_members.go's `vmDomainIdentity(memberKey)`).
+func VmChildExecutor(parentExec DeployExecutor, deployName string) (DeployExecutor, error) {
+	ssh := SSHParamsForVm(vmshared.VmDomainIdentity(deployName))
 	// If parent is localhost-equivalent, use a direct SSHExecutor —
 	// no need to hop through a trivial wrapper.
 	if parentExec == nil {
@@ -102,14 +104,15 @@ func VmChildExecutor(node *BundleNode, parentExec DeployExecutor, deployName str
 }
 
 // SSHParamsForVm returns an SSHExecutor pointing at the VM's managed
-// ssh-config alias (charly-<deployName>). All connection details — User,
-// Port, IdentityFile, host-key checking — live in the Host stanza
-// that `charly vm create` / `charly bundle add` published into
-// ~/.config/charly/ssh_config; ssh(1) reads them from there. Our
-// SSHExecutor needs only the alias as Host.
-func SSHParamsForVm(deployName string) *SSHExecutor {
+// ssh-config alias (charly-<domainID>) — the caller passes the per-deploy
+// DOMAIN IDENTITY (VmDomainIdentity of the deploy), NOT the shared kind:vm
+// entity (P33). All connection details — User, Port, IdentityFile, host-key
+// checking — live in the Host stanza that `charly vm create` / `charly bundle
+// add` published into ~/.config/charly/ssh_config; ssh(1) reads them from there.
+// Our SSHExecutor needs only the alias as Host.
+func SSHParamsForVm(domainID string) *SSHExecutor {
 	return &SSHExecutor{
-		Host:           VmSshAlias(deployName),
+		Host:           VmSshAlias(domainID),
 		ConnectTimeout: 10,
 	}
 }
