@@ -46,5 +46,5 @@ const (
 // ValidateRecord is the egress-validation seam for ledger writes. The ledger
 // (install_ledger.go) validates each record against its egress schema before
 // writing; charly injects its ValidateEgressValue here at init (see
-// charly/install_ledger_egress.go). Defaults to a no-op for standalone kit use.
+// charly/kit_ledger_aliases.go). Defaults to a no-op for standalone kit use.
 var ValidateRecord = func(kind, label string, v any) error { return nil }
