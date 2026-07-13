@@ -73,8 +73,10 @@ type RunnerConfig struct {
 	Distros  []string
 	Box      string
 	Instance string
-	// VmName is the resolved vm: ENTITY name for a VM deployment (the deploy/bed name remapped
-	// to its entity). Empty for non-VM deployments. Read by the host vm/spice verb legs.
+	// VmName is the VM domain-target name the host vm/spice/libvirt verb legs address for a VM
+	// deployment: the caller sets it to the already-resolved per-deploy domain identity
+	// (charly-<VmName> is the live libvirt domain). Empty for non-VM deployments, where
+	// VmTargetName falls back to Box.
 	VmName string
 
 	HostVars map[string]string
@@ -296,8 +298,9 @@ func (r *Runner) Exec() Executor { return r.exec }
 func (r *Runner) Box() string      { return r.box }
 func (r *Runner) Instance() string { return r.instance }
 
-// VmName is the resolved vm: entity name (empty for non-VM deployments); VmTargetName falls back
-// to Box, the name the host vm/spice legs hand the plugin as the libvirt-domain target.
+// VmName is the caller-set VM domain-target (the resolved per-deploy domain identity; empty for
+// non-VM deployments); VmTargetName falls back to Box, the name the host vm/spice legs hand the
+// plugin as the libvirt-domain target.
 func (r *Runner) VmName() string { return r.vmName }
 func (r *Runner) VmTargetName() string {
 	if r.vmName != "" {
