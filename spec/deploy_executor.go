@@ -82,8 +82,6 @@ type DeployExecutor interface {
 	// runner for reporting and skip decisions. Values:
 	//   "host"      — ShellExecutor (operator's machine)
 	//   "container" — NestedExecutor with JumpPodmanExec / JumpDockerExec
-	//   "image"     — NestedExecutor with JumpPodmanRun / JumpDockerRun
-	//                 (disposable container per invocation)
 	//   "vm"        — SSHExecutor or NestedExecutor with JumpSSH/JumpVirshConsole
 	// Replaces the test-time Executor.Kind() method deleted in the
 	// 2026-04 executor-hierarchy cutover.

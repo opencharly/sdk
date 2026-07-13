@@ -257,26 +257,6 @@ func ContainerChain(engine, containerName string) DeployExecutor {
 	}
 }
 
-// ImageChain builds a one-hop chain that runs commands inside a freshly-
-// spawned disposable container (`<engine> run --rm <imageRef> bash`).
-// Used by `charly check box --section box` to replace the deleted
-// ImageExecutor — same semantics, expressed via the unified chain
-// primitive.
-//
-// engine defaults to "podman" when empty. imageRef is passed verbatim
-// (full registry refs and short local names both work as long as
-// `<engine> run --rm` accepts them).
-func ImageChain(engine, imageRef string) DeployExecutor {
-	jumpKind := JumpPodmanRun
-	if engine == "docker" {
-		jumpKind = JumpDockerRun
-	}
-	return &NestedExecutor{
-		Parent: ShellExecutor{},
-		Jump:   NestedJump{Kind: jumpKind, Target: imageRef},
-	}
-}
-
 // didYouMeanDeploy returns a "; available deployments: a, b, c" hint
 // listing top-level deploy names sorted alphabetically. Empty when no
 // candidates exist.

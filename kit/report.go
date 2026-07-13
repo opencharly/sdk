@@ -39,6 +39,11 @@ func FormatStepResultsText(w io.Writer, results []StepResult) {
 
 func renderStep(w io.Writer, step *StepResult) {
 	status := strings.ToUpper(step.Result.Status.String())
+	// A podman container-SETUP infra failure (R44) is NOT a checks-failed verdict — label it
+	// INFRA so a recurring infra storm is loud and distinguishable from a real FAIL at a glance.
+	if step.Result.Status == StatusFail && IsContainerInfraResult(step.Result.Message) {
+		status = "INFRA"
+	}
 	retryInfo := ""
 	if step.Result.Attempts > 1 {
 		retryInfo = fmt.Sprintf(" (attempts=%d, elapsed=%s)",

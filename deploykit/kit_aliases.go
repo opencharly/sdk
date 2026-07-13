@@ -21,8 +21,6 @@ const (
 
 	JumpPodmanExec   = kit.JumpPodmanExec
 	JumpDockerExec   = kit.JumpDockerExec
-	JumpPodmanRun    = kit.JumpPodmanRun
-	JumpDockerRun    = kit.JumpDockerRun
 	JumpSSH          = kit.JumpSSH
 	JumpVirshConsole = kit.JumpVirshConsole
 )
