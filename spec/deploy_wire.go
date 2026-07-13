@@ -784,9 +784,13 @@ type PostTeardownReply struct {
 // CliRequest is the "cli" host-builder envelope (M4): a lifecycle plugin asks the HOST to run a
 // `charly <argv>` subcommand — Capture=false inherits stdin/out/err (interactive: charly shell,
 // logs -f), Capture=true captures stdout (a status parse). BestEffort swallows a non-zero exit.
+// Combined (with Capture) MERGES stderr into the captured Stdout — a check-bed step whose child
+// `charly check …` writes its results to STDERR needs the combined stream to persist a faithful
+// per-step .log (parity with the pre-relocation core runCapture, which captured combined output).
 type CliRequest struct {
 	Argv       []string `json:"argv"`
 	Capture    bool     `json:"capture,omitempty"`
+	Combined   bool     `json:"combined,omitempty"`
 	BestEffort bool     `json:"best_effort,omitempty"`
 }
 
