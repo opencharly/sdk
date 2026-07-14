@@ -153,6 +153,34 @@ func (e *Executor) RunCapture(ctx context.Context, script string) (stdout, stder
 	return r.GetStdout(), r.GetStderr(), int(r.GetExitCode()), nil
 }
 
+// RunInteractive runs a command on the venue wired to the operator's LIVE TTY (F12): the HOST
+// reverse-server runs it inheriting os.Stdin/os.Stdout/os.Stderr (= the operator's terminal), so
+// stdio never crosses the wire — only script→exit. Blocks until the session ends. The live-stdio
+// sibling of RunCapture (consumers: charly shell/-cmd via the plugin's OpAttach).
+func (e *Executor) RunInteractive(ctx context.Context, script string) (int, error) {
+	r, callErr := e.client.RunInteractive(ctx, &pb.RunRequest{Script: script})
+	if callErr != nil {
+		return -1, callErr
+	}
+	if r.GetError() != "" {
+		return int(r.GetExitCode()), errors.New(r.GetError())
+	}
+	return int(r.GetExitCode()), nil
+}
+
+// RunStream runs a command on the venue streaming stdout/stderr LIVE to the operator (F12; no
+// stdin). Blocks until exit. Consumer: charly logs --follow via the plugin's OpLogs.
+func (e *Executor) RunStream(ctx context.Context, script string) (int, error) {
+	r, callErr := e.client.RunStream(ctx, &pb.RunRequest{Script: script})
+	if callErr != nil {
+		return -1, callErr
+	}
+	if r.GetError() != "" {
+		return int(r.GetExitCode()), errors.New(r.GetError())
+	}
+	return int(r.GetExitCode()), nil
+}
+
 // VenueHasTool reports whether tool is on PATH on the venue — an EXEC-based check verb's
 // tool-presence probe over the reverse channel.
 func (e *Executor) VenueHasTool(ctx context.Context, tool string) bool {

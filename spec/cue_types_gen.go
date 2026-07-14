@@ -2996,6 +2996,26 @@ type TunnelPort struct {
 	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 }
 
+// #PodLiveStdioPlan is the F12 host-resolved LIVE-STDIO carrier — ONE carrier for shell + cmd + logs
+// (identical shape, R3; the OP + the executor method distinguish them). Like #PodLifecyclePlan the
+// RESOLUTION stays host-side (#59 inventory fills `script` with the exact venue command); the host
+// threads it on the F6 OpAttach (shell/cmd) / OpLogs (logs --follow) op.Params, and
+// candy/plugin-deploy-pod EXECUTES it over the served host executor via exec.RunInteractive
+// (OpAttach — inherited LIVE stdin/stdout/stderr; the child `podman exec -it`/`-i` owns the PTY +
+// resize + Ctrl-C) / exec.RunStream (OpLogs — inherited LIVE stdout/stderr, no stdin). UNARY: the
+// host reverse-server runs IN the charly process, so os.Stdin/os.Stdout = the operator's terminal —
+// stdio NEVER crosses the wire, only `script` + the session exit code (the hostBuildCli doctrine).
+// This takes the F12 exit for the shell/cmd/logs-follow rows of the #57 M-core register: the former
+// inline `charly shell`/`cmd` bodies + the podCli("logs") reentry are DELETED (bodies, not shells).
+type PodLiveStdioPlan struct {
+	// resolved venue command:
+	//
+	//	shell → `podman exec -it charly-<box> bash [-c cmd]` OR the ephemeral `podman run --rm -it … bash`
+	//	cmd   → `<engine> exec [-e env] charly-<box>[-<sidecar>] sh -c <command>` (no -t; stdin piped)
+	//	logs  → `<engine> logs [-f] [-n N] charly-<box>` OR quadlet `journalctl --user -u <svc> [-f] [-n N]`
+	Script string `yaml:"script,omitempty" json:"script"`
+}
+
 // #CheckRunRequest asks the host to RUN a check plan against a venue and return the
 // per-step results (P12). command:check (candy/plugin-check) owns the `charly check`
 // CLI + output formatting, but RUNNING a plan is a composite of core host-serving

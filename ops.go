@@ -24,7 +24,7 @@ const (
 	OpReverse        = "reverse"         // builder: teardown ops for a resolved stage context → BuilderReverseReply
 
 	// F6 — the SUBSTRATE LIFECYCLE selectors (host→plugin on Provider.Invoke): a deploy
-	// substrate plugin brings its OWN host-side venue lifecycle. PrepareVenue/TeardownExecutor
+	// substrate plugin brings its OWN host-side venue lifecycle. PrepareVenue/VenueExecutor
 	// return a VenueDescriptor the HOST re-materializes into a real DeployExecutor (the live
 	// executor never crosses the wire); the rest carry name/node/opts in, error/StatusInfo out.
 	OpPrepareVenue     = "prepare-venue"     // lifecycle: build the venue → VenueDescriptor (re-materialized host-side)
@@ -36,7 +36,8 @@ const (
 	OpStop             = "stop"              // lifecycle: stop the venue
 	OpStatus           = "status"            // lifecycle: venue status → StatusInfo
 	OpLogs             = "logs"              // lifecycle: stream venue logs
-	OpShell            = "shell"             // lifecycle: open a venue shell
+	OpShell            = "shell"             // lifecycle: NON-interactive in-container exec CAPTURE (charly service — output-in-reply); interactive shell is OpAttach
+	OpAttach           = "attach"            // F12 lifecycle: LIVE-STDIO attach — charly shell (-it TTY) + charly cmd (-i, stdin piped). The plugin exec.RunInteractive's a host-resolved #PodLiveStdioPlan.script; the host reverse-server holds the operator's terminal (stdio never crosses the wire)
 	OpRebuild          = "rebuild"           // lifecycle: rebuild the venue (charly update)
 
 	// OpConfigWrite is the POD config-WRITE selector (P11, Q1=(a)): the HOST `charly config`
