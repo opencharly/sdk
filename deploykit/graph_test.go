@@ -151,6 +151,32 @@ func TestResolveBoxGraphBuilderBackedImageWithoutBase(t *testing.T) {
 	}
 }
 
+func TestResolveBoxGraphExcludesBaseOutsideProjectedBoxSet(t *testing.T) {
+	boxes := map[string]*buildkit.ResolvedBox{
+		"local-image": {Name: "local-image", Base: "arch.arch"},
+	}
+
+	if deps := BoxDirectDeps("local-image", boxes["local-image"], boxes, false); len(deps) != 0 {
+		t.Fatalf("BoxDirectDeps() = %v, want no dependency outside projected box set", deps)
+	}
+
+	order, err := ResolveBoxOrder(boxes, nil)
+	if err != nil {
+		t.Fatalf("ResolveBoxOrder() error = %v", err)
+	}
+	if want := []string{"local-image"}; !reflect.DeepEqual(order, want) {
+		t.Errorf("ResolveBoxOrder() = %v, want %v", order, want)
+	}
+
+	levels, err := ResolveBoxLevels(boxes, nil)
+	if err != nil {
+		t.Fatalf("ResolveBoxLevels() error = %v", err)
+	}
+	if want := [][]string{{"local-image"}}; !reflect.DeepEqual(levels, want) {
+		t.Errorf("ResolveBoxLevels() = %v, want %v", levels, want)
+	}
+}
+
 func TestResolveBoxGraphStillReportsRealCycle(t *testing.T) {
 	boxes := map[string]*buildkit.ResolvedBox{
 		"a": {Name: "a", Base: "b"},
