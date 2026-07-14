@@ -9,7 +9,16 @@ package spec
 // interface. Homing them in spec keeps sdk/kit's own reverse-channel executor
 // (kit.DeployExecutor, a DISTINCT interface) collision-free.
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrNotSupported is returned by RunInteractive/RunStream on a venue that cannot host a
+// LIVE-STDIO session (a capture-only / non-interactive executor). Callers surface it as
+// "shell/logs not supported on this substrate" — an explicit, compile-forced failure, never
+// a silent no-op (F12; the honest form of the executor-matrix ErrNotSupported path).
+var ErrNotSupported = errors.New("live-stdio (interactive/stream) not supported on this venue")
 
 // DeployExecutor is the in-process host-side executor: the concrete venue an
 // InstallPlan's steps are applied against (ShellExecutor on the operator's
@@ -77,6 +86,23 @@ type DeployExecutor interface {
 	// method used by every probe across `charly check live`, `charly check box`, and
 	// `charly check` scoring.
 	RunCapture(ctx context.Context, script string) (stdout, stderr string, exit int, err error)
+
+	// RunInteractive runs a command on the venue wired to the operator's LIVE TTY:
+	// stdin/stdout/stderr are INHERITED from the host charly process (the reverse-channel
+	// server runs IN that process, so os.Std* IS the operator's terminal). The child
+	// (`podman exec -it` / `ssh -t`) owns the PTY, resize (SIGWINCH), and Ctrl-C. Blocks
+	// until the session ends; returns its exit code. NOT ctx-deadlined — the TTY owns its
+	// lifetime (the hostBuildCli doctrine). Stdio NEVER crosses the plugin wire — only the
+	// script + the exit code (F12; the live-stdio sibling of RunCapture). Consumers: `charly
+	// shell` (-it) and `charly cmd` (-i, stdin piped). A venue that cannot host an interactive
+	// session returns ErrNotSupported.
+	RunInteractive(ctx context.Context, script string) (exit int, err error)
+
+	// RunStream runs a command on the venue streaming stdout/stderr LIVE to the operator
+	// (inherited os.Stdout/os.Stderr; NO stdin). Blocks until exit. Same host-holds-the-
+	// terminal semantics as RunInteractive (F12). Consumer: `charly logs --follow`. Returns
+	// ErrNotSupported on a venue that cannot stream.
+	RunStream(ctx context.Context, script string) (exit int, err error)
 
 	// Kind returns a coarse classification of the venue used by the test
 	// runner for reporting and skip decisions. Values:
