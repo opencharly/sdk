@@ -498,6 +498,302 @@ type Box struct {
 	Shell *Shell `yaml:"shell,omitempty" json:"shell,omitempty"`
 }
 
+// #VolumeMount — a resolved named-volume mount (charly-<deploy>-<name> → container path).
+// In-memory only (never marshaled) → tags wire-irrelevant. deploykit.VolumeMount aliases this.
+type VolumeMount struct {
+	VolumeName string `yaml:"volume_name,omitempty" json:"volume_name,omitempty"`
+
+	ContainerPath string `yaml:"container_path,omitempty" json:"container_path,omitempty"`
+}
+
+// #LabeledDescription — one origin's plan-shaped self-description (MARSHALED into
+// ai.opencharly.description). origin is REQUIRED (json:"origin", no omitempty). kit aliases it.
+type LabeledDescription struct {
+	Origin string `yaml:"origin,omitempty" json:"origin"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+}
+
+// #LabelDescriptionSet — the three-section (candy/box/deploy) description manifest
+// (ai.opencharly.description). kit.LabelDescriptionSet aliases this.
+type LabelDescriptionSet struct {
+	Candy []LabeledDescription `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	Box []LabeledDescription `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Deploy []LabeledDescription `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+}
+
+// #LabelVolumeEntry — a volume in the ai.opencharly.volume label (name+path both required).
+type LabelVolumeEntry struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Path string `yaml:"path,omitempty" json:"path"`
+}
+
+// #LabelRouteEntry — a traefik route in ai.opencharly.route (host+port both required).
+type LabelRouteEntry struct {
+	Host string `yaml:"host,omitempty" json:"host"`
+
+	Port int `yaml:"port,omitempty" json:"port"`
+}
+
+// #CapabilityService — the full structured service spec baked into ai.opencharly.service.
+// name required; all else omitempty. Mirrors the hand struct byte-for-byte.
+type CapabilityService struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+
+	Enable bool `yaml:"enable,omitempty" json:"enable,omitempty"`
+
+	UsePackaged string `yaml:"use_packaged,omitempty" json:"use_packaged,omitempty"`
+
+	Exec string `yaml:"exec,omitempty" json:"exec,omitempty"`
+
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Restart string `yaml:"restart,omitempty" json:"restart,omitempty"`
+
+	WorkingDirectory string `yaml:"working_directory,omitempty" json:"working_directory,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	After []string `yaml:"after,omitempty" json:"after,omitempty"`
+
+	Before []string `yaml:"before,omitempty" json:"before,omitempty"`
+
+	Stdout string `yaml:"stdout,omitempty" json:"stdout,omitempty"`
+
+	StopTimeout string `yaml:"stop_timeout,omitempty" json:"stop_timeout,omitempty"`
+
+	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
+
+	Events string `yaml:"events,omitempty" json:"events,omitempty"`
+
+	AutoStart *bool `yaml:"auto_start,omitempty" json:"auto_start,omitempty"`
+
+	StartRetries int `yaml:"start_retries,omitempty" json:"start_retries,omitempty"`
+
+	StartSec int `yaml:"start_sec,omitempty" json:"start_sec,omitempty"`
+
+	StopSignal string `yaml:"stop_signal,omitempty" json:"stop_signal,omitempty"`
+
+	ExitCode string `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
+
+	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
+
+	Init string `yaml:"init,omitempty" json:"init,omitempty"`
+
+	Candy string `yaml:"candy,omitempty" json:"candy,omitempty"`
+}
+
+// #CapabilityInitDef — the deploy-relevant subset of an InitDef (ai.opencharly.init_def).
+type CapabilityInitDef struct {
+	Entrypoint []string `yaml:"entrypoint,omitempty" json:"entrypoint,omitempty"`
+
+	FallbackEntrypoint []string `yaml:"fallback_entrypoint,omitempty" json:"fallback_entrypoint,omitempty"`
+
+	ManagementTool string `yaml:"management_tool,omitempty" json:"management_tool,omitempty"`
+
+	ManagementCommands map[string]string `yaml:"management_commands,omitempty" json:"management_commands,omitempty"`
+}
+
+// #LabelDataEntry — a data mapping in ai.opencharly.data (volume/staging/candy required).
+type LabelDataEntry struct {
+	Volume string `yaml:"volume,omitempty" json:"volume"`
+
+	Staging string `yaml:"staging,omitempty" json:"staging"`
+
+	Candy string `yaml:"candy,omitempty" json:"candy"`
+
+	Dest string `yaml:"dest,omitempty" json:"dest,omitempty"`
+}
+
+// #ShellEntry — one origin's shell-init contribution (in ai.opencharly.shell). origin required.
+type ShellEntry struct {
+	Origin string `yaml:"origin,omitempty" json:"origin"`
+
+	ID string `yaml:"id,omitempty" json:"id,omitempty"`
+
+	Generic *ShellSpec `yaml:"generic,omitempty" json:"generic,omitempty"`
+
+	ByShell map[string]*ShellSpec `yaml:"by_shell,omitempty" json:"by_shell,omitempty"`
+
+	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
+}
+
+// #LabelShellSet — the three-section shell-init manifest (ai.opencharly.shell).
+type LabelShellSet struct {
+	Candy []ShellEntry `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	Box []ShellEntry `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Deploy []ShellEntry `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+}
+
+// #CollectedAlias — a command alias baked into ai.opencharly.alias (name+command required).
+type CollectedAlias struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Command string `yaml:"command,omitempty" json:"command"`
+}
+
+// #LabelSecretEntry — a secret requirement in ai.opencharly.secret (name+target required).
+type LabelSecretEntry struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Target string `yaml:"target,omitempty" json:"target"`
+
+	Env string `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// #BoxMetadata — the OCI-label metadata hub. NEVER whole-marshaled (ExtractMetadata builds it
+// field-by-field), so its own tags are wire-irrelevant. Deploy-only fields (Tunnel/DNS/
+// AcmeEmail/Engine) are fed by MergeDeployOntoMetadata, never baked. PortProto RESHAPED
+// map[int]string → map[string]string (the WIRE was always string-keyed; the int-key was an
+// ExtractMetadata-internal convenience — resolveProto + ExtractMetadata rewired to match).
+type BoxMetadata struct {
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
+
+	Bootc bool `yaml:"bootc,omitempty" json:"bootc,omitempty"`
+
+	UID int `yaml:"uid,omitempty" json:"uid,omitempty"`
+
+	GID int `yaml:"gid,omitempty" json:"gid,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+
+	Port []string `yaml:"port,omitempty" json:"port,omitempty"`
+
+	Volume []VolumeMount `yaml:"volume,omitempty" json:"volume,omitempty"`
+
+	Alias []CollectedAlias `yaml:"alias,omitempty" json:"alias,omitempty"`
+
+	Security Security `yaml:"security,omitempty" json:"security,omitempty"`
+
+	Network string `yaml:"network,omitempty" json:"network,omitempty"`
+
+	Tunnel *TunnelYAML `yaml:"tunnel,omitempty" json:"tunnel,omitempty"`
+
+	DNS string `yaml:"dns,omitempty" json:"dns,omitempty"`
+
+	AcmeEmail string `yaml:"acme_email,omitempty" json:"acme_email,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Hook *CandyHook `yaml:"hook,omitempty" json:"hook,omitempty"`
+
+	Route []LabelRouteEntry `yaml:"route,omitempty" json:"route,omitempty"`
+
+	Init string `yaml:"init,omitempty" json:"init,omitempty"`
+
+	InitDef *CapabilityInitDef `yaml:"init_def,omitempty" json:"init_def,omitempty"`
+
+	Service []CapabilityService `yaml:"service,omitempty" json:"service,omitempty"`
+
+	ServiceNames []string `yaml:"service_names,omitempty" json:"service_names,omitempty"`
+
+	EnvCandy map[string]string `yaml:"env_candy,omitempty" json:"env_candy,omitempty"`
+
+	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	PortProto map[string]string `yaml:"port_proto,omitempty" json:"port_proto,omitempty"`
+
+	PortRelay []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
+
+	Skill string `yaml:"skill,omitempty" json:"skill,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
+
+	Info string `yaml:"info,omitempty" json:"info,omitempty"`
+
+	CandyVersion map[string]string `yaml:"candy_version,omitempty" json:"candy_version,omitempty"`
+
+	Secret []LabelSecretEntry `yaml:"secret,omitempty" json:"secret,omitempty"`
+
+	Distro []string `yaml:"distro,omitempty" json:"distro,omitempty"`
+
+	BuildFormat []string `yaml:"build_format,omitempty" json:"build_format,omitempty"`
+
+	Builder map[string]string `yaml:"builder,omitempty" json:"builder,omitempty"`
+
+	Build []string `yaml:"build,omitempty" json:"build,omitempty"`
+
+	DataEntries []LabelDataEntry `yaml:"data_entries,omitempty" json:"data_entries,omitempty"`
+
+	DataImage bool `yaml:"data_image,omitempty" json:"data_image,omitempty"`
+
+	EnvProvide map[string]string `yaml:"env_provide,omitempty" json:"env_provide,omitempty"`
+
+	EnvRequire []EnvDependency `yaml:"env_require,omitempty" json:"env_require,omitempty"`
+
+	EnvAccept []EnvDependency `yaml:"env_accept,omitempty" json:"env_accept,omitempty"`
+
+	SecretAccept []EnvDependency `yaml:"secret_accept,omitempty" json:"secret_accept,omitempty"`
+
+	SecretRequire []EnvDependency `yaml:"secret_require,omitempty" json:"secret_require,omitempty"`
+
+	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
+
+	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
+
+	MCPAccept []EnvDependency `yaml:"mcp_accept,omitempty" json:"mcp_accept,omitempty"`
+
+	Description *LabelDescriptionSet `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Shell *LabelShellSet `yaml:"shell,omitempty" json:"shell,omitempty"`
+
+	CheckLevel string `yaml:"check_level,omitempty" json:"check_level,omitempty"`
+}
+
+// HooksConfig — lifecycle hook scripts.
+type CandyHook struct {
+	PostEnable string `yaml:"post_enable,omitempty" json:"post_enable,omitempty"`
+
+	PreRemove string `yaml:"pre_remove,omitempty" json:"pre_remove,omitempty"`
+}
+
+// EnvDependency (layers.go) — ONE Go type reused for env_require/env_accept,
+// secret_accept/secret_require, AND mcp_require/mcp_accept. The hand struct is a
+// single SUPERSET {name, description, default, key}; the three former CUE defs
+// (#CandyEnvDep/#CandySecretDep/#CandyMCPDep) were distinct only in their
+// per-context name regex (env-var name vs mcp-server name) and the secret-only
+// `key` override — all of which Go validate.go enforces. gengotypes cannot emit
+// THREE shapes for ONE Go type, and a faithful drop-in for []EnvDependency
+// requires every usage to carry all four fields (mcp_require's former 2-field
+// def is missing default/key), so the three collapse to ONE shared
+// #EnvDependency (R3 — one shared abstraction; per-context strictness stays in
+// Go).
+type EnvDependency struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Description string `yaml:"description,omitempty" json:"description"`
+
+	Default string `yaml:"default,omitempty" json:"default,omitempty"`
+
+	Key string `yaml:"key,omitempty" json:"key,omitempty"`
+}
+
+// MCPServerYAML — mcp_provide entry exposed to peer containers.
+type CandyMCPProvide struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	URL string `yaml:"url,omitempty" json:"url"`
+
+	Transport string `yaml:"transport,omitempty" json:"transport,omitempty"`
+}
+
 // #InstallContext — data a distro format's install/prepare/cleanup template
 // renders against: packages + repo/copr/module/exclude/key modifiers, resolved
 // cache mounts, and the builder-stage identity/uid/gid/home.
@@ -998,43 +1294,6 @@ type CandyData struct {
 	Dest string `yaml:"dest,omitempty" json:"dest,omitempty"`
 }
 
-// HooksConfig — lifecycle hook scripts.
-type CandyHook struct {
-	PostEnable string `yaml:"post_enable,omitempty" json:"post_enable,omitempty"`
-
-	PreRemove string `yaml:"pre_remove,omitempty" json:"pre_remove,omitempty"`
-}
-
-// MCPServerYAML — mcp_provide entry exposed to peer containers.
-type CandyMCPProvide struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	URL string `yaml:"url,omitempty" json:"url"`
-
-	Transport string `yaml:"transport,omitempty" json:"transport,omitempty"`
-}
-
-// EnvDependency (layers.go) — ONE Go type reused for env_require/env_accept,
-// secret_accept/secret_require, AND mcp_require/mcp_accept. The hand struct is a
-// single SUPERSET {name, description, default, key}; the three former CUE defs
-// (#CandyEnvDep/#CandySecretDep/#CandyMCPDep) were distinct only in their
-// per-context name regex (env-var name vs mcp-server name) and the secret-only
-// `key` override — all of which Go validate.go enforces. gengotypes cannot emit
-// THREE shapes for ONE Go type, and a faithful drop-in for []EnvDependency
-// requires every usage to carry all four fields (mcp_require's former 2-field
-// def is missing default/key), so the three collapse to ONE shared
-// #EnvDependency (R3 — one shared abstraction; per-context strictness stays in
-// Go).
-type EnvDependency struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Description string `yaml:"description,omitempty" json:"description"`
-
-	Default string `yaml:"default,omitempty" json:"default,omitempty"`
-
-	Key string `yaml:"key,omitempty" json:"key,omitempty"`
-}
-
 // SecretYAML — a candy-owned secret (target defaults to /run/secrets/<name>).
 type CandySecret struct {
 	Name string `yaml:"name,omitempty" json:"name"`
@@ -1150,6 +1409,11 @@ type CandyModel struct {
 	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 
 	// --- validate read-surface (candy-local config the validate ENGINE checks) ---
+	// external_builder: the reserved word of an EXTERNAL builder plugin this candy selects
+	// (from the candy manifest external_builder:). validateCandyContents reads it to accept a
+	// candy whose only content is an external-builder selection (deploykit EmitExternalBuilderStages).
+	ExternalBuilder string `yaml:"external_builder,omitempty" json:"external_builder,omitempty"`
+
 	Libvirt []string `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
 
 	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
@@ -2163,6 +2427,16 @@ type ResolvedBoxView struct {
 	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 
 	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	// box-AUTHORED surfaces the validate ENGINE checks (task #60): the box's OWN authored `plan:`
+	// (validateOps box-arm — every Op validated for authoring errors) and `alias:` (validateAliases
+	// box-arm — name char-set + cross-entry dedup). Distinct from the resolved `aliases` AGGREGATE
+	// above (cross-candy CollectBoxAlias) — these are the box entity's raw authored entries the plugin
+	// re-validates, so the whole validateOps/validateAliases move to plugin-box (ruling-a: grow the
+	// envelope rather than keep the R-rule in core).
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	AuthoredAliases []BoxAlias `yaml:"authored_aliases,omitempty" json:"authored_aliases,omitempty"`
 }
 
 // #ResolvedVolumeMount — one entry of the box-aggregate volume list (CollectBoxVolume): the
@@ -2197,6 +2471,14 @@ type CandyView struct {
 
 	IsPlugin bool `yaml:"is_plugin,omitempty" json:"is_plugin,omitempty"`
 
+	// the candy's OWN declared plugin block (validatePluginCandy SUBJECT, task #60): the
+	// `plugin.providers:` capability strings + `plugin.source:` so the validate plugin can check each
+	// declared BUILTIN `<class>:<word>` is a member of ResolvedProject.ProviderCapabilities (the TARGET
+	// set). Empty for a non-plugin candy. is_plugin stays the cheap presence bool for inspect/list.
+	PluginProviders []string `yaml:"plugin_providers,omitempty" json:"plugin_providers,omitempty"`
+
+	PluginSource string `yaml:"plugin_source,omitempty" json:"plugin_source,omitempty"`
+
 	Require []CandyRef `yaml:"require,omitempty" json:"require,omitempty"`
 
 	IncludedCandy []CandyRef `yaml:"candy,omitempty" json:"candy,omitempty"`
@@ -2222,6 +2504,23 @@ type CandyView struct {
 	HasInit bool `yaml:"has_init,omitempty" json:"has_init,omitempty"`
 
 	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
+
+	// capabilities — the per-candy capability surface the validate ENGINE reads (task #60,
+	// ruling a). The projector fills it from the candy's `capabilities:` block; the validate
+	// plugin re-runs AggregateCandyCapabilities over a box's candy order (a boolean OR of
+	// preserve_user, order-independent) + the PreserveUser rule (validateInitDependencies +
+	// validatePackagedServices box-arms). An aggregate over RESOLVED models belongs on the
+	// envelope, not a host route-B diagnostic — a lean envelope is not a virtue when it keeps
+	// an R-rule in core.
+	Capabilities *CandyCapabilitiesView `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+}
+
+// #CandyCapabilitiesView — the per-candy capability surface a consumer reads off the envelope.
+// Carries exactly the caps the validate ENGINE consumes (preserve_user today); grow it only when
+// a relocated rule reads a further cap. Mirrors the read half of the runtime candy's `capabilities:`
+// block (charly AggregatedCandyCaps).
+type CandyCapabilitiesView struct {
+	PreserveUser bool `yaml:"preserve_user,omitempty" json:"preserve_user,omitempty"`
 }
 
 // #ResolvedProject — the whole resolved projection: the schema version, the resolved boxes keyed by
@@ -2259,6 +2558,21 @@ type ResolvedProject struct {
 
 	// build order + auto-intermediates (charly box list targets).
 	BuildTargets []BuildTarget `yaml:"build_targets,omitempty" json:"build_targets,omitempty"`
+
+	// validate D-data word-sets (task #60, ruling: host projects the registry facts into the envelope
+	// so the validate ENGINE moves to the plugin WITHOUT the plugin ever dialing the host registry).
+	// The host fills these in the validate-project path only (empty for the resolved-project path);
+	// clause-D kind/word-recognition DATA consulted BY WORD, never a per-kind branch.
+	//
+	//	provider_capabilities — every compiled-in provider as "<class>:<word>" (validatePluginCandy
+	//	  checks a `source: builtin` candy's declared providers are actually compiled in).
+	//	act_capable_verbs — the plugin WORDS whose act form has a build/deploy install path (the host
+	//	  type-asserts ProvisionActor/TypedStepProvider/BuildEmitter + connected/declared externals +
+	//	  command, exactly as core's opActsInBuildDeploy does), so validateCheck's act-form rule keeps
+	//	  builtin rejection behaviour without the registry.
+	ProviderCapabilities []string `yaml:"provider_capabilities,omitempty" json:"provider_capabilities,omitempty"`
+
+	ActCapableVerbs []string `yaml:"act_capable_verbs,omitempty" json:"act_capable_verbs,omitempty"`
 
 	// box_plans — the include-ready FLATTENED acceptance plan per box (the `include: box:<name>`
 	// arm of the plan-composition splicer). The host projector runs the SAME base-chain walk
@@ -2999,6 +3313,24 @@ type StatusSubstrateReply struct {
 	Roots []StatusNestedNode `yaml:"roots,omitempty" json:"roots,omitempty"`
 
 	Single DeploymentStatus `yaml:"single,omitempty" json:"single,omitempty"`
+}
+
+// #ValidateProjectRequest — which project dir to validate (empty = the host's cwd) + whether to
+// include enabled:false boxes. Mirrors #ResolvedProjectRequest (the sibling resolved-project seam).
+type ValidateProjectRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	IncludeDisabled bool `yaml:"include_disabled,omitempty" json:"include_disabled,omitempty"`
+}
+
+// #ValidateProjectReply — the host-side project-validation result: the error-TOLERANT
+// #ResolvedProject projection (partial; only boxes/candies that resolved) + the host-anchored
+// diagnostics (per-box resolve failures + CUE-conformance + resource-vocab + build-tunable/merge).
+// The plugin merges these with its own pure-rule + resolution-graph findings for the final verdict.
+type ValidateProjectReply struct {
+	Project *ResolvedProject `yaml:"project,omitempty" json:"project,omitempty"`
+
+	Diagnostics Diagnostics `yaml:"diagnostics,omitempty" json:"diagnostics,omitempty"`
 }
 
 type Vm struct {

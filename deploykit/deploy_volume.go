@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
 )
 
@@ -18,12 +19,13 @@ import (
 // the two PURE per-deploy naming helpers (DeployVolumePrefix / DeployStorageDir, P13, from
 // charly/deploy.go) + (P11 — the enc-model cutover this file's P13 header earmarked) the
 // enc-coupled volume RESOLVER: ResolveVolumeBacking / resolveVolumeHostPath + the pure enc
-// path cluster (EncryptedVolumeName / EncryptedCipherDir / EncryptedPlainDir). VolumeMount +
-// ResolvedBindMount (the latter defined in quadlet.go with the P11 enc move) are plain-Go,
-// NOT CUE-sourced: they are NEVER marshaled — the ai.opencharly.volume OCI label is
-// []LabelVolumeEntry {name,path}, and VolumeMount is the DEPLOY-RESOLVED form built from a
-// LabelVolumeEntry + the box name at decode. So they are resolved runtime state and deploykit
-// plain-Go is their correct permanent home — the wire mandate does not apply.
+// path cluster (EncryptedVolumeName / EncryptedCipherDir / EncryptedPlainDir). VolumeMount is
+// CUE-sourced in spec now (P2B, task #60) and ALIASED here: not because the WIRE mandate applies
+// (it is never marshaled — the ai.opencharly.volume label is []LabelVolumeEntry {name,path}, and
+// VolumeMount is the DEPLOY-RESOLVED form built from one at decode), but because spec.BoxMetadata
+// CONTAINS []VolumeMount and spec sits below deploykit — a spec type cannot reference a deploykit
+// type, so containment forces VolumeMount down to spec. ResolvedBindMount (quadlet.go, the P11 enc
+// move) is NOT contained by any spec type, so it stays plain-Go here.
 // ResolveVolumeBacking is a PURE resolver: the HOST (config-resolve seam) loads labelVolumes
 // (ExtractMetadata) + deployVolumes (charly.yml) and calls it; the pod plugin consumes the
 // result. What STILL lives in charly core: scopeVolumesToDeployKey (reads *BoxMetadata — folds
@@ -31,10 +33,11 @@ import (
 // encStatus — deploy state, reached via the config-resolve seam, per Ruling C).
 
 // VolumeMount is a resolved named-volume mount (charly-<deploy>-<name> → container path).
-type VolumeMount struct {
-	VolumeName    string // e.g. "charly-openclaw-data"
-	ContainerPath string // e.g. "/home/user/.openclaw" (~ expanded)
-}
+// CUE-sourced in spec (boxmetadata.cue, P2B) + aliased here; consumers keep using
+// deploykit.VolumeMount unchanged. DISTINCT from spec.ResolvedVolumeMount (the box-aggregate
+// `charly box inspect --format volumes` entry): same two fields, different concept + call sites —
+// do NOT conflate them.
+type VolumeMount = spec.VolumeMount
 
 // DeployVolumePrefix is the named-volume prefix for a deploy: the deploy's container
 // name plus a dash, so EVERY distinctly-named deploy (base, Pattern-B, instance, or

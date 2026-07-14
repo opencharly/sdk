@@ -63,6 +63,15 @@
 	volumes?: [...#ResolvedVolumeMount] @go(Volumes)
 	aliases?: [...#CandyAlias] @go(Aliases)
 	engine?: string @go(Engine)
+
+	// box-AUTHORED surfaces the validate ENGINE checks (task #60): the box's OWN authored `plan:`
+	// (validateOps box-arm — every Op validated for authoring errors) and `alias:` (validateAliases
+	// box-arm — name char-set + cross-entry dedup). Distinct from the resolved `aliases` AGGREGATE
+	// above (cross-candy CollectBoxAlias) — these are the box entity's raw authored entries the plugin
+	// re-validates, so the whole validateOps/validateAliases move to plugin-box (ruling-a: grow the
+	// envelope rather than keep the R-rule in core).
+	plan?: [...#Step] @go(Plan)
+	authored_aliases?: [...#BoxAlias] @go(AuthoredAliases)
 }
 
 // #ResolvedVolumeMount — one entry of the box-aggregate volume list (CollectBoxVolume): the
@@ -88,6 +97,12 @@
 	remote?:      bool
 	repo_path?:   string @go(RepoPath)
 	is_plugin?:   bool   @go(IsPlugin)
+	// the candy's OWN declared plugin block (validatePluginCandy SUBJECT, task #60): the
+	// `plugin.providers:` capability strings + `plugin.source:` so the validate plugin can check each
+	// declared BUILTIN `<class>:<word>` is a member of ResolvedProject.ProviderCapabilities (the TARGET
+	// set). Empty for a non-plugin candy. is_plugin stays the cheap presence bool for inspect/list.
+	plugin_providers?: [...string] @go(PluginProviders)
+	plugin_source?:    string      @go(PluginSource)
 	require?: [...#CandyRef] @go(Require)
 	candy?: [...#CandyRef] @go(IncludedCandy)
 	env_provide?: {[string]: string} @go(EnvProvides)
@@ -104,6 +119,23 @@
 	aliases?: [...#CandyAlias] @go(Aliases)
 	has_init?: bool @go(HasInit)
 	port_relay?: [...int] @go(PortRelayPorts,type=[]int)
+
+	// capabilities — the per-candy capability surface the validate ENGINE reads (task #60,
+	// ruling a). The projector fills it from the candy's `capabilities:` block; the validate
+	// plugin re-runs AggregateCandyCapabilities over a box's candy order (a boolean OR of
+	// preserve_user, order-independent) + the PreserveUser rule (validateInitDependencies +
+	// validatePackagedServices box-arms). An aggregate over RESOLVED models belongs on the
+	// envelope, not a host route-B diagnostic — a lean envelope is not a virtue when it keeps
+	// an R-rule in core.
+	capabilities?: #CandyCapabilitiesView @go(Capabilities,optional=nillable)
+}
+
+// #CandyCapabilitiesView — the per-candy capability surface a consumer reads off the envelope.
+// Carries exactly the caps the validate ENGINE consumes (preserve_user today); grow it only when
+// a relocated rule reads a further cap. Mirrors the read half of the runtime candy's `capabilities:`
+// block (charly AggregatedCandyCaps).
+#CandyCapabilitiesView: {
+	preserve_user?: bool @go(PreserveUser)
 }
 
 // #ResolvedProject — the whole resolved projection: the schema version, the resolved boxes keyed by
@@ -131,6 +163,18 @@
 	agent_bodies?: {[string]: bytes} @go(AgentBodies,type=map[string]RawBody)
 	// build order + auto-intermediates (charly box list targets).
 	build_targets?: [...#BuildTarget] @go(BuildTargets)
+	// validate D-data word-sets (task #60, ruling: host projects the registry facts into the envelope
+	// so the validate ENGINE moves to the plugin WITHOUT the plugin ever dialing the host registry).
+	// The host fills these in the validate-project path only (empty for the resolved-project path);
+	// clause-D kind/word-recognition DATA consulted BY WORD, never a per-kind branch.
+	//   provider_capabilities — every compiled-in provider as "<class>:<word>" (validatePluginCandy
+	//     checks a `source: builtin` candy's declared providers are actually compiled in).
+	//   act_capable_verbs — the plugin WORDS whose act form has a build/deploy install path (the host
+	//     type-asserts ProvisionActor/TypedStepProvider/BuildEmitter + connected/declared externals +
+	//     command, exactly as core's opActsInBuildDeploy does), so validateCheck's act-form rule keeps
+	//     builtin rejection behaviour without the registry.
+	provider_capabilities?: [...string] @go(ProviderCapabilities)
+	act_capable_verbs?: [...string] @go(ActCapableVerbs)
 	// box_plans — the include-ready FLATTENED acceptance plan per box (the `include: box:<name>`
 	// arm of the plan-composition splicer). The host projector runs the SAME base-chain walk
 	// CollectDescriptions uses (candy-chain bakeable steps + the box-level bakeable plan) and

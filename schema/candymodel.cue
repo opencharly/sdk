@@ -77,6 +77,10 @@
 	aliases?: [...#CandyAlias] @go(Aliases)
 
 	// --- validate read-surface (candy-local config the validate ENGINE checks) ---
+	// external_builder: the reserved word of an EXTERNAL builder plugin this candy selects
+	// (from the candy manifest external_builder:). validateCandyContents reads it to accept a
+	// candy whose only content is an external-builder selection (deploykit EmitExternalBuilderStages).
+	external_builder?: string @go(ExternalBuilder)
 	libvirt?: [...string] @go(Libvirt)
 	engine?:  string @go(Engine)
 	port_relay?: [...int] @go(PortRelayPorts,type=[]int)
