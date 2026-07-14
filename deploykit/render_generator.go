@@ -1,6 +1,8 @@
 package deploykit
 
 import (
+	"strings"
+
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/spec"
 )
@@ -71,8 +73,14 @@ type Generator struct {
 
 	// ValidateEgress gates a hand-built config (traefik routes, …) against the
 	// egress CUE schemas before it is written into the build context. Wraps core
-	// ValidateEgress (the egress validation stays core / its plugin).
+	// ValidateEgress (the egress validation stays core / its plugin) — mode "bytes".
 	ValidateEgress func(kind, label string, data []byte) error
+
+	// ValidateTextEgress gates a rendered TEXT artifact (the Containerfile — rejects the
+	// "<no value>" template-failure marker) against the rendered_text constraint. Wraps core
+	// validateTextEgress (kind "rendered_text", mode "text"). Distinct from ValidateEgress (bytes)
+	// because the Containerfile is a rendered string, not a YAML/JSON blob (#67 render-DRIVE move).
+	ValidateTextEgress func(label, text string) error
 
 	// RenderService materializes a ServiceEntry into a RenderedService via
 	// candy/plugin-init's OpResolve (the init-system template knowledge lives in
@@ -128,6 +136,18 @@ type Generator struct {
 	// the minimal-input Invoke (all its error strings preserved byte-exact). Wraps core
 	// resolveExternalBuilder + its provider resolution. Used by EmitExternalBuilderStages.
 	ResolveExternalBuilderStage func(word, candyName string, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error)
+
+	// EmitBakedPlugins bakes each composing candy's `bake_plugin:` out-of-tree plugin
+	// binaries into the FINAL image at /usr/lib/charly/plugins/. The deploykit render
+	// calls this seam post-main-FROM (after EmitExternalBuilderArtifacts). The host
+	// (live path) wires the charly emitBakedPlugins closure; plugin-build wires it via
+	// HostBuild("bake-plugins"). Used by generateContainerfile (#67 render-DRIVE move).
+	EmitBakedPlugins func(b *strings.Builder, boxName string, candyOrder []string) error
+
+	// CollectBoxVolume returns an image's aggregated volume mounts. Wraps the core
+	// CollectBoxVolume(cfg, layers, boxName, home, nil) aggregator (which reads the core
+	// Config + Candy graph — RESOLVE-side, stays core). Used by generateDataImageContainerfile.
+	CollectBoxVolume func(boxName string, home string) ([]VolumeMount, error)
 }
 
 // NewRenderGenerator constructs a render Generator with its unexported per-image

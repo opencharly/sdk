@@ -50,6 +50,19 @@
 	source_dir?: string @go(SourceDir)
 	reboot?:     bool   @go(Reboot)
 
+	// --- host-precomputed predicates (#67 render-DRIVE move) ---
+	// has_content / has_install_files are the LIVE *Candy.HasContent() / HasInstallFiles()
+	// verdicts, computed HOST-SIDE (the live Candy has the env/ports/route/volumes/aliases/
+	// libvirt/init fields + the fs-probe caches the envelope CandyModel cannot recompute
+	// faithfully) and carried here so the specCandyAdapter matches the live *Candy
+	// byte-exactly — the candy-graph composition (ExpandCandy/ResolveCandyOrder: a composing
+	// candy with no content is skipped) and the pixi-bound intermediate detection both gate
+	// on these. A pure-composition candy (e.g. agent-forwarding: candy: [gnupg,direnv,
+	// ssh-client], only a check plan) has has_content=false, so it is correctly EXCLUDED
+	// from the candy graph — matching the pre-move core render.
+	has_content?:        bool @go(HasContent)
+	has_install_files?: bool @go(HasInstallFiles)
+
 	// --- plan + lowered ops ---
 	plan?: [...#Step] @go(Plan)
 	run_ops?: [...#Op] @go(RunOps)

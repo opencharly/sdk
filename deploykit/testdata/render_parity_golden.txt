@@ -1,0 +1,29 @@
+# .build/demo/Containerfile (generated -- do not edit)
+
+ARG BASE_IMAGE=quay.io/fedora/fedora:43
+
+FROM ${BASE_IMAGE}
+
+# Bootstrap
+RUN { [ -L /usr/local ] && mkdir -p "$(readlink /usr/local)"; mkdir -p /usr/local/bin; } && \
+    ARCH=$(uname -m) && \
+    case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac && \
+    curl -fsSL "https://github.com/go-task/task/releases/latest/download/task_linux_${ARCH}.tar.gz" | tar -xzf - -C /usr/local/bin task
+
+# User user (uid=1000) adopted from base image (declared in the embedded distro.base_user) — no useradd needed
+
+WORKDIR /home/user
+
+USER 1000
+# Image metadata
+LABEL ai.opencharly.version="2026.001.0001"
+LABEL ai.opencharly.box="demo"
+LABEL ai.opencharly.uid="1000"
+LABEL ai.opencharly.gid="1000"
+LABEL ai.opencharly.user="user"
+LABEL ai.opencharly.home="/home/user"
+LABEL ai.opencharly.platform.distro='["fedora:43","fedora"]'
+LABEL ai.opencharly.platform.format='["rpm"]'
+LABEL ai.opencharly.status="testing"
+LABEL ai.opencharly.check_level=""
+

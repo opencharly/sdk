@@ -117,15 +117,27 @@ func (a *specCandyAdapter) HasFormatPackages() bool {
 	return len(a.m.FormatSections) > 0 || len(a.m.TagSections) > 0 || len(a.m.TopPackages) > 0
 }
 func (a *specCandyAdapter) HasContent() bool {
-	return len(a.m.Plan) > 0 || len(a.m.RunOps) > 0 || a.HasFormatPackages() ||
-		len(a.m.Service) > 0 || len(a.m.Extract) > 0 || len(a.m.Data) > 0 || len(a.m.Apk) > 0
+	// Host-precomputed (#67): the live *Candy.HasContent() verdict (env/ports/route/volumes/
+	// aliases/libvirt/init + fs-probe caches the envelope cannot recompute faithfully), carried
+	// on the CandyModel so the candy-graph composition matches the pre-move core render.
+	return a.m.HasContent
 }
-func (a *specCandyAdapter) HasInstallFiles() bool { return a.HasContent() }
+func (a *specCandyAdapter) HasInstallFiles() bool {
+	// Host-precomputed (#67): the live *Candy.HasInstallFiles() verdict (packages + fs-probe
+	// detection + tasks/apk), carried on the CandyModel — distinct from HasContent (the pixi-
+	// bound intermediate detection gates on this narrower predicate).
+	return a.m.HasInstallFiles
+}
 func (a *specCandyAdapter) HasInit(string) bool {
 	return len(a.m.ServiceFiles) > 0 || len(a.m.Service) > 0
 }
 
 func (a *specCandyAdapter) GetExternalBuilder() string { return a.m.ExternalBuilder }
-func (a *specCandyAdapter) GetSubPathPrefix() string   { return "" } // build-mode-only; deferred to the K3-D render move (#67)
+
+// GetSubPathPrefix — the parent dir within the repo for a remote candy's COPY-source
+// (RepoPath + SubPathPrefix + ref). Filled on the CandyView by the resolve projector (#67
+// build-render move); the build-mode render (candyCopySource) reads it to reproduce remote
+// COPY sources WITHOUT the live *Candy. (Was stubbed "" while build-mode was host-only.)
+func (a *specCandyAdapter) GetSubPathPrefix() string { return a.v.SubPathPrefix }
 
 var _ CandyModel = (*specCandyAdapter)(nil)
