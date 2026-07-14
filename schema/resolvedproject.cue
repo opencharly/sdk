@@ -72,6 +72,43 @@
 	// envelope rather than keep the R-rule in core).
 	plan?: [...#Step] @go(Plan)
 	authored_aliases?: [...#BoxAlias] @go(AuthoredAliases)
+
+	// build-render label carriers (#67, the build_resolve RENDER-leg death). The host projector runs
+	// the label collectors + caps + init resolve + skill probe + status into a fully-baked #BakedLabelSet
+	// (the EXACT wire data writeLabels emits) so the deploykit render's WriteLabels — relocated out of
+	// core — FORMATS it byte-for-byte WITHOUT the live *Candy graph. #BakedLabelSet is the BUILD-side
+	// wire-form carrier (env map, volume LabelVolumeEntry, +init_label_key/oci_labels), distinct from
+	// #BoxMetadata (the deploy-side hub). caps carries the aggregated candy capability surface the
+	// render reads beyond the baked labels (the two render-gating booleans; oci_labels also ride the
+	// baked set for the formatter). Both filled ONLY in the build-render projection; empty for the
+	// resolved-project / validate path (which never renders), so that path stays lean.
+	baked_metadata?: #BakedLabelSet           @go(BakedMetadata,optional=nillable)
+	caps?:           #AggregatedCandyCapsView @go(Caps,optional=nillable)
+
+	// build-RENDER init/candy-order caches (#67, the build_resolve RENDER-leg death). The host
+	// render-prep computes these over the live *Candy/*Config graph (globalOrderForBox,
+	// AggregateCandyCapabilities, ActiveInit, ResolveInitSystem) and either sets them directly on
+	// the live ResolvedBox (the parity-test live path) or carries them through this envelope (the
+	// plugin-build drive path, re-attached by NewSpecResolvedBox) so the deploykit render reads
+	// RESOLVED caches WITHOUT the live graph. Filled ONLY in the build-render projection; empty for
+	// the resolved-project / validate path. render_candy_order is the per-box cache-optimal candy
+	// sequence; init_system/init_def the active init; active_inits the full active-init map
+	// (EmitInitFragmentStages + EmitInitAssembly read it).
+	render_candy_order?: [...string] @go(RenderCandyOrder)
+	init_system?:         string     @go(InitSystem)
+	init_def?:             _         @go(InitDef,type=*ResolvedInit)
+	active_inits?:         {[string]: _} @go(ActiveInits,type=map[string]*ResolvedInit)
+}
+
+// #AggregatedCandyCapsView — the box-level aggregated candy capability surface the build RENDER reads
+// (a wire projection of buildkit.AggregatedCandyCaps): the arbitrary candy-declared oci_labels + the
+// two booleans that gate the render (preserve_user → the final-USER-reset skip + the bootc round-trip
+// label; needs_root_after_init → the post-candy root reset). Carried so the plugin-side render
+// (NewSpecResolvedBox) reattaches img.CandyCaps WITHOUT re-aggregating over the live *Candy graph.
+#AggregatedCandyCapsView: {
+	preserve_user?:         bool @go(PreserveUser)
+	needs_root_after_init?: bool @go(NeedsRootAfterInit)
+	oci_labels?: {[string]: string} @go(OCILabels)
 }
 
 // #ResolvedVolumeMount — one entry of the box-aggregate volume list (CollectBoxVolume): the
@@ -96,6 +133,12 @@
 	info?:        string
 	remote?:      bool
 	repo_path?:   string @go(RepoPath)
+	// sub_path_prefix — the parent directory within the repo for sibling ref resolution
+	// (e.g. "candy/"). Build-mode remote-candy COPY-source leg: RepoPath + SubPathPrefix +
+	// ref reconstruct a remote candy's context path. Filled by the resolve projector; the
+	// specCandyAdapter returns it so the plugin-side render reproduces remote COPY sources
+	// WITHOUT the live *Candy (K3-D render move, #67 — the GetSubPathPrefix deferral).
+	sub_path_prefix?: string @go(SubPathPrefix)
 	is_plugin?:   bool   @go(IsPlugin)
 	// the candy's OWN declared plugin block (validatePluginCandy SUBJECT, task #60): the
 	// `plugin.providers:` capability strings + `plugin.source:` so the validate plugin can check each
@@ -184,6 +227,18 @@
 	// are host resolve Mechanisms over the runtime Candy), so the resolve engine ships it. Only
 	// boxes with a non-empty flattened plan appear.
 	box_plans?: {[string]: [...#Step]} @go(BoxPlans)
+	// global_order — the popularity-weighted GLOBAL candy order (GlobalCandyOrder) the
+	// build RENDER reads (deploykit Generator.GlobalOrderForBox → per-box candy sequence for
+	// cache-optimal layering). A host resolve Mechanism over the runtime Candy graph, so the
+	// resolve engine ships it (the plugin-side render can't recompute it). Filled in the
+	// build-render projection (#67); empty for the resolved-project/validate path.
+	global_order?: [...string] @go(GlobalOrder)
+	// externalized_builders — the registry D-FACT: which detection-builder WORDS
+	// (pixi/npm/aur/cargo) are externalized (their inline render crosses the OpResolve seam vs
+	// an in-core vocabulary). The render selects the branch by word (deploykit
+	// DetectExternalizedBuilders + candy_steps builder arm). clause-D word-recognition DATA
+	// consulted BY WORD; filled in the build-render projection (#67).
+	externalized_builders?: {[string]: bool} @go(ExternalizedBuilders)
 }
 
 // #ProjectTemplates — the bare pod:/vm:/local:/k8s:/android: template maps carried as OPAQUE payloads

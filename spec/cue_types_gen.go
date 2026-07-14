@@ -794,6 +794,124 @@ type CandyMCPProvide struct {
 	Transport string `yaml:"transport,omitempty" json:"transport,omitempty"`
 }
 
+// #BakedLabelSet — the BUILD-side wire-form carrier for the render's OCI-label emission
+// (#67, the build_resolve RENDER-leg death). The former charly/generate.go writeLabels body
+// split at the data/format boundary: the HOST gather (buildBakedMetadata) reads the live
+// *Candy/*Config graph + the Collect* aggregators and produces a *spec.BakedLabelSet holding
+// EXACTLY the data writeLabels emits, in WIRE form; the deploykit FORMATTER (WriteLabels)
+// emits the LABEL lines from it byte-for-byte WITHOUT the live graph. It is distinct from
+// #BoxMetadata (the DEPLOY-side hub ExtractMetadata builds field-by-field from labels): a
+// few fields differ in shape between the bake wire form and the deploy read form — env is a
+// map here (the label bakes a JSON object) but []string KEY=VALUE pairs in #BoxMetadata, and
+// volume is #LabelVolumeEntry here (name+path) but #VolumeMount in #BoxMetadata — so the
+// build carrier is its own wire-faithful type, never the deploy hub. It rides the envelope on
+// #ResolvedBoxView.baked_metadata (build-render projection only) and re-attaches via
+// NewSpecResolvedBox. MARSHALED (crosses core→plugin), so its tags are wire-relevant; the
+// sub-shapes are the same CUE-sourced label types writeLabels emitted.
+type BakedLabelSet struct {
+	// always-present scalars (the formatter emits these unconditionally as LABEL %q).
+	Version string `yaml:"version,omitempty" json:"version"`
+
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	UID int `yaml:"uid,omitempty" json:"uid"`
+
+	GID int `yaml:"gid,omitempty" json:"gid"`
+
+	User string `yaml:"user,omitempty" json:"user"`
+
+	Home string `yaml:"home,omitempty" json:"home"`
+
+	// conditional scalars (the formatter omits these when empty).
+	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
+
+	Bootc bool `yaml:"bootc,omitempty" json:"bootc,omitempty"`
+
+	OCILabels map[string]string `yaml:"oci_labels,omitempty" json:"oci_labels,omitempty"`
+
+	Network string `yaml:"network,omitempty" json:"network,omitempty"`
+
+	// platform identity + builder-pool coordination (writeJSONLabel).
+	Distro []string `yaml:"distro,omitempty" json:"distro,omitempty"`
+
+	BuildFormat []string `yaml:"build_format,omitempty" json:"build_format,omitempty"`
+
+	Builder map[string]string `yaml:"builder,omitempty" json:"builder,omitempty"`
+
+	Build []string `yaml:"build,omitempty" json:"build,omitempty"`
+
+	// JSON labels (omitted when empty). env is the image-level env MAP (the label wire form).
+	Port []string `yaml:"port,omitempty" json:"port,omitempty"`
+
+	PortProto map[string]string `yaml:"port_proto,omitempty" json:"port_proto,omitempty"`
+
+	Volume []LabelVolumeEntry `yaml:"volume,omitempty" json:"volume,omitempty"`
+
+	Alias []CollectedAlias `yaml:"alias,omitempty" json:"alias,omitempty"`
+
+	Security Security `yaml:"security,omitempty" json:"security,omitempty"`
+
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Hook *CandyHook `yaml:"hook,omitempty" json:"hook,omitempty"`
+
+	Description *LabelDescriptionSet `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Shell *LabelShellSet `yaml:"shell,omitempty" json:"shell,omitempty"`
+
+	// init system: active name + the deploy-relevant init def + the DYNAMIC label key the
+	// per-init service-name list emits under (writeJSONLabel(b, labelInitDef.LabelKey, names)).
+	Init string `yaml:"init,omitempty" json:"init,omitempty"`
+
+	InitDef *CapabilityInitDef `yaml:"init_def,omitempty" json:"init_def,omitempty"`
+
+	InitLabelKey string `yaml:"init_label_key,omitempty" json:"init_label_key,omitempty"`
+
+	ServiceNames []string `yaml:"service_names,omitempty" json:"service_names,omitempty"`
+
+	Service []CapabilityService `yaml:"service,omitempty" json:"service,omitempty"`
+
+	PortRelay []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
+
+	Secret []LabelSecretEntry `yaml:"secret,omitempty" json:"secret,omitempty"`
+
+	EnvProvide map[string]string `yaml:"env_provide,omitempty" json:"env_provide,omitempty"`
+
+	EnvRequire []EnvDependency `yaml:"env_require,omitempty" json:"env_require,omitempty"`
+
+	EnvAccept []EnvDependency `yaml:"env_accept,omitempty" json:"env_accept,omitempty"`
+
+	SecretRequire []EnvDependency `yaml:"secret_require,omitempty" json:"secret_require,omitempty"`
+
+	SecretAccept []EnvDependency `yaml:"secret_accept,omitempty" json:"secret_accept,omitempty"`
+
+	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
+
+	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
+
+	MCPAccept []EnvDependency `yaml:"mcp_accept,omitempty" json:"mcp_accept,omitempty"`
+
+	Route []LabelRouteEntry `yaml:"route,omitempty" json:"route,omitempty"`
+
+	EnvCandy map[string]string `yaml:"env_candy,omitempty" json:"env_candy,omitempty"`
+
+	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
+
+	Skill string `yaml:"skill,omitempty" json:"skill,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
+
+	CheckLevel string `yaml:"check_level,omitempty" json:"check_level,omitempty"`
+
+	Info string `yaml:"info,omitempty" json:"info,omitempty"`
+
+	CandyVersion map[string]string `yaml:"candy_version,omitempty" json:"candy_version,omitempty"`
+
+	DataEntries []LabelDataEntry `yaml:"data_entries,omitempty" json:"data_entries,omitempty"`
+
+	DataImage bool `yaml:"data_image,omitempty" json:"data_image,omitempty"`
+}
+
 // #InstallContext — data a distro format's install/prepare/cleanup template
 // renders against: packages + repo/copr/module/exclude/key modifiers, resolved
 // cache mounts, and the builder-stage identity/uid/gid/home.
@@ -945,18 +1063,17 @@ type BuildResolveRequest struct {
 	GenerateOnly bool `yaml:"generate_only,omitempty" json:"generate_only,omitempty"`
 }
 
-// #BuildResolveBox is one image's drive descriptor: the tag to build, the
-// rendered Containerfile CONTENT (piped to `podman build -f -` — shipped in the
-// reply, NOT read from disk, to preserve the race-safety vs a concurrent
-// generate overwrite), and whether merge.auto fires for it (the candy gates the
-// HostBuild("merge") call on this bool; the host merge seam resolves the size
-// knobs from config).
+// #BuildResolveBox is one image's drive descriptor: the tag to build and whether
+// merge.auto fires for it (the candy gates the HostBuild("merge") call on this
+// bool; the host merge seam resolves the size knobs from config). The rendered
+// Containerfile CONTENT is NO LONGER shipped in the reply (#67 render-DRIVE
+// move): plugin-build renders Containerfiles itself from the resolved-project
+// envelope (BuildResolveReply.resolved_project) via deploykit.Generator, so the
+// candy pipes dg.Containerfiles[name] to podman — not a reply field.
 type BuildResolveBox struct {
 	Name string `yaml:"name,omitempty" json:"name"`
 
 	FullTag string `yaml:"full_tag,omitempty" json:"full_tag,omitempty"`
-
-	Containerfile string `yaml:"containerfile,omitempty" json:"containerfile,omitempty"`
 
 	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
 
@@ -991,6 +1108,608 @@ type BuildResolveReply struct {
 	KeepImages int64 `yaml:"keep_images,omitempty" json:"keep_images,omitempty"`
 
 	Written []string `yaml:"written,omitempty" json:"written,omitempty"`
+
+	// resolved_project — the full resolved-project envelope with build-render
+	// caches (BakedMetadata/RenderCandyOrder/InitSystem/InitDef/ActiveInits/Caps
+	// on each ResolvedBoxView + GlobalOrder/ExternalizedBuilders on the project),
+	// so plugin-build renders Containerfiles via deploykit.Generator WITHOUT the
+	// live *Candy/*Config graph (#67 render-DRIVE move). Filled by the build-prep
+	// seam (render-prep → projectResolvedProject with caches). Empty for the
+	// generate-only path that writes Containerfiles host-side (transitional).
+	ResolvedProject *ResolvedProject `yaml:"resolved_project,omitempty" json:"resolved_project,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// #ResolvedProject — the whole resolved projection: the schema version, the resolved boxes keyed by
+// name, the resolved candy graph keyed by name, and the deploy tree (uf.Bundle verbatim — already
+// map[string]spec.Deploy). The deploy map is @go-pinned to a pointer map so `cue exp gengotypes`
+// generates map[string]*Deploy (recursive tree, faithful). provides/sidecar are additive later
+// members of this same envelope (added by the consumer unit that first needs them).
+type ResolvedProject struct {
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Boxes map[string]ResolvedBoxView `yaml:"boxes,omitempty" json:"boxes,omitempty"`
+
+	Candies map[string]CandyView `yaml:"candies,omitempty" json:"candies,omitempty"`
+
+	// candy_models — the serializable candy BUILD models (validate, the plan-include splicer, K3-D)
+	// keyed by name, distinct from candies (identity/graph). See candymodel.cue.
+	CandyModels map[string]CandyModel `yaml:"candy_models,omitempty" json:"candy_models,omitempty"`
+
+	Deploy map[string]*Deploy `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+
+	// build vocabulary (the validate ENGINE consumer): distro/init PIN the hand wire structs
+	// (spec.ResolvedDistro/ResolvedInit — the distro/init de-type OpResolve envelopes, no #CUE def);
+	// #Builder is a clean def. Pointer maps for parity with DistroConfig/BuilderConfig/InitConfig.Init.
+	Distro map[string]*ResolvedDistro `yaml:"distro,omitempty" json:"distro,omitempty"`
+
+	Builder map[string]*Builder `yaml:"builder,omitempty" json:"builder,omitempty"`
+
+	Init map[string]*ResolvedInit `yaml:"init,omitempty" json:"init,omitempty"`
+
+	// kind templates (validate localtemplates + check-include pod/vm arms + status k8s/adb enumeration).
+	Templates *ProjectTemplates `yaml:"templates,omitempty" json:"templates,omitempty"`
+
+	// kind:agent catalog (the harness AI-CLI pick — plugin-check reads it off this envelope; charly feature list-agent).
+	AgentBodies map[string]RawBody `yaml:"agent_bodies,omitempty" json:"agent_bodies,omitempty"`
+
+	// build order + auto-intermediates (charly box list targets).
+	BuildTargets []BuildTarget `yaml:"build_targets,omitempty" json:"build_targets,omitempty"`
+
+	// validate D-data word-sets (task #60, ruling: host projects the registry facts into the envelope
+	// so the validate ENGINE moves to the plugin WITHOUT the plugin ever dialing the host registry).
+	// The host fills these in the validate-project path only (empty for the resolved-project path);
+	// clause-D kind/word-recognition DATA consulted BY WORD, never a per-kind branch.
+	//
+	//	provider_capabilities — every compiled-in provider as "<class>:<word>" (validatePluginCandy
+	//	  checks a `source: builtin` candy's declared providers are actually compiled in).
+	//	act_capable_verbs — the plugin WORDS whose act form has a build/deploy install path (the host
+	//	  type-asserts ProvisionActor/TypedStepProvider/BuildEmitter + connected/declared externals +
+	//	  command, exactly as core's opActsInBuildDeploy does), so validateCheck's act-form rule keeps
+	//	  builtin rejection behaviour without the registry.
+	ProviderCapabilities []string `yaml:"provider_capabilities,omitempty" json:"provider_capabilities,omitempty"`
+
+	ActCapableVerbs []string `yaml:"act_capable_verbs,omitempty" json:"act_capable_verbs,omitempty"`
+
+	// box_plans — the include-ready FLATTENED acceptance plan per box (the `include: box:<name>`
+	// arm of the plan-composition splicer). The host projector runs the SAME base-chain walk
+	// CollectDescriptions uses (candy-chain bakeable steps + the box-level bakeable plan) and
+	// flattens the three sections into one ordered []Step, keyed by the QUALIFIED box name
+	// (namespaced boxes like `fedora.jupyter` included) — the exact result the former in-core
+	// box arm produced. A plugin cannot recompute it (base-chain + candy-order + bakeable filter
+	// are host resolve Mechanisms over the runtime Candy), so the resolve engine ships it. Only
+	// boxes with a non-empty flattened plan appear.
+	BoxPlans map[string][]Step `yaml:"box_plans,omitempty" json:"box_plans,omitempty"`
+
+	// global_order — the popularity-weighted GLOBAL candy order (GlobalCandyOrder) the
+	// build RENDER reads (deploykit Generator.GlobalOrderForBox → per-box candy sequence for
+	// cache-optimal layering). A host resolve Mechanism over the runtime Candy graph, so the
+	// resolve engine ships it (the plugin-side render can't recompute it). Filled in the
+	// build-render projection (#67); empty for the resolved-project/validate path.
+	GlobalOrder []string `yaml:"global_order,omitempty" json:"global_order,omitempty"`
+
+	// externalized_builders — the registry D-FACT: which detection-builder WORDS
+	// (pixi/npm/aur/cargo) are externalized (their inline render crosses the OpResolve seam vs
+	// an in-core vocabulary). The render selects the branch by word (deploykit
+	// DetectExternalizedBuilders + candy_steps builder arm). clause-D word-recognition DATA
+	// consulted BY WORD; filled in the build-render projection (#67).
+	ExternalizedBuilders map[string]bool `yaml:"externalized_builders,omitempty" json:"externalized_builders,omitempty"`
+}
+
+// #ResolvedBoxView — the resolved box METADATA a consumer reads: EXACTLY the non-json:"-" fields of
+// buildkit.ResolvedBox, in declaration order, so this view is the wire-safe half of what
+// `charly box inspect` already serializes (json.MarshalIndent(*ResolvedBox) — which never reaches the
+// 6 json:"-" compute-cache pointers). Field order mirrors ResolvedBox so a future inspect relocation
+// projects into this view byte-faithfully. Every field optional (a projection envelope); name is the
+// stable key.
+type ResolvedBoxView struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	EffectiveVersion string `yaml:"effective_version,omitempty" json:"effective_version,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
+
+	Info string `yaml:"info,omitempty" json:"info,omitempty"`
+
+	CheckLevel string `yaml:"check_level,omitempty" json:"check_level,omitempty"`
+
+	Base string `yaml:"base,omitempty" json:"base,omitempty"`
+
+	From string `yaml:"from,omitempty" json:"from,omitempty"`
+
+	BootstrapBuilderImage string `yaml:"bootstrap_builder_image,omitempty" json:"bootstrap_builder_image,omitempty"`
+
+	Platforms []string `yaml:"platforms,omitempty" json:"platforms,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
+
+	Pkg string `yaml:"pkg,omitempty" json:"pkg,omitempty"`
+
+	Distro []string `yaml:"distro,omitempty" json:"distro,omitempty"`
+
+	BuildFormats []string `yaml:"build_formats,omitempty" json:"build_formats,omitempty"`
+
+	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+
+	Candy []string `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	UID int64 `yaml:"uid,omitempty" json:"uid,omitempty"`
+
+	GID int64 `yaml:"gid,omitempty" json:"gid,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+
+	UserAdopted bool `yaml:"user_adopted,omitempty" json:"user_adopted,omitempty"`
+
+	Merge *BoxMerge `yaml:"merge,omitempty" json:"merge,omitempty"`
+
+	Builder map[string]string `yaml:"builder,omitempty" json:"builder,omitempty"`
+
+	BuilderCapabilities []string `yaml:"builder_capabilities,omitempty" json:"builder_capabilities,omitempty"`
+
+	Auto bool `yaml:"auto,omitempty" json:"auto,omitempty"`
+
+	Network string `yaml:"network,omitempty" json:"network,omitempty"`
+
+	DataImage bool `yaml:"data_image,omitempty" json:"data_image,omitempty"`
+
+	IsExternalBase bool `yaml:"is_external_base,omitempty" json:"is_external_base,omitempty"`
+
+	FullTag string `yaml:"full_tag,omitempty" json:"full_tag,omitempty"`
+
+	// box-AGGREGATES — the cross-candy effective values `charly box inspect --format
+	// ports|volumes|aliases|engine` prints (the host projector runs CollectBoxPorts /
+	// CollectBoxVolume / CollectBoxAlias / ResolveBoxEngine into these). engine is the raw
+	// resolver result ("" → the command body renders "(global default)").
+	Ports []string `yaml:"ports,omitempty" json:"ports,omitempty"`
+
+	Volumes []ResolvedVolumeMount `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+
+	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	// box-AUTHORED surfaces the validate ENGINE checks (task #60): the box's OWN authored `plan:`
+	// (validateOps box-arm — every Op validated for authoring errors) and `alias:` (validateAliases
+	// box-arm — name char-set + cross-entry dedup). Distinct from the resolved `aliases` AGGREGATE
+	// above (cross-candy CollectBoxAlias) — these are the box entity's raw authored entries the plugin
+	// re-validates, so the whole validateOps/validateAliases move to plugin-box (ruling-a: grow the
+	// envelope rather than keep the R-rule in core).
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	AuthoredAliases []BoxAlias `yaml:"authored_aliases,omitempty" json:"authored_aliases,omitempty"`
+
+	// build-render label carriers (#67, the build_resolve RENDER-leg death). The host projector runs
+	// the label collectors + caps + init resolve + skill probe + status into a fully-baked #BakedLabelSet
+	// (the EXACT wire data writeLabels emits) so the deploykit render's WriteLabels — relocated out of
+	// core — FORMATS it byte-for-byte WITHOUT the live *Candy graph. #BakedLabelSet is the BUILD-side
+	// wire-form carrier (env map, volume LabelVolumeEntry, +init_label_key/oci_labels), distinct from
+	// #BoxMetadata (the deploy-side hub). caps carries the aggregated candy capability surface the
+	// render reads beyond the baked labels (the two render-gating booleans; oci_labels also ride the
+	// baked set for the formatter). Both filled ONLY in the build-render projection; empty for the
+	// resolved-project / validate path (which never renders), so that path stays lean.
+	BakedMetadata *BakedLabelSet `yaml:"baked_metadata,omitempty" json:"baked_metadata,omitempty"`
+
+	Caps *AggregatedCandyCapsView `yaml:"caps,omitempty" json:"caps,omitempty"`
+
+	// build-RENDER init/candy-order caches (#67, the build_resolve RENDER-leg death). The host
+	// render-prep computes these over the live *Candy/*Config graph (globalOrderForBox,
+	// AggregateCandyCapabilities, ActiveInit, ResolveInitSystem) and either sets them directly on
+	// the live ResolvedBox (the parity-test live path) or carries them through this envelope (the
+	// plugin-build drive path, re-attached by NewSpecResolvedBox) so the deploykit render reads
+	// RESOLVED caches WITHOUT the live graph. Filled ONLY in the build-render projection; empty for
+	// the resolved-project / validate path. render_candy_order is the per-box cache-optimal candy
+	// sequence; init_system/init_def the active init; active_inits the full active-init map
+	// (EmitInitFragmentStages + EmitInitAssembly read it).
+	RenderCandyOrder []string `yaml:"render_candy_order,omitempty" json:"render_candy_order,omitempty"`
+
+	InitSystem string `yaml:"init_system,omitempty" json:"init_system,omitempty"`
+
+	InitDef *ResolvedInit `yaml:"init_def,omitempty" json:"init_def,omitempty"`
+
+	ActiveInits map[string]*ResolvedInit `yaml:"active_inits,omitempty" json:"active_inits,omitempty"`
+}
+
+// #ResolvedVolumeMount — one entry of the box-aggregate volume list (CollectBoxVolume): the
+// charly-<box>-<name> volume name + the home-expanded container path. Mirrors deploykit.VolumeMount
+// (a permanent deploykit home, never wire-marshaled there — spec carries the envelope copy).
+type ResolvedVolumeMount struct {
+	VolumeName string `yaml:"volume_name,omitempty" json:"volume_name,omitempty"`
+
+	ContainerPath string `yaml:"container_path,omitempty" json:"container_path,omitempty"`
+}
+
+// AliasYAML — for a CANDY alias `command` is REQUIRED (validateAliases); the
+// box-level #BoxAlias keeps it optional (defaults to name).
+type CandyAlias struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Command string `yaml:"command,omitempty" json:"command"`
+}
+
+// #AggregatedCandyCapsView — the box-level aggregated candy capability surface the build RENDER reads
+// (a wire projection of buildkit.AggregatedCandyCaps): the arbitrary candy-declared oci_labels + the
+// two booleans that gate the render (preserve_user → the final-USER-reset skip + the bootc round-trip
+// label; needs_root_after_init → the post-candy root reset). Carried so the plugin-side render
+// (NewSpecResolvedBox) reattaches img.CandyCaps WITHOUT re-aggregating over the live *Candy graph.
+type AggregatedCandyCapsView struct {
+	PreserveUser bool `yaml:"preserve_user,omitempty" json:"preserve_user,omitempty"`
+
+	NeedsRootAfterInit bool `yaml:"needs_root_after_init,omitempty" json:"needs_root_after_init,omitempty"`
+
+	OCILabels map[string]string `yaml:"oci_labels,omitempty" json:"oci_labels,omitempty"`
+}
+
+// #CandyView — the resolved candy GRAPH node a consumer reads: identity + dep-graph + provides +
+// ports/services (the exported surface of the runtime Candy). The Has* filesystem probes, the
+// unexported package/service sections, and the *CandyPluginDecl stay host — this is NOT the candy
+// BUILD model (plan-steps / package-format sections), which is the CandyModel / S-CM concern (K3-D),
+// distinct by design. require / candy pin to the bare map-key ref form (#CandyRef is @go(-), so a
+// list of it generates []string). name is the stable key.
+type CandyView struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
+
+	Info string `yaml:"info,omitempty" json:"info,omitempty"`
+
+	Remote bool `yaml:"remote,omitempty" json:"remote,omitempty"`
+
+	RepoPath string `yaml:"repo_path,omitempty" json:"repo_path,omitempty"`
+
+	// sub_path_prefix — the parent directory within the repo for sibling ref resolution
+	// (e.g. "candy/"). Build-mode remote-candy COPY-source leg: RepoPath + SubPathPrefix +
+	// ref reconstruct a remote candy's context path. Filled by the resolve projector; the
+	// specCandyAdapter returns it so the plugin-side render reproduces remote COPY sources
+	// WITHOUT the live *Candy (K3-D render move, #67 — the GetSubPathPrefix deferral).
+	SubPathPrefix string `yaml:"sub_path_prefix,omitempty" json:"sub_path_prefix,omitempty"`
+
+	IsPlugin bool `yaml:"is_plugin,omitempty" json:"is_plugin,omitempty"`
+
+	// the candy's OWN declared plugin block (validatePluginCandy SUBJECT, task #60): the
+	// `plugin.providers:` capability strings + `plugin.source:` so the validate plugin can check each
+	// declared BUILTIN `<class>:<word>` is a member of ResolvedProject.ProviderCapabilities (the TARGET
+	// set). Empty for a non-plugin candy. is_plugin stays the cheap presence bool for inspect/list.
+	PluginProviders []string `yaml:"plugin_providers,omitempty" json:"plugin_providers,omitempty"`
+
+	PluginSource string `yaml:"plugin_source,omitempty" json:"plugin_source,omitempty"`
+
+	Require []CandyRef `yaml:"require,omitempty" json:"require,omitempty"`
+
+	IncludedCandy []CandyRef `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	EnvProvides map[string]string `yaml:"env_provide,omitempty" json:"env_provide,omitempty"`
+
+	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
+
+	Ports []int64 `yaml:"port,omitempty" json:"port,omitempty"`
+
+	ServiceNames []string `yaml:"service_name,omitempty" json:"service_name,omitempty"`
+
+	// per-candy list-subcommand sources: `charly box list routes|volumes|aliases|services`.
+	// route/volumes/aliases carry the authored detail each subcommand prints (their presence IS
+	// the RouteCandy/VolumeCandy/AliasCandy predicate). has_init + port_relay reconstruct the
+	// InitCandy predicate (HasAnyInit() || PortRelayPorts>0) for `list services`.
+	Route *RouteConfig `yaml:"route,omitempty" json:"route,omitempty"`
+
+	Volumes []CandyVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+
+	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+
+	HasInit bool `yaml:"has_init,omitempty" json:"has_init,omitempty"`
+
+	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
+
+	// capabilities — the per-candy capability surface the validate ENGINE reads (task #60,
+	// ruling a). The projector fills it from the candy's `capabilities:` block; the validate
+	// plugin re-runs AggregateCandyCapabilities over a box's candy order (a boolean OR of
+	// preserve_user, order-independent) + the PreserveUser rule (validateInitDependencies +
+	// validatePackagedServices box-arms). An aggregate over RESOLVED models belongs on the
+	// envelope, not a host route-B diagnostic — a lean envelope is not a virtue when it keeps
+	// an R-rule in core.
+	Capabilities *CandyCapabilitiesView `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+}
+
+// #RouteConfig — a resolved route declaration (host + port-as-string). Mirrors deploykit.RouteConfig.
+// Port is a STRING here (the resolved form), distinct from #CandyRoute.port (authored int).
+type RouteConfig struct {
+	Host string `yaml:"host,omitempty" json:"host,omitempty"`
+
+	Port string `yaml:"port,omitempty" json:"port,omitempty"`
+}
+
+// VolumeYAML — name is lowercase-hyphen (validateVolume); path may be
+// home-relative (~/…) or absolute, so not anchored to /.
+type CandyVolume struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Path string `yaml:"path,omitempty" json:"path"`
+}
+
+// #CandyCapabilitiesView — the per-candy capability surface a consumer reads off the envelope.
+// Carries exactly the caps the validate ENGINE consumes (preserve_user today); grow it only when
+// a relocated rule reads a further cap. Mirrors the read half of the runtime candy's `capabilities:`
+// block (charly AggregatedCandyCaps).
+type CandyCapabilitiesView struct {
+	PreserveUser bool `yaml:"preserve_user,omitempty" json:"preserve_user,omitempty"`
+}
+
+// #CandyModel — the serializable candy build model. Every field optional (a projection). name is the
+// stable key. Field order mirrors the runtime *Candy accessors (deploykit.CandyModel interface).
+type CandyModel struct {
+	// --- identity ---
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	SourceDir string `yaml:"source_dir,omitempty" json:"source_dir,omitempty"`
+
+	Reboot bool `yaml:"reboot,omitempty" json:"reboot,omitempty"`
+
+	// --- host-precomputed predicates (#67 render-DRIVE move) ---
+	// has_content / has_install_files are the LIVE *Candy.HasContent() / HasInstallFiles()
+	// verdicts, computed HOST-SIDE (the live Candy has the env/ports/route/volumes/aliases/
+	// libvirt/init fields + the fs-probe caches the envelope CandyModel cannot recompute
+	// faithfully) and carried here so the specCandyAdapter matches the live *Candy
+	// byte-exactly — the candy-graph composition (ExpandCandy/ResolveCandyOrder: a composing
+	// candy with no content is skipped) and the pixi-bound intermediate detection both gate
+	// on these. A pure-composition candy (e.g. agent-forwarding: candy: [gnupg,direnv,
+	// ssh-client], only a check plan) has has_content=false, so it is correctly EXCLUDED
+	// from the candy graph — matching the pre-move core render.
+	HasContent bool `yaml:"has_content,omitempty" json:"has_content,omitempty"`
+
+	HasInstallFiles bool `yaml:"has_install_files,omitempty" json:"has_install_files,omitempty"`
+
+	// --- plan + lowered ops ---
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	RunOps []Op `yaml:"run_ops,omitempty" json:"run_ops,omitempty"`
+
+	// --- services / extract / data / apk ---
+	Service []CandyService `yaml:"service,omitempty" json:"service,omitempty"`
+
+	Extract []CandyExtract `yaml:"extract,omitempty" json:"extract,omitempty"`
+
+	Data []CandyData `yaml:"data,omitempty" json:"data,omitempty"`
+
+	Apk []ApkPackageSpec `yaml:"apk,omitempty" json:"apk,omitempty"`
+
+	// --- package surface (resolved) ---
+	TopPackages []string `yaml:"top_packages,omitempty" json:"top_packages,omitempty"`
+
+	LocalPkg map[string]string `yaml:"localpkg,omitempty" json:"localpkg,omitempty"`
+
+	FormatSections map[string]PackageSection `yaml:"format_sections,omitempty" json:"format_sections,omitempty"`
+
+	TagSections map[string]TagPkgConfig `yaml:"tag_sections,omitempty" json:"tag_sections,omitempty"`
+
+	// --- env / vars / route / shell ---
+	Vars map[string]string `yaml:"vars,omitempty" json:"vars,omitempty"`
+
+	Env *EnvConfig `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Route *RouteConfig `yaml:"route,omitempty" json:"route,omitempty"`
+
+	Shell *Shell `yaml:"shell,omitempty" json:"shell,omitempty"`
+
+	// --- volumes / aliases ---
+	Volumes []CandyVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+
+	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+
+	// --- validate read-surface (candy-local config the validate ENGINE checks) ---
+	// external_builder: the reserved word of an EXTERNAL builder plugin this candy selects
+	// (from the candy manifest external_builder:). validateCandyContents reads it to accept a
+	// candy whose only content is an external-builder selection (deploykit EmitExternalBuilderStages).
+	ExternalBuilder string `yaml:"external_builder,omitempty" json:"external_builder,omitempty"`
+
+	Libvirt []string `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
+
+	ServiceFiles []string `yaml:"service_files,omitempty" json:"service_files,omitempty"`
+
+	EnvRequire []EnvDependency `yaml:"env_require,omitempty" json:"env_require,omitempty"`
+
+	EnvAccept []EnvDependency `yaml:"env_accept,omitempty" json:"env_accept,omitempty"`
+
+	SecretRequire []EnvDependency `yaml:"secret_require,omitempty" json:"secret_require,omitempty"`
+
+	SecretAccept []EnvDependency `yaml:"secret_accept,omitempty" json:"secret_accept,omitempty"`
+
+	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
+
+	MCPAccept []EnvDependency `yaml:"mcp_accept,omitempty" json:"mcp_accept,omitempty"`
+}
+
+// ServiceEntry (service_render.go). use_packaged XOR exec is a Go cross-field
+// rule (mixed-entry polymorphism allows the SAME name twice: one packaged form,
+// one exec form) — neither is required at the CUE layer.
+type CandyService struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	UsePackaged string `yaml:"use_packaged,omitempty" json:"use_packaged,omitempty"`
+
+	Exec string `yaml:"exec,omitempty" json:"exec,omitempty"`
+
+	// distro restricts this entry to the named distros — a bare distro name
+	// ("debian") or a versioned tag ("debian:13"). Empty = every distro (the
+	// backward-compatible default). The service analogue of a check step's
+	// exclude_distros: — it lets ONE candy carry per-distro-DIVERGENT packaged
+	// units / exec daemons (the modular virtqemud.socket + virtnetworkd.socket
+	// on Fedora/Arch vs the monolithic libvirtd.socket on Debian/Ubuntu, whose
+	// libvirt is built without the split daemons) WITHOUT a <name>-host sibling
+	// candy (CLAUDE.md "Init-system polymorphism"; R3). Filtered at render time
+	// against the target distro tag chain (compileServiceSteps + generate.go).
+	Distro []string `yaml:"distro,omitempty" json:"distro,omitempty"`
+
+	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Restart string `yaml:"restart,omitempty" json:"restart,omitempty"`
+
+	WorkingDirectory string `yaml:"working_directory,omitempty" json:"working_directory,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	After []string `yaml:"after,omitempty" json:"after,omitempty"`
+
+	Before []string `yaml:"before,omitempty" json:"before,omitempty"`
+
+	WantedBy []string `yaml:"wanted_by,omitempty" json:"wanted_by,omitempty"`
+
+	Stdout string `yaml:"stdout,omitempty" json:"stdout,omitempty"`
+
+	StopTimeout string `yaml:"stop_timeout,omitempty" json:"stop_timeout,omitempty"`
+
+	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+
+	Enable bool `yaml:"enable,omitempty" json:"enable,omitempty"`
+
+	Overrides *CandyServiceOverrides `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+
+	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
+
+	Events string `yaml:"event,omitempty" json:"event,omitempty"`
+
+	AutoStart *bool `yaml:"auto_start,omitempty" json:"auto_start,omitempty"`
+
+	StartRetries int `yaml:"start_retry,omitempty" json:"start_retry,omitempty"`
+
+	StartSecs int `yaml:"start_sec,omitempty" json:"start_sec,omitempty"`
+
+	StopSignal string `yaml:"stop_signal,omitempty" json:"stop_signal,omitempty"`
+
+	ExitCode string `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
+
+	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
+}
+
+type CandyServiceOverrides struct {
+	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
+
+	After []string `yaml:"after,omitempty" json:"after,omitempty"`
+
+	Exec string `yaml:"exec,omitempty" json:"exec,omitempty"`
+}
+
+// ExtractYAML — copy a path out of another OCI image into this one. source is
+// an image ref; path (in the source image) and dest (in this image) are
+// absolute (validateCandyContents).
+type CandyExtract struct {
+	Source string `yaml:"source,omitempty" json:"source"`
+
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	Dest string `yaml:"dest,omitempty" json:"dest"`
+}
+
+// DataYAML — stage candy-dir data into a volume at build, provision at deploy.
+type CandyData struct {
+	Src string `yaml:"src,omitempty" json:"src"`
+
+	Volume string `yaml:"volume,omitempty" json:"volume"`
+
+	Dest string `yaml:"dest,omitempty" json:"dest,omitempty"`
+}
+
+// #PackageSection — a generic format-specific package section (rpm/deb/pac/aur). Raw carries the
+// full YAML map for template rendering. Mirrors deploykit.PackageSection (which now aliases this).
+type PackageSection struct {
+	FormatName string `yaml:"format_name,omitempty" json:"format_name,omitempty"`
+
+	Packages []string `yaml:"packages,omitempty" json:"packages,omitempty"`
+
+	Raw map[string]any `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #TagPkgConfig — a distro/version-specific package section (debian:13, ubuntu:24.04, fedora:43…).
+// Raw captures the full YAML so tag sections carry repos:/options:/keys:. Mirrors deploykit.TagPkgConfig.
+type TagPkgConfig struct {
+	Package []string `yaml:"package,omitempty" json:"package,omitempty"`
+
+	Raw map[string]any `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #EnvConfig — resolved candy env (KEY=value vars + PATH-append entries). Mirrors kit.EnvConfig.
+type EnvConfig struct {
+	Vars map[string]string `yaml:"vars,omitempty" json:"vars,omitempty"`
+
+	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
+}
+
+// #ProjectTemplates — the bare pod:/vm:/local:/k8s:/android: template maps carried as OPAQUE payloads
+// (the uf.Pod/VM/Local/K8s/Android raw bytes, verbatim). The host projector stays KIND-BLIND — it
+// copies the raw template bytes with NO concrete-kind decode (a kernel that read spec.Local/#Pod/…
+// would violate the boundary law + trip TestNoConcreteKindInKernel). The CONSUMING PLUGINS
+// (validate localtemplates, check-include pod/vm arms, status k8s/adb) decode a RawBody into the
+// concrete spec kind type themselves — a plugin MAY know kinds, the kernel may not.
+type ProjectTemplates struct {
+	Local map[string]RawBody `yaml:"local,omitempty" json:"local,omitempty"`
+
+	K8s map[string]RawBody `yaml:"k8s,omitempty" json:"k8s,omitempty"`
+
+	Pod map[string]RawBody `yaml:"pod,omitempty" json:"pod,omitempty"`
+
+	VM map[string]RawBody `yaml:"vm,omitempty" json:"vm,omitempty"`
+
+	Android map[string]RawBody `yaml:"android,omitempty" json:"android,omitempty"`
+}
+
+// #BuildTarget — a build-order entry (charly box list targets): the box/intermediate name + whether
+// it is an auto-computed intermediate (the `name [auto]` output).
+type BuildTarget struct {
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	Auto bool `yaml:"auto,omitempty" json:"auto,omitempty"`
+}
+
+// #BakePluginsRequest carries the inputs the host-side bake-plugins seam needs: the
+// project dir (to load the live *Candy graph for SourceDir + buildPluginBinary), the box
+// name (for the staging dir), and the candy order (the composition being baked). The host
+// builds + stages each bake_plugin binary + returns the COPY/chmod fragment (#67).
+type BakePluginsRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	BoxName string `yaml:"box_name,omitempty" json:"box_name"`
+
+	CandyOrder []string `yaml:"candy_order,omitempty" json:"candy_order,omitempty"`
+}
+
+// #BakePluginsReply carries the rendered Containerfile fragment (COPY + chmod lines for
+// each bake_plugin binary) + the reply-error convention.
+type BakePluginsReply struct {
+	Fragment string `yaml:"fragment,omitempty" json:"fragment,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// #RenderSeamRequest is the generic host↔plugin render-seam dispatch (#67 render-DRIVE move).
+// plugin-build wires the deploykit.Generator seams via HostBuild("render-seam") with a method
+// discriminator + opaque JSON params. The host dispatches by method to the corresponding core
+// function. This is the SINGLE HostBuild kind for ALL render seams that need host callbacks
+// (RenderService, ValidateEgress, EmitPluginOp, etc.) — one CUE type, many methods.
+type RenderSeamRequest struct {
+	Method string `yaml:"method,omitempty" json:"method"`
+
+	Params []byte `yaml:"params,omitempty" json:"params,omitempty"`
+}
+
+// #RenderSeamReply carries the opaque JSON result + the reply-error convention.
+type RenderSeamReply struct {
+	Result []byte `yaml:"result,omitempty" json:"result,omitempty"`
 
 	Error string `yaml:"error,omitempty" json:"error,omitempty"`
 }
@@ -1188,112 +1907,6 @@ type CandyRoute struct {
 	Port int `yaml:"port,omitempty" json:"port"`
 }
 
-// ServiceEntry (service_render.go). use_packaged XOR exec is a Go cross-field
-// rule (mixed-entry polymorphism allows the SAME name twice: one packaged form,
-// one exec form) — neither is required at the CUE layer.
-type CandyService struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	UsePackaged string `yaml:"use_packaged,omitempty" json:"use_packaged,omitempty"`
-
-	Exec string `yaml:"exec,omitempty" json:"exec,omitempty"`
-
-	// distro restricts this entry to the named distros — a bare distro name
-	// ("debian") or a versioned tag ("debian:13"). Empty = every distro (the
-	// backward-compatible default). The service analogue of a check step's
-	// exclude_distros: — it lets ONE candy carry per-distro-DIVERGENT packaged
-	// units / exec daemons (the modular virtqemud.socket + virtnetworkd.socket
-	// on Fedora/Arch vs the monolithic libvirtd.socket on Debian/Ubuntu, whose
-	// libvirt is built without the split daemons) WITHOUT a <name>-host sibling
-	// candy (CLAUDE.md "Init-system polymorphism"; R3). Filtered at render time
-	// against the target distro tag chain (compileServiceSteps + generate.go).
-	Distro []string `yaml:"distro,omitempty" json:"distro,omitempty"`
-
-	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
-
-	Restart string `yaml:"restart,omitempty" json:"restart,omitempty"`
-
-	WorkingDirectory string `yaml:"working_directory,omitempty" json:"working_directory,omitempty"`
-
-	User string `yaml:"user,omitempty" json:"user,omitempty"`
-
-	After []string `yaml:"after,omitempty" json:"after,omitempty"`
-
-	Before []string `yaml:"before,omitempty" json:"before,omitempty"`
-
-	WantedBy []string `yaml:"wanted_by,omitempty" json:"wanted_by,omitempty"`
-
-	Stdout string `yaml:"stdout,omitempty" json:"stdout,omitempty"`
-
-	StopTimeout string `yaml:"stop_timeout,omitempty" json:"stop_timeout,omitempty"`
-
-	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
-
-	Enable bool `yaml:"enable,omitempty" json:"enable,omitempty"`
-
-	Overrides *CandyServiceOverrides `yaml:"overrides,omitempty" json:"overrides,omitempty"`
-
-	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
-
-	Events string `yaml:"event,omitempty" json:"event,omitempty"`
-
-	AutoStart *bool `yaml:"auto_start,omitempty" json:"auto_start,omitempty"`
-
-	StartRetries int `yaml:"start_retry,omitempty" json:"start_retry,omitempty"`
-
-	StartSecs int `yaml:"start_sec,omitempty" json:"start_sec,omitempty"`
-
-	StopSignal string `yaml:"stop_signal,omitempty" json:"stop_signal,omitempty"`
-
-	ExitCode string `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
-
-	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
-}
-
-type CandyServiceOverrides struct {
-	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
-
-	After []string `yaml:"after,omitempty" json:"after,omitempty"`
-
-	Exec string `yaml:"exec,omitempty" json:"exec,omitempty"`
-}
-
-// VolumeYAML — name is lowercase-hyphen (validateVolume); path may be
-// home-relative (~/…) or absolute, so not anchored to /.
-type CandyVolume struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Path string `yaml:"path,omitempty" json:"path"`
-}
-
-// AliasYAML — for a CANDY alias `command` is REQUIRED (validateAliases); the
-// box-level #BoxAlias keeps it optional (defaults to name).
-type CandyAlias struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Command string `yaml:"command,omitempty" json:"command"`
-}
-
-// ExtractYAML — copy a path out of another OCI image into this one. source is
-// an image ref; path (in the source image) and dest (in this image) are
-// absolute (validateCandyContents).
-type CandyExtract struct {
-	Source string `yaml:"source,omitempty" json:"source"`
-
-	Path string `yaml:"path,omitempty" json:"path"`
-
-	Dest string `yaml:"dest,omitempty" json:"dest"`
-}
-
-// DataYAML — stage candy-dir data into a volume at build, provision at deploy.
-type CandyData struct {
-	Src string `yaml:"src,omitempty" json:"src"`
-
-	Volume string `yaml:"volume,omitempty" json:"volume"`
-
-	Dest string `yaml:"dest,omitempty" json:"dest,omitempty"`
-}
-
 // SecretYAML — a candy-owned secret (target defaults to /run/secrets/<name>).
 type CandySecret struct {
 	Name string `yaml:"name,omitempty" json:"name"`
@@ -1324,115 +1937,6 @@ type CandyArtifactRewrite struct {
 	Find string `yaml:"find,omitempty" json:"find"`
 
 	Replace string `yaml:"replace,omitempty" json:"replace,omitempty"`
-}
-
-// #PackageSection — a generic format-specific package section (rpm/deb/pac/aur). Raw carries the
-// full YAML map for template rendering. Mirrors deploykit.PackageSection (which now aliases this).
-type PackageSection struct {
-	FormatName string `yaml:"format_name,omitempty" json:"format_name,omitempty"`
-
-	Packages []string `yaml:"packages,omitempty" json:"packages,omitempty"`
-
-	Raw map[string]any `yaml:"raw,omitempty" json:"raw,omitempty"`
-}
-
-// #TagPkgConfig — a distro/version-specific package section (debian:13, ubuntu:24.04, fedora:43…).
-// Raw captures the full YAML so tag sections carry repos:/options:/keys:. Mirrors deploykit.TagPkgConfig.
-type TagPkgConfig struct {
-	Package []string `yaml:"package,omitempty" json:"package,omitempty"`
-
-	Raw map[string]any `yaml:"raw,omitempty" json:"raw,omitempty"`
-}
-
-// #EnvConfig — resolved candy env (KEY=value vars + PATH-append entries). Mirrors kit.EnvConfig.
-type EnvConfig struct {
-	Vars map[string]string `yaml:"vars,omitempty" json:"vars,omitempty"`
-
-	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
-}
-
-// #RouteConfig — a resolved route declaration (host + port-as-string). Mirrors deploykit.RouteConfig.
-// Port is a STRING here (the resolved form), distinct from #CandyRoute.port (authored int).
-type RouteConfig struct {
-	Host string `yaml:"host,omitempty" json:"host,omitempty"`
-
-	Port string `yaml:"port,omitempty" json:"port,omitempty"`
-}
-
-// #CandyModel — the serializable candy build model. Every field optional (a projection). name is the
-// stable key. Field order mirrors the runtime *Candy accessors (deploykit.CandyModel interface).
-type CandyModel struct {
-	// --- identity ---
-	Name string `yaml:"name,omitempty" json:"name,omitempty"`
-
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-
-	SourceDir string `yaml:"source_dir,omitempty" json:"source_dir,omitempty"`
-
-	Reboot bool `yaml:"reboot,omitempty" json:"reboot,omitempty"`
-
-	// --- plan + lowered ops ---
-	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
-
-	RunOps []Op `yaml:"run_ops,omitempty" json:"run_ops,omitempty"`
-
-	// --- services / extract / data / apk ---
-	Service []CandyService `yaml:"service,omitempty" json:"service,omitempty"`
-
-	Extract []CandyExtract `yaml:"extract,omitempty" json:"extract,omitempty"`
-
-	Data []CandyData `yaml:"data,omitempty" json:"data,omitempty"`
-
-	Apk []ApkPackageSpec `yaml:"apk,omitempty" json:"apk,omitempty"`
-
-	// --- package surface (resolved) ---
-	TopPackages []string `yaml:"top_packages,omitempty" json:"top_packages,omitempty"`
-
-	LocalPkg map[string]string `yaml:"localpkg,omitempty" json:"localpkg,omitempty"`
-
-	FormatSections map[string]PackageSection `yaml:"format_sections,omitempty" json:"format_sections,omitempty"`
-
-	TagSections map[string]TagPkgConfig `yaml:"tag_sections,omitempty" json:"tag_sections,omitempty"`
-
-	// --- env / vars / route / shell ---
-	Vars map[string]string `yaml:"vars,omitempty" json:"vars,omitempty"`
-
-	Env *EnvConfig `yaml:"env,omitempty" json:"env,omitempty"`
-
-	Route *RouteConfig `yaml:"route,omitempty" json:"route,omitempty"`
-
-	Shell *Shell `yaml:"shell,omitempty" json:"shell,omitempty"`
-
-	// --- volumes / aliases ---
-	Volumes []CandyVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
-
-	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
-
-	// --- validate read-surface (candy-local config the validate ENGINE checks) ---
-	// external_builder: the reserved word of an EXTERNAL builder plugin this candy selects
-	// (from the candy manifest external_builder:). validateCandyContents reads it to accept a
-	// candy whose only content is an external-builder selection (deploykit EmitExternalBuilderStages).
-	ExternalBuilder string `yaml:"external_builder,omitempty" json:"external_builder,omitempty"`
-
-	Libvirt []string `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
-
-	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
-
-	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
-
-	ServiceFiles []string `yaml:"service_files,omitempty" json:"service_files,omitempty"`
-
-	EnvRequire []EnvDependency `yaml:"env_require,omitempty" json:"env_require,omitempty"`
-
-	EnvAccept []EnvDependency `yaml:"env_accept,omitempty" json:"env_accept,omitempty"`
-
-	SecretRequire []EnvDependency `yaml:"secret_require,omitempty" json:"secret_require,omitempty"`
-
-	SecretAccept []EnvDependency `yaml:"secret_accept,omitempty" json:"secret_accept,omitempty"`
-
-	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
-
-	MCPAccept []EnvDependency `yaml:"mcp_accept,omitempty" json:"mcp_accept,omitempty"`
 }
 
 // #DeployTraits is a SUBSTRATE kind's DECLARED deploy behaviour (P9): a substrate plugin
@@ -2347,268 +2851,6 @@ type SidecarVolume struct {
 	Name string `yaml:"name,omitempty" json:"name"`
 
 	Path string `yaml:"path,omitempty" json:"path"`
-}
-
-// #ResolvedBoxView — the resolved box METADATA a consumer reads: EXACTLY the non-json:"-" fields of
-// buildkit.ResolvedBox, in declaration order, so this view is the wire-safe half of what
-// `charly box inspect` already serializes (json.MarshalIndent(*ResolvedBox) — which never reaches the
-// 6 json:"-" compute-cache pointers). Field order mirrors ResolvedBox so a future inspect relocation
-// projects into this view byte-faithfully. Every field optional (a projection envelope); name is the
-// stable key.
-type ResolvedBoxView struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-
-	EffectiveVersion string `yaml:"effective_version,omitempty" json:"effective_version,omitempty"`
-
-	Status string `yaml:"status,omitempty" json:"status,omitempty"`
-
-	Info string `yaml:"info,omitempty" json:"info,omitempty"`
-
-	CheckLevel string `yaml:"check_level,omitempty" json:"check_level,omitempty"`
-
-	Base string `yaml:"base,omitempty" json:"base,omitempty"`
-
-	From string `yaml:"from,omitempty" json:"from,omitempty"`
-
-	BootstrapBuilderImage string `yaml:"bootstrap_builder_image,omitempty" json:"bootstrap_builder_image,omitempty"`
-
-	Platforms []string `yaml:"platforms,omitempty" json:"platforms,omitempty"`
-
-	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
-
-	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
-
-	Pkg string `yaml:"pkg,omitempty" json:"pkg,omitempty"`
-
-	Distro []string `yaml:"distro,omitempty" json:"distro,omitempty"`
-
-	BuildFormats []string `yaml:"build_formats,omitempty" json:"build_formats,omitempty"`
-
-	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
-
-	Candy []string `yaml:"candy,omitempty" json:"candy,omitempty"`
-
-	User string `yaml:"user,omitempty" json:"user,omitempty"`
-
-	UID int64 `yaml:"uid,omitempty" json:"uid,omitempty"`
-
-	GID int64 `yaml:"gid,omitempty" json:"gid,omitempty"`
-
-	Home string `yaml:"home,omitempty" json:"home,omitempty"`
-
-	UserAdopted bool `yaml:"user_adopted,omitempty" json:"user_adopted,omitempty"`
-
-	Merge *BoxMerge `yaml:"merge,omitempty" json:"merge,omitempty"`
-
-	Builder map[string]string `yaml:"builder,omitempty" json:"builder,omitempty"`
-
-	BuilderCapabilities []string `yaml:"builder_capabilities,omitempty" json:"builder_capabilities,omitempty"`
-
-	Auto bool `yaml:"auto,omitempty" json:"auto,omitempty"`
-
-	Network string `yaml:"network,omitempty" json:"network,omitempty"`
-
-	DataImage bool `yaml:"data_image,omitempty" json:"data_image,omitempty"`
-
-	IsExternalBase bool `yaml:"is_external_base,omitempty" json:"is_external_base,omitempty"`
-
-	FullTag string `yaml:"full_tag,omitempty" json:"full_tag,omitempty"`
-
-	// box-AGGREGATES — the cross-candy effective values `charly box inspect --format
-	// ports|volumes|aliases|engine` prints (the host projector runs CollectBoxPorts /
-	// CollectBoxVolume / CollectBoxAlias / ResolveBoxEngine into these). engine is the raw
-	// resolver result ("" → the command body renders "(global default)").
-	Ports []string `yaml:"ports,omitempty" json:"ports,omitempty"`
-
-	Volumes []ResolvedVolumeMount `yaml:"volumes,omitempty" json:"volumes,omitempty"`
-
-	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
-
-	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
-
-	// box-AUTHORED surfaces the validate ENGINE checks (task #60): the box's OWN authored `plan:`
-	// (validateOps box-arm — every Op validated for authoring errors) and `alias:` (validateAliases
-	// box-arm — name char-set + cross-entry dedup). Distinct from the resolved `aliases` AGGREGATE
-	// above (cross-candy CollectBoxAlias) — these are the box entity's raw authored entries the plugin
-	// re-validates, so the whole validateOps/validateAliases move to plugin-box (ruling-a: grow the
-	// envelope rather than keep the R-rule in core).
-	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
-
-	AuthoredAliases []BoxAlias `yaml:"authored_aliases,omitempty" json:"authored_aliases,omitempty"`
-}
-
-// #ResolvedVolumeMount — one entry of the box-aggregate volume list (CollectBoxVolume): the
-// charly-<box>-<name> volume name + the home-expanded container path. Mirrors deploykit.VolumeMount
-// (a permanent deploykit home, never wire-marshaled there — spec carries the envelope copy).
-type ResolvedVolumeMount struct {
-	VolumeName string `yaml:"volume_name,omitempty" json:"volume_name,omitempty"`
-
-	ContainerPath string `yaml:"container_path,omitempty" json:"container_path,omitempty"`
-}
-
-// #CandyView — the resolved candy GRAPH node a consumer reads: identity + dep-graph + provides +
-// ports/services (the exported surface of the runtime Candy). The Has* filesystem probes, the
-// unexported package/service sections, and the *CandyPluginDecl stay host — this is NOT the candy
-// BUILD model (plan-steps / package-format sections), which is the CandyModel / S-CM concern (K3-D),
-// distinct by design. require / candy pin to the bare map-key ref form (#CandyRef is @go(-), so a
-// list of it generates []string). name is the stable key.
-type CandyView struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
-
-	Status string `yaml:"status,omitempty" json:"status,omitempty"`
-
-	Info string `yaml:"info,omitempty" json:"info,omitempty"`
-
-	Remote bool `yaml:"remote,omitempty" json:"remote,omitempty"`
-
-	RepoPath string `yaml:"repo_path,omitempty" json:"repo_path,omitempty"`
-
-	IsPlugin bool `yaml:"is_plugin,omitempty" json:"is_plugin,omitempty"`
-
-	// the candy's OWN declared plugin block (validatePluginCandy SUBJECT, task #60): the
-	// `plugin.providers:` capability strings + `plugin.source:` so the validate plugin can check each
-	// declared BUILTIN `<class>:<word>` is a member of ResolvedProject.ProviderCapabilities (the TARGET
-	// set). Empty for a non-plugin candy. is_plugin stays the cheap presence bool for inspect/list.
-	PluginProviders []string `yaml:"plugin_providers,omitempty" json:"plugin_providers,omitempty"`
-
-	PluginSource string `yaml:"plugin_source,omitempty" json:"plugin_source,omitempty"`
-
-	Require []CandyRef `yaml:"require,omitempty" json:"require,omitempty"`
-
-	IncludedCandy []CandyRef `yaml:"candy,omitempty" json:"candy,omitempty"`
-
-	EnvProvides map[string]string `yaml:"env_provide,omitempty" json:"env_provide,omitempty"`
-
-	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
-
-	Ports []int64 `yaml:"port,omitempty" json:"port,omitempty"`
-
-	ServiceNames []string `yaml:"service_name,omitempty" json:"service_name,omitempty"`
-
-	// per-candy list-subcommand sources: `charly box list routes|volumes|aliases|services`.
-	// route/volumes/aliases carry the authored detail each subcommand prints (their presence IS
-	// the RouteCandy/VolumeCandy/AliasCandy predicate). has_init + port_relay reconstruct the
-	// InitCandy predicate (HasAnyInit() || PortRelayPorts>0) for `list services`.
-	Route *RouteConfig `yaml:"route,omitempty" json:"route,omitempty"`
-
-	Volumes []CandyVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
-
-	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
-
-	HasInit bool `yaml:"has_init,omitempty" json:"has_init,omitempty"`
-
-	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
-
-	// capabilities — the per-candy capability surface the validate ENGINE reads (task #60,
-	// ruling a). The projector fills it from the candy's `capabilities:` block; the validate
-	// plugin re-runs AggregateCandyCapabilities over a box's candy order (a boolean OR of
-	// preserve_user, order-independent) + the PreserveUser rule (validateInitDependencies +
-	// validatePackagedServices box-arms). An aggregate over RESOLVED models belongs on the
-	// envelope, not a host route-B diagnostic — a lean envelope is not a virtue when it keeps
-	// an R-rule in core.
-	Capabilities *CandyCapabilitiesView `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
-}
-
-// #CandyCapabilitiesView — the per-candy capability surface a consumer reads off the envelope.
-// Carries exactly the caps the validate ENGINE consumes (preserve_user today); grow it only when
-// a relocated rule reads a further cap. Mirrors the read half of the runtime candy's `capabilities:`
-// block (charly AggregatedCandyCaps).
-type CandyCapabilitiesView struct {
-	PreserveUser bool `yaml:"preserve_user,omitempty" json:"preserve_user,omitempty"`
-}
-
-// #ResolvedProject — the whole resolved projection: the schema version, the resolved boxes keyed by
-// name, the resolved candy graph keyed by name, and the deploy tree (uf.Bundle verbatim — already
-// map[string]spec.Deploy). The deploy map is @go-pinned to a pointer map so `cue exp gengotypes`
-// generates map[string]*Deploy (recursive tree, faithful). provides/sidecar are additive later
-// members of this same envelope (added by the consumer unit that first needs them).
-type ResolvedProject struct {
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-
-	Boxes map[string]ResolvedBoxView `yaml:"boxes,omitempty" json:"boxes,omitempty"`
-
-	Candies map[string]CandyView `yaml:"candies,omitempty" json:"candies,omitempty"`
-
-	// candy_models — the serializable candy BUILD models (validate, the plan-include splicer, K3-D)
-	// keyed by name, distinct from candies (identity/graph). See candymodel.cue.
-	CandyModels map[string]CandyModel `yaml:"candy_models,omitempty" json:"candy_models,omitempty"`
-
-	Deploy map[string]*Deploy `yaml:"deploy,omitempty" json:"deploy,omitempty"`
-
-	// build vocabulary (the validate ENGINE consumer): distro/init PIN the hand wire structs
-	// (spec.ResolvedDistro/ResolvedInit — the distro/init de-type OpResolve envelopes, no #CUE def);
-	// #Builder is a clean def. Pointer maps for parity with DistroConfig/BuilderConfig/InitConfig.Init.
-	Distro map[string]*ResolvedDistro `yaml:"distro,omitempty" json:"distro,omitempty"`
-
-	Builder map[string]*Builder `yaml:"builder,omitempty" json:"builder,omitempty"`
-
-	Init map[string]*ResolvedInit `yaml:"init,omitempty" json:"init,omitempty"`
-
-	// kind templates (validate localtemplates + check-include pod/vm arms + status k8s/adb enumeration).
-	Templates *ProjectTemplates `yaml:"templates,omitempty" json:"templates,omitempty"`
-
-	// kind:agent catalog (the harness AI-CLI pick — plugin-check reads it off this envelope; charly feature list-agent).
-	AgentBodies map[string]RawBody `yaml:"agent_bodies,omitempty" json:"agent_bodies,omitempty"`
-
-	// build order + auto-intermediates (charly box list targets).
-	BuildTargets []BuildTarget `yaml:"build_targets,omitempty" json:"build_targets,omitempty"`
-
-	// validate D-data word-sets (task #60, ruling: host projects the registry facts into the envelope
-	// so the validate ENGINE moves to the plugin WITHOUT the plugin ever dialing the host registry).
-	// The host fills these in the validate-project path only (empty for the resolved-project path);
-	// clause-D kind/word-recognition DATA consulted BY WORD, never a per-kind branch.
-	//
-	//	provider_capabilities — every compiled-in provider as "<class>:<word>" (validatePluginCandy
-	//	  checks a `source: builtin` candy's declared providers are actually compiled in).
-	//	act_capable_verbs — the plugin WORDS whose act form has a build/deploy install path (the host
-	//	  type-asserts ProvisionActor/TypedStepProvider/BuildEmitter + connected/declared externals +
-	//	  command, exactly as core's opActsInBuildDeploy does), so validateCheck's act-form rule keeps
-	//	  builtin rejection behaviour without the registry.
-	ProviderCapabilities []string `yaml:"provider_capabilities,omitempty" json:"provider_capabilities,omitempty"`
-
-	ActCapableVerbs []string `yaml:"act_capable_verbs,omitempty" json:"act_capable_verbs,omitempty"`
-
-	// box_plans — the include-ready FLATTENED acceptance plan per box (the `include: box:<name>`
-	// arm of the plan-composition splicer). The host projector runs the SAME base-chain walk
-	// CollectDescriptions uses (candy-chain bakeable steps + the box-level bakeable plan) and
-	// flattens the three sections into one ordered []Step, keyed by the QUALIFIED box name
-	// (namespaced boxes like `fedora.jupyter` included) — the exact result the former in-core
-	// box arm produced. A plugin cannot recompute it (base-chain + candy-order + bakeable filter
-	// are host resolve Mechanisms over the runtime Candy), so the resolve engine ships it. Only
-	// boxes with a non-empty flattened plan appear.
-	BoxPlans map[string][]Step `yaml:"box_plans,omitempty" json:"box_plans,omitempty"`
-}
-
-// #ProjectTemplates — the bare pod:/vm:/local:/k8s:/android: template maps carried as OPAQUE payloads
-// (the uf.Pod/VM/Local/K8s/Android raw bytes, verbatim). The host projector stays KIND-BLIND — it
-// copies the raw template bytes with NO concrete-kind decode (a kernel that read spec.Local/#Pod/…
-// would violate the boundary law + trip TestNoConcreteKindInKernel). The CONSUMING PLUGINS
-// (validate localtemplates, check-include pod/vm arms, status k8s/adb) decode a RawBody into the
-// concrete spec kind type themselves — a plugin MAY know kinds, the kernel may not.
-type ProjectTemplates struct {
-	Local map[string]RawBody `yaml:"local,omitempty" json:"local,omitempty"`
-
-	K8s map[string]RawBody `yaml:"k8s,omitempty" json:"k8s,omitempty"`
-
-	Pod map[string]RawBody `yaml:"pod,omitempty" json:"pod,omitempty"`
-
-	VM map[string]RawBody `yaml:"vm,omitempty" json:"vm,omitempty"`
-
-	Android map[string]RawBody `yaml:"android,omitempty" json:"android,omitempty"`
-}
-
-// #BuildTarget — a build-order entry (charly box list targets): the box/intermediate name + whether
-// it is an auto-computed intermediate (the `name [auto]` output).
-type BuildTarget struct {
-	Name string `yaml:"name,omitempty" json:"name,omitempty"`
-
-	Auto bool `yaml:"auto,omitempty" json:"auto,omitempty"`
 }
 
 // #ResolvedProjectRequest — the `resolved-project` HostBuild request: which project dir to resolve

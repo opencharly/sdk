@@ -45,16 +45,16 @@
 	generate_only?:    bool   @go(GenerateOnly)
 }
 
-// #BuildResolveBox is one image's drive descriptor: the tag to build, the
-// rendered Containerfile CONTENT (piped to `podman build -f -` — shipped in the
-// reply, NOT read from disk, to preserve the race-safety vs a concurrent
-// generate overwrite), and whether merge.auto fires for it (the candy gates the
-// HostBuild("merge") call on this bool; the host merge seam resolves the size
-// knobs from config).
+// #BuildResolveBox is one image's drive descriptor: the tag to build and whether
+// merge.auto fires for it (the candy gates the HostBuild("merge") call on this
+// bool; the host merge seam resolves the size knobs from config). The rendered
+// Containerfile CONTENT is NO LONGER shipped in the reply (#67 render-DRIVE
+// move): plugin-build renders Containerfiles itself from the resolved-project
+// envelope (BuildResolveReply.resolved_project) via deploykit.Generator, so the
+// candy pipes dg.Containerfiles[name] to podman — not a reply field.
 #BuildResolveBox: {
 	name!:          string @go(Name)
 	full_tag?:      string @go(FullTag)
-	containerfile?: string @go(Containerfile)
 	registry?:      string @go(Registry)
 	platforms?: [...string] @go(Platforms)
 	merge_auto?:         bool @go(MergeAuto)
@@ -88,5 +88,46 @@
 	cache?:       string @go(Cache)
 	keep_images?: int @go(KeepImages)
 	written?: [...string] @go(Written)
+	// resolved_project — the full resolved-project envelope with build-render
+	// caches (BakedMetadata/RenderCandyOrder/InitSystem/InitDef/ActiveInits/Caps
+	// on each ResolvedBoxView + GlobalOrder/ExternalizedBuilders on the project),
+	// so plugin-build renders Containerfiles via deploykit.Generator WITHOUT the
+	// live *Candy/*Config graph (#67 render-DRIVE move). Filled by the build-prep
+	// seam (render-prep → projectResolvedProject with caches). Empty for the
+	// generate-only path that writes Containerfiles host-side (transitional).
+	resolved_project?: #ResolvedProject @go(ResolvedProject,optional=nillable)
 	error?: string @go(Error)
+}
+
+// #BakePluginsRequest carries the inputs the host-side bake-plugins seam needs: the
+// project dir (to load the live *Candy graph for SourceDir + buildPluginBinary), the box
+// name (for the staging dir), and the candy order (the composition being baked). The host
+// builds + stages each bake_plugin binary + returns the COPY/chmod fragment (#67).
+#BakePluginsRequest: {
+	dir?:        string @go(Dir)
+	box_name!:   string @go(BoxName)
+	candy_order?: [...string] @go(CandyOrder)
+}
+
+// #BakePluginsReply carries the rendered Containerfile fragment (COPY + chmod lines for
+// each bake_plugin binary) + the reply-error convention.
+#BakePluginsReply: {
+	fragment?: string @go(Fragment)
+	error?:    string @go(Error)
+}
+
+// #RenderSeamRequest is the generic host↔plugin render-seam dispatch (#67 render-DRIVE move).
+// plugin-build wires the deploykit.Generator seams via HostBuild("render-seam") with a method
+// discriminator + opaque JSON params. The host dispatches by method to the corresponding core
+// function. This is the SINGLE HostBuild kind for ALL render seams that need host callbacks
+// (RenderService, ValidateEgress, EmitPluginOp, etc.) — one CUE type, many methods.
+#RenderSeamRequest: {
+	method!: string @go(Method)
+	params?: bytes @go(Params)
+}
+
+// #RenderSeamReply carries the opaque JSON result + the reply-error convention.
+#RenderSeamReply: {
+	result?: bytes @go(Result)
+	error?:  string @go(Error)
 }

@@ -177,3 +177,74 @@
 	shell?: #LabelShellSet @go(Shell,optional=nillable)
 	check_level?: string @go(CheckLevel)
 }
+
+// #BakedLabelSet — the BUILD-side wire-form carrier for the render's OCI-label emission
+// (#67, the build_resolve RENDER-leg death). The former charly/generate.go writeLabels body
+// split at the data/format boundary: the HOST gather (buildBakedMetadata) reads the live
+// *Candy/*Config graph + the Collect* aggregators and produces a *spec.BakedLabelSet holding
+// EXACTLY the data writeLabels emits, in WIRE form; the deploykit FORMATTER (WriteLabels)
+// emits the LABEL lines from it byte-for-byte WITHOUT the live graph. It is distinct from
+// #BoxMetadata (the DEPLOY-side hub ExtractMetadata builds field-by-field from labels): a
+// few fields differ in shape between the bake wire form and the deploy read form — env is a
+// map here (the label bakes a JSON object) but []string KEY=VALUE pairs in #BoxMetadata, and
+// volume is #LabelVolumeEntry here (name+path) but #VolumeMount in #BoxMetadata — so the
+// build carrier is its own wire-faithful type, never the deploy hub. It rides the envelope on
+// #ResolvedBoxView.baked_metadata (build-render projection only) and re-attaches via
+// NewSpecResolvedBox. MARSHALED (crosses core→plugin), so its tags are wire-relevant; the
+// sub-shapes are the same CUE-sourced label types writeLabels emitted.
+#BakedLabelSet: {
+	// always-present scalars (the formatter emits these unconditionally as LABEL %q).
+	version!: string @go(Version)
+	box!:     string @go(Box)
+	uid!:     int    @go(UID,type=int)
+	gid!:     int    @go(GID,type=int)
+	user!:    string @go(User)
+	home!:    string @go(Home)
+	// conditional scalars (the formatter omits these when empty).
+	registry?:  string @go(Registry)
+	bootc?:     bool   @go(Bootc)
+	oci_labels?: {[string]: string} @go(OCILabels) // candy-declared arbitrary labels (emitted sorted)
+	network?:   string @go(Network)
+	// platform identity + builder-pool coordination (writeJSONLabel).
+	distro?:       [...string] @go(Distro)
+	build_format?: [...string] @go(BuildFormat)
+	builder?: {[string]: string} @go(Builder)
+	build?: [...string] @go(Build) // builder-provide capabilities
+	// JSON labels (omitted when empty). env is the image-level env MAP (the label wire form).
+	port?: [...string] @go(Port)
+	port_proto?: {[string]: string} @go(PortProto)
+	volume?: [...#LabelVolumeEntry] @go(Volume)
+	alias?: [...#CollectedAlias] @go(Alias)
+	security?: #Security @go(Security)
+	env?: {[string]: string} @go(Env)
+	hook?: #CandyHook @go(Hook,optional=nillable)
+	description?: #LabelDescriptionSet @go(Description,optional=nillable)
+	shell?: #LabelShellSet @go(Shell,optional=nillable)
+	// init system: active name + the deploy-relevant init def + the DYNAMIC label key the
+	// per-init service-name list emits under (writeJSONLabel(b, labelInitDef.LabelKey, names)).
+	init?:           string @go(Init)
+	init_def?:       #CapabilityInitDef @go(InitDef,optional=nillable)
+	init_label_key?: string @go(InitLabelKey)
+	service_names?: [...string] @go(ServiceNames)
+	service?: [...#CapabilityService] @go(Service)
+	port_relay?: [...int] @go(PortRelay,type=[]int)
+	secret?: [...#LabelSecretEntry] @go(Secret)
+	env_provide?: {[string]: string} @go(EnvProvide)
+	env_require?: [...#EnvDependency] @go(EnvRequire)
+	env_accept?: [...#EnvDependency] @go(EnvAccept)
+	secret_require?: [...#EnvDependency] @go(SecretRequire)
+	secret_accept?: [...#EnvDependency] @go(SecretAccept)
+	mcp_provide?: [...#CandyMCPProvide] @go(MCPProvide)
+	mcp_require?: [...#EnvDependency] @go(MCPRequire)
+	mcp_accept?: [...#EnvDependency] @go(MCPAccept)
+	route?: [...#LabelRouteEntry] @go(Route)
+	env_candy?: {[string]: string} @go(EnvCandy)
+	path_append?: [...string] @go(PathAppend)
+	skill?: string @go(Skill)
+	status?: string @go(Status)
+	check_level?: string @go(CheckLevel)
+	info?: string @go(Info)
+	candy_version?: {[string]: string} @go(CandyVersion)
+	data_entries?: [...#LabelDataEntry] @go(DataEntries)
+	data_image?: bool @go(DataImage)
+}

@@ -139,6 +139,17 @@ type ResolvedBox struct {
 	// Bootc) remain as authored image-level fields alongside it.
 	CandyCaps *AggregatedCandyCaps `json:"-"`
 
+	// --- build-RENDER inputs (#67, the build_resolve RENDER-leg death) ---
+	// Host-RESOLVED render inputs the deploykit render reads as a pure ORCHESTRATOR. The host
+	// build-render projection computes them (globalOrderForBox / ActiveInit / ResolveInitSystem /
+	// the label collectors + per-candy label iteration) and either sets them directly (the live
+	// render path) or carries them through the resolved-project envelope (ResolvedBoxView →
+	// NewSpecResolvedBox, the plugin-build drive path). All json:"-": a render compute cache, never
+	// the box's own inspect wire identity (the wire copy rides ResolvedBoxView, filled by the projector).
+	BakedMetadata    *spec.BakedLabelSet      `json:"-"` // the fully-baked OCI-label wire set the render's WriteLabels FORMATS
+	RenderCandyOrder []string                 `json:"-"` // the per-box cache-optimal candy order (globalOrderForBox)
+	ActiveInits      map[string]*ResolvedInit `json:"-"` // the active init systems for this composition (ActiveInit)
+
 	// Derived fields
 	IsExternalBase bool   // true if base is external OCI image, false if internal
 	FullTag        string // registry/name:tag
