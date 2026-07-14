@@ -8,7 +8,9 @@
 //     makes gengotypes degrade the whole def to `map[string]any`.
 //     The hand Go field is a CONCRETE struct, so #VmDeployState
 //     is @go(-)'d and the faithful struct (+ its nested state
-//     sub-types) is mirrored HERE.
+//     sub-types) is mirrored HERE. Kept in lockstep with the CUE def
+//     (schema/deploy.cue #VmDeployState) — every field here has a matching
+//     CUE field (e.g. PortForwards ⇄ port_forwards, the auto-forward record).
 //
 // Ported from the package-main param structs (the source of truth); keep in
 // lockstep until WF-B repoints package main onto this package. STANDALONE — no
@@ -26,10 +28,14 @@ type PortSpec struct {
 // VmDeployState is the runtime state the vm lifecycle hook's PrepareVenue writes on first apply.
 // Source: charly/deploy.go VmDeployState.
 type VmDeployState struct {
-	InstanceID              string                  `yaml:"instance_id,omitempty" json:"instance_id,omitempty"`
-	DiskPath                string                  `yaml:"disk_path,omitempty" json:"disk_path,omitempty"`
-	SeedIso                 string                  `yaml:"seed_iso,omitempty" json:"seed_iso,omitempty"`
-	SshPort                 int                     `yaml:"ssh_port,omitempty" json:"ssh_port,omitempty"`
+	InstanceID string `yaml:"instance_id,omitempty" json:"instance_id,omitempty"`
+	DiskPath   string `yaml:"disk_path,omitempty" json:"disk_path,omitempty"`
+	SeedIso    string `yaml:"seed_iso,omitempty" json:"seed_iso,omitempty"`
+	SshPort    int    `yaml:"ssh_port,omitempty" json:"ssh_port,omitempty"`
+	// PortForwards maps a guest port (string) to its auto-allocated host port for
+	// each `auto:<guest>` network.port_forwards entry — persisted at vm-create so
+	// the allocation is reused across create→deploy-add (the sibling of SshPort).
+	PortForwards            map[string]int          `yaml:"port_forwards,omitempty" json:"port_forwards,omitempty"`
 	SshUser                 string                  `yaml:"ssh_user,omitempty" json:"ssh_user,omitempty"`
 	Backend                 string                  `yaml:"backend,omitempty" json:"backend,omitempty"`
 	KeyInjectionResolved    *VmKeyInjectionResolved `yaml:"key_injection_resolved,omitempty" json:"key_injection_resolved,omitempty"`

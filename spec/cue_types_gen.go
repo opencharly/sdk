@@ -3002,6 +3002,10 @@ type VmNetwork struct {
 
 	MAC string `yaml:"mac,omitempty" json:"mac,omitempty"`
 
+	// Each entry is "<host>:<guest>". The host side may be a fixed port OR the
+	// literal `auto` sentinel (matching the pod `port: [auto]` word) — `auto`
+	// auto-allocates a free host port at vm-create (persisted in vm_state,
+	// reused across the create→deploy-add sequence), the sibling of ssh.port_auto.
 	PortForwards []string `yaml:"port_forwards,omitempty" json:"port_forwards,omitempty"`
 }
 

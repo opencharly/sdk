@@ -299,12 +299,10 @@ func renderQemuNic(spec *VmSpec, rt VmRuntimeParams) []string {
 		fallthrough
 	default:
 		fwds := []string{fmt.Sprintf("hostfwd=tcp::%d-:22", rt.SshPort)}
-		for _, pf := range net.PortForwards {
-			host, guest := splitPortForward(pf)
-			if host != "" && guest != "" {
-				fwds = append(fwds, fmt.Sprintf("hostfwd=tcp::%s-:%s", host, guest))
-			}
-		}
+		// Extra forwards come from rt.ExtraPortForwards — the RESOLVED "host:guest"
+		// strings the orchestrator produced (auto sentinels already allocated to
+		// concrete host ports, host-side). Like rt.SshPort, the renderer reads the
+		// resolved rt value, never spec.Network.PortForwards directly.
 		for _, pf := range rt.ExtraPortForwards {
 			host, guest := splitPortForward(pf)
 			if host != "" && guest != "" {
