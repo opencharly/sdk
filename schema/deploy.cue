@@ -229,6 +229,11 @@
 	backend?:                    "auto" | "qemu" | "libvirt" // "auto" persisted pre-resolution (the vm deploy lifecycle hook)
 	cloud_init_rendered_digest?: string
 	charly_install_strategy?:    "auto" | "scp" | "url" | "skip"
+	// port_forwards persists the auto-allocated host ports for `auto:<guest>`
+	// network.port_forwards entries (guest-port → allocated host port), so the
+	// allocation is reused across the vm-create → deploy-add sequence — the
+	// sibling of ssh_port. Validation-only (the Go type is hand-mirrored, @go(-)).
+	port_forwards?: {[string]: int}
 	...
 } @go(-)
 

@@ -128,7 +128,11 @@
 	mode:    *"user" | "bridge" | "nat" | "network"
 	bridge?: string
 	mac?:    string @go(MAC)
-	port_forwards?: [...(string & =~":")] @go(PortForwards)
+	// Each entry is "<host>:<guest>". The host side may be a fixed port OR the
+	// literal `auto` sentinel (matching the pod `port: [auto]` word) — `auto`
+	// auto-allocates a free host port at vm-create (persisted in vm_state,
+	// reused across the create→deploy-add sequence), the sibling of ssh.port_auto.
+	port_forwards?: [...(string & =~"^(auto|[0-9]{1,5}):[0-9]{1,5}$")] @go(PortForwards)
 	if mode == "bridge" {
 		bridge: string & !=""
 	}
