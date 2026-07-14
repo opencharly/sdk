@@ -243,13 +243,14 @@ func BoxNeedsBuilder(img *buildkit.ResolvedBox, boxes map[string]*buildkit.Resol
 //   - BootstrapBuilderImage (the `from: builder:pacstrap` / debootstrap source)
 //
 // Self-refs and refs to boxes not in the map (for builder + bootstrap builder)
-// are filtered out. Base is appended unconditionally when not external.
+// are filtered out. Base is appended only when it names an internal box;
+// builder-backed images legitimately have no base.
 //
 // One helper, three callers (ResolveBoxOrder, ResolveBoxLevels, filterBox in
 // build.go) so adding a future edge kind lands in one place.
 func BoxDirectDeps(name string, img *buildkit.ResolvedBox, boxes map[string]*buildkit.ResolvedBox, includeFormatBuilders bool) []string {
 	var deps []string
-	if !img.IsExternalBase {
+	if !img.IsExternalBase && img.Base != "" {
 		deps = append(deps, img.Base)
 	}
 	if includeFormatBuilders {
