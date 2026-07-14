@@ -96,4 +96,35 @@ func TestRenderDrive_ByteGolden(t *testing.T) {
 	if string(want) != got {
 		t.Fatalf("render-parity golden mismatch (run -update-render-golden if intended):\n--- want ---\n%s\n--- got ---\n%s", want, got)
 	}
+
+	// RIDER: prove-it-can-fail + non-vacuity. The golden must be SENSITIVE to the render — a
+	// perturbed render (a different EffectiveVersion → a different LABEL ai.opencharly.version
+	// line) MUST produce a different Containerfile, so the golden comparison is not vacuously
+	// passing on a constant. If this ever stops failing, the golden (or the render) has gone
+	// vacuous and the guard is broken.
+	t.Run("can_fail", func(t *testing.T) {
+		perturbed := trivialBox()
+		perturbed.EffectiveVersion = "2026.999.9999"
+		perturbed.BakedMetadata.Version = "2026.999.9999"
+		tmp2 := t.TempDir()
+		dg2 := NewRenderGenerator()
+		dg2.Dir = tmp2
+		dg2.BuildDir = filepath.Join(tmp2, ".build")
+		dg2.Containerfiles = map[string]string{}
+		dg2.Boxes = map[string]*buildkit.ResolvedBox{"demo": perturbed}
+		dg2.Candies = map[string]CandyModel{}
+		dg2.EmitBakedPlugins = func(b *strings.Builder, boxName string, candyOrder []string) error { return nil }
+		dg2.ValidateTextEgress = func(label, text string) error { return nil }
+		dg2.CollectBoxPorts = func(boxName string) ([]string, error) { return nil, nil }
+		dg2.CollectBoxVolume = func(boxName, home string) ([]VolumeMount, error) { return nil, nil }
+		if err := dg2.Generate([]string{"demo"}); err != nil {
+			t.Fatalf("Generate: %v", err)
+		}
+		if dg2.Containerfiles["demo"] == got {
+			t.Fatal("can-fail RIDER: a perturbed render (different version) produced the SAME golden — the golden is vacuous / not sensitive to the render")
+		}
+		if !strings.Contains(dg2.Containerfiles["demo"], `ai.opencharly.version="2026.999.9999"`) {
+			t.Fatal("can-fail RIDER: the perturbed version did not reach the LABEL — the render is not wired as the golden assumes")
+		}
+	})
 }
