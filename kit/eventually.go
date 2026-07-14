@@ -63,6 +63,11 @@ func RunWithEventually(ctx context.Context, check *spec.Op, handler func() Check
 		// bounded number of times so a transient load spike that starves one probe does
 		// not spuriously fail the check (the 2026-07 check-box "exit -1" under load). A
 		// probe that RAN and failed is NOT retried here (that is the author's `eventually:`).
+		// NOTE (R44): a podman container-SETUP infra failure is deliberately NOT retried —
+		// Option A (the persistent-container box-mode) removes the O(N) setup contention at
+		// the root, so a residual setup failure is RARE and MEANINGFUL: it is classified INFRA
+		// and surfaced LOUDLY (the infra exit class, never checks-failed), never absorbed by a
+		// retry that would hide it (the concurrency mandate wants infra events visible).
 		for attempt := 1; attempt <= killedProbeRetries && probeWasKilled(result); attempt++ {
 			select {
 			case <-ctx.Done():

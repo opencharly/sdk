@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync/atomic"
-	"time"
 
 	"github.com/opencharly/sdk/spec"
 )
@@ -77,17 +75,6 @@ const (
 	// for emergency-only shell access (used when the guest is
 	// unreachable over SSH). Best-effort; primarily a diagnostic path.
 	JumpVirshConsole
-
-	// JumpPodmanRun spawns a fresh disposable container per invocation
-	// via `podman run --rm <Target> bash`. Replaces the deleted
-	// ImageExecutor — `charly check box` (build-section) uses this jump
-	// to get the same "ephemeral image probe" semantics through the
-	// unified chain primitive. Each call starts a new container; state
-	// does NOT persist across calls.
-	JumpPodmanRun
-
-	// JumpDockerRun is the docker counterpart of JumpPodmanRun.
-	JumpDockerRun
 )
 
 // NestedJump describes one hop into a nested environment. The Target
@@ -109,13 +96,6 @@ type NestedJump struct {
 	// needed; useful for `podman exec --env FOO=bar` or
 	// `ssh -o ProxyJump=…` style tweaks.
 	ExtraArgs []string
-
-	// ProbeName names the disposable container for a JumpPodmanRun/JumpDockerRun
-	// jump so a probe KILLED before it exits (e.g. by a check ProbeTimeout) can be
-	// force-reaped instead of orphaning a "Created" container that poisons the
-	// podman container store. Set per-invocation by NestedExecutor.prepareJump;
-	// empty for non-disposable jumps.
-	ProbeName string
 }
 
 // String renders a jump as a human-readable venue segment. Used as a
@@ -130,10 +110,6 @@ func (j NestedJump) String() string {
 		return "ssh:" + j.Target
 	case JumpVirshConsole:
 		return "virsh:" + j.Target
-	case JumpPodmanRun:
-		return "podman-run:" + j.Target
-	case JumpDockerRun:
-		return "docker-run:" + j.Target
 	}
 	return "jump?"
 }
@@ -164,14 +140,13 @@ func (n *NestedExecutor) Venue() string {
 // container or ssh session already carries its own root-escalation semantics; we
 // don't want `sudo ssh sudo bash` triple-escalation.
 func (n *NestedExecutor) run(ctx context.Context, script string, asRoot bool, opts EmitOpts) error {
-	wrapped, reap, err := n.prepareJump(script, asRoot)
+	wrapped, err := n.prepareJump(script, asRoot)
 	if err != nil {
 		return err
 	}
 	if n.Parent == nil {
 		return fmt.Errorf("NestedExecutor: nil Parent")
 	}
-	defer reap()
 	return n.Parent.RunUser(ctx, wrapped, opts)
 }
 
@@ -209,55 +184,44 @@ func (n *NestedExecutor) RunBuilder(ctx context.Context, opts BuilderRunOpts) ([
 // semantics). Adding root escalation would silently change probe
 // behaviour for every existing test.
 func (n *NestedExecutor) RunCapture(ctx context.Context, script string) (string, string, int, error) {
-	wrapped, reap, err := n.prepareJump(script, false /*root*/)
+	wrapped, err := n.prepareJump(script, false /*root*/)
 	if err != nil {
 		return "", "", -1, err
 	}
 	if n.Parent == nil {
 		return "", "", -1, fmt.Errorf("NestedExecutor: nil Parent")
 	}
-	defer reap()
-	return n.Parent.RunCapture(ctx, wrapped)
+	stdout, stderr, exit, rerr := n.Parent.RunCapture(ctx, wrapped)
+	// Container-setup infra classification (R44): only for CONTAINER jumps (podman/docker
+	// run+exec) — a host command's nonzero exit is never re-typed. When podman's OWN setup
+	// failed (exit-125, or a stderr signature: the probe container's mount/passwd-gen raced
+	// a concurrent build's layer commits), the check command NEVER RAN, so this is an infra
+	// error, not a check verdict. Returning a MARKED error (not the laundered (exit, nil))
+	// lets the eventually.go bounded retry re-attempt it and the check-box exit mapping route
+	// it to the infra exit class. A genuine in-container "command not found" matches nothing
+	// and stays an ordinary (exit, nil) result. See infra_classify.go.
+	if rerr == nil && isContainerJump(n.Jump.Kind) {
+		if sig, ok := ClassifyContainerInfraFailure(exit, stderr); ok {
+			return stdout, stderr, exit, containerInfraError(sig, exit, TrimPreview(stderr))
+		}
+	}
+	return stdout, stderr, exit, rerr
 }
 
-// probeNameSeq makes disposable-probe container names unique within a process;
-// combined with the pid it is unique across concurrent charly processes too.
-var probeNameSeq atomic.Uint64
-
-// prepareJump wraps a script for this executor's jump and, for a DISPOSABLE
-// container jump (JumpPodmanRun/JumpDockerRun), names the throwaway container
-// deterministically and returns a reap closure. A `podman run --rm` probe KILLED
-// before it exits (e.g. by a check ProbeTimeout) leaves a "Created" container
-// that --rm never cleans; such orphans accumulate and poison the podman
-// container store (sqlite "database is locked" under concurrency). The reap
-// force-removes the named container so a killed probe can never leave an orphan.
-// A no-op reap for a non-disposable jump.
-func (n *NestedExecutor) prepareJump(script string, asRoot bool) (string, func(), error) {
-	j := n.Jump
-	if j.Kind == JumpPodmanRun || j.Kind == JumpDockerRun {
-		j.ProbeName = fmt.Sprintf("charly-probe-%d-%d", os.Getpid(), probeNameSeq.Add(1))
+// isContainerJump reports whether a jump enters a container (podman/docker exec) — the only
+// venues where a podman container-SETUP infra failure (infra_classify.go) can occur.
+// SSH/virsh-console jumps are excluded.
+func isContainerJump(kind JumpKind) bool {
+	switch kind {
+	case JumpPodmanExec, JumpDockerExec:
+		return true
 	}
-	wrapped, err := wrapWithJump(j, script, asRoot)
-	if err != nil {
-		return "", func() {}, err
-	}
-	return wrapped, func() { n.reapDisposableProbe(j.Kind, j.ProbeName) }, nil
+	return false
 }
 
-// reapDisposableProbe force-removes a named disposable probe container via the
-// parent executor on a DETACHED context, so it runs even when the caller's ctx
-// was cancelled (the ProbeTimeout kill path). No-op when name is empty.
-func (n *NestedExecutor) reapDisposableProbe(kind JumpKind, name string) {
-	if name == "" || n.Parent == nil {
-		return
-	}
-	engine := "podman"
-	if kind == JumpDockerRun {
-		engine = "docker"
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	_ = n.Parent.RunUser(ctx, engine+" rm -f "+deployShellQuote(name)+" >/dev/null 2>&1 || true", EmitOpts{})
+// prepareJump wraps a script for this executor's jump.
+func (n *NestedExecutor) prepareJump(script string, asRoot bool) (string, error) {
+	return wrapWithJump(n.Jump, script, asRoot)
 }
 
 // ResolveHome returns $HOME for `user` inside the leaf environment of
@@ -294,8 +258,6 @@ func (n *NestedExecutor) Kind() string {
 	switch n.Jump.Kind {
 	case JumpPodmanExec, JumpDockerExec:
 		return "container"
-	case JumpPodmanRun, JumpDockerRun:
-		return "image"
 	case JumpSSH, JumpVirshConsole:
 		return "vm"
 	}
@@ -452,29 +414,6 @@ func wrapWithJump(jump NestedJump, script string, asRoot bool) (string, error) {
 		cmd := strings.Join(execParts, " ")
 		return fmt.Sprintf("%s <<'%s'\n%s\n%s\n", cmd, delim, script, delim), nil
 
-	case JumpPodmanRun, JumpDockerRun:
-		// Disposable container per invocation: `<engine> run --rm
-		// <imageref> bash`. State doesn't persist across calls — same
-		// semantics as the deleted ImageExecutor. The image ref is in
-		// jump.Target. --entrypoint='' clears any baked entrypoint so
-		// bash actually runs (matches the pre-cutover ImageExecutor
-		// shape).
-		engine := "podman"
-		if jump.Kind == JumpDockerRun {
-			engine = "docker"
-		}
-		extras := strings.Join(escapeTokens(jump.ExtraArgs), " ")
-		nameFlag := ""
-		if jump.ProbeName != "" {
-			// Name the disposable container so a probe killed before it exits can
-			// be force-reaped (reapDisposableProbe) rather than orphaning a
-			// "Created" container that poisons the podman store.
-			nameFlag = "--name " + deployShellQuote(jump.ProbeName) + " "
-		}
-		cmd := fmt.Sprintf("%s run --rm %s-i --entrypoint= %s %s %s",
-			engine, nameFlag, extras, deployShellQuote(jump.Target), shell)
-		return fmt.Sprintf("%s <<'%s'\n%s\n%s\n", cmd, delim, script, delim), nil
-
 	case JumpSSH:
 		user, host, port := parseSSHTarget(jump.Target)
 		if host == "" {
@@ -563,10 +502,6 @@ func copyIntoJumpCommand(jump NestedJump, stagePath, remotePath string, mode uin
 			portArg, quote(stagePath), target, installCmd), nil
 	}
 
-	switch jump.Kind {
-	case JumpPodmanRun, JumpDockerRun:
-		return "", fmt.Errorf("NestedJump: PutFile is not supported for disposable-container jumps (JumpPodmanRun/JumpDockerRun) — files cannot persist across `run --rm` invocations")
-	}
 	return "", fmt.Errorf("NestedJump: PutFile not supported for JumpKind %d", jump.Kind)
 }
 
