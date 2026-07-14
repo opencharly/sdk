@@ -103,28 +103,14 @@ type PlanContext interface {
 	Grader() StepGrader
 }
 
-// LabeledDescription is one entity's baked plan with its collection-time origin + description.
-type LabeledDescription struct {
-	Origin      string      `json:"origin"`
-	Description string      `json:"description,omitempty"`
-	Plan        []spec.Step `json:"plan,omitempty"`
-}
+// LabeledDescription + LabelDescriptionSet are CUE-sourced in spec (boxmetadata.cue, P2B, #60)
+// and ALIASED here — spec.BoxMetadata.Description contains a *LabelDescriptionSet and spec sits
+// below kit, so containment forces them down to spec (like VolumeMount → spec). Consumers keep
+// using kit.LabelDescriptionSet / kit.LabeledDescription unchanged; the IsEmpty method lives in
+// spec/labelset_methods.go beside the type.
+type LabeledDescription = spec.LabeledDescription
 
-// LabelDescriptionSet groups the collected + include-expanded + overlay-merged plans by the
-// entity layer they came from (candy → box → deploy), the walk order RunPlan flattens.
-type LabelDescriptionSet struct {
-	Candy  []LabeledDescription `json:"candy,omitempty"`
-	Box    []LabeledDescription `json:"box,omitempty"`
-	Deploy []LabeledDescription `json:"deploy,omitempty"`
-}
-
-// IsEmpty reports whether the set carries no labeled descriptions in any layer.
-func (s *LabelDescriptionSet) IsEmpty() bool {
-	if s == nil {
-		return true
-	}
-	return len(s.Candy) == 0 && len(s.Box) == 0 && len(s.Deploy) == 0
-}
+type LabelDescriptionSet = spec.LabelDescriptionSet
 
 // flatStep carries a plan step with its collection-time origin + the owning entity's
 // description (for the agent grader).
