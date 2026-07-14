@@ -1,8 +1,11 @@
 package deploykit
 
 import (
+	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/opencharly/sdk/buildkit"
 )
 
 // The pure topo-sort tests, relocated with topoSort/topoLevels from charly/graph.go
@@ -113,5 +116,60 @@ func TestTopoSortDeterministic(t *testing.T) {
 		if !reflect.DeepEqual(result, first) {
 			t.Errorf("non-deterministic output: got %v, first was %v", result, first)
 		}
+	}
+}
+
+func TestResolveBoxGraphBuilderBackedImageWithoutBase(t *testing.T) {
+	boxes := map[string]*buildkit.ResolvedBox{
+		"bootstrap-builder": {Name: "bootstrap-builder", IsExternalBase: true},
+		"bootstrap-image": {
+			Name:                  "bootstrap-image",
+			From:                  "builder:pacstrap",
+			BootstrapBuilderImage: "bootstrap-builder",
+		},
+	}
+
+	deps := BoxDirectDeps("bootstrap-image", boxes["bootstrap-image"], boxes, false)
+	if want := []string{"bootstrap-builder"}; !reflect.DeepEqual(deps, want) {
+		t.Fatalf("BoxDirectDeps() = %v, want %v", deps, want)
+	}
+
+	order, err := ResolveBoxOrder(boxes, nil)
+	if err != nil {
+		t.Fatalf("ResolveBoxOrder() error = %v", err)
+	}
+	if want := []string{"bootstrap-builder", "bootstrap-image"}; !reflect.DeepEqual(order, want) {
+		t.Errorf("ResolveBoxOrder() = %v, want %v", order, want)
+	}
+
+	levels, err := ResolveBoxLevels(boxes, nil)
+	if err != nil {
+		t.Fatalf("ResolveBoxLevels() error = %v", err)
+	}
+	if want := [][]string{{"bootstrap-builder"}, {"bootstrap-image"}}; !reflect.DeepEqual(levels, want) {
+		t.Errorf("ResolveBoxLevels() = %v, want %v", levels, want)
+	}
+}
+
+func TestResolveBoxGraphStillReportsRealCycle(t *testing.T) {
+	boxes := map[string]*buildkit.ResolvedBox{
+		"a": {Name: "a", Base: "b"},
+		"b": {Name: "b", Base: "a"},
+	}
+
+	for name, resolve := range map[string]func() error{
+		"order":  func() error { _, err := ResolveBoxOrder(boxes, nil); return err },
+		"levels": func() error { _, err := ResolveBoxLevels(boxes, nil); return err },
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := resolve()
+			var cycleErr *CycleError
+			if !errors.As(err, &cycleErr) {
+				t.Fatalf("error = %v, want *CycleError", err)
+			}
+			if len(cycleErr.Cycle) == 0 {
+				t.Fatal("CycleError.Cycle is empty for a real cycle")
+			}
+		})
 	}
 }
