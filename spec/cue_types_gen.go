@@ -2601,6 +2601,87 @@ type PodConfigWriteReply struct {
 	WrittenPaths []string `yaml:"written_paths,omitempty" json:"written_paths,omitempty"`
 }
 
+// #PodLifecyclePlan is the host-resolved pod-lifecycle carrier (the K4 deep-body move): the pod
+// start/stop/shell RESOLUTION stays host-side (config_image/deploy/network/enc/tunnel = #59
+// inventory) and FILLS this plan, which the host threads on the F6 OpStart/OpStop/OpShell
+// op.Params; candy/plugin-deploy-pod EXECUTES it — running the container start/stop over the served
+// host executor and composing enc + tunnel via InvokeProvider(verb:enc/verb:tunnel), so the former
+// podCli("start"/"stop"/…) `charly`-reentries are DELETED (bodies, not shells). The pre-built enc
+// verb input (spec.EncExecInput — a hand-written wire type with no CUE def) rides as an opaque
+// RawBody envelope (empty ⇒ that leg is skipped, the common plain-pod case) with its Method set
+// per-op host-side; tunnel references the CUE-def'd #TunnelConfig directly and the plugin infers
+// start-vs-stop from the op. The ARBITER claim is NOT threaded here — its CHARLY_PREEMPT_LEASE
+// machinery is host-PROCESS state a placement-agnostic plugin cannot own, so the host proxy BRACKETS
+// the plugin op (acquire before OpStart; release after OpStop + on the failure path).
+// #PodExecReply is the reply from the pod plugin's OpShell CAPTURED-exec leg (the K4 `charly service`
+// move — an in-container init-mgmt exec, non-interactive). The plugin RunCaptures the argv over the
+// served executor and returns the combined Output + the exact ExitCode; the host reprints Output
+// (placement-agnostic: an out-of-process plugin's stdout is NOT charly's) and propagates a non-zero
+// ExitCode as *sdk.ExitCodeError so `charly service` preserves the container command's exit code
+// exactly (the passthrough→capture semantics change the ruling requires be exit-code-faithful).
+type PodExecReply struct {
+	Output string `yaml:"output,omitempty" json:"output,omitempty"`
+
+	ExitCode int `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
+}
+
+type PodLifecyclePlan struct {
+	Mode string `yaml:"mode,omitempty" json:"mode"`
+
+	SvcName string `yaml:"svc_name,omitempty" json:"svc_name,omitempty"`
+
+	ContainerName string `yaml:"container_name,omitempty" json:"container_name"`
+
+	RunArgv []string `yaml:"run_argv,omitempty" json:"run_argv,omitempty"`
+
+	DirectDeploy bool `yaml:"direct_deploy,omitempty" json:"direct_deploy,omitempty"`
+
+	EngineBin string `yaml:"engine_bin,omitempty" json:"engine_bin"`
+
+	Unmount bool `yaml:"unmount,omitempty" json:"unmount,omitempty"`
+
+	Enc RawBody `yaml:"enc,omitempty" json:"enc,omitempty"`
+
+	Tunnel *TunnelConfig `yaml:"tunnel,omitempty" json:"tunnel,omitempty"`
+}
+
+// #TunnelConfig — the resolved, ready-to-execute tunnel configuration.
+type TunnelConfig struct {
+	// provider — "tailscale" or "cloudflare".
+	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
+
+	// tunnel_name — cloudflare: tunnel name.
+	TunnelName string `yaml:"tunnel_name,omitempty" json:"tunnel_name,omitempty"`
+
+	// hostname — cloudflare: default hostname (from the image dns field).
+	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
+
+	// box_name — for PID file naming / cloudflare tunnel-name default.
+	BoxName string `yaml:"box_name,omitempty" json:"box_name,omitempty"`
+
+	// ports — all tunneled ports with their access scope.
+	Ports []TunnelPort `yaml:"ports,omitempty" json:"ports,omitempty"`
+}
+
+// #TunnelPort — a single port to tunnel with its protocol and access scope.
+type TunnelPort struct {
+	// port — the tailscale HTTPS listen port (must be a valid serve/funnel port).
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+
+	// backend_port — the localhost backend port (0 means same as port).
+	BackendPort int `yaml:"backend_port,omitempty" json:"backend_port,omitempty"`
+
+	// protocol — backend scheme: http | https | https+insecure | tcp |
+	// tls-terminated-tcp | ssh | rdp | smb (udp is skipped, never tunneled).
+	Protocol string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
+
+	// public — true = internet-accessible (funnel), false = private (serve).
+	Public bool `yaml:"public,omitempty" json:"public,omitempty"`
+
+	// hostname — cloudflare: per-port hostname (from the map form).
+	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
+}
+
 // #CheckRunRequest asks the host to RUN a check plan against a venue and return the
 // per-step results (P12). command:check (candy/plugin-check) owns the `charly check`
 // CLI + output formatting, but RUNNING a plan is a composite of core host-serving
@@ -2918,43 +2999,6 @@ type StatusSubstrateReply struct {
 	Roots []StatusNestedNode `yaml:"roots,omitempty" json:"roots,omitempty"`
 
 	Single DeploymentStatus `yaml:"single,omitempty" json:"single,omitempty"`
-}
-
-// #TunnelConfig — the resolved, ready-to-execute tunnel configuration.
-type TunnelConfig struct {
-	// provider — "tailscale" or "cloudflare".
-	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
-
-	// tunnel_name — cloudflare: tunnel name.
-	TunnelName string `yaml:"tunnel_name,omitempty" json:"tunnel_name,omitempty"`
-
-	// hostname — cloudflare: default hostname (from the image dns field).
-	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
-
-	// box_name — for PID file naming / cloudflare tunnel-name default.
-	BoxName string `yaml:"box_name,omitempty" json:"box_name,omitempty"`
-
-	// ports — all tunneled ports with their access scope.
-	Ports []TunnelPort `yaml:"ports,omitempty" json:"ports,omitempty"`
-}
-
-// #TunnelPort — a single port to tunnel with its protocol and access scope.
-type TunnelPort struct {
-	// port — the tailscale HTTPS listen port (must be a valid serve/funnel port).
-	Port int `yaml:"port,omitempty" json:"port,omitempty"`
-
-	// backend_port — the localhost backend port (0 means same as port).
-	BackendPort int `yaml:"backend_port,omitempty" json:"backend_port,omitempty"`
-
-	// protocol — backend scheme: http | https | https+insecure | tcp |
-	// tls-terminated-tcp | ssh | rdp | smb (udp is skipped, never tunneled).
-	Protocol string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
-
-	// public — true = internet-accessible (funnel), false = private (serve).
-	Public bool `yaml:"public,omitempty" json:"public,omitempty"`
-
-	// hostname — cloudflare: per-port hostname (from the map form).
-	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 }
 
 type Vm struct {

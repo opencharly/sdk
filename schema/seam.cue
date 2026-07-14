@@ -241,6 +241,41 @@
 	written_paths?: [...string] @go(WrittenPaths)
 }
 
+// #PodLifecyclePlan is the host-resolved pod-lifecycle carrier (the K4 deep-body move): the pod
+// start/stop/shell RESOLUTION stays host-side (config_image/deploy/network/enc/tunnel = #59
+// inventory) and FILLS this plan, which the host threads on the F6 OpStart/OpStop/OpShell
+// op.Params; candy/plugin-deploy-pod EXECUTES it — running the container start/stop over the served
+// host executor and composing enc + tunnel via InvokeProvider(verb:enc/verb:tunnel), so the former
+// podCli("start"/"stop"/…) `charly`-reentries are DELETED (bodies, not shells). The pre-built enc
+// verb input (spec.EncExecInput — a hand-written wire type with no CUE def) rides as an opaque
+// RawBody envelope (empty ⇒ that leg is skipped, the common plain-pod case) with its Method set
+// per-op host-side; tunnel references the CUE-def'd #TunnelConfig directly and the plugin infers
+// start-vs-stop from the op. The ARBITER claim is NOT threaded here — its CHARLY_PREEMPT_LEASE
+// machinery is host-PROCESS state a placement-agnostic plugin cannot own, so the host proxy BRACKETS
+// the plugin op (acquire before OpStart; release after OpStop + on the failure path).
+// #PodExecReply is the reply from the pod plugin's OpShell CAPTURED-exec leg (the K4 `charly service`
+// move — an in-container init-mgmt exec, non-interactive). The plugin RunCaptures the argv over the
+// served executor and returns the combined Output + the exact ExitCode; the host reprints Output
+// (placement-agnostic: an out-of-process plugin's stdout is NOT charly's) and propagates a non-zero
+// ExitCode as *sdk.ExitCodeError so `charly service` preserves the container command's exit code
+// exactly (the passthrough→capture semantics change the ruling requires be exit-code-faithful).
+#PodExecReply: {
+	output?:    string @go(Output)
+	exit_code?: int    @go(ExitCode,type=int)
+}
+
+#PodLifecyclePlan: {
+	mode!:           "quadlet" | "direct" @go(Mode)           // runQuadlet (systemctl) vs runDirect (podman run)
+	svc_name?:       string               @go(SvcName)        // serviceNameInstance — quadlet unit
+	container_name!: string               @go(ContainerName)  // containerNameInstance — engine target
+	run_argv?: [...string] @go(RunArgv)                        // buildStartArgs output — direct mode `podman run -d`
+	direct_deploy?:  bool                 @go(DirectDeploy)    // IsDirectDeploy — quadlet-absent `podman start` fallback
+	engine_bin!:     string               @go(EngineBin)      // EngineBinary(resolved engine)
+	unmount?:        bool                 @go(Unmount)        // `charly stop --unmount` — enc FUSE teardown
+	enc?:     bytes @go(Enc, type=RawBody) // pre-built spec.EncExecInput (Method ensure@start / unmount@stop)
+	tunnel?:  #TunnelConfig @go(Tunnel,optional=nillable) // resolved tunnel config (nil ⇒ no tunnel) — TunnelStart@start / TunnelStop@stop
+}
+
 // #CheckRunRequest asks the host to RUN a check plan against a venue and return the
 // per-step results (P12). command:check (candy/plugin-check) owns the `charly check`
 // CLI + output formatting, but RUNNING a plan is a composite of core host-serving
