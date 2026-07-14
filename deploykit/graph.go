@@ -250,8 +250,10 @@ func BoxNeedsBuilder(img *buildkit.ResolvedBox, boxes map[string]*buildkit.Resol
 // build.go) so adding a future edge kind lands in one place.
 func BoxDirectDeps(name string, img *buildkit.ResolvedBox, boxes map[string]*buildkit.ResolvedBox, includeFormatBuilders bool) []string {
 	var deps []string
-	if !img.IsExternalBase && img.Base != "" {
-		deps = append(deps, img.Base)
+	if !img.IsExternalBase && img.Base != "" && img.Base != name {
+		if _, ok := boxes[img.Base]; ok {
+			deps = append(deps, img.Base)
+		}
 	}
 	if includeFormatBuilders {
 		for _, builder := range img.Builder.AllBuilder() {
