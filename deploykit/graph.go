@@ -242,15 +242,17 @@ func BoxNeedsBuilder(img *buildkit.ResolvedBox, boxes map[string]*buildkit.Resol
 //   - Builder.AllBuilder() format-builder boxes (only when includeFormatBuilders)
 //   - BootstrapBuilderImage (the `from: builder:pacstrap` / debootstrap source)
 //
-// Self-refs and refs to boxes not in the map (for builder + bootstrap builder)
-// are filtered out. An empty Base from a resolved `from:` box is not an edge.
+// Self-refs and refs to boxes not in the local map are filtered out. This covers
+// both an empty Base from a resolved `from:` box and namespaced remote bases.
 //
 // One helper, three callers (ResolveBoxOrder, ResolveBoxLevels, filterBox in
 // build.go) so adding a future edge kind lands in one place.
 func BoxDirectDeps(name string, img *buildkit.ResolvedBox, boxes map[string]*buildkit.ResolvedBox, includeFormatBuilders bool) []string {
 	var deps []string
 	if !img.IsExternalBase && img.Base != "" {
-		deps = append(deps, img.Base)
+		if _, ok := boxes[img.Base]; ok {
+			deps = append(deps, img.Base)
+		}
 	}
 	if includeFormatBuilders {
 		for _, builder := range img.Builder.AllBuilder() {

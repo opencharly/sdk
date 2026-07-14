@@ -134,3 +134,20 @@ func TestResolveBoxOrderFromOnlyBoxHasNoEmptyDependency(t *testing.T) {
 		t.Fatalf("ResolveBoxOrder() = %v, want %v", got, want)
 	}
 }
+
+func TestResolveBoxOrderNamespacedRemoteBaseHasNoLocalDependency(t *testing.T) {
+	boxes := map[string]*buildkit.ResolvedBox{
+		"derived": {
+			Name: "derived",
+			Base: "remote.base",
+		},
+	}
+
+	got, err := ResolveBoxOrder(boxes, nil)
+	if err != nil {
+		t.Fatalf("ResolveBoxOrder() error = %v", err)
+	}
+	if want := []string{"derived"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ResolveBoxOrder() = %v, want %v", got, want)
+	}
+}
