@@ -282,6 +282,8 @@ const (
 	ExecutorService_RunUser_FullMethodName        = "/charlyplugin.ExecutorService/RunUser"
 	ExecutorService_PutFile_FullMethodName        = "/charlyplugin.ExecutorService/PutFile"
 	ExecutorService_RunCapture_FullMethodName     = "/charlyplugin.ExecutorService/RunCapture"
+	ExecutorService_RunInteractive_FullMethodName = "/charlyplugin.ExecutorService/RunInteractive"
+	ExecutorService_RunStream_FullMethodName      = "/charlyplugin.ExecutorService/RunStream"
 	ExecutorService_GetFile_FullMethodName        = "/charlyplugin.ExecutorService/GetFile"
 	ExecutorService_RunHostStep_FullMethodName    = "/charlyplugin.ExecutorService/RunHostStep"
 	ExecutorService_InvokeProvider_FullMethodName = "/charlyplugin.ExecutorService/InvokeProvider"
@@ -298,6 +300,8 @@ type ExecutorServiceClient interface {
 	RunUser(ctx context.Context, in *RunRequest, opts ...grpc.CallOption) (*RunReply, error)
 	PutFile(ctx context.Context, in *PutFileRequest, opts ...grpc.CallOption) (*PutFileReply, error)
 	RunCapture(ctx context.Context, in *RunRequest, opts ...grpc.CallOption) (*CaptureReply, error)
+	RunInteractive(ctx context.Context, in *RunRequest, opts ...grpc.CallOption) (*LiveReply, error)
+	RunStream(ctx context.Context, in *RunRequest, opts ...grpc.CallOption) (*LiveReply, error)
 	GetFile(ctx context.Context, in *GetFileRequest, opts ...grpc.CallOption) (*GetFileReply, error)
 	RunHostStep(ctx context.Context, in *HostStepRequest, opts ...grpc.CallOption) (*HostStepReply, error)
 	InvokeProvider(ctx context.Context, in *InvokeProviderRequest, opts ...grpc.CallOption) (*InvokeReply, error)
@@ -358,6 +362,24 @@ func (c *executorServiceClient) RunCapture(ctx context.Context, in *RunRequest, 
 	return out, nil
 }
 
+func (c *executorServiceClient) RunInteractive(ctx context.Context, in *RunRequest, opts ...grpc.CallOption) (*LiveReply, error) {
+	out := new(LiveReply)
+	err := c.cc.Invoke(ctx, ExecutorService_RunInteractive_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *executorServiceClient) RunStream(ctx context.Context, in *RunRequest, opts ...grpc.CallOption) (*LiveReply, error) {
+	out := new(LiveReply)
+	err := c.cc.Invoke(ctx, ExecutorService_RunStream_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *executorServiceClient) GetFile(ctx context.Context, in *GetFileRequest, opts ...grpc.CallOption) (*GetFileReply, error) {
 	out := new(GetFileReply)
 	err := c.cc.Invoke(ctx, ExecutorService_GetFile_FullMethodName, in, out, opts...)
@@ -412,6 +434,8 @@ type ExecutorServiceServer interface {
 	RunUser(context.Context, *RunRequest) (*RunReply, error)
 	PutFile(context.Context, *PutFileRequest) (*PutFileReply, error)
 	RunCapture(context.Context, *RunRequest) (*CaptureReply, error)
+	RunInteractive(context.Context, *RunRequest) (*LiveReply, error)
+	RunStream(context.Context, *RunRequest) (*LiveReply, error)
 	GetFile(context.Context, *GetFileRequest) (*GetFileReply, error)
 	RunHostStep(context.Context, *HostStepRequest) (*HostStepReply, error)
 	InvokeProvider(context.Context, *InvokeProviderRequest) (*InvokeReply, error)
@@ -438,6 +462,12 @@ func (UnimplementedExecutorServiceServer) PutFile(context.Context, *PutFileReque
 }
 func (UnimplementedExecutorServiceServer) RunCapture(context.Context, *RunRequest) (*CaptureReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RunCapture not implemented")
+}
+func (UnimplementedExecutorServiceServer) RunInteractive(context.Context, *RunRequest) (*LiveReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunInteractive not implemented")
+}
+func (UnimplementedExecutorServiceServer) RunStream(context.Context, *RunRequest) (*LiveReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunStream not implemented")
 }
 func (UnimplementedExecutorServiceServer) GetFile(context.Context, *GetFileRequest) (*GetFileReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetFile not implemented")
@@ -553,6 +583,42 @@ func _ExecutorService_RunCapture_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ExecutorServiceServer).RunCapture(ctx, req.(*RunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExecutorService_RunInteractive_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecutorServiceServer).RunInteractive(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExecutorService_RunInteractive_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecutorServiceServer).RunInteractive(ctx, req.(*RunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExecutorService_RunStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecutorServiceServer).RunStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExecutorService_RunStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecutorServiceServer).RunStream(ctx, req.(*RunRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -673,6 +739,14 @@ var ExecutorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunCapture",
 			Handler:    _ExecutorService_RunCapture_Handler,
+		},
+		{
+			MethodName: "RunInteractive",
+			Handler:    _ExecutorService_RunInteractive_Handler,
+		},
+		{
+			MethodName: "RunStream",
+			Handler:    _ExecutorService_RunStream_Handler,
 		},
 		{
 			MethodName: "GetFile",
