@@ -3,6 +3,8 @@ package deploykit
 import (
 	"reflect"
 	"testing"
+
+	"github.com/opencharly/sdk/buildkit"
 )
 
 // The pure topo-sort tests, relocated with topoSort/topoLevels from charly/graph.go
@@ -113,5 +115,22 @@ func TestTopoSortDeterministic(t *testing.T) {
 		if !reflect.DeepEqual(result, first) {
 			t.Errorf("non-deterministic output: got %v, first was %v", result, first)
 		}
+	}
+}
+
+func TestResolveBoxOrderFromOnlyBoxHasNoEmptyDependency(t *testing.T) {
+	boxes := map[string]*buildkit.ResolvedBox{
+		"from-only": {
+			Name: "from-only",
+			From: "builder:pacstrap",
+		},
+	}
+
+	got, err := ResolveBoxOrder(boxes, nil)
+	if err != nil {
+		t.Fatalf("ResolveBoxOrder() error = %v", err)
+	}
+	if want := []string{"from-only"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ResolveBoxOrder() = %v, want %v", got, want)
 	}
 }
