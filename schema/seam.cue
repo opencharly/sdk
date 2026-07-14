@@ -416,6 +416,7 @@
 	image?:       string @go(Image)      // pod bed box ref ("" for vm/local/group)
 	vm_template?: string @go(VMTemplate) // node.From for a vm bed (the ENTITY — `charly vm build` builds off it)
 	bed_domain?:  string @go(BedDomain)  // per-deploy live domain identity (`charly vm create/destroy/start … --domain <this>`, post-P33)
+	image_tag?:   string @go(ImageTag)   // per-RUN bed-scoped image tag (<bed-root>-<runCalver>); every `charly box build` + deploy in the run passes it as --tag, so concurrent beds building the SAME fixture image name never collide on the store-global short-name→newest-local-CalVer resolution (#75 — the tag analogue of bed_domain=deploy-name)
 	local_ref?:   string @go(LocalRef)   // node.From for a local bed
 	vm_domains?: [...string] @go(VMDomains)      // charly-<domain> set locked by setup (per-deploy, post-P33)
 	check_live_refs?: [...string] @go(CheckLiveRefs) // bed + nested-child refs

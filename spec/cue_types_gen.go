@@ -3175,6 +3175,8 @@ type CheckBedReply struct {
 
 	BedDomain string `yaml:"bed_domain,omitempty" json:"bed_domain,omitempty"`
 
+	ImageTag string `yaml:"image_tag,omitempty" json:"image_tag,omitempty"`
+
 	LocalRef string `yaml:"local_ref,omitempty" json:"local_ref,omitempty"`
 
 	VMDomains []string `yaml:"vm_domains,omitempty" json:"vm_domains,omitempty"`
