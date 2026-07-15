@@ -309,13 +309,6 @@ func FindVmDeployNode(deploys map[string]BundleNode, name, vmName string) (Bundl
 	return BundleNode{}, false
 }
 
-// marshalBundleNodeLegacy yaml-marshals a BundleNode into the LEGACY struct body
-// shape — re-injecting the now-yaml:"-" structural fields (`target:`, `nested:`,
-// `peer:`) that no longer marshal off the struct. This reproduces exactly the
-// input migrateDeployEntity expects (the body it converts into node-form tree
-// children), so the per-host overlay writer round-trips the deployment tree even
-// though Target/Children/Members are no longer authored/marshaled fields
-// (Risk 5a). Recurses so nested children + members at every depth are preserved.
 // DropMappingKey removes a key (and its value) from a YAML mapping node in place.
 func DropMappingKey(m *yaml.Node, key string) {
 	if m == nil || m.Kind != yaml.MappingNode {
@@ -517,9 +510,8 @@ func MergeDeployConfigs(configs ...*BundleConfig) *BundleConfig {
 // --- deploy state-model helpers relocated from charly/deploy.go (K5-Unit-1) ---
 // These pure helpers moved out of core alongside the load/save/merge/clean/saveDeployState
 // bodies: they carry NO core Mechanism dep (only spec types + deploykit's own primitives),
-// so they live here unconditionally. The core-coupled ops (LoadUnified / LatestSchemaVersion /
-// acquireDeployConfigLock / migrateDeployEntity) reach deploykit through the seam vars in
-// deploy_file.go (DeployStateHost), filled by charly at init.
+// so they live here unconditionally. The ONE core-coupled op (LoadUnified) reaches deploykit
+// through the seam var in deploy_file.go (DeployStateHost), filled by charly at init.
 
 // Named is the interface for provides entries (shared pipeline logic). EnvProvideEntry and
 // MCPProvideEntry both satisfy it via their GetName/GetSource methods. Relocated from
