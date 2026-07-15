@@ -73,6 +73,19 @@
 	plan?: [...#Step] @go(Plan)
 	authored_aliases?: [...#BoxAlias] @go(AuthoredAliases)
 
+	// box-AUTHORED deploy-overlay surfaces ExportAllBox reads (K5-Unit-1, the #67 keystone): the
+	// box entity's OWN authored env / env_file / security / network / raw description — the fields
+	// `charly bundle export --all` projects into a BundleConfig so the deploy-state model can be
+	// built from the RESOLVED-PROJECT ENVELOPE, not the live *Config graph. description is the RAW
+	// authored string (distinct from info above, which is its descriptionInfo first-line summary);
+	// env/env_file/security are the box-authored deploy-overlay defaults. network is already carried
+	// above; these three + description are the additions. Filled by projectBoxAggregates from
+	// cfg.BoxConfig(name), alongside plan/authored_aliases.
+	description?: string & !=""
+	env?:       {PATH?: _|_, [string]: #StrVal} @go(Env,type=map[string]string)
+	env_file?:  string & !=""              @go(EnvFile)
+	security?:  #Security                 @go(Security,optional=nillable)
+
 	// build-render label carriers (#67, the build_resolve RENDER-leg death). The host projector runs
 	// the label collectors + caps + init resolve + skill probe + status into a fully-baked #BakedLabelSet
 	// (the EXACT wire data writeLabels emits) so the deploykit render's WriteLabels — relocated out of
