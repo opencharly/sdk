@@ -14,6 +14,14 @@ const (
 	OpResolve  = "resolve"  // builder: resolve a builder image + steps (build-time multi-stage)
 	OpBuild    = "build"    // build: dispatch the image-build / generate engine host-side (F10 HostBuild seam)
 
+	// OpCompile is the K4-B deploy-COMPILE selector (command:bundle): the host's
+	// deployAddCmd.compileNodePlans computes the per-node selection and Invokes the
+	// command:bundle plugin's OpCompile with a spec.DeployCompileRequest; the plugin
+	// re-hydrates the resolved-project envelope (HostBuild("resolved-project")) +
+	// loops deploykit.BuildDeployPlan, returning []spec.InstallPlanView the host
+	// re-materializes. A generic action selector (never a provider word — F11).
+	OpCompile = "compile"
+
 	// OpCollectContext + OpReverse are the DEPLOY-TIME builder-IR legs of an externalized
 	// detection-builder plugin (cargo/npm/pixi/aur). A builder's build-time multi-stage is
 	// resolved by its OpResolve leg (C10); these two carry the per-builder deploy-time IR

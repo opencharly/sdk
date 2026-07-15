@@ -3466,6 +3466,51 @@ type CheckBedMember struct {
 	From string `yaml:"from,omitempty" json:"from,omitempty"`
 }
 
+// #DeployCompileRequest is the per-node COMPILE seam (K4-B): the host computes the
+// per-node selection (resolved box — authored OR synthetic — projected to a
+// ResolvedBoxView; the FINAL pruned candy order; the host-side HostContext incl. the
+// preresolved BuilderContext) and asks the command:bundle plugin's OpCompile handler to
+// compile. The plugin fetches the resolved-project envelope itself via
+// HostBuild("resolved-project") (the established seam — it does NOT receive the whole
+// project in the request), re-hydrates the box vocab via deploykit.NewSpecResolvedBox and
+// each candy model via deploykit.NewSpecCandyModel, loops deploykit.BuildDeployPlan over
+// the host-provided order, and returns []InstallPlanView. The host re-materializes
+// []*InstallPlan from the views via deploykit.PlanFromView.
+//
+// BoxView is the resolved box to compile against, INLINE (the host projects authored
+// boxes via projectResolvedBox AND synthetics via syntheticHostBox/syntheticVmBox the SAME
+// way — both become a spec.ResolvedBoxView). HostContextJSON is the marshalled
+// deploykit.HostContext (MachineVenue/Distro/Glibc/BuilderImage + the preresolved
+// BuilderContext map) — a hand-written sdk/deploykit type with no CUE def, so it rides as
+// an opaque RawBody envelope (the VmJSON/PodConfigJSON idiom; the plugin unmarshals into
+// deploykit.HostContext, which it imports via github.com/opencharly/sdk/deploykit). Tag is
+// the image CalVer pin (for the plan Version field when set). Dir is the project dir the
+// plugin threads into its HostBuild("resolved-project") call (empty → plugin cwd).
+type DeployCompileRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir"`
+
+	BoxView ResolvedBoxView `yaml:"box_view,omitempty" json:"box_view"`
+
+	Order []string `yaml:"order,omitempty" json:"order,omitempty"`
+
+	HostContextJSON RawBody `yaml:"host_context,omitempty" json:"host_context"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+}
+
+// #DeployCompileReply is the OpCompile reply: the compiled plans as marshalled
+// []spec.InstallPlanView (a hand-written sdk/spec wire type with no CUE def → opaque
+// RawBody envelope; the host unmarshals into []spec.InstallPlanView and re-materializes
+// []*spec.InstallPlan via deploykit.PlanFromView), plus the base identity (box name) and
+// the resolved candy set (the order, for deployID + overlay-candy propagation).
+type DeployCompileReply struct {
+	PlansJSON RawBody `yaml:"plans,omitempty" json:"plans"`
+
+	Base string `yaml:"base,omitempty" json:"base,omitempty"`
+
+	CandySet []string `yaml:"candy_set,omitempty" json:"candy_set,omitempty"`
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.

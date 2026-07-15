@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/opencharly/sdk/spec"
@@ -46,6 +47,32 @@ func WireView(p *spec.InstallPlan) spec.InstallPlanView {
 		Meta:            p.Meta,
 		Steps:           StepsToView(p.Steps),
 	}
+}
+
+// PlanFromView re-materializes the rich in-core *spec.InstallPlan from its JSON-roundtrippable
+// spec.InstallPlanView wire form — the REVERSE of WireView, used by the host to reconstruct
+// []*InstallPlan from the command:bundle plugin's OpCompile reply (K4-B). Steps round-trip
+// through the SINGLE stepsFromView converter (step_view.go), already proven round-trip-faithful
+// by TestStepView_RoundTrip. The host re-materialized plan is byte-equivalent to the former
+// in-proc compile output (the K4-B parity golden proves it via DeepEqual against the OLD
+// host-compile path).
+func PlanFromView(v spec.InstallPlanView) (*spec.InstallPlan, error) {
+	steps, err := stepsFromView(v.Steps)
+	if err != nil {
+		return nil, fmt.Errorf("re-materialize plan %q: %w", v.Candy, err)
+	}
+	return &spec.InstallPlan{
+		DeployID:        v.DeployID,
+		Box:             v.Box,
+		Version:         v.Version,
+		Distro:          v.Distro,
+		Candy:           v.Candy,
+		CandiesIncluded: v.CandiesIncluded,
+		AddCandies:      v.AddCandies,
+		BuilderImage:    v.BuilderImage,
+		Meta:            v.Meta,
+		Steps:           steps,
+	}, nil
 }
 
 // ResolveHome substitutes the deferred HomeToken with a concrete home in

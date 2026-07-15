@@ -450,3 +450,42 @@
 	vendor!: string @go(Vendor)
 	reason!: string @go(Reason)
 }
+
+// #DeployCompileRequest is the per-node COMPILE seam (K4-B): the host computes the
+// per-node selection (resolved box — authored OR synthetic — projected to a
+// ResolvedBoxView; the FINAL pruned candy order; the host-side HostContext incl. the
+// preresolved BuilderContext) and asks the command:bundle plugin's OpCompile handler to
+// compile. The plugin fetches the resolved-project envelope itself via
+// HostBuild("resolved-project") (the established seam — it does NOT receive the whole
+// project in the request), re-hydrates the box vocab via deploykit.NewSpecResolvedBox and
+// each candy model via deploykit.NewSpecCandyModel, loops deploykit.BuildDeployPlan over
+// the host-provided order, and returns []InstallPlanView. The host re-materializes
+// []*InstallPlan from the views via deploykit.PlanFromView.
+//
+// BoxView is the resolved box to compile against, INLINE (the host projects authored
+// boxes via projectResolvedBox AND synthetics via syntheticHostBox/syntheticVmBox the SAME
+// way — both become a spec.ResolvedBoxView). HostContextJSON is the marshalled
+// deploykit.HostContext (MachineVenue/Distro/Glibc/BuilderImage + the preresolved
+// BuilderContext map) — a hand-written sdk/deploykit type with no CUE def, so it rides as
+// an opaque RawBody envelope (the VmJSON/PodConfigJSON idiom; the plugin unmarshals into
+// deploykit.HostContext, which it imports via github.com/opencharly/sdk/deploykit). Tag is
+// the image CalVer pin (for the plan Version field when set). Dir is the project dir the
+// plugin threads into its HostBuild("resolved-project") call (empty → plugin cwd).
+#DeployCompileRequest: {
+	dir!:          string          @go(Dir)
+	box_view!:     #ResolvedBoxView @go(BoxView)
+	order?:        [...string]     @go(Order)
+	host_context!: bytes           @go(HostContextJSON, type=RawBody)
+	tag?:          string          @go(Tag)
+}
+
+// #DeployCompileReply is the OpCompile reply: the compiled plans as marshalled
+// []spec.InstallPlanView (a hand-written sdk/spec wire type with no CUE def → opaque
+// RawBody envelope; the host unmarshals into []spec.InstallPlanView and re-materializes
+// []*spec.InstallPlan via deploykit.PlanFromView), plus the base identity (box name) and
+// the resolved candy set (the order, for deployID + overlay-candy propagation).
+#DeployCompileReply: {
+	plans!:     bytes     @go(PlansJSON, type=RawBody)
+	base?:      string    @go(Base)
+	candy_set?: [...string] @go(CandySet)
+}
