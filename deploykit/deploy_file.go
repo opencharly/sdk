@@ -14,48 +14,50 @@ import (
 
 // deploy_file.go — the deploy STATE-MODEL load/save/merge/export body relocated out of
 // charly/deploy.go to sdk/deploykit (K5-Unit-1, the S-K5 keystone that unblocks P13). The
-// PURE helpers (LoadDeployFile / RemoveBoxDeploy) were already here; this cutover moves the
-// EIGHT remaining state-model bodies — LoadBundleConfig / SaveBundleConfig /
-// LoadDeployConfigForRead / LoadDeployConfigForWrite / MergeDeployOntoMetadata /
-// CleanDeployEntry / SaveDeployState / ExportAllBox — plus the SaveDeployStateInput type
-// (deploy_state.go) and the pure helpers (MarshalBundleNodeLegacy / ScopeVolumesToDeployKey /
-// DescriptionInfo / IsSameBaseBox / RemoveBySource / RemoveByExactSource / Named).
+// PURE helpers (LoadDeployFile / RemoveBoxDeploy) were already here; this cutover moved the
+// state-model bodies — LoadBundleConfig / SaveBundleConfig / LoadDeployConfigForRead /
+// LoadDeployConfigForWrite / MergeDeployOntoMetadata / CleanDeployEntry / SaveDeployState /
+// ExportAllBox — plus the SaveDeployStateInput type (deploy_state.go) and the pure helpers
+// (ScopeVolumesToDeployKey / DescriptionInfo / IsSameBaseBox / RemoveBySource /
+// RemoveByExactSource / Named).
 //
-// Four of these bodies reach core Mechanisms the SDK cannot import — the unified LOADER
-// (LoadUnified → uf.ProjectBundleConfig), the process-shared deploy-config FLOCK
-// (acquireDeployConfigLock), the legacy→node-form MIGRATE transform (migrateDeployEntity),
-// and the runtime VERSION stamp (LatestSchemaVersion). They reach core through the
-// DeployStateHost seam below, filled by charly at init (the DeployConfigPath =
-// kit.DefaultDeployConfigPath precedent). ExportAllBox is the #67 keystone: it takes the
-// spec.ResolvedProject envelope the "resolved-project" HostBuild seam produces (K5-Unit-0)
-// and projects the box-authored deploy-overlay fields into a BundleConfig — no live *Config
-// graph. The per-host ledger is read/written by compiled-in command plugins via the
-// config-resolve / config-persist host seams (the plugin-vm precedent); these bodies are the
-// shared library those seams and the charly command family both call.
+// ONE of these bodies reaches a core Mechanism the SDK cannot import — the unified LOADER
+// (LoadUnified → uf.ProjectBundleConfig), reached through the DeployStateHost seam below
+// (filled by charly at init). The process-shared deploy-config FLOCK + the runtime VERSION
+// stamp are kind-blind kit primitives (kit.AcquireFileLock / kit.LatestSchemaVersion) called
+// directly; the deploy-kind-specific marshal (the struct-body → compact node-form transform)
+// is the caller's responsibility, supplied as a callback to the kind-blind SaveBundleConfig
+// shell. ExportAllBox is the #67 keystone: it takes the spec.ResolvedProject envelope the
+// "resolved-project" HostBuild seam produces (K5-Unit-0) and projects the box-authored
+// deploy-overlay fields into a BundleConfig — no live *Config graph. The per-host ledger is
+// read/written by compiled-in command plugins via the config-resolve / config-persist host
+// seams (the plugin-vm precedent); these bodies are the shared library those seams and the
+// charly command family both call.
 
-// StateHostMechanisms carries the host-side Mechanisms the state-file load/save/clean/merge
-// bodies need but the SDK cannot import. charly/ fills it at init (RegisterDeployStateHost);
-// a plugin or SDK consumer that does not register it gets nil-safe no-ops from the write
-// paths (the read paths below fall back to the kit-only file path when the seam is absent).
+// StateHostMechanisms carries the ONE host-side Mechanism the state-file load/save bodies need
+// but the SDK cannot import: the unified LOADER (LoadUnified → uf.ProjectBundleConfig), reached
+// through LoadUnifiedBundleConfig. charly/ fills it at init (RegisterDeployStateHost); a plugin
+// or SDK consumer that does not register it gets nil-safe no-ops from the write paths (the read
+// paths fall back to the kit-only file path when the seam is absent).
+//
+// E/M justification (the kernel/plugin boundary law): LoadUnifiedBundleConfig is a kind-blind
+// MECHANISM (M) — it loads ANY per-host charly.yml through the unified loader and returns its
+// ProjectBundleConfig, never branching on a deploy kind. It lives in the seam (not in deploykit
+// directly) ONLY because the LoadUnified orchestration has not yet relocated to sdk/loaderkit
+// (K1, task #31): once K1 lands, plugin-bundle calls loaderkit.LoadUnified directly and this
+// seam dies entirely. The deploy-kind-specific marshal is NOT here — it is the caller's
+// responsibility, supplied as a callback to SaveBundleConfig (a kind-blind file shell). Tracked
+// K1-exit task: this seam field is deleted when K1 lands.
 type StateHostMechanisms struct {
 	// LoadUnifiedBundleConfig loads a per-host charly.yml configDir through the unified
 	// loader and returns its ProjectBundleConfig (or nil, nil when absent / empty).
 	LoadUnifiedBundleConfig func(configDir string) (*BundleConfig, error)
-	// LatestSchemaVersion returns the HEAD schema CalVer (the version: stamp SaveBundleConfig
-	// writes so a re-load passes the schema gate).
-	LatestSchemaVersion func() string
-	// AcquireDeployConfigLock takes the process-shared flock around the load→modify→save
-	// critical section (concurrent charly processes / parallel check beds).
-	AcquireDeployConfigLock func() (unlock func() error, err error)
-	// MigrateDeployEntity rewrites a deploy entity body into the compact node-form the
-	// per-host overlay is read back in (the legacy→node-form serializer).
-	MigrateDeployEntity func(body *yaml.Node) *yaml.Node
 }
 
 // DeployStateHost is the seam charly fills at init. Nil-safe: the write paths (SaveDeployState /
-// CleanDeployEntry) no-op when it is nil; LoadBundleConfig returns (nil, nil) (absent file) and
-// SaveBundleConfig errors with a clear "host not registered" message. A plugin/SDK consumer
-// that never writes the per-host ledger (the read-only validate / inspect paths) leaves it nil.
+// CleanDeployEntry) no-op when it is nil; LoadBundleConfig returns (nil, nil) (absent file) so
+// the read-only validate/inspect paths work without a registration. A plugin/SDK consumer that
+// never writes the per-host ledger leaves it nil.
 var DeployStateHost *StateHostMechanisms
 
 // RegisterDeployStateHost is the charly init hook (called once from package main at startup).
@@ -110,11 +112,16 @@ func LoadBundleConfig() (*BundleConfig, error) {
 	return &BundleConfig{}, nil
 }
 
-// SaveBundleConfig writes a BundleConfig to the standard charly.yml path. Uses tempfile +
-// os.Rename for atomic write — defense in depth against partial writes truncating the prior
-// file. Relocated from charly/deploy.go (K5-Unit-1); the version stamp + the migrate transform
-// reach core through DeployStateHost.
-func SaveBundleConfig(dc *BundleConfig) error {
+// SaveBundleConfig writes a BundleConfig to the standard charly.yml path. The kind-blind file
+// shell: the HEAD version stamp (kit.LatestSchemaVersion), the provides directive, the
+// caller-supplied per-entry node-form bodies, and the atomic tempfile+os.Rename write with a
+// fail-safe re-check. The deploy-kind-specific marshal (the struct-body → compact node-form
+// transform) is the caller's responsibility — supplied via marshalNode, which returns the
+// MIGRATED node-form body for one BundleNode (the value placed under the entry's name key).
+// This keeps SaveBundleConfig kind-blind: no per-kind map, no target-vocabulary switch, no
+// deploy-kind-specific struct knowledge. Relocated from charly/deploy.go (K5-Unit-1); the
+// LoadUnified hop (the fail-safe re-check) reaches core through DeployStateHost.
+func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *BundleNode) (*yaml.Node, error)) error {
 	path, err := kit.DefaultDeployConfigPath()
 	if err != nil {
 		return fmt.Errorf("determining deploy config path: %w", err)
@@ -134,17 +141,16 @@ func SaveBundleConfig(dc *BundleConfig) error {
 	if dc == nil {
 		dc = &BundleConfig{}
 	}
-	if DeployStateHost == nil || DeployStateHost.LatestSchemaVersion == nil || DeployStateHost.MigrateDeployEntity == nil {
-		return fmt.Errorf("SaveBundleConfig: DeployStateHost not registered (charly init must call RegisterDeployStateHost before any write)")
+	if marshalNode == nil {
+		return fmt.Errorf("SaveBundleConfig: marshalNode callback is nil (the deploy-kind-specific marshal is the caller's responsibility)")
 	}
 	// Write a unified node-form per-host charly.yml: the HEAD `version:` stamp lets a re-load
 	// through LoadUnified pass the schema gate; `provides:` stays a document directive; each
-	// deploy entry is a name-first node `<name>: {bundle: <scalars>, <child-nodes>}` — the SAME
-	// shape the node-form loader accepts (the only authoring surface). Reuses MigrateDeployEntity
-	// (the legacy-body → node-form transform) on each entry's marshaled struct body, so the
-	// writer can never drift from the migration.
+	// deploy entry is a name-first node `<name>: {<disc>: <body>, <child-nodes>}` — the SAME
+	// shape the node-form loader accepts (the only authoring surface), produced by the caller's
+	// marshalNode callback.
 	root := &yaml.Node{Kind: yaml.MappingNode}
-	root.Content = append(root.Content, kit.ScalarNode("version"), kit.ScalarNode(DeployStateHost.LatestSchemaVersion()))
+	root.Content = append(root.Content, kit.ScalarNode("version"), kit.ScalarNode(kit.LatestSchemaVersion().String()))
 	if dc.Provides != nil {
 		pb, perr := yaml.Marshal(dc.Provides)
 		if perr != nil {
@@ -165,11 +171,11 @@ func SaveBundleConfig(dc *BundleConfig) error {
 	sort.Strings(names)
 	for _, name := range names {
 		node := dc.Bundle[name]
-		body, merr := MarshalBundleNodeLegacy(&node)
+		body, merr := marshalNode(name, &node)
 		if merr != nil {
 			return fmt.Errorf("marshaling deploy %q: %w", name, merr)
 		}
-		root.Content = append(root.Content, kit.ScalarNode(name), DeployStateHost.MigrateDeployEntity(body))
+		root.Content = append(root.Content, kit.ScalarNode(name), body)
 	}
 	data, err := yaml.Marshal(root)
 	if err != nil {
@@ -200,64 +206,6 @@ func SaveBundleConfig(dc *BundleConfig) error {
 		return fmt.Errorf("renaming %s -> %s: %w", tmpPath, path, err)
 	}
 	return nil
-}
-
-// MarshalBundleNodeLegacy yaml-marshals a BundleNode into the LEGACY struct body shape —
-// re-injecting the now-yaml:"-" structural fields (`target:`, `nested:`, `peer:`) that no
-// longer marshal off the struct. This reproduces exactly the input MigrateDeployEntity expects
-// (the body it converts into node-form tree children), so the per-host overlay writer
-// round-trips the deployment tree even though Target/Children/Members are no longer
-// authored/marshaled fields. Recurses so nested children + members at every depth are
-// preserved. Relocated from charly/deploy.go (K5-Unit-1); MigrateDeployEntity reaches core
-// through DeployStateHost.
-func MarshalBundleNodeLegacy(node *BundleNode) (*yaml.Node, error) {
-	nb, err := yaml.Marshal(node)
-	if err != nil {
-		return nil, err
-	}
-	var nd yaml.Node
-	if err := yaml.Unmarshal(nb, &nd); err != nil {
-		return nil, err
-	}
-	if len(nd.Content) != 1 || nd.Content[0].Kind != yaml.MappingNode {
-		// Empty/odd body — return an empty mapping so the caller still emits a node.
-		return &yaml.Node{Kind: yaml.MappingNode}, nil
-	}
-	body := nd.Content[0]
-	// descent: is a loader-DERIVED venue-hop descriptor (Cutover H) re-stamped on every load by
-	// the substrate plugin — NEVER persist it (a stored descent trips #DeployValue's descent?:
-	// _|_ on reload, and MigrateDeployEntity does not know the key). Drop it from the marshaled
-	// body at every recursion level.
-	DropMappingKey(body, "descent")
-	// target: — derived from the node's disc/cross-ref at load; re-emit it so a reload re-derives
-	// the same target (also lets a group's empty target stay absent rather than mis-marshaling).
-	if node.Target != "" {
-		body.Content = append(body.Content, kit.ScalarNode("target"), kit.ScalarNode(node.Target))
-	}
-	// nested: + peer: — the recursive tree. Each child/member body is itself marshaled through
-	// this helper so its own structural fields survive.
-	appendNodeMap := func(key string, m map[string]*BundleNode) error {
-		if len(m) == 0 {
-			return nil
-		}
-		mapNode := &yaml.Node{Kind: yaml.MappingNode}
-		for _, k := range SortedNestedKeys(m) {
-			childBody, cerr := MarshalBundleNodeLegacy(m[k])
-			if cerr != nil {
-				return cerr
-			}
-			mapNode.Content = append(mapNode.Content, kit.ScalarNode(k), childBody)
-		}
-		body.Content = append(body.Content, kit.ScalarNode(key), mapNode)
-		return nil
-	}
-	if err := appendNodeMap("nested", node.Children); err != nil {
-		return nil, err
-	}
-	if err := appendNodeMap("peer", node.Members); err != nil {
-		return nil, err
-	}
-	return body, nil
 }
 
 // LoadDeployConfigForRead loads charly.yml for read-only consumption. Unlike the historical
