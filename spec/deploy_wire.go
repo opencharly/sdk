@@ -649,16 +649,82 @@ type OverlayBuildRequest struct {
 	WithServices     bool   `json:"with_services,omitempty"`      //
 }
 
-// OverlayBuildReply is what the "overlay" host-builder returns: the built overlay image ref
-// (== BaseImage when there was no add_candy overlay to synthesize), the resolved base image
-// ref, and the flattened deploy name. The caller (PrepareVenue) uses these to print the start
-// hint and persist the concrete overlay ref (saveDeployState) so config/start deploy exactly
-// this overlay. A build FAILURE rides Error (the reply-error convention, like BuildReply).
+// OverlayBuildReply is what the "overlay" host-builder returns. P11c (the overlay-BUILD
+// dissolution): the host "overlay" host-builder shrinks to PREP+RESOLVE only — it reconstructs
+// the core *Generator (with the deploy's add_candy refs as ExtraCandyRefs), resolves the base
+// image ref + distro + init + base-image metadata (ExtractMetadata), stages remote candy copies
+// (host-fs), projects a *ResolvedProject scoped to the overlay, serializes the live plans, and
+// returns the envelope. The candy (candy/plugin-deploy-pod podPrepareVenue) consumes this envelope,
+// constructs a deploykit.Generator via the shared deploykit.NewRenderGeneratorFromProject, renders
+// the overlay Containerfile IN ITS OWN CODE, and runs podman build + the deploy-name alias tag via
+// the served executor. The host "step-emit" generic host-builder (reached via HostBuild("step-emit",
+// "oci-emit-step", …)) renders each per-step Containerfile fragment host-side (ociEmitStep — the
+// full provider-registry dispatch), looking up the cached overlay buildEngineContext by dir.
+//
+// Legacy fields (OverlayRef/BaseImage/DeployName) are kept for the no-overlay / tag-only path the
+// candy drives; ResolvedProject + Plans + the base-image metadata (BaseUser/BaseSecurity/
+// BaseRegistry) + CalVer carry the render envelope. A build FAILURE rides Error (the reply-error
+// convention, like BuildReply).
 type OverlayBuildReply struct {
 	OverlayRef string `json:"overlay_ref,omitempty"`
 	BaseImage  string `json:"base_image,omitempty"`
 	DeployName string `json:"deploy_name,omitempty"`
 	Error      string `json:"error,omitempty"`
+
+	// ResolvedProject is the overlay-scoped resolved-project envelope the candy constructs a
+	// deploykit.Generator from (via deploykit.NewRenderGeneratorFromProject). Nil when there is no
+	// add_candy overlay to synthesize (the tag-only path).
+	ResolvedProject *ResolvedProject `json:"resolved_project,omitempty"`
+
+	// Plans is the deployment's compiled InstallPlans serialized as InstallPlanViews — the candy
+	// decodes them (deploykit.PlanFromView) + walks the overlay candies' steps. Empty for the
+	// no-overlay path. The live plans cannot ride a []byte boundary as a *InstallPlan (the
+	// InstallPlan carries concrete steps); the InstallPlanView is the wire form.
+	Plans []InstallPlanView `json:"plans,omitempty"`
+
+	// BaseUser is the base image's runtime USER (ExtractMetadata.User) — the candy emits the
+	// post-overlay `USER <base>` restore directive when the overlay set USER root for install tasks
+	// (mirrors PodDeployTarget.buildOverlay). Empty/""root" → no restore.
+	BaseUser string `json:"base_user,omitempty"`
+
+	// BaseSecurity is the base image's baked LabelSecurity (ExtractMetadata.Security) — the candy
+	// merges each overlay candy's security on top + emits a LABEL directive so `charly config` picks
+	// up intrinsic requirements declared by add_candy (mirrors renderOverlaySecurityLabel). Nil → no
+	// merge needed.
+	BaseSecurity *Security `json:"base_security,omitempty"`
+
+	// BaseRegistry is the base image's ai.opencharly.registry OCI label — the candy uses it to form
+	// the deploy-name alias tag (`<registry>/<deploy-name>:<calver>`) so deployment-name-keyed
+	// commands resolve the image when deploy-name != image-name (mirrors tagDeployAlias). Empty → no
+	// registry prefix.
+	BaseRegistry string `json:"base_registry,omitempty"`
+
+	// CalVer is the host's current CalVer (ComputeCalVer) — the candy uses it for the deploy-name
+	// alias tag (the core ComputeCalVer is host-only; the candy cannot compute it).
+	CalVer string `json:"calver,omitempty"`
+
+	// OverlayCandySecurity carries each overlay candy's own `security:` block (the per-candy
+	// *Security the host prep reads via gen.candyByName(name).Security()). The CandyModel interface
+	// the candy builds its deploykit.Generator from has NO Security() method, so the candy cannot
+	// read overlay-candy security itself; the host prep reads it core-side + carries it here. The
+	// candy's renderOverlaySecurityLabel merges each entry on top of BaseSecurity (the base image's
+	// baked label) + emits the LABEL directive (mirrors the former PodDeployTarget
+	// .renderOverlaySecurityLabel). nil entries are skipped; an empty map means no overlay candy
+	// contributed security (the base label is kept as-is). SecurityConfig == Security (alias), so
+	// json.Marshal is byte-identical to the former in-core render.
+	OverlayCandySecurity map[string]*Security `json:"overlay_candy_security,omitempty"`
+
+	// ParentVolumes carries the PARENT deploy node's bind-mount volumes for a NESTED pod-in-pod
+	// overlay build (a pod deploy nested under a parent pod). The candy runs `podman build` via the
+	// served executor, which for a nested overlay IS the parent venue executor (the host threads it
+	// onto the candy's Invoke ctx); the build context (the project root) is bind-mounted into the
+	// parent venue, so the candy must translate host-side paths (the Containerfile path + the build
+	// context) to venue-side paths via translateHostPathToVenue before invoking podman. nil/empty
+	// (the common non-nested case) means no translation — the candy uses host paths directly. The
+	// host prep copies parentNode.Volume (the []DeployVolume bind-mount list) when parentNode is
+	// non-nil; the candy's translateHostPathToVenue reads the same Type/Host/Path fields the former
+	// in-core PodDeployTarget.translateHostPathToVenue did (byte-faithful).
+	ParentVolumes []DeployVolume `json:"parent_volumes,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
