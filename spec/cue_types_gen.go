@@ -3624,6 +3624,42 @@ type StatusSubstrateReply struct {
 	Single DeploymentStatus `yaml:"single,omitempty" json:"single,omitempty"`
 }
 
+// #SubstrateStatusRequest — the per-substrate COLLECTOR request the host sends to the substrate
+// plugin's OpStatusCollect (P14a: the cleanly-movable collectors — pod live + local + the probes —
+// relocated into candy/plugin-substrate, served on the kind provider's Invoke by word
+// pod/vm/k8s/local/android). The host passes the scalar inputs a sdk-only candy cannot derive:
+// the engine binary name (engine_bin), the run mode, the quadlet dir (pod's quadlet-description
+// enrichment + enabled-but-not-running append), include_all (--all), and — on the single path —
+// box+instance. NO deploy-cone (BundleConfig/UnifiedFile) crosses this seam: the deploy
+// enrichment stays host-side until K5, applied to the live rows this reply returns. vm/k8s/android
+// are deferred to K5 (their collectors are deploy-cone-coupled); the plugin returns no rows for
+// those words until then.
+type SubstrateStatusRequest struct {
+	IncludeAll bool `yaml:"include_all,omitempty" json:"include_all,omitempty"`
+
+	RunMode string `yaml:"run_mode,omitempty" json:"run_mode"`
+
+	QuadletDir string `yaml:"quadlet_dir,omitempty" json:"quadlet_dir"`
+
+	EngineBin string `yaml:"engine_bin,omitempty" json:"engine_bin"`
+
+	Single bool `yaml:"single,omitempty" json:"single,omitempty"`
+
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #SubstrateStatusReply — the per-substrate COLLECTOR result: the LIVE rows the substrate plugin
+// produced (pod: snapshot-derived + live mounts + tool probes; local: install-ledger rows). The
+// host applies the deploy enrichment (tunnel + image-label fallback) to the pod rows after they
+// cross this seam; the single field carries the one pod detail row.
+type SubstrateStatusReply struct {
+	Rows []DeploymentStatus `yaml:"rows,omitempty" json:"rows,omitempty"`
+
+	Single DeploymentStatus `yaml:"single,omitempty" json:"single,omitempty"`
+}
+
 // #ValidateProjectRequest — which project dir to validate (empty = the host's cwd) + whether to
 // include enabled:false boxes. Mirrors #ResolvedProjectRequest (the sibling resolved-project seam).
 type ValidateProjectRequest struct {

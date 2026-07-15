@@ -91,3 +91,32 @@
 	roots?: [...#StatusNestedNode]  @go(Roots)
 	single?: #DeploymentStatus      @go(Single)
 }
+
+// #SubstrateStatusRequest — the per-substrate COLLECTOR request the host sends to the substrate
+// plugin's OpStatusCollect (P14a: the cleanly-movable collectors — pod live + local + the probes —
+// relocated into candy/plugin-substrate, served on the kind provider's Invoke by word
+// pod/vm/k8s/local/android). The host passes the scalar inputs a sdk-only candy cannot derive:
+// the engine binary name (engine_bin), the run mode, the quadlet dir (pod's quadlet-description
+// enrichment + enabled-but-not-running append), include_all (--all), and — on the single path —
+// box+instance. NO deploy-cone (BundleConfig/UnifiedFile) crosses this seam: the deploy
+// enrichment stays host-side until K5, applied to the live rows this reply returns. vm/k8s/android
+// are deferred to K5 (their collectors are deploy-cone-coupled); the plugin returns no rows for
+// those words until then.
+#SubstrateStatusRequest: {
+	include_all?: bool   @go(IncludeAll)
+	run_mode:   string   @go(RunMode)
+	quadlet_dir: string  @go(QuadletDir)
+	engine_bin: string   @go(EngineBin)
+	single?:    bool     @go(Single)
+	box?:       string   @go(Box)
+	instance?:  string   @go(Instance)
+}
+
+// #SubstrateStatusReply — the per-substrate COLLECTOR result: the LIVE rows the substrate plugin
+// produced (pod: snapshot-derived + live mounts + tool probes; local: install-ledger rows). The
+// host applies the deploy enrichment (tunnel + image-label fallback) to the pod rows after they
+// cross this seam; the single field carries the one pod detail row.
+#SubstrateStatusReply: {
+	rows?:   [...#DeploymentStatus] @go(Rows)
+	single?: #DeploymentStatus      @go(Single)
+}
