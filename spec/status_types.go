@@ -1,5 +1,34 @@
 package spec
 
+import "strings"
+
+// StatusFromState normalises an engine/container runtime state vocabulary to
+// charly's DeploymentStatus.Status vocabulary. Shared by the substrate plugins'
+// status collectors (the pod live row builder in candy/plugin-substrate) AND the
+// host-side vm collector (charly/status_collect_vm.go, deploy-cone-coupled →
+// stays core until K5) — single-sourced here (R3) so the live/enrich split
+// (P14a) and the K5 vm-collector move both read ONE mapper. Pure over its input.
+func StatusFromState(state string) string {
+	switch strings.ToLower(state) {
+	case "running":
+		return "running"
+	case "exited", "stopped", "created":
+		return "stopped"
+	case "dead":
+		return "dead"
+	case "removing":
+		return "removing"
+	case "paused":
+		return "paused"
+	case "enabled":
+		return "enabled"
+	case "":
+		return "stopped"
+	default:
+		return strings.ToLower(state)
+	}
+}
+
 // SubstrateKind identifies which deployment substrate a DeploymentStatus row came
 // from — the discriminator that lets `charly status` present pod, VM, k8s, local,
 // and android deployments side-by-side from one unified table. The command:status
