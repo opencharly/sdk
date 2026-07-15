@@ -9,11 +9,12 @@ package deploykit
 //
 // Coverage:
 //   - ExportAllBox against a constructed *spec.ResolvedProject (the #67 keystone).
-//   - MarshalBundleNodeLegacy round-trip (target/nested/peer re-injection + descent drop).
-//   - SaveBundleConfig round-trip through a stub DeployStateHost + CHARLY_DEPLOY_CONFIG
-//     tempdir redirect (exercises LoadBundleConfig's fail-safe, LatestSchemaVersion,
-//     MigrateDeployEntity, the atomic tempfile+rename write).
-//   - RegisterDeployStateHost seam (the charly init hook).
+//   - SaveBundleConfig round-trip through a stub DeployStateHost (the 1-op
+//     LoadUnifiedBundleConfig seam) + CHARLY_DEPLOY_CONFIG tempdir redirect + a stub
+//     marshalNode callback (exercises LoadBundleConfig's fail-safe, the kit.LatestSchemaVersion
+//     version stamp, the atomic tempfile+rename write). The deploy-kind-specific marshal
+//     itself is tested charly-side (it lives in charly/deploy_nodeform.go).
+//   - RegisterDeployStateHost seam (the charly init hook, 1-op).
 //   - The pure helpers DescriptionInfo / IsSameBaseBox / RemoveBySource / RemoveByExactSource.
 
 import (
@@ -104,121 +105,27 @@ func TestExportAllBox_NilSafe(t *testing.T) {
 	}
 }
 
-// --- MarshalBundleNodeLegacy — the structural-field round-trip ---
-
-// TestMarshalBundleNodeLegacy_ReInjectsStructuralFields is the per-host overlay writer
-// body test: MarshalBundleNodeLegacy re-injects the structural fields (target / nested /
-// peer) that the node-form serializer expects, recurses into children/members, and drops
-// the loader-derived descent venue descriptor (a stored descent trips #DeployValue's
-// descent?: _|_ on reload). The returned *yaml.Node body is exactly what MigrateDeployEntity
-// consumes (the charly-side legacy→node-form transform reconciles it into clean node-form),
-// so the test inspects the NODE body directly — the contract the SDK-level function owns.
-func TestMarshalBundleNodeLegacy_ReInjectsStructuralFields(t *testing.T) {
-	child := &spec.Deploy{Image: "redis"}
-	member := &spec.Deploy{Image: "sidecar"}
-	node := spec.Deploy{
-		Image:    "web",
-		Target:   "vm",
-		Env:      map[string]string{"LOG_LEVEL": "info"},
-		Children: map[string]*spec.Deploy{"db": child},
-		Members:  map[string]*spec.Deploy{"peer1": member},
-		Descent:  &spec.DescentDescriptor{Venue: "parent"}, // must be DROPPED by DropMappingKey
-	}
-
-	body, err := MarshalBundleNodeLegacy(&node)
-	if err != nil {
-		t.Fatalf("MarshalBundleNodeLegacy: %v", err)
-	}
-	if body == nil || body.Kind != yaml.MappingNode {
-		t.Fatalf("MarshalBundleNodeLegacy returned %v; want a MappingNode", body)
-	}
-
-	// Walk the mapping's key/value pairs and index them by key string.
-	keys := mappingKeys(body)
-	for _, want := range []string{"target", "nested", "peer", "env"} {
-		if _, ok := keys[want]; !ok {
-			t.Errorf("body missing re-injected key %q; present keys: %v", want, keys)
-		}
-	}
-	if _, ok := keys["descent"]; ok {
-		t.Errorf("body still carries `descent` (DropMappingKey failed); present keys: %v", keys)
-	}
-
-	// target value must be "vm".
-	if tv := mappingValueString(body, "target"); tv != "vm" {
-		t.Errorf("body[target] = %q; want vm", tv)
-	}
-	// nested must contain the "db" child; peer must contain "peer1".
-	if !mappingHasChildKey(body, "nested", "db") {
-		t.Errorf("body[nested] missing the db child; keys: %v", keys)
-	}
-	if !mappingHasChildKey(body, "peer", "peer1") {
-		t.Errorf("body[peer] missing the peer1 member; keys: %v", keys)
-	}
-	// env must carry LOG_LEVEL=info (the non-structural field marshals normally).
-	if ev := mappingValueString(body, "env"); ev != "" && !strings.Contains(ev, "LOG_LEVEL") {
-		t.Errorf("body[env] = %q; want it to carry LOG_LEVEL", ev)
-	}
-}
-
-// mappingKeys returns the set of key strings in a YAML mapping node.
-func mappingKeys(m *yaml.Node) map[string]*yaml.Node {
-	out := map[string]*yaml.Node{}
-	if m == nil || m.Kind != yaml.MappingNode {
-		return out
-	}
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		out[m.Content[i].Value] = m.Content[i+1]
-	}
-	return out
-}
-
-func mappingValueString(m *yaml.Node, key string) string {
-	v := mappingKeys(m)[key]
-	if v == nil {
-		return ""
-	}
-	if v.Kind == yaml.ScalarNode {
-		return v.Value
-	}
-	data, _ := yaml.Marshal(v)
-	return string(data)
-}
-
-func mappingHasChildKey(m *yaml.Node, key, child string) bool {
-	v := mappingKeys(m)[key]
-	if v == nil || v.Kind != yaml.MappingNode {
-		return false
-	}
-	for i := 0; i+1 < len(v.Content); i += 2 {
-		if v.Content[i].Value == child {
-			return true
-		}
-	}
-	return false
-}
-
-// --- SaveBundleConfig — the atomic write round-trip through the DeployStateHost seam ---
+// --- SaveBundleConfig — the kind-blind file shell + callback round-trip ---
 
 // TestSaveBundleConfig_RoundTrip exercises the full SaveBundleConfig write path: the
-// fail-safe LoadBundleConfig re-check, the LatestSchemaVersion version stamp, the
-// MigrateDeployEntity per-entry transform, MarshalBundleNodeLegacy on each entry, and the
-// atomic tempfile+os.Rename write — all reaching core through the DeployStateHost seam
-// (the SDK cannot import charly's LoadUnified/LatestSchemaVersion/migrateDeployEntity).
-// CHARLY_DEPLOY_CONFIG redirects the write to a tempdir so the test never touches the
-// operator's real per-host overlay.
+// fail-safe LoadBundleConfig re-check (through the 1-op LoadUnifiedBundleConfig seam), the
+// kit.LatestSchemaVersion version stamp, the caller-supplied marshalNode callback per entry,
+// and the atomic tempfile+os.Rename write. CHARLY_DEPLOY_CONFIG redirects the write to a
+// tempdir so the test never touches the operator's real per-host overlay. The marshalNode
+// stub emits a simple node-form body (the deploy-kind-specific marshal lives in
+// charly/deploy_nodeform.go and is tested charly-side).
 func TestSaveBundleConfig_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "charly.yml")
 	t.Setenv(kit.DeployConfigEnv, dest)
 
-	// Stub the host Mechanisms SaveBundleConfig reaches through DeployStateHost.
+	// Stub the ONE host Mechanism SaveBundleConfig reaches through DeployStateHost (the
+	// LoadUnified hop for the fail-safe re-check). The version stamp is kit.LatestSchemaVersion
+	// (a direct kit call, not a seam op); the marshal is the caller's callback.
 	stub := &StateHostMechanisms{
 		LoadUnifiedBundleConfig: func(configDir string) (*BundleConfig, error) {
 			return nil, nil // absent file → LoadBundleConfig returns (empty, nil) → fail-safe passes
 		},
-		LatestSchemaVersion: func() string { return "2026.196.0000" },
-		MigrateDeployEntity: func(body *yaml.Node) *yaml.Node { return body }, // identity: observe the node-form body verbatim
 	}
 	prev := DeployStateHost
 	RegisterDeployStateHost(stub)
@@ -227,15 +134,37 @@ func TestSaveBundleConfig_RoundTrip(t *testing.T) {
 	dc := &BundleConfig{
 		Bundle: map[string]BundleNode{
 			"web": {
-				Image:    "web",
-				Target:   "vm",
-				Env:      map[string]string{"LOG_LEVEL": "info"},
-				Children: map[string]*spec.Deploy{"db": {Image: "redis"}},
+				Image: "web",
+				Env:   map[string]string{"LOG_LEVEL": "info"},
 			},
 		},
 	}
 
-	if err := SaveBundleConfig(dc); err != nil {
+	// stubMarshalNode emits a node-form body: a mapping with the discriminator + the
+	// struct-marshaled fields (a faithful miniature of charly's marshalBundleNode).
+	stubMarshalNode := func(name string, node *BundleNode) (*yaml.Node, error) {
+		nb, err := yaml.Marshal(node)
+		if err != nil {
+			return nil, err
+		}
+		var nd yaml.Node
+		if err := yaml.Unmarshal(nb, &nd); err != nil {
+			return nil, err
+		}
+		body := &yaml.Node{Kind: yaml.MappingNode}
+		if len(nd.Content) == 1 && nd.Content[0].Kind == yaml.MappingNode {
+			body = nd.Content[0]
+		}
+		content := &yaml.Node{Kind: yaml.MappingNode}
+		value := &yaml.Node{Kind: yaml.MappingNode}
+		content.Content = append(content.Content, kit.ScalarNode("pod"), value)
+		for i := 0; i+1 < len(body.Content); i += 2 {
+			value.Content = append(value.Content, body.Content[i], body.Content[i+1])
+		}
+		return content, nil
+	}
+
+	if err := SaveBundleConfig(dc, stubMarshalNode); err != nil {
 		t.Fatalf("SaveBundleConfig: %v", err)
 	}
 
@@ -244,7 +173,9 @@ func TestSaveBundleConfig_RoundTrip(t *testing.T) {
 		t.Fatalf("reading written overlay %s: %v", dest, err)
 	}
 	got := string(data)
-	for _, want := range []string{"version:", "2026.196.0000", "web:", "target: vm", "nested:", "db:", "LOG_LEVEL"} {
+	// The version stamp is the real kit.LatestSchemaVersion() CalVer (non-empty).
+	wantVersion := kit.LatestSchemaVersion().String()
+	for _, want := range []string{"version:", wantVersion, "web:", "pod:", "image: web", "LOG_LEVEL"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("written overlay missing %q:\n%s", want, got)
 		}
@@ -256,24 +187,23 @@ func TestSaveBundleConfig_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestSaveBundleConfig_ErrorsWhenHostNotRegistered pins the nil-safe guard: with NO
-// DeployStateHost registered (a read-only SDK consumer that never writes the per-host
-// ledger), SaveBundleConfig errors clearly instead of silently no-op'ing or writing a
-// versionless file.
-func TestSaveBundleConfig_ErrorsWhenHostNotRegistered(t *testing.T) {
+// TestSaveBundleConfig_ErrorsWhenCallbackNil pins the nil-callback guard: SaveBundleConfig
+// errors clearly when marshalNode is nil (the deploy-kind-specific marshal is the caller's
+// responsibility — a nil callback would nil-deref inside the per-entry loop).
+func TestSaveBundleConfig_ErrorsWhenCallbackNil(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(kit.DeployConfigEnv, filepath.Join(dir, "charly.yml"))
 	prev := DeployStateHost
-	DeployStateHost = nil
+	DeployStateHost = nil // no fail-safe re-check dep when the seam is nil
 	t.Cleanup(func() { DeployStateHost = prev })
 
-	err := SaveBundleConfig(&BundleConfig{Bundle: map[string]BundleNode{"x": {Image: "x"}}})
+	err := SaveBundleConfig(&BundleConfig{Bundle: map[string]BundleNode{"x": {Image: "x"}}}, nil)
 	if err == nil {
-		t.Fatal("SaveBundleConfig with nil DeployStateHost returned nil; want an error")
+		t.Fatal("SaveBundleConfig with nil callback returned nil; want an error")
 	}
 }
 
-// --- RegisterDeployStateHost — the charly init seam ---
+// --- RegisterDeployStateHost — the charly init seam (1-op) ---
 
 // TestRegisterDeployStateHost pins the seam contract: a non-nil host is stored; a nil
 // argument is ignored (the existing registration survives — charly registers once at
@@ -283,7 +213,7 @@ func TestRegisterDeployStateHost(t *testing.T) {
 	t.Cleanup(func() { DeployStateHost = prev })
 
 	DeployStateHost = nil
-	h := &StateHostMechanisms{LatestSchemaVersion: func() string { return "x" }}
+	h := &StateHostMechanisms{LoadUnifiedBundleConfig: func(string) (*BundleConfig, error) { return nil, nil }}
 	RegisterDeployStateHost(h)
 	if DeployStateHost != h {
 		t.Fatal("RegisterDeployStateHost did not store the non-nil host")

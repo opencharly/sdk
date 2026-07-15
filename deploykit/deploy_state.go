@@ -660,16 +660,23 @@ type SaveDeployStateInput struct {
 }
 
 // SaveDeployState persists deployment parameters to charly.yml (best-effort). Merges onto any
-// existing entry to preserve fields from charly bundle import. Relocated from
-// charly/deploy.go (K5-Unit-1); the process-shared flock + the loader reach core through the
-// DeployStateHost seam vars (AcquireDeployConfigLock / LoadUnifiedBundleConfig).
+// existing entry to preserve fields from charly bundle import. Relocated from charly/deploy.go
+// (K5-Unit-1); the process-shared flock is a kind-blind kit primitive (kit.AcquireFileLock on
+// the deploy-config path) and the loader reaches core through the DeployStateHost seam
+// (LoadUnifiedBundleConfig). marshalNode is the deploy-kind-specific node-form serializer the
+// caller supplies (the callback SaveBundleConfig invokes per entry).
 //
 //nolint:gocyclo // field-by-field conditional persist; every branch is a peer (write-when-set)
-func SaveDeployState(boxName, instance string, input SaveDeployStateInput) {
+func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *BundleNode) (*yaml.Node, error)) {
 	if DeployStateHost == nil {
 		return
 	}
-	unlock, lockErr := DeployStateHost.AcquireDeployConfigLock()
+	path, pathErr := kit.DefaultDeployConfigPath()
+	if pathErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not resolve charly.yml path: %v\n", pathErr)
+		return
+	}
+	unlock, lockErr := kit.AcquireFileLock(path+".lock", true)
 	if lockErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not lock charly.yml for write: %v\n", lockErr)
 		return
@@ -764,20 +771,26 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput) {
 		return
 	}
 	dc.Bundle[key] = entry
-	if err := SaveBundleConfig(dc); err != nil {
+	if err := SaveBundleConfig(dc, marshalNode); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not save to charly.yml: %v\n", err)
 	}
 }
 
 // CleanDeployEntry removes an image's entry from charly.yml (best-effort). Also removes global
 // service env vars injected by this image. If charly.yml becomes empty after removal, the file is
-// deleted. Relocated from charly/deploy.go (K5-Unit-1); flock + loader reach core through the
-// DeployStateHost seam.
-func CleanDeployEntry(boxName, instance string) {
+// deleted. Relocated from charly/deploy.go (K5-Unit-1); the flock is a kind-blind kit primitive
+// (kit.AcquireFileLock) and the loader reaches core through the DeployStateHost seam. marshalNode
+// is the deploy-kind-specific node-form serializer the caller supplies.
+func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *BundleNode) (*yaml.Node, error)) {
 	if DeployStateHost == nil {
 		return
 	}
-	unlock, lockErr := DeployStateHost.AcquireDeployConfigLock()
+	path, pathErr := kit.DefaultDeployConfigPath()
+	if pathErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not resolve charly.yml path: %v\n", pathErr)
+		return
+	}
+	unlock, lockErr := kit.AcquireFileLock(path+".lock", true)
 	if lockErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not lock charly.yml for clean: %v\n", lockErr)
 		return
@@ -858,7 +871,7 @@ func CleanDeployEntry(boxName, instance string) {
 		if path, pathErr := kit.DefaultDeployConfigPath(); pathErr == nil {
 			_ = os.Remove(path)
 		}
-	} else if err := SaveBundleConfig(dc); err != nil {
+	} else if err := SaveBundleConfig(dc, marshalNode); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not clean charly.yml: %v\n", err)
 		return
 	}
