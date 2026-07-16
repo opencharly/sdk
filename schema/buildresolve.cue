@@ -5,14 +5,14 @@
 // the privileged builder-bootstrap, or ensure builder images — those stay core
 // Mechanisms (the loader is P6's plugin + a kernel M/B; the runtime Candy graph
 // is core by the P2 decision). The candy reaches them over the in-proc reverse
-// channel: resolve+render → HostBuild("build-resolve"), layer merge →
+// channel: resolve+render → HostBuild("build-prep"), layer merge →
 // HostBuild("merge") (candy/plugin-oci's transitional seam, P14a). Each action
 // noun is CLASS-GENERIC (never a provider word — the F11 uniform-API gate),
 // mirroring the P10 config-resolve/vm-build seams in seam.cue.
 //
 // This REVERSES the P8 "permanent facade": P8 kept the whole engine host-side
 // behind HostBuild("image"); P8b moves the DRIVE into the candy and leaves the
-// host a pure RESOLVE/RENDER SEAM PROVIDER (build-resolve). generate.go /
+// host a pure RESOLVE/RENDER SEAM PROVIDER (build-prep). generate.go /
 // OCITarget / intermediates / layers stay core PINNED BY the loader Mechanism +
 // the P2 runtime-Candy decision — re-judged at P15/P16 after the loader fold.
 //
