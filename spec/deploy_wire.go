@@ -593,9 +593,9 @@ type BuilderResolveInput struct {
 // marshal into the compiled-in candy/plugin-build's Invoke (op.Params). P8b moved the podman
 // DRIVE (build/push/merge loop, per-image lock) INTO the candy — reversing the P8 "permanent
 // facade"; the candy consumes this envelope, then reaches the host RESOLVE/RENDER seam via
-// HostBuild("build-resolve", BuildResolveRequest) for the loader-render drive-model. The RESOLVE
+// HostBuild("build-prep", BuildResolveRequest) for the loader-render drive-model. The RESOLVE
 // (loader + Containerfile render + privileged builder-bootstrap) STAYS host-side — Config /
-// ResolvedBox / the runtime Candy graph are reconstructed from Dir inside the build-resolve
+// ResolvedBox / the runtime Candy graph are reconstructed from Dir inside the build-prep
 // host-builder (exactly as pod_deploy_lifecycle re-runs NewGenerator(dir,…)) because a candy
 // importing only sdk cannot run the loader. The fields here are the CLI-supplied inputs not
 // reconstructable from Dir alone: the generate path reads Boxes/Tag/Dir/IncludeDisabled; the build
