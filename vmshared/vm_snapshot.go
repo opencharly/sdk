@@ -465,7 +465,7 @@ func DecrementSnapshotRefcount(vmName, snapName string) error {
 	if !ok {
 		// Tolerant: a snapshot that's gone (manually removed) shouldn't
 		// block ephemeral teardown. Log-and-continue.
-		fmt.Fprintf(os.Stderr, "warning: vm %q snapshot %q absent during refcount decrement (already deleted?)\n", vmName, snapName)
+		fmt.Fprintf(os.Stderr, "note: vm %q snapshot %q absent during refcount decrement (already deleted?)\n", vmName, snapName)
 		return nil
 	}
 	if entry.Refcount > 0 {
