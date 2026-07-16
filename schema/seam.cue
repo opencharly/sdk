@@ -417,32 +417,48 @@
 	skip!:  int @go(Skip, type=int)
 }
 
-// #CheckBedRequest — the transitional check-bed host-session seam (P12 Wave-2, K5-mortal).
-// A compiled-in plugin-check drives the R10 bed sequence over HostBuild("cli"), but the
-// lock/lease/env lifecycle + the node-derived bed shape are core state a separate module
-// cannot hold: this op-discriminated envelope opens/drives/closes a host-side session keyed by
-// Bed. Class-generic action noun "check-bed" (F11 — never a substrate/provider word). The
-// setup/teardown pair are two of its ops; members-up/members-down/wait-ready are the
-// mid-sequence host-coupled helpers (they run AFTER the substrate deploys, so cannot fold into
-// setup, and call saveDeployState+libvirt+SSHExecutor/podman polls with no `charly` verb, so
-// cannot be cli-reentry). DIES at K5 (post-loaderkit the plugin self-orchestrates its own flock
-// via statekit, computes the repo-override itself, and calls the arbiter over InvokeProvider).
+// #CheckBedRequest — the check-bed host-helper seam (K5-U1: the setup/teardown SESSION
+// (locks/lease/env/GPU-prereq/BedDescriptor) moved INTO the plugin — candy/plugin-check now holds
+// its own bedSession state directly (kit.AcquireFileLock + a plugin-local map keyed by bed, safe
+// because a compiled-in plugin shares the host's OS process: os.Setenv / an flock fd acquired
+// plugin-side is visible to that SAME process's later HostBuild("cli") forks). What remains here
+// are the narrow, genuinely HOST-SHARED helpers the session still cannot self-serve:
+// members-up/members-down/wait-ready call saveDeployState+libvirt+SSHExecutor/podman polls with no
+// `charly` verb (so cannot be cli-reentry) and are SHARED with bundle_members.go's own bring-up
+// path; persist-overrides wraps persistBedDeployOverrides (same sharing); gpu-prereq wraps
+// bedGPUPrereqMissing (needs the project's resolved resource vocabulary, LoadUnified-backed today);
+// libvirt-start is a best-effort systemd unit kick shared with 2 other core callers;
+// lease-acquire/lease-release wrap acquireResourceForClaimant's GPU-implied-sharing + holder-addr
+// construction, ALSO shared (substrate_lifecycle_grpc.go); repo-override-pair is a STATELESS
+// read-only git-identity query (selfSuperprojectOverridePair, whose rootRepoIdentity chain a
+// plugin cannot self-serve) — it returns a PAIR STRING only, never touches the environment: the
+// plugin itself does the actual os.Setenv/restore (safe, same-process — see above), so the
+// env-lifecycle bookkeeping stays fully plugin-side while the identity LOOKUP stays the one
+// core-shared computation it always was (also used by check_cmd.go — no duplicated logic, R3).
+// Class-generic action noun "check-bed" (F11 — never a substrate/provider word).
 #CheckBedRequest: {
-	op!:  string @go(Op)  // setup | members-up | members-down | wait-ready | teardown
-	bed!: string @go(Bed) // the disposable bundle (bed) name — the session key
-	ok?:  bool   @go(OK)  // teardown only: true → Lease.Release, false → Lease.ReleaseFailed
-	dir?: string @go(Dir) // project dir (empty → host cwd), matching LoadUnified(dir)
+	op!:  string @go(Op)  // members-up | members-down | wait-ready | persist-overrides | gpu-prereq | libvirt-start | lease-acquire | lease-release | repo-override-pair
+	bed!: string @go(Bed) // the disposable bundle (bed) name
+	node?:      #Deploy @go(Node, optional=nillable) // the resolved bed node — every op but libvirt-start/repo-override-pair needs it
+	image_tag?: string  @go(ImageTag)                // members-up: the per-run bed-scoped image tag (bringUpMembers's imageTag arg)
+	active?:    bool    @go(Active)                  // lease-release: was the lease actually active (Release()/ReleaseFailed() no-op otherwise)
+	ok?:        bool    @go(OK)                      // lease-release: true → Lease.Release, false → Lease.ReleaseFailed
 }
 
-// #CheckBedReply — the setup op returns the BedDescriptor (the node-derived shape the kind-blind
-// plugin drives the sequence from — the substrate analogue of OpPrepareVenue's VenueDescriptor).
-// All other ops return {} (errors ride the host-builder error return). PrereqSkip set ⇒ the bed
-// is a clean SKIP (exit 3): the plugin writes the prereq-skip summary + returns CheckSkippedError,
-// running NO other op (not even teardown — setup acquired nothing on the skip path).
+// #CheckBedReply — {} for most ops (errors ride the host-builder error return). PrereqSkip is
+// gpu-prereq's output: set ⇒ the bed is a clean SKIP (exit 3) — the plugin's own session setup
+// writes the prereq-skip summary + returns CheckSkippedError, acquiring nothing else. LeaseActive
+// is lease-acquire's output, so the plugin's session knows whether a later lease-release must
+// actually dispatch to the arbiter (and whether to mark CHARLY_PREEMPT_LEASE itself). The
+// remaining fields are the plugin's own bedDescriptor shape (K5-U1: assembled directly in Go from
+// the resolved-project envelope, never wire-carried anymore) — kept on this def so the ONE
+// generated struct still serves both roles with no duplicate type (R3).
 #CheckBedReply: {
-	calver?:      string            @go(Calver)                    // logDir calver (.check/<bed>/<calver>)
-	log_dir?:     string            @go(LogDir)                    // host-relative; the plugin writes step logs here
-	prereq_skip?: #CheckBedPrereqSkip @go(PrereqSkip, optional=nillable)
+	lease_active?:       bool   @go(LeaseActive)
+	repo_override_pair?: string @go(RepoOverridePair) // repo-override-pair's output ("" ⇒ not a submodule / no override needed)
+	calver?:             string @go(Calver)           // logDir calver (.check/<bed>/<calver>)
+	log_dir?:      string             @go(LogDir)                       // host-relative; the plugin writes step logs here
+	prereq_skip?:  #CheckBedPrereqSkip @go(PrereqSkip, optional=nillable)
 	// BedDescriptor — the substrate classification + refs the plugin drives from.
 	is_vm?:       bool   @go(IsVM)
 	is_local?:    bool   @go(IsLocal)
