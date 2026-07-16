@@ -326,7 +326,7 @@ func emitInstallSection(b *strings.Builder, cfg QuadletConfig) {
 // volume/bind's container path if declared, else home.
 func ResolveWorkingDir(volumes []VolumeMount, bindMounts []ResolvedBindMount, home, boxName, instance string) string {
 	for _, v := range volumes {
-		if BareVolumeName(v.VolumeName, boxName, instance) == "workspace" {
+		if kit.BareVolumeName(v.VolumeName, boxName, instance) == "workspace" {
 			return v.ContainerPath
 		}
 	}
@@ -336,20 +336,6 @@ func ResolveWorkingDir(volumes []VolumeMount, bindMounts []ResolvedBindMount, ho
 		}
 	}
 	return home
-}
-
-// BareVolumeName strips the "charly-<box>[-<instance>]-" prefix from a resolved
-// volume name.
-func BareVolumeName(volumeName, boxName, instance string) string {
-	if instance != "" {
-		if p := "charly-" + boxName + "-" + instance + "-"; strings.HasPrefix(volumeName, p) {
-			return volumeName[len(p):]
-		}
-	}
-	if p := "charly-" + boxName + "-"; strings.HasPrefix(volumeName, p) {
-		return volumeName[len(p):]
-	}
-	return volumeName
 }
 
 // LocalizePort applies a host bind address to a port mapping.
