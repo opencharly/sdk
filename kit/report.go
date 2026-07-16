@@ -175,3 +175,40 @@ func FormatStepResultsJUnit(w io.Writer, results []StepResult) error {
 	fmt.Fprintln(w)
 	return nil
 }
+
+// ReportStepResults writes results in the requested format ("json"/"tap"/"junit", default
+// text), dispatching to the FormatStepResults* family above. P12a follow-up: the SAME
+// format-selection switch previously lived duplicated in charly/check_feature_run.go's
+// reportSteps AND candy/plugin-check/check_cmd.go's reportSteps (R3) — both now delegate here,
+// and candy/plugin-box's `box feature run` word (its move destination) calls it directly.
+func ReportStepResults(w io.Writer, results []StepResult, format string) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "json":
+		_ = FormatStepResultsJSON(w, results)
+	case "tap":
+		FormatStepResultsTAP(w, results)
+	case "junit":
+		_ = FormatStepResultsJUnit(w, results)
+	default:
+		FormatStepResultsText(w, results)
+	}
+}
+
+// ClassifyStepFailures splits FAIL results into genuine check failures vs. container-setup
+// INFRA failures (IsContainerInfraResult) — the shared discriminator every check-run caller
+// (box/live/feature, in-core and externalized) uses to map its own exit-code error type. An
+// infra failure means the check command never ran (a probe container's mount/passwd-gen raced
+// concurrent build churn); it must never read as a checks-failed verdict.
+func ClassifyStepFailures(results []StepResult) (checkFails, infraFails int) {
+	for i := range results {
+		if results[i].Result.Status != StatusFail {
+			continue
+		}
+		if IsContainerInfraResult(results[i].Result.Message) {
+			infraFails++
+		} else {
+			checkFails++
+		}
+	}
+	return checkFails, infraFails
+}
