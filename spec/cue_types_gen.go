@@ -3049,20 +3049,42 @@ type VmBuildReply struct {
 	Force bool `yaml:"force,omitempty" json:"force,omitempty"`
 }
 
-// #DeployAddRequest carries the `charly bundle add` command flags (the former
-// BundleAddCmd's authored fields). The command:bundle plugin (P13) owns the CLI
-// GRAMMAR but cannot drive the deploy KERNEL — the loader, the InstallPlan
-// compiler, ResolveTarget → externalDeployTarget, and the live-executor
-// composition (which threads host objects that cannot cross the process boundary)
-// are core Mechanisms. So the plugin's `charly bundle add` command is THIN — it
-// forwards these flags to HostBuild("deploy-add"), and the host runs the existing
-// add orchestration VERBATIM (Run → dispatchNode → compile → ResolveTarget → Add),
-// exactly as the box-build engine stayed core behind HostBuild("image") in P8 and
-// the VM-disk engine behind HostBuild("vm-build") in P10. The two per-node internal
-// fields (vmEntity, builderImageOverride) are NOT carried — the host derives them
-// during dispatch.
-type DeployAddRequest struct {
-	Name string `yaml:"name,omitempty" json:"name"`
+// #DeployTreeResolveRequest/#DeployTreeResolveReply — K4 lane A. candy/plugin-bundle now OWNS
+// the `charly bundle add` dispatch CONTROL FLOW (Run's target-path resolve + the pre-order tree
+// walk); resolveTreeRoot (reads LoadUnified, a core Mechanism the plugin cannot import) stays
+// host-side, returning the WHOLE merged project+operator deploy tree so the plugin walks it
+// itself via the already-pure sdk/deploykit WalkDeploymentTree/ResolveNodePath. Also connects the
+// deployment's out-of-tree plugin candies (loadDeployPlugins) — the ONE per-invocation preamble
+// every dispatch needs before ResolveTarget can route to an external substrate. root_venue_ssh
+// reports whether the resolved root's stamped descent traits are the "ssh" venue (a vm root) —
+// the plugin dispatches node-only in that case (nested pods deploy IN the guest), mirroring the
+// prior in-core check without needing the registry-backed nodeTraits call itself.
+type DeployTreeResolveRequest struct {
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	AddCandy []string `yaml:"add_candy,omitempty" json:"add_candy,omitempty"`
+}
+
+type DeployTreeResolveReply struct {
+	Tree map[string]*Deploy `yaml:"tree,omitempty" json:"tree,omitempty"`
+
+	RootVenueSSH bool `yaml:"root_venue_ssh,omitempty" json:"root_venue_ssh,omitempty"`
+}
+
+// #DeployNodeDispatchRequest/#DeployNodeDispatchReply — the per-node `charly bundle add`
+// terminal step (K4 lane A keystone, RDD-spike-proven): resolve+compile+ResolveTarget+Add for
+// ONE tree position, reached once per node from the plugin's own walk instead of core walking
+// in-process. ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain
+// the OLD in-core walk built (deriveChildExecutorForPath is pure Go over spec/kit types and is
+// re-run HOST-side here) — a live DeployExecutor never needs to cross the wire.
+type DeployNodeDispatchRequest struct {
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	AncestorPaths []string `yaml:"ancestor_paths,omitempty" json:"ancestor_paths,omitempty"`
+
+	AncestorNodes []Deploy `yaml:"ancestor_nodes,omitempty" json:"ancestor_nodes,omitempty"`
 
 	Ref string `yaml:"ref,omitempty" json:"ref,omitempty"`
 
@@ -3071,8 +3093,6 @@ type DeployAddRequest struct {
 	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
 
 	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
-
-	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
 
 	Format string `yaml:"format,omitempty" json:"format,omitempty"`
 
@@ -3097,20 +3117,41 @@ type DeployAddRequest struct {
 	Lifecycle string `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
 }
 
-// #DeployAddReply is the "deploy-add" host-builder reply — empty; the add prints its
-// own progress + dry-run output to the shared stdio (the compiled-in plugin's
-// HostBuild runs in charly's own process) and signals failure via the error return.
-type DeployAddReply struct {
+type DeployNodeDispatchReply struct {
 }
 
-// #DeployDelRequest carries the `charly bundle del` command flags. The plugin's
-// `charly bundle del` forwards these to HostBuild("deploy-del"); the host runs the
-// existing del orchestration VERBATIM (resolveDelNode → ResolveTarget → Del,
-// replaying the recorded ReverseOps). The live ReverseRunner is NOT carried — a
-// programmatic teardown that needs a specific runner (the vm guest-SSH reverse
-// runner) is a host-side path, resolved during dispatch, never authored on the CLI.
-type DeployDelRequest struct {
+// #DeployMembersRequest/#DeployMembersReply — bring up / tear down a deployment's sibling
+// members (bringUpMembers/tearDownMembers — providerRegistry + ledger + subprocess-dependent,
+// stays host-side), reached once at the end of Run() / the start of `charly bundle del`.
+type DeployMembersRequest struct {
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+}
+
+type DeployMembersReply struct {
+}
+
+// #DeployDelResolveRequest/#DeployDelResolveReply — resolve a `charly bundle del` target's
+// BundleNode (resolveDelNode: literal "host" / "vm:"-prefix legacy forms / a charly.yml tree
+// entry / a ref-based pod-artifact probe) — needs LoadUnified + the on-disk artifact probe, so
+// it stays host-side; the plugin's `charly bundle del` calls this FIRST.
+type DeployDelResolveRequest struct {
 	Name string `yaml:"name,omitempty" json:"name"`
+}
+
+type DeployDelResolveReply struct {
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
+}
+
+// #DeployNodeDelDispatchRequest/#DeployNodeDelDispatchReply — the `charly bundle del` terminal
+// step: ResolveTarget + target.Del, honoring the teardown gates (the prior "deploy-del"
+// host-builder's tail, unchanged; the live ReverseRunner is still never carried on the wire — a
+// programmatic teardown needing a specific runner is resolved host-side during dispatch).
+type DeployNodeDelDispatchRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
 
 	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
 
@@ -3123,9 +3164,7 @@ type DeployDelRequest struct {
 	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
 }
 
-// #DeployDelReply is the "deploy-del" host-builder reply — empty (prints host-side,
-// errors via the return).
-type DeployDelReply struct {
+type DeployNodeDelDispatchReply struct {
 }
 
 // #DeployFromBoxRequest carries the `charly bundle from-box` command flags (the
