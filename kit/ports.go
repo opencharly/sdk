@@ -455,3 +455,20 @@ func ResolveDeployPorts(containerPorts []int, pins, prior []string, occupied map
 	}
 	return out, nil
 }
+
+// ParsePublishedPort extracts a `podman port <container> <N>` command's output (one
+// "host:port" line, or "0.0.0.0:port" / "[::]:port" forms) into a dialable
+// 127.0.0.1-normalized host:port string. P12a: relocated from charly/check_venue.go
+// (a pure string-parsing helper with no host state; its sole caller stays core).
+func ParsePublishedPort(output string, port int) (string, error) {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
+		return "", fmt.Errorf("no port mapping found for %d", port)
+	}
+	hostPort := strings.TrimSpace(lines[0])
+	hostPort = strings.Replace(hostPort, "0.0.0.0", "127.0.0.1", 1)
+	if after, ok := strings.CutPrefix(hostPort, "[::]:"); ok {
+		hostPort = "127.0.0.1:" + after
+	}
+	return hostPort, nil
+}
