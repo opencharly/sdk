@@ -2,12 +2,14 @@ package spec
 
 import "gopkg.in/yaml.v3"
 
-// loader_seam.go — the hand-written CONTRACT types for the unified-config loader seam (K1). These
-// are interface + data contracts (no mechanism): the parse machinery lives in sdk/loaderkit, the
-// materialize in charly core. They live in spec (the shared contract home, alongside the
-// CUE-generated #ParsedProject / #LoadedProject wire types) so BOTH the loader plugin
-// (candy/plugin-loader → loaderkit) and the host may reference them without either importing the
-// other — keeping charly core's only loaderkit import the single Walk driver file.
+// loader_seam.go — the hand-written CONTRACT types for the unified-config loader seam (K1/#46).
+// These are interface + data contracts (no mechanism): the parse + walk machinery lives in
+// sdk/loaderkit, the materialize in charly core. They live in spec (the shared contract home,
+// alongside the CUE-generated #ParsedProject / #LoadedProject wire types) so BOTH the loader
+// plugin (candy/plugin-loader → loaderkit) and the host may reference them without either
+// importing the other — charly core imports NEITHER loaderkit NOR any other sdk mechanism kit;
+// it reaches the whole-project WALK exclusively through the typed ProjectWalker seam below,
+// resolved from the registered compiled-in loader plugin (mirroring DocParser/Threaded for PARSE).
 
 // Threaded is the host-computed, registry-derived DATA the per-document parse consults instead of
 // querying the provider registry (boundary law clause D): which words are recognized kinds /
@@ -29,4 +31,40 @@ type Threaded struct {
 // repo/defaults/provides); `pp` is the decomposed entity nodes.
 type DocParser interface {
 	ParseDoc(doc *yaml.Node, t Threaded) (directives map[string]*yaml.Node, pp ParsedProject, err error)
+}
+
+// WalkSeams is the set of host-supplied callbacks the whole-project WALK needs for everything
+// registry-coupled or host-coupled — the host builds this value and hands it to the registered
+// ProjectWalker; the walk mechanism (sdk/loaderkit.Walk) calls each seam and never does the
+// coupled work itself (boundary law clause D: the walk consults host-threaded DATA/mechanisms,
+// never the provider registry directly).
+type WalkSeams struct {
+	// Parser is the per-document parse (the host passes the registered DocParser).
+	Parser DocParser
+	// Boundary runs at each PROJECT boundary (the root file AND each namespace root) BEFORE that
+	// boundary's documents parse: the host does the parse pre-scan + connect-declared-kind-plugins
+	// side effects (registry mutation). data = the boundary file bytes.
+	Boundary func(dir string, data []byte) error
+	// Threaded returns the current registry-derived kind-recognition snapshot. Called fresh per
+	// document parse (the host's loaderThreaded()).
+	Threaded func() Threaded
+	// ResolveRef resolves an import ref (local path OR remote "@host/org/repo[/sub]:ver") to a
+	// stable cache KEY + a concrete on-disk PATH. The host owns remote fetch + cache + auto-migration.
+	ResolveRef func(ref, baseDir string) (key, path string, err error)
+	// GateDoc runs the host #NodeDoc CUE validate-before-execute gate on one raw document's bytes.
+	GateDoc func(label string, raw []byte) error
+	// RepoIdentity returns the canonical repo identity of an import ref (for the cycle-break), or ""
+	// (the host's nsRepoIdentity). Empty → version-keyed fallback.
+	RepoIdentity func(ref, baseDir string) string
+}
+
+// ProjectWalker is the swappable WHOLE-PROJECT WALK seam: the loader plugin candy implements it
+// (candy/plugin-loader, delegating to loaderkit.Walk), and the host resolves the registered loader
+// provider to it and calls it once per project load — so an alternative loader plugin serves a
+// different walk mechanism by implementing this. Typed (no wire envelope) since the compiled-in
+// placement passes live Go callbacks (WalkSeams) that cannot cross a JSON envelope. rootData is the
+// (possibly bootstrap-transformed) root document bytes; rootIdentity seeds the namespace
+// cycle-break with the root project's own repo identity.
+type ProjectWalker interface {
+	WalkProject(rootDir string, rootData []byte, rootIdentity string, seams WalkSeams) (LoadedProject, error)
 }

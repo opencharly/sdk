@@ -9,8 +9,9 @@
 // Everything registry-coupled or host-coupled (the parse pre-scan + connect-declared-kind-plugins
 // side effects, the #NodeDoc CUE validate-before-execute gate, remote-ref resolution + the
 // project-repo cache, and the repo-identity cycle-break) is a SEAM CALLBACK the host supplies via
-// WalkSeams — Walk itself calls the seam and never does the coupled work directly (boundary law
-// clause D: Walk consults host-threaded DATA, never the provider registry).
+// spec.WalkSeams (#46 — the seam contract lives in sdk/spec, not here, so charly core references
+// it without importing this package) — Walk itself calls the seam and never does the coupled work
+// directly (boundary law clause D: Walk consults host-threaded DATA, never the provider registry).
 //
 // Faithful-port mapping (see charly/unified.go + charly/ns_identity.go):
 //
@@ -39,35 +40,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// WalkSeams is the set of host-supplied callbacks Walk needs for everything registry-coupled or
-// host-coupled. Walk calls each seam; it never does the coupled work itself (boundary law clause D
-// — Walk consults host-threaded DATA/mechanisms, never the provider registry directly).
-type WalkSeams struct {
-	// Parser is the per-document parse (the host passes the registered spec.DocParser).
-	Parser spec.DocParser
-	// Boundary runs at each PROJECT boundary (the root file AND each namespace root — i.e. every
-	// depth-0 walkFile) BEFORE that boundary's documents parse: the host does the parse pre-scan +
-	// connect-declared-kind-plugins side effects (registry mutation). data = the boundary file bytes.
-	Boundary func(dir string, data []byte) error
-	// Threaded returns the current registry-derived kind-recognition snapshot. Called fresh per
-	// document parse (the host's loaderThreaded()).
-	Threaded func() spec.Threaded
-	// ResolveRef resolves an import ref (local path OR remote "@host/org/repo[/sub]:ver") to a
-	// stable cache KEY + a concrete on-disk PATH. The host owns remote fetch + cache + auto-migration.
-	ResolveRef func(ref, baseDir string) (key, path string, err error)
-	// GateDoc runs the host #NodeDoc CUE validate-before-execute gate on one raw document's bytes.
-	GateDoc func(label string, raw []byte) error
-	// RepoIdentity returns the canonical repo identity of an import ref (for the cycle-break), or ""
-	// (the host's nsRepoIdentity). Empty → version-keyed fallback.
-	RepoIdentity func(ref, baseDir string) string
-}
-
-// walker holds the seams for one Walk call. nsCache/loadingRepos are threaded explicitly (not
-// walker fields) because they are per-Walk-call state shared across the WHOLE recursive tree,
-// mirroring how charly/unified.go threads them as explicit loadUnifiedInto/loadNamespaceCached
-// parameters rather than package globals.
+// walker holds the seams for one Walk call (spec.WalkSeams, #46 — the seam contract lives in
+// sdk/spec, the shared home BOTH the host, importing only spec, and this mechanism package
+// reference without either importing the other). nsCache/loadingRepos are threaded explicitly
+// (not walker fields) because they are per-Walk-call state shared across the WHOLE recursive
+// tree, mirroring how charly/unified.go threads them as explicit loadUnifiedInto/
+// loadNamespaceCached parameters rather than package globals.
 type walker struct {
-	seams  WalkSeams
+	seams  spec.WalkSeams
 	nextID int64 // per-walk stable-id counter for spec.LoadedProject.ID (namespace cycle/diamond dedup)
 }
 
@@ -102,7 +82,7 @@ type nsAcc struct {
 // own repo identity (the host's rootRepoIdentity), seeded into the cycle-break so a transitive
 // self-import resolves to the in-progress root — mirrors LoadUnified seeding
 // loadingRepos[rootRepoIdentity(dir)] = merged BEFORE the walk starts.
-func Walk(rootDir string, rootData []byte, rootIdentity string, seams WalkSeams) (spec.LoadedProject, error) {
+func Walk(rootDir string, rootData []byte, rootIdentity string, seams spec.WalkSeams) (spec.LoadedProject, error) {
 	w := &walker{seams: seams}
 	nsCache := map[string]*spec.LoadedProject{}
 	loadingRepos := map[string]*spec.LoadedProject{}
