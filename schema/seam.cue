@@ -96,10 +96,15 @@
 #ConfigPersistReply: {}
 
 // #VmBuildRequest carries the `charly vm build` command flags (the former
-// VmBuildCmd fields). The host resolves the kind:vm entity + build config +
-// dispatches the per-source-kind VM-disk build engine itself (the engine stays
-// core, exactly as the box-build engine stayed core behind HostBuild("image") in
-// P8). The plugin's `charly vm build` command is THIN — it forwards these flags.
+// VmBuildCmd fields). The host resolves the kind:vm entity + the build vocabulary
+// + the per-source-kind image refs into a #VmBuildReply envelope (the "vm-build"
+// host-builder is PREP+RESOLVE only, P8b-rest); the plugin's `charly vm build`
+// command runs the actual privileged-container / qemu-img / bootc-install / cloud-init
+// disk-build ENGINE itself, exactly as candy/plugin-build's podman DRIVE runs behind
+// HostBuild("build-prep") (P8b) — the same inversion, applied to the VM disk-build engine.
+// force skips the cloud_image content-freshness check, forcing a base-disk rebuild even when
+// unchanged (P8b-rest: `--force` predates command:vm's P10 externalization but was dropped from
+// this seam then — restored here since BuildCloudImage's force parameter is load-bearing).
 #VmBuildRequest: {
 	box!:       string @go(Box)
 	size?:      string @go(Size)
@@ -108,11 +113,41 @@
 	type?:      string @go(Type)
 	transport?: string @go(Transport)
 	console?:   bool   @go(Console)
+	force?:     bool   @go(Force)
 }
 
-// #VmBuildReply is the "vm-build" host-builder reply — empty; the build prints its
-// own progress to the shared stdio and signals failure via the error return.
-#VmBuildReply: {}
+// #VmBuildReply is the "vm-build" host-builder reply (P8b-rest): everything the
+// plugin needs to run the disk-build engine without importing the loader. VmJSON is
+// the resolved+validated kind:vm entity (the #Vm-shaped value resolveVmViaPlugin
+// already produces — opaque bytes, the SAME convention #ConfigResolveReply.vm_json
+// uses for a #Vm-shaped payload) so the plugin decodes it into its own spec.Vm rather
+// than re-parsing uf.VM[entity] itself (which needs LoadUnified, a core Mechanism).
+// DistroJSON/BuilderJSON carry the matched *DistroDef/*BuilderDef (bootstrap source
+// only) — hand-written runtime types with no CUE def, so they ride as opaque RawBody
+// too (the established idiom this file documents at the top). Engine/Rootful are the
+// resolved runtime settings (ResolveRuntime) the engine needs to pick `podman` vs
+// `sudo podman`. BootcImageRef/BuilderImageRef are PRE-RESOLVED (and, for the builder
+// image, pre-built via `charly box build`) — both need the local podman-storage +
+// project-config lookup a plugin cannot do (resolveBootcImageRef / ensureBuilderImageBuilt
+// stay host-side). OutputDir/VmStateDir are the resolved per-entity paths (vmshared.VmDiskDir
+// is ALREADY plugin-importable, but the host still resolves+creates VmStateDir since it also
+// reads the existing ledger state below). ExistingState is the entity's persisted
+// VmDeployState (#VmDeployState already has a CUE def — a typed embed, not opaque) so the
+// plugin reuses the same instance-id / regenerates the seed ISO idempotently.
+#VmBuildReply: {
+	source_kind!:       string          @go(SourceKind) // cloud_image | bootc | bootstrap
+	vm_json!:           bytes           @go(VmJSON, type=RawBody)
+	distro_json?:       bytes           @go(DistroJSON, type=RawBody)
+	builder_json?:      bytes           @go(BuilderJSON, type=RawBody)
+	engine?:            string          @go(Engine)
+	rootful?:           bool            @go(Rootful)
+	bootc_image_ref?:   string          @go(BootcImageRef)
+	builder_image_ref?: string          @go(BuilderImageRef)
+	output_dir!:        string          @go(OutputDir)
+	vm_state_dir!:      string          @go(VmStateDir)
+	existing_state?:    #VmDeployState  @go(ExistingState, type=*VmDeployState)
+	force?:             bool            @go(Force)
+}
 
 // #DeployAddRequest carries the `charly bundle add` command flags (the former
 // BundleAddCmd's authored fields). The command:bundle plugin (P13) owns the CLI
