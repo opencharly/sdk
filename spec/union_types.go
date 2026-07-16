@@ -236,12 +236,37 @@ func (ml *MatcherList) UnmarshalJSON(data []byte) error {
 // default via decodeContainsList; no base #Op field uses it anymore.)
 
 // ---------------------------------------------------------------------------
-// PackageItem — #PackageItem (calamares_types.go). Bare scalar XOR object form;
-// the bare-scalar shorthand is canonicalized to {name} by the loader normalizer.
+// PackageItem — #PackageItem. Bare scalar XOR object form; the bare-scalar
+// shorthand is canonicalized to {name} by the loader normalizer.
 // ---------------------------------------------------------------------------
 type PackageItem struct {
 	Name        string `yaml:"name" json:"name"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+// PackageNames returns just the names from a PackageItem list, in order.
+// Convenience for places that only need the install-target list.
+func PackageNames(items []PackageItem) []string {
+	out := make([]string, 0, len(items))
+	for _, p := range items {
+		if p.Name != "" {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
+
+// PackageItemsFromStrings constructs a PackageItem slice from bare names.
+// Used by the migrator when collapsing legacy format sections that only
+// carried `packages: [name1, name2]`.
+func PackageItemsFromStrings(names []string) []PackageItem {
+	out := make([]PackageItem, 0, len(names))
+	for _, n := range names {
+		if n != "" {
+			out = append(out, PackageItem{Name: n})
+		}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
