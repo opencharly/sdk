@@ -3,14 +3,13 @@ package deploykit
 import "github.com/opencharly/sdk/spec"
 
 // box_engine.go — the two per-deploy engine-resolution functions with NO project-loader
-// dependency (K4 lane B: relocated from charly/engine.go). Homed here (not kit) because
+// dependency (K4: relocated from charly/engine.go). Homed here (not kit) because
 // ResolveBoxEngineForDeploy needs LoadDeployConfigForRead, a deploykit-only mechanism (kit cannot
 // import deploykit — that would cycle). ResolveBoxEngine/ResolveBoxEngineFromDir/ImageRuntime
-// (which DO need *Config/*Candy/LoadConfig) STAY in charly core. Shared between charly core's many
-// remaining callers (commands.go, container.go, preempt.go, resolved_project_host.go, service.go,
-// start.go, config_image.go, status_collector.go, volume_cp_tags_cmd.go) and
-// candy/plugin-deploy-pod (pod_lifecycle_resolve.go's quadlet-mode move) via the
-// deploykit_pod_aliases.go passthrough.
+// (which DO need *Config/*Candy/LoadConfig) STAY in charly core. Shared between charly core's
+// remaining callers (preempt.go, resolved_project_host.go, status_collector.go — direct
+// deploykit.ResolveBoxEngineForDeploy calls, K3 ZERO-ALIASES) and candy/plugin-deploy-pod
+// (the pod-lifecycle resolvers).
 
 // ResolveBoxEngineForDeploy resolves the run engine from the per-host deploy config,
 // falling back to globalEngine. No charly.yml (project) dependency.
