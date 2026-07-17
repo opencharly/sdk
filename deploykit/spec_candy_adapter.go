@@ -225,18 +225,23 @@ func (a *specCandyAdapter) LocalPkgFormats() []string {
 	return out
 }
 
-// Port returns the candy's raw authored port list ("8080"/"http:8080" strings) — the
-// pre-normalization sibling of PortSpecs(), derived from it since the envelope carries only
-// the normalized PortSpec form. Error return kept for interface/API-stability parity with the
-// charly *Candy.Port() signature (never non-nil here — the envelope has no I/O to fail on).
+// Port returns the OCI/publish-oriented port list — bare "8080", or "47998/udp" ONLY when
+// Protocol=="udp" — the pre-normalization sibling of PortSpecs(), re-derived from it since the
+// envelope carries only the normalized PortSpec form. Every OTHER protocol value (tcp,
+// https+insecure, …) is a routing/scheme hint for a DIFFERENT consumer (route generation reads
+// PortSpecs() directly) and publishes as a bare port — matching the pre-move *Candy.Port()
+// semantics (populateCandyFromYAML: udp gets the "/udp" suffix, everything else stays bare) that
+// CollectBoxPorts' kit.StripPortSuffix parsing depends on. Error return kept for interface/API-
+// stability parity with the charly *Candy.Port() signature (never non-nil here — the envelope has
+// no I/O to fail on).
 func (a *specCandyAdapter) Port() ([]string, error) {
 	if len(a.m.Port) == 0 {
 		return nil, nil
 	}
 	out := make([]string, len(a.m.Port))
 	for i, p := range a.m.Port {
-		if p.Protocol != "" {
-			out[i] = p.Protocol + ":" + strconv.Itoa(p.Port)
+		if p.Protocol == "udp" {
+			out[i] = strconv.Itoa(p.Port) + "/udp"
 		} else {
 			out[i] = strconv.Itoa(p.Port)
 		}
