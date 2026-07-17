@@ -3,9 +3,7 @@ package kit
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strconv"
-	"strings"
 
 	"github.com/opencharly/sdk/spec"
 )
@@ -18,28 +16,13 @@ import (
 // service.go, start.go) which now import kit directly (K3 ZERO-ALIASES — no alias file).
 
 // InspectLabels reads OCI labels from a local image via engine inspect.
-// Package-level var for testability.
-var InspectLabels = defaultInspectLabels
-
-func defaultInspectLabels(engine, imageRef string) (map[string]string, error) {
-	binary := EngineBinary(engine)
-	cmd := exec.Command(binary, "inspect", "--format", "{{json .Config.Labels}}", imageRef)
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("inspecting %s: %w", imageRef, err)
-	}
-
-	trimmed := strings.TrimSpace(string(output))
-	if trimmed == "null" || trimmed == "" {
-		return nil, nil
-	}
-
-	var labels map[string]string
-	if err := json.Unmarshal([]byte(trimmed), &labels); err != nil {
-		return nil, fmt.Errorf("parsing labels from %s: %w", imageRef, err)
-	}
-	return labels, nil
-}
+// Package-level var for testability — defaults to the canonical InspectImageLabels
+// (kit/local_image.go, promoted from charly/labels.go by the parallel K3 leg) rather
+// than a duplicate body: this file originally carried its own byte-identical
+// defaultInspectLabels, a genuine R3 duplicate produced by two independent
+// extractions of the same charly-core function racing each other (caught during
+// PR validation).
+var InspectLabels = InspectImageLabels
 
 // ExtractMetadata reads OCI labels from a local image and returns parsed spec.BoxMetadata.
 // Returns nil if the image has no ai.opencharly labels.
