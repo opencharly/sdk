@@ -86,6 +86,13 @@ type CandyScanner interface {
 	// ly is already the parsed body (no manifest file, no parseManifest seam needed). sourceDir is
 	// the charly.yml's own directory.
 	ScanInlineCandy(name, sourceDir string, ly *Candy) (CandyModel, CandyView, CandyRefs)
+	// ScanRemoteCandy scans specific candies out of a downloaded remote repository directory —
+	// only the bare refs in wantRefs (each "github.com/org/repo/candy/x" form). Sets each result's
+	// CandyView.Remote/.RepoPath/.SubPathPrefix and runs the remote-sibling-dep qualification
+	// (QualifyRemoteSiblingDeps) before returning, mirroring the pre-move charly/layers.go
+	// ScanRemoteCandy, which did the same two things (post-scan.Remote/RepoPath/SubPathPrefix
+	// mutation, then qualifyRemoteSiblingDeps) on the live *Candy it had just built.
+	ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseManifest func(path string) (*Candy, error)) (map[string]ScannedCandy, error)
 }
 
 // CandyRefs carries the RICH require:/candy:/bake_plugin: refs (CandyRefEntry, with a mutable
@@ -94,11 +101,22 @@ type CandyScanner interface {
 // .Resolved on a remote candy's plain-name sibling deps) and the FINAL bare-string conversion into
 // CandyView.Require/.IncludedCandy (mirrors the pre-move projectCandyView's bareRefs() call,
 // which ran AFTER qualification on the live *Candy — this type is what lets that same ordering
-// survive the *Candy struct's departure). BakePlugin has no CandyView/CandyModel field of its own
-// yet — see CandyModel.BakePlugin (added alongside this type) for the FINAL bare-string form
-// generate.go's emitBakedPlugins reads.
+// survive the *Candy struct's departure). The FINAL bare-string form lands on CandyView.Require/
+// .IncludedCandy and CandyModel.BakePlugin (FinalizeCandyRefs, sdk/loaderkit).
 type CandyRefs struct {
 	Require       []CandyRefEntry
 	IncludedCandy []CandyRefEntry
 	BakePlugin    []CandyRefEntry
+}
+
+// ScannedCandy bundles one candy's full scan result — the two resolved envelope views plus the
+// rich pre-qualification refs — HAND-WRITTEN, same-process pipeline state, never a wire type: it is
+// the mutable intermediate the whole scan→fetch→qualify→arbitrate pipeline (charly's ScanAllCandy
+// family) carries in place of the pre-move *Candy, until the FINAL step bare-strings the refs
+// (FinalizeCandyRefs) and wraps (Model, View) into a spec.CandyReader via
+// sdk/deploykit.NewSpecCandyModel.
+type ScannedCandy struct {
+	Model CandyModel
+	View  CandyView
+	Refs  CandyRefs
 }

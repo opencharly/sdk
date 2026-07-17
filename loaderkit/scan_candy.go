@@ -2,6 +2,7 @@ package loaderkit
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -51,6 +52,51 @@ func ScanCandy(path, name, manifestName string, parseDoc func(path string) (*spe
 // never drift because they share this one function.
 func ScanInlineCandy(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyModel, spec.CandyView, spec.CandyRefs) {
 	return scanFromParsed(name, sourceDir, ly)
+}
+
+// ScanRemoteCandy scans specific candies out of a downloaded remote repository directory — only
+// the bare refs in wantRefs (each "github.com/org/repo/candy/name" form, keyed by that same bare
+// ref in the returned map). Ported verbatim from the pre-move charly/layers.go ScanRemoteCandy: for
+// each wanted ref, ScanCandy the candy dir, then set the resulting CandyView's
+// Remote/RepoPath/SubPathPrefix (the post-scan "construct-then-mutate" step scan-time cannot do
+// itself — a candy doesn't know it's REMOTE until the fetch layer resolves it there) and qualify
+// its plain-name sibling deps (QualifyRemoteSiblingDeps) so the dependency graph + validator can
+// resolve a remote candy's transitive deps against siblings pulled from the same repo, without
+// per-call-site repo-path plumbing.
+func ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseDoc func(path string) (*spec.CandyYAML, error)) (map[string]spec.ScannedCandy, error) {
+	out := make(map[string]spec.ScannedCandy, len(wantRefs))
+
+	for bareRef := range wantRefs {
+		// Extract sub-path from bare ref: "github.com/org/repo/candy/name" -> "candy/name"
+		subPath := strings.TrimPrefix(bareRef, repoPath+"/")
+		candyDir := filepath.Join(repoDir, subPath)
+
+		// Derive name from last segment
+		name := subPath
+		if idx := strings.LastIndex(subPath, "/"); idx != -1 {
+			name = subPath[idx+1:]
+		}
+
+		if _, err := os.Stat(candyDir); os.IsNotExist(err) {
+			return nil, fmt.Errorf("remote candy %s not found at %s", bareRef, candyDir)
+		}
+
+		m, v, refs, err := ScanCandy(candyDir, name, kit.UnifiedFileName, parseDoc)
+		if err != nil {
+			return nil, fmt.Errorf("scanning remote candy %s: %w", bareRef, err)
+		}
+		v.Remote = true
+		v.RepoPath = repoPath
+		// Compute sub-path prefix for sibling dep resolution (e.g. "candy/")
+		if idx := strings.LastIndex(subPath, "/"); idx != -1 {
+			v.SubPathPrefix = subPath[:idx+1]
+		}
+		QualifyRemoteSiblingDeps(v.RepoPath, v.SubPathPrefix, &refs)
+
+		out[bareRef] = spec.ScannedCandy{Model: m, View: v, Refs: refs}
+	}
+
+	return out, nil
 }
 
 // scanFromParsed is the shared construction body: fs-probes + populateFromYAML + the partial
