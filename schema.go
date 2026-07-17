@@ -61,6 +61,22 @@ type ProvidedCapability struct {
 	// (off node.Descent) — never by switching on the kind word. nil for every other
 	// capability (the zero-value → external-in-place semantics).
 	DeployTraits *spec.DeployTraits
+	// Subcommands is set ONLY for Class=="command" (F-CLI-NEST): the plugin's DECLARED
+	// one-level-deep CLI subcommand catalog (name+help). The host uses it to build a REAL
+	// nested Kong grammar — a named `cmd:""` child per entry, restoring `--help` fidelity
+	// and CLI-model (MCP) leaf discoverability — in place of the opaque `[<args>...]`
+	// pass-through holder every command-class capability otherwise gets. Empty (the
+	// default) preserves today's flat pass-through behavior byte-for-byte; use
+	// KongSubcommands to derive the catalog from an existing Kong-tagged struct instead of
+	// hand-duplicating it.
+	Subcommands []CLISubcommand
+}
+
+// CLISubcommand is one DECLARED child of a class="command" capability's own CLI word — see
+// ProvidedCapability.Subcommands.
+type CLISubcommand struct {
+	Name string
+	Help string
 }
 
 // StepContract is the SDK-facing form of the proto StepContract — a class="step" plugin's
@@ -122,6 +138,9 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary}
 		if c.StepContract != nil {
 			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope, Venue: int32(c.StepContract.Venue), Gate: c.StepContract.Gate, Emits: c.StepContract.Emits}
+		}
+		for _, sc := range c.Subcommands {
+			pc.Subcommands = append(pc.Subcommands, &pb.CLISubcommand{Name: sc.Name, Help: sc.Help})
 		}
 		if c.DeployTraits != nil {
 			pc.DeployTraits = &pb.DeployTraits{

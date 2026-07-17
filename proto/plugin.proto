@@ -44,6 +44,16 @@ message ProvidedCapability {
   string phase = 9;                   // F9: the plugin lifecycle PHASE (sdk.Phase*; "" => runtime default) — the ordered point at which the kernel loads/invokes the plugin; "bootstrap" runs BEFORE config validation/migration
   string primary = 10;                // set ONLY for class="verb": the input field the scalar sugar shorthand targets (`file: /x` -> plugin_input: {<primary>: "/x"}); "" => map input only
   DeployTraits deploy_traits = 11;    // set ONLY for class="kind" (P9): a SUBSTRATE kind's DECLARED deploy behaviour traits, the SINGLE plugin-declared source kit.StampDescent stamps onto node.Descent — the consult sites read the traits off node.Descent instead of switching on the substrate kind word
+  repeated CLISubcommand subcommands = 12; // set ONLY for class="command": the plugin's DECLARED one-level-deep CLI subcommand catalog (name+help). Lets the host build a REAL nested Kong grammar (in place of the opaque `[<args>...]` pass-through holder every command-class capability otherwise gets) and synthesize a dotted "<word>.<name>" CLI-model leaf per entry for `charly __cli-model` / MCP tool generation. Empty (the default) preserves today's flat pass-through behavior byte-for-byte.
+}
+
+// CLISubcommand — one DECLARED child of a class="command" capability's own CLI word (F-CLI-NEST).
+// A plain name+help pair, not a full grammar: the host renders it as a Kong `cmd:""` child whose
+// OWN body is still a pass-through Args leaf (the plugin's real internal flag/positional shape
+// stays invisible to the host, exactly like today's flat holder — only the NAMING becomes real).
+message CLISubcommand {
+  string name = 1; // the subcommand word, e.g. "live", "boxes"
+  string help = 2; // one-line help text, shown in `--help` and used as the MCP tool description
 }
 
 // DeployTraits — a SUBSTRATE kind's DECLARED deploy behaviour (P9), advertised per substrate
