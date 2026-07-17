@@ -1572,6 +1572,12 @@ type CandyModel struct {
 	// port mirrors candy.cue's own union shape exactly (a plain int OR a "proto:port" string,
 	// normalized Go-side to PortSpec — there is no reusable #PortSpec def, per candy.cue's own note).
 	Port []PortSpec `yaml:"port,omitempty" json:"port,omitempty"`
+
+	// bake_plugin: the FINAL bare-string form (post remote-sibling qualification — see
+	// spec.CandyRefs, the hand-written pipeline-state type carrying the rich pre-qualification
+	// form). generate.go's emitBakedPlugins reads this to COPY the plugin's pre-built provider
+	// binary into every composing image.
+	BakePlugin []CandyRef `yaml:"bake_plugin,omitempty" json:"bake_plugin,omitempty"`
 }
 
 // ServiceEntry (service_render.go). use_packaged XOR exec is a Go cross-field

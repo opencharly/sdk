@@ -68,3 +68,37 @@ type WalkSeams struct {
 type ProjectWalker interface {
 	WalkProject(rootDir string, rootData []byte, rootIdentity string, seams WalkSeams) (LoadedProject, error)
 }
+
+// CandyScanner is the swappable CANDY-SCAN seam (W9): the loader plugin candy implements it
+// (candy/plugin-loader, delegating to loaderkit.ScanCandy), and the host resolves the registered
+// loader provider to it and calls it once per candy directory. Typed (no wire envelope) — the
+// compiled-in placement passes a live parseManifest callback (a Go function value, exactly like
+// WalkSeams.Parser above) since the candy-manifest parse itself is registry-coupled (it threads
+// the registered DocParser + the registry-derived Threaded snapshot) and so stays a HOST-injected
+// seam rather than moving into loaderkit — only the SCAN+CONSTRUCT logic (fs-probes, the
+// bake_plugin/package-derivation/port-normalization business logic) moves. Returns the two
+// resolved envelope views (spec.CandyModel + spec.CandyView) DIRECTLY — the same shape
+// sdk/deploykit.NewSpecCandyModel already consumes to build a spec.CandyReader, so core never
+// needs a concrete Candy struct to hold the scan result.
+type CandyScanner interface {
+	ScanCandy(path, name, manifestName string, parseManifest func(path string) (*Candy, error)) (CandyModel, CandyView, CandyRefs, error)
+	// ScanInlineCandy builds the two views for a candy declared INLINE in a unified charly.yml —
+	// ly is already the parsed body (no manifest file, no parseManifest seam needed). sourceDir is
+	// the charly.yml's own directory.
+	ScanInlineCandy(name, sourceDir string, ly *Candy) (CandyModel, CandyView, CandyRefs)
+}
+
+// CandyRefs carries the RICH require:/candy:/bake_plugin: refs (CandyRefEntry, with a mutable
+// .Resolved) a freshly scanned candy declares — HAND-WRITTEN, same-process pipeline state, never a
+// wire type: it exists only between ScanCandy and the host's qualifyRemoteSiblingDeps (which sets
+// .Resolved on a remote candy's plain-name sibling deps) and the FINAL bare-string conversion into
+// CandyView.Require/.IncludedCandy (mirrors the pre-move projectCandyView's bareRefs() call,
+// which ran AFTER qualification on the live *Candy — this type is what lets that same ordering
+// survive the *Candy struct's departure). BakePlugin has no CandyView/CandyModel field of its own
+// yet — see CandyModel.BakePlugin (added alongside this type) for the FINAL bare-string form
+// generate.go's emitBakedPlugins reads.
+type CandyRefs struct {
+	Require       []CandyRefEntry
+	IncludedCandy []CandyRefEntry
+	BakePlugin    []CandyRefEntry
+}

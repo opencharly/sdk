@@ -122,4 +122,9 @@
 	// port mirrors candy.cue's own union shape exactly (a plain int OR a "proto:port" string,
 	// normalized Go-side to PortSpec — there is no reusable #PortSpec def, per candy.cue's own note).
 	port?: [...(int & >0 & <=65535 | string & =~"^[a-z+-]+:[0-9]+$")] @go(Port,type=[]PortSpec)
+	// bake_plugin: the FINAL bare-string form (post remote-sibling qualification — see
+	// spec.CandyRefs, the hand-written pipeline-state type carrying the rich pre-qualification
+	// form). generate.go's emitBakedPlugins reads this to COPY the plugin's pre-built provider
+	// binary into every composing image.
+	bake_plugin?: [...#CandyRef] @go(BakePlugin)
 }
