@@ -130,8 +130,15 @@ func (a *specCandyAdapter) HasInstallFiles() bool {
 	// bound intermediate detection gates on this narrower predicate).
 	return a.m.HasInstallFiles
 }
-func (a *specCandyAdapter) HasInit(string) bool {
-	return len(a.m.ServiceFiles) > 0 || len(a.m.Service) > 0
+// HasInit reports whether this candy triggers the NAMED init system — the per-init-system lookup
+// (W9 finding): CandyView.InitSystems is the host-completed cross-candy map PopulateCandyInitSystem
+// (charly) / its loaderkit port populates once, after every candy in the project is scanned,
+// mirroring the live *Candy.HasInit(initName) exactly. Previously approximated via ServiceFiles/
+// Service non-empty (ignoring initName entirely) because the envelope carried no per-init field —
+// that approximation silently mismatched the live *Candy for any consumer asking about a SPECIFIC
+// init system (e.g. this package's own EmitInitFragmentStages).
+func (a *specCandyAdapter) HasInit(initName string) bool {
+	return a.v.InitSystems[initName]
 }
 
 func (a *specCandyAdapter) GetExternalBuilder() string { return a.m.ExternalBuilder }

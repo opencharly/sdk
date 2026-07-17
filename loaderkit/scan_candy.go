@@ -17,8 +17,8 @@ import (
 // charly/unified.go (populateCandyFromYAML). It reads a candy directory + its manifest and
 // constructs the two envelope views DIRECTLY (spec.CandyModel + spec.CandyView) — the SAME
 // resolved shape sdk/deploykit.NewSpecCandyModel already consumes to build a spec.CandyReader, so
-// core never needs a concrete Candy struct again: candy/plugin-loader's ScanCandy seam calls
-// ScanCandy below and returns the two views; the host wraps them via NewSpecCandyModel.
+// core never needs a concrete Candy struct again: candy/plugin-loader's ScanCandyManifest seam
+// calls ScanCandyManifest below and returns the two views; the host wraps them via NewSpecCandyModel.
 //
 // Every derived-logic branch below (bake_plugin→require implication, per-distro package-section
 // derivation, port protocol-suffix normalization) is preserved byte-for-byte from the original —
@@ -26,11 +26,13 @@ import (
 // comparing this path against the pre-move charly/layers.go+unified.go pair on real candies,
 // including a malformed-manifest negative case for identical error-path behavior).
 
-// ScanCandy scans a single candy DIRECTORY (the `from:`-directory / legacy-discovered-candy path)
-// and returns its two resolved envelope views. parseDoc is the injected per-document parse seam
-// (charly's parseCandyYAML — registry-coupled, so it stays host-side; see the CandyScanner
-// interface doc in sdk/spec/loader_seam.go).
-func ScanCandy(path, name, manifestName string, parseDoc func(path string) (*spec.CandyYAML, error)) (spec.CandyModel, spec.CandyView, spec.CandyRefs, error) {
+// ScanCandyManifest scans a single candy DIRECTORY (the `from:`-directory / legacy-discovered-candy
+// path) and returns its two resolved envelope views. Named distinctly from the ESTABLISHED exported
+// charly.ScanCandy(dir) (the whole-project scan-all-candies entry point) to avoid confusion between
+// the two similarly-shaped-but-different scans while both exist side by side during the cutover.
+// parseDoc is the injected per-document parse seam (charly's parseCandyYAML — registry-coupled, so
+// it stays host-side; see the CandyScanner interface doc in sdk/spec/loader_seam.go).
+func ScanCandyManifest(path, name, manifestName string, parseDoc func(path string) (*spec.CandyYAML, error)) (spec.CandyModel, spec.CandyView, spec.CandyRefs, error) {
 	yamlPath := filepath.Join(path, manifestName)
 	var ly *spec.CandyYAML
 	if kit.FileExists(yamlPath) {
@@ -57,7 +59,7 @@ func ScanInlineCandy(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyMode
 // ScanRemoteCandy scans specific candies out of a downloaded remote repository directory — only
 // the bare refs in wantRefs (each "github.com/org/repo/candy/name" form, keyed by that same bare
 // ref in the returned map). Ported verbatim from the pre-move charly/layers.go ScanRemoteCandy: for
-// each wanted ref, ScanCandy the candy dir, then set the resulting CandyView's
+// each wanted ref, ScanCandyManifest the candy dir, then set the resulting CandyView's
 // Remote/RepoPath/SubPathPrefix (the post-scan "construct-then-mutate" step scan-time cannot do
 // itself — a candy doesn't know it's REMOTE until the fetch layer resolves it there) and qualify
 // its plain-name sibling deps (QualifyRemoteSiblingDeps) so the dependency graph + validator can
@@ -81,7 +83,7 @@ func ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseDo
 			return nil, fmt.Errorf("remote candy %s not found at %s", bareRef, candyDir)
 		}
 
-		m, v, refs, err := ScanCandy(candyDir, name, kit.UnifiedFileName, parseDoc)
+		m, v, refs, err := ScanCandyManifest(candyDir, name, kit.UnifiedFileName, parseDoc)
 		if err != nil {
 			return nil, fmt.Errorf("scanning remote candy %s: %w", bareRef, err)
 		}
@@ -100,7 +102,7 @@ func ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseDo
 }
 
 // scanFromParsed is the shared construction body: fs-probes + populateFromYAML + the partial
-// #67 host-precomputed predicates — used by both ScanCandy (file-based) and ScanInlineCandy
+// #67 host-precomputed predicates — used by both ScanCandyManifest (file-based) and ScanInlineCandy
 // (already-parsed). The returned spec.CandyRefs carries the RICH pre-qualification
 // require:/candy:/bake_plugin: refs — CandyView.Require/.IncludedCandy and CandyModel.BakePlugin
 // stay UNSET here (their bare-string FINAL form is written by the host's qualify-then-finalize
@@ -269,8 +271,8 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 		v.Capabilities = &spec.CandyCapabilitiesView{PreserveUser: ly.Capability.PreserveUser}
 	}
 	// v.HasInit is NOT set here — it needs PopulateCandyInitSystem's cross-candy InitConfig
-	// resolution (see the ScanCandy doc comment above), which runs once after every candy in the
-	// project is scanned. The host sets it in that later pass.
+	// resolution (see the ScanCandyManifest doc comment above), which runs once after every candy
+	// in the project is scanned. The host sets it in that later pass.
 	return spec.CandyRefs{Require: require, IncludedCandy: includedCandy, BakePlugin: bakePlugin}
 }
 

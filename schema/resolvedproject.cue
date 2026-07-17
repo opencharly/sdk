@@ -174,6 +174,13 @@
 	volumes?: [...#CandyVolume] @go(Volumes)
 	aliases?: [...#CandyAlias] @go(Aliases)
 	has_init?: bool @go(HasInit)
+	// init_systems — the PER-INIT-SYSTEM trigger map (W9 finding: HasInit alone is one AGGREGATE
+	// "any init" bool, which cannot answer "does this candy trigger init system Y" — the question
+	// deploykit's HasInit(initName) / sdk/deploykit's EmitInitFragmentStages actually ask). Mirrors
+	// the live *Candy.InitSystems field exactly; populated by the SAME cross-candy host-completion
+	// pass PopulateCandyInitSystem runs (once, after every candy is scanned) — see
+	// sdk/deploykit.specCandyAdapter.HasInit, which reads this field directly.
+	init_systems?: {[string]: bool} @go(InitSystems)
 	port_relay?: [...int] @go(PortRelayPorts,type=[]int)
 
 	// capabilities — the per-candy capability surface the validate ENGINE reads (task #60,

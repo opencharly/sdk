@@ -1425,6 +1425,14 @@ type CandyView struct {
 
 	HasInit bool `yaml:"has_init,omitempty" json:"has_init,omitempty"`
 
+	// init_systems — the PER-INIT-SYSTEM trigger map (W9 finding: HasInit alone is one AGGREGATE
+	// "any init" bool, which cannot answer "does this candy trigger init system Y" — the question
+	// deploykit's HasInit(initName) / sdk/deploykit's EmitInitFragmentStages actually ask). Mirrors
+	// the live *Candy.InitSystems field exactly; populated by the SAME cross-candy host-completion
+	// pass PopulateCandyInitSystem runs (once, after every candy is scanned) — see
+	// sdk/deploykit.specCandyAdapter.HasInit, which reads this field directly.
+	InitSystems map[string]bool `yaml:"init_systems,omitempty" json:"init_systems,omitempty"`
+
 	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
 
 	// capabilities — the per-candy capability surface the validate ENGINE reads (task #60,
