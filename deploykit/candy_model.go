@@ -1,62 +1,12 @@
 package deploykit
 
-import "github.com/opencharly/sdk/vmshared"
+import "github.com/opencharly/sdk/spec"
 
-// candy_model.go — CandyModel, the read-only view of a runtime candy that the
-// deploy-plan compiler (BuildDeployPlan) consumes. The concrete runtime Candy lives
-// in charly and implements this interface; the compiler depends on the abstraction
-// (kernel/plugin boundary law: a Mechanism consumes an interface, the concrete kind
-// implements it), so the candy struct + its whole test suite stay in charly with
-// zero cross-package churn.
-type CandyModel interface {
-	GetName() string
-	GetSourceDir() string
-	GetVersion() string
-	Vars() map[string]string
-	PlanSteps() []Step
-	Reboot() bool
-	Apk() []ApkPackageSpec
-	EnvConfig() (*EnvConfig, error)
-	Service() []ServiceEntry
-	Shell() *ShellConfig
-	TopPackages() []string
-	FormatSection(name string) *PackageSection
-	LocalPkg(format string) string
-	TagSection(tag string) *TagPkgConfig
-	HasFile(filename string) bool
-
-	// P8 render-delta accessors (build-mode graph/render surface). Field-backed
-	// members use Get* to avoid a field/method name collision on the charly *Candy
-	// implementer; the three already-methods keep their names.
-	GetIncludedCandy() []CandyRef // candy: composition refs (splicing)
-	GetRequire() []CandyRef       // require: deps (ordering + resolution)
-	HasContent() bool
-	HasInstallFiles() bool // at least one install file (drives pixi-bound detection)
-	PixiManifest() string
-	GetHasPackageJson() bool
-	GetHasCargoToml() bool
-	GetExternalBuilder() string // external_builder: word (the out-of-tree builder plugin this candy selects)
-	HasFormatPackages() bool
-	GetRemote() bool // true if the candy came from a remote repo
-	HasExtract() bool
-	Extract() []ExtractYAML
-	HasData() bool
-	Data() []DataYAML
-	GetHasPixiLock() bool
-	GetRepoPath() string
-	GetSubPathPrefix() string
-	HasEnv() bool
-	HasRoute() bool
-	Route() (*RouteConfig, error)
-
-	// P8 init-cluster accessors (emitInitAssembly/emitInitFragmentStages/
-	// generateInitFragments). RelayPorts wraps the field-backed PortRelayPorts to
-	// avoid a field/method name collision on the charly *Candy implementer.
-	HasInit(initName string) bool // this candy contributes to the named init system
-	ServiceFiles() []string       // file_copy-model service unit paths (globbed)
-	RelayPorts() []int            // port_relay: ports (init-agnostic)
-
-	// P8 writeCandySteps accessors.
-	HasTasks() bool        // the candy has any tasks: (runOps non-empty)
-	RunOps() []vmshared.Op // the candy's plan lowered to build-mode run ops
-}
+// candy_model.go — CandyModel is now promoted to spec.CandyReader (W9: the mass-edit interface
+// relocation). spec is the shared contract home an import-clean charly file can reach WITHOUT an
+// sdk mechanism-kit import (mirrors the loader_seam.go DocParser/ProjectWalker precedent + the
+// PackageSection/TagPkgConfig/RouteConfig/ApkPackageSpec/ServiceEntry/HooksConfig/SecurityConfig
+// promotions already sitting in layer_model.go/steps.go/candy_field_aliases.go). This alias keeps
+// every existing deploykit-internal + charly `deploykit.CandyModel` reference compiling unchanged;
+// new call sites in an import-clean file should reach spec.CandyReader directly.
+type CandyModel = spec.CandyReader

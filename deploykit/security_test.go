@@ -143,3 +143,155 @@ func TestSecurityArgsMemoryCapsWithPrivileged(t *testing.T) {
 		t.Errorf("SecurityArgs(privileged+caps) = %v, want %v", args, want)
 	}
 }
+
+// The tests below migrated from charly/security_test.go with the W9 CollectSecurity split:
+// AppendUniqueString/IpcModeBlocksShmSize/the byte-size merge helpers now live in this package
+// exclusively (parseShmBytes/maxShmSize/minCap/minCpus back MergeCandySecurity above).
+
+func TestAppendUniqueString(t *testing.T) {
+	result := AppendUniqueString([]string{"a", "b"}, "b", "c", "a", "d")
+	want := []string{"a", "b", "c", "d"}
+	if !reflect.DeepEqual(result, want) {
+		t.Errorf("AppendUniqueString = %v, want %v", result, want)
+	}
+}
+
+// TestIpcModeBlocksShmSize is the helper-level check for the gate.
+// Only "host" should trigger the drop.
+func TestIpcModeBlocksShmSize(t *testing.T) {
+	cases := []struct {
+		ipc  string
+		want bool
+	}{
+		{"host", true},
+		{"private", false},
+		{"shareable", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := IpcModeBlocksShmSize(tc.ipc); got != tc.want {
+			t.Errorf("IpcModeBlocksShmSize(%q) = %v, want %v", tc.ipc, got, tc.want)
+		}
+	}
+}
+
+func TestMaxShmSize(t *testing.T) {
+	tests := []struct {
+		a, b, want string
+	}{
+		{"", "1g", "1g"},
+		{"1g", "", "1g"},
+		{"256m", "1g", "1g"},
+		{"2g", "1g", "2g"},
+		{"512m", "512m", "512m"},
+	}
+	for _, tt := range tests {
+		got := maxShmSize(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("maxShmSize(%q, %q) = %q, want %q", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+func TestParseShmBytes(t *testing.T) {
+	tests := []struct {
+		s    string
+		want int64
+	}{
+		{"1g", 1024 * 1024 * 1024},
+		{"256m", 256 * 1024 * 1024},
+		{"64k", 64 * 1024},
+		{"1024", 1024},
+		{"", 0},
+	}
+	for _, tt := range tests {
+		got := parseShmBytes(tt.s)
+		if got != tt.want {
+			t.Errorf("parseShmBytes(%q) = %d, want %d", tt.s, got, tt.want)
+		}
+	}
+}
+
+func TestMinCap(t *testing.T) {
+	// Smallest-wins: opposite of maxShmSize. Tighter cap is safer.
+	tests := []struct {
+		a, b, want string
+	}{
+		{"", "1g", "1g"},
+		{"1g", "", "1g"},
+		{"256m", "1g", "256m"},
+		{"2g", "1g", "1g"},
+		{"512m", "512m", "512m"},
+		{"1024m", "1g", "1024m"}, // equal sizes — first wins
+	}
+	for _, tt := range tests {
+		got := minCap(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("minCap(%q, %q) = %q, want %q", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+func TestMinCpus(t *testing.T) {
+	tests := []struct {
+		a, b, want string
+	}{
+		{"", "2", "2"},
+		{"2", "", "2"},
+		{"1.5", "4", "1.5"},
+		{"8", "2.5", "2.5"},
+		{"2", "2", "2"},
+		{"bogus", "2", "2"}, // unparseable → other wins
+		{"2", "bogus", "2"},
+	}
+	for _, tt := range tests {
+		got := minCpus(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("minCpus(%q, %q) = %q, want %q", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+// candyWithSecurity builds a CandyModel (via the existing NewSpecCandyModel envelope adapter)
+// carrying only a Security config — the minimal fixture MergeCandySecurity needs.
+func candyWithSecurity(sec *SecurityConfig) CandyModel {
+	return NewSpecCandyModel(spec.CandyModel{Security: sec}, spec.CandyView{})
+}
+
+func TestMergeCandySecurityMergesCapsSmallest(t *testing.T) {
+	candies := []CandyModel{
+		candyWithSecurity(&SecurityConfig{MemoryMax: "8g", MemoryHigh: "7g", Cpus: "8"}),
+		candyWithSecurity(&SecurityConfig{MemoryMax: "4g", MemoryHigh: "3g", Cpus: "2"}),
+	}
+	sec := MergeCandySecurity(candies, nil)
+	if sec.MemoryMax != "4g" {
+		t.Errorf("MemoryMax = %q, want 4g (smallest wins)", sec.MemoryMax)
+	}
+	if sec.MemoryHigh != "3g" {
+		t.Errorf("MemoryHigh = %q, want 3g", sec.MemoryHigh)
+	}
+	if sec.Cpus != "2" {
+		t.Errorf("Cpus = %q, want 2", sec.Cpus)
+	}
+}
+
+func TestMergeCandySecurityImageOverridesCaps(t *testing.T) {
+	candies := []CandyModel{
+		candyWithSecurity(&SecurityConfig{MemoryMax: "6g", ShmSize: "1g"}),
+	}
+	sec := MergeCandySecurity(candies, &SecurityConfig{MemoryMax: "16g"})
+	if sec.MemoryMax != "16g" {
+		t.Errorf("MemoryMax = %q, want 16g (box override)", sec.MemoryMax)
+	}
+	if sec.ShmSize != "1g" {
+		t.Errorf("ShmSize = %q, want 1g (candy default preserved)", sec.ShmSize)
+	}
+}
+
+func TestMergeCandySecurityNilCandySkipped(t *testing.T) {
+	candies := []CandyModel{nil, candyWithSecurity(&SecurityConfig{Privileged: true})}
+	sec := MergeCandySecurity(candies, nil)
+	if !sec.Privileged {
+		t.Error("expected Privileged=true from the non-nil candy")
+	}
+}

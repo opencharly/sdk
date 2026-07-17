@@ -1524,6 +1524,12 @@ type CandyModel struct {
 
 	Aliases []CandyAlias `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 
+	// --- security / hooks (the OCI-label-collector surface: CollectSecurity/CollectHooks
+	// read this per-candy field then apply the box-level #ResolvedBoxView.security override) ---
+	Security *Security `yaml:"security,omitempty" json:"security,omitempty"`
+
+	Hook *CandyHook `yaml:"hook,omitempty" json:"hook,omitempty"`
+
 	// --- validate read-surface (candy-local config the validate ENGINE checks) ---
 	// external_builder: the reserved word of an EXTERNAL builder plugin this candy selects
 	// (from the candy manifest external_builder:). validateCandyContents reads it to accept a
@@ -1549,6 +1555,23 @@ type CandyModel struct {
 	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
 
 	MCPAccept []EnvDependency `yaml:"mcp_accept,omitempty" json:"mcp_accept,omitempty"`
+
+	// --- W9 mass-edit interface-completeness fill: the remaining fields the 42-file
+	// CandyReader repoint needs, already authored on #Candy (candy.cue) but not yet
+	// projected onto the build model. artifact/requires_capability/secret/port mirror
+	// candy.cue's own fields+shapes exactly; capability widens the CandyView's narrow
+	// (preserve_user-only) #CandyCapabilitiesView to the full authored #CandyCapability.
+	Artifact []CandyArtifact `yaml:"artifact,omitempty" json:"artifact,omitempty"`
+
+	RequiresCapability []string `yaml:"requires_capability,omitempty" json:"requires_capability,omitempty"`
+
+	Capability *CandyCapability `yaml:"capability,omitempty" json:"capability,omitempty"`
+
+	Secret []CandySecret `yaml:"secret,omitempty" json:"secret,omitempty"`
+
+	// port mirrors candy.cue's own union shape exactly (a plain int OR a "proto:port" string,
+	// normalized Go-side to PortSpec — there is no reusable #PortSpec def, per candy.cue's own note).
+	Port []PortSpec `yaml:"port,omitempty" json:"port,omitempty"`
 }
 
 // ServiceEntry (service_render.go). use_packaged XOR exec is a Go cross-field
@@ -1664,6 +1687,52 @@ type EnvConfig struct {
 	Vars map[string]string `yaml:"vars,omitempty" json:"vars,omitempty"`
 
 	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
+}
+
+// CandyArtifact — a file the candy publishes back to the operator post-setup.
+type CandyArtifact struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	RetrieveTo string `yaml:"retrieve_to,omitempty" json:"retrieve_to"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	Optional bool `yaml:"optional,omitempty" json:"optional,omitempty"`
+
+	WaitSeconds int `yaml:"wait_second,omitempty" json:"wait_second,omitempty"`
+
+	Rewrite []CandyArtifactRewrite `yaml:"rewrite,omitempty" json:"rewrite,omitempty"`
+}
+
+type CandyArtifactRewrite struct {
+	Find string `yaml:"find,omitempty" json:"find"`
+
+	Replace string `yaml:"replace,omitempty" json:"replace,omitempty"`
+}
+
+// CandyCapabilities — image-level facts a candy contributes (aggregated at
+// resolve time). oci_label is a genuine open string→string passthrough.
+type CandyCapability struct {
+	PreserveUser bool `yaml:"preserve_user,omitempty" json:"preserve_user,omitempty"`
+
+	NeedsRootAfterInit bool `yaml:"needs_root_after_init,omitempty" json:"needs_root_after_init,omitempty"`
+
+	InitSystemHint string `yaml:"init_system_hint,omitempty" json:"init_system_hint,omitempty"`
+
+	DataOnly bool `yaml:"data_only,omitempty" json:"data_only,omitempty"`
+
+	OCILabels map[string]string `yaml:"oci_label,omitempty" json:"oci_label,omitempty"`
+}
+
+// SecretYAML — a candy-owned secret (target defaults to /run/secrets/<name>).
+type CandySecret struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+
+	Env string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 // #ProjectTemplates — the bare pod:/vm:/local:/k8s:/android: template maps carried as OPAQUE payloads
@@ -1876,20 +1945,6 @@ type Candy struct {
 	Artifact []CandyArtifact `yaml:"artifact,omitempty" json:"artifact,omitempty"`
 }
 
-// CandyCapabilities — image-level facts a candy contributes (aggregated at
-// resolve time). oci_label is a genuine open string→string passthrough.
-type CandyCapability struct {
-	PreserveUser bool `yaml:"preserve_user,omitempty" json:"preserve_user,omitempty"`
-
-	NeedsRootAfterInit bool `yaml:"needs_root_after_init,omitempty" json:"needs_root_after_init,omitempty"`
-
-	InitSystemHint string `yaml:"init_system_hint,omitempty" json:"init_system_hint,omitempty"`
-
-	DataOnly bool `yaml:"data_only,omitempty" json:"data_only,omitempty"`
-
-	OCILabels map[string]string `yaml:"oci_label,omitempty" json:"oci_label,omitempty"`
-}
-
 // #Plugin — the candy's plugin declaration. Its presence makes the candy a
 // plugin (Go: charly/checkspec.go via the generated Candy.Plugin field, consumed
 // by plugin_loader.go). CLOSED.
@@ -1921,38 +1976,6 @@ type CandyRoute struct {
 	Host string `yaml:"host,omitempty" json:"host"`
 
 	Port int `yaml:"port,omitempty" json:"port"`
-}
-
-// SecretYAML — a candy-owned secret (target defaults to /run/secrets/<name>).
-type CandySecret struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Target string `yaml:"target,omitempty" json:"target,omitempty"`
-
-	Env string `yaml:"env,omitempty" json:"env,omitempty"`
-}
-
-// CandyArtifact — a file the candy publishes back to the operator post-setup.
-type CandyArtifact struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Path string `yaml:"path,omitempty" json:"path"`
-
-	RetrieveTo string `yaml:"retrieve_to,omitempty" json:"retrieve_to"`
-
-	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
-
-	Optional bool `yaml:"optional,omitempty" json:"optional,omitempty"`
-
-	WaitSeconds int `yaml:"wait_second,omitempty" json:"wait_second,omitempty"`
-
-	Rewrite []CandyArtifactRewrite `yaml:"rewrite,omitempty" json:"rewrite,omitempty"`
-}
-
-type CandyArtifactRewrite struct {
-	Find string `yaml:"find,omitempty" json:"find"`
-
-	Replace string `yaml:"replace,omitempty" json:"replace,omitempty"`
 }
 
 // #DeployTraits is a SUBSTRATE kind's DECLARED deploy behaviour (P9): a substrate plugin

@@ -15,6 +15,8 @@ package deploykit
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 
 	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
@@ -139,5 +141,79 @@ func (a *specCandyAdapter) GetExternalBuilder() string { return a.m.ExternalBuil
 // build-render move); the build-mode render (candyCopySource) reads it to reproduce remote
 // COPY sources WITHOUT the live *Candy. (Was stubbed "" while build-mode was host-only.)
 func (a *specCandyAdapter) GetSubPathPrefix() string { return a.v.SubPathPrefix }
+
+// OCI-label-collector surface (CollectSecurity/CollectHooks/layer_secrets): direct
+// field reads over the build model, same snapshot-safe shape as every other
+// CandyModel field above.
+func (a *specCandyAdapter) Security() *SecurityConfig      { return a.m.Security }
+func (a *specCandyAdapter) Hooks() *HooksConfig            { return a.m.Hook }
+func (a *specCandyAdapter) EnvRequire() []EnvDependency    { return a.m.EnvRequire }
+func (a *specCandyAdapter) EnvAccept() []EnvDependency     { return a.m.EnvAccept }
+func (a *specCandyAdapter) SecretRequire() []EnvDependency { return a.m.SecretRequire }
+func (a *specCandyAdapter) SecretAccept() []EnvDependency  { return a.m.SecretAccept }
+func (a *specCandyAdapter) MCPRequire() []EnvDependency    { return a.m.MCPRequire }
+func (a *specCandyAdapter) MCPAccept() []EnvDependency     { return a.m.MCPAccept }
+
+// W9 mass-edit interface-completeness fill: the 42-file repoint's remaining accessors.
+// Alias/Volume/EnvProvides/MCPProvide read off CandyView (the identity/graph half — these
+// carry the LIST-subcommand detail, not the build model); Artifact/Capabilities/
+// RequiresCapabilities/Engine/Libvirt/Secret/PortSpecs read off CandyModel (the build half,
+// widened with the same 5 fields added to #CandyModel alongside this fill).
+func (a *specCandyAdapter) Alias() []AliasYAML               { return a.v.Aliases }
+func (a *specCandyAdapter) HasAliases() bool                 { return len(a.v.Aliases) > 0 }
+func (a *specCandyAdapter) Volume() []VolumeYAML             { return a.v.Volumes }
+func (a *specCandyAdapter) HasVolumes() bool                 { return len(a.v.Volumes) > 0 }
+func (a *specCandyAdapter) EnvProvides() map[string]string   { return a.v.EnvProvides }
+func (a *specCandyAdapter) MCPProvide() []MCPServerYAML      { return a.v.MCPProvide }
+func (a *specCandyAdapter) Artifact() []CandyArtifact        { return a.m.Artifact }
+func (a *specCandyAdapter) Capabilities() *CandyCapabilities { return a.m.Capability }
+func (a *specCandyAdapter) RequiresCapabilities() []string   { return a.m.RequiresCapability }
+func (a *specCandyAdapter) Engine() string                   { return a.m.Engine }
+func (a *specCandyAdapter) Libvirt() []string                { return a.m.Libvirt }
+func (a *specCandyAdapter) HasLibvirt() bool                 { return len(a.m.Libvirt) > 0 }
+func (a *specCandyAdapter) Secret() []SecretYAML             { return a.m.Secret }
+func (a *specCandyAdapter) PortSpecs() []PortSpec            { return a.m.Port }
+func (a *specCandyAdapter) HasPorts() bool                   { return len(a.m.Port) > 0 }
+func (a *specCandyAdapter) HasEnvAccepts() bool              { return len(a.m.EnvAccept) > 0 }
+func (a *specCandyAdapter) HasEnvProvides() bool             { return len(a.v.EnvProvides) > 0 }
+func (a *specCandyAdapter) HasEnvRequires() bool             { return len(a.m.EnvRequire) > 0 }
+func (a *specCandyAdapter) HasMCPAccepts() bool              { return len(a.m.MCPAccept) > 0 }
+func (a *specCandyAdapter) HasMCPProvides() bool             { return len(a.v.MCPProvide) > 0 }
+func (a *specCandyAdapter) HasMCPRequires() bool             { return len(a.m.MCPRequire) > 0 }
+func (a *specCandyAdapter) HasSecretAccepts() bool           { return len(a.m.SecretAccept) > 0 }
+func (a *specCandyAdapter) HasSecretRequires() bool          { return len(a.m.SecretRequire) > 0 }
+
+// LocalPkgFormats returns the sorted list of package formats with a bundled local source
+// (localpkg: map keys) — the envelope carries the same map CollectLocalPkg needs.
+func (a *specCandyAdapter) LocalPkgFormats() []string {
+	if len(a.m.LocalPkg) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(a.m.LocalPkg))
+	for f := range a.m.LocalPkg {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Port returns the candy's raw authored port list ("8080"/"http:8080" strings) — the
+// pre-normalization sibling of PortSpecs(), derived from it since the envelope carries only
+// the normalized PortSpec form. Error return kept for interface/API-stability parity with the
+// charly *Candy.Port() signature (never non-nil here — the envelope has no I/O to fail on).
+func (a *specCandyAdapter) Port() ([]string, error) {
+	if len(a.m.Port) == 0 {
+		return nil, nil
+	}
+	out := make([]string, len(a.m.Port))
+	for i, p := range a.m.Port {
+		if p.Protocol != "" {
+			out[i] = p.Protocol + ":" + strconv.Itoa(p.Port)
+		} else {
+			out[i] = strconv.Itoa(p.Port)
+		}
+	}
+	return out, nil
+}
 
 var _ CandyModel = (*specCandyAdapter)(nil)
