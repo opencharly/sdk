@@ -3227,6 +3227,85 @@ type DeployNodeDelDispatchRequest struct {
 type DeployNodeDelDispatchReply struct {
 }
 
+// #DeployAddRequest carries the `charly bundle add` command flags (the former
+// BundleAddCmd's authored fields). The command:bundle plugin (P13) owns the CLI
+// GRAMMAR but cannot drive the deploy KERNEL — the loader, the InstallPlan
+// compiler, ResolveTarget → externalDeployTarget, and the live-executor
+// composition (which threads host objects that cannot cross the process boundary)
+// are core Mechanisms. So the plugin's `charly bundle add` command is THIN — it
+// forwards these flags to HostBuild("deploy-add"), and the host runs the existing
+// add orchestration VERBATIM (Run → dispatchNode → compile → ResolveTarget → Add),
+// exactly as the box-build engine stayed core behind HostBuild("image") in P8 and
+// the VM-disk engine behind HostBuild("vm-build") in P10. The two per-node internal
+// fields (vmEntity, builderImageOverride) are NOT carried — the host derives them
+// during dispatch.
+type DeployAddRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Ref string `yaml:"ref,omitempty" json:"ref,omitempty"`
+
+	AddCandy []string `yaml:"add_candy,omitempty" json:"add_candy,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+
+	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
+
+	Format string `yaml:"format,omitempty" json:"format,omitempty"`
+
+	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
+
+	Verify bool `yaml:"verify,omitempty" json:"verify,omitempty"`
+
+	WithServices bool `yaml:"with_services,omitempty" json:"with_services,omitempty"`
+
+	AllowRepoChanges bool `yaml:"allow_repo_changes,omitempty" json:"allow_repo_changes,omitempty"`
+
+	AllowRootTasks bool `yaml:"allow_root_tasks,omitempty" json:"allow_root_tasks,omitempty"`
+
+	SkipIncompatible bool `yaml:"skip_incompatible,omitempty" json:"skip_incompatible,omitempty"`
+
+	BuilderImage string `yaml:"builder_image,omitempty" json:"builder_image,omitempty"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	Disposable bool `yaml:"disposable,omitempty" json:"disposable,omitempty"`
+
+	Lifecycle string `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+}
+
+// #DeployAddReply is the "deploy-add" host-builder reply — empty; the add prints its
+// own progress + dry-run output to the shared stdio (the compiled-in plugin's
+// HostBuild runs in charly's own process) and signals failure via the error return.
+type DeployAddReply struct {
+}
+
+// #DeployDelRequest carries the `charly bundle del` command flags. The plugin's
+// `charly bundle del` forwards these to HostBuild("deploy-del"); the host runs the
+// existing del orchestration VERBATIM (resolveDelNode → ResolveTarget → Del,
+// replaying the recorded ReverseOps). The live ReverseRunner is NOT carried — a
+// programmatic teardown that needs a specific runner (the vm guest-SSH reverse
+// runner) is a host-side path, resolved during dispatch, never authored on the CLI.
+type DeployDelRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	KeepRepoChanges bool `yaml:"keep_repo_changes,omitempty" json:"keep_repo_changes,omitempty"`
+
+	KeepServices bool `yaml:"keep_services,omitempty" json:"keep_services,omitempty"`
+
+	KeepImage bool `yaml:"keep_image,omitempty" json:"keep_image,omitempty"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+}
+
+// #DeployDelReply is the "deploy-del" host-builder reply — empty (prints host-side,
+// errors via the return).
+type DeployDelReply struct {
+}
+
 // #DeployFromBoxRequest carries the `charly bundle from-box` command flags (the
 // former BundleFromBoxCmd) — a SOURCE-LESS deploy driven entirely by an image's
 // baked OCI labels. The plugin forwards these to HostBuild("deploy-from-box"); the
