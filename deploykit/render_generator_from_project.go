@@ -25,10 +25,13 @@ import (
 // providerRegistry.resolve+Invoke dispatch (or pure data + host-fs I/O over the CandyModel
 // envelope) — RDD-spiked live on the external-builder leg, proven to need no host callback at
 // all — so they now dispatch directly via renderSeamCaller.invoke (InvokeProvider, no
-// HostBuild round-trip). The 4 REMAINING seams (EmitPluginOp, localpkg, inline-builder,
-// ensure-builders) + EmitBakedPlugins have a genuine host-only dependency (the live loader's
-// scan+connect machinery, or a Go-level type-assertion against a BUILTIN provider's concrete
-// type) and still call back via HostBuild("render-seam"/"bake-plugins").
+// HostBuild round-trip). LocalPkg is ALSO GONE (W3): the seam's "host rebuilds from the live
+// *Candy graph" claim was stale — the caller (candy_steps.go) already builds the step from
+// dg.Candies/dg.Boxes (the SAME envelope data) before calling RenderLocalPkgImageInstall, so
+// the function now runs directly, in-package, on the step it's given. The 3 REMAINING seams
+// (EmitPluginOp, inline-builder, ensure-builders) + EmitBakedPlugins have a genuine host-only
+// dependency (the live loader's scan+connect machinery, or a Go-level type-assertion against a
+// BUILTIN provider's concrete type) and still call back via HostBuild("render-seam"/"bake-plugins").
 
 // renderSeamCaller holds the two dispatch primitives every wired seam needs (the venue executor
 // + its context) so NewRenderGeneratorFromProject's own body stays a flat field-assignment list
@@ -245,15 +248,13 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return rewriteHeaderCopyForRemote(dg.Candies, dir, dg.BuildDir, headerCopy)
 	}
 
-	// RenderLocalPkgImageInstall: still host-side — the host rebuilds the LocalPkgInstallStep
-	// from the live *Candy graph (the SAME CompileLocalPkgStep origin/main used) + renders it.
-	dg.RenderLocalPkgImageInstall = func(step *LocalPkgInstallStep, devLocalPkg bool, imageDir, boxName string) (string, error) {
-		var res LocalPkgResult
-		if err := c.hostBuild(RenderSeamLocalPkg, LocalPkgParams{Dir: dir, BoxName: boxName, CandyName: step.CandyName, ImageDir: imageDir, DevLocalPkg: devLocalPkg}, &res); err != nil {
-			return "", err
-		}
-		return res.Fragment, nil
-	}
+	// RenderLocalPkgImageInstall: direct call, NO host round-trip (W3 — the render-seam claim
+	// of a genuine host dependency here was STALE). The caller (candy_steps.go) already builds
+	// the step via CompileLocalPkgStep(layer, img, HostContext{}) using dg.Candies/dg.Boxes —
+	// data ALREADY present in this envelope-hydrated Generator — so RenderLocalPkgImageInstall
+	// needs nothing the host has that the plugin doesn't; it operates purely on the step it's
+	// given (deploykit.RenderLocalPkgImageInstall, sdk/deploykit/localpkg.go).
+	dg.RenderLocalPkgImageInstall = RenderLocalPkgImageInstall
 
 	// ResolveInlineBuilder: still host-side — rides K1 with EnsureBuilders (its embedded connect
 	// is the same loader scan+connect action, usually a no-op but not guaranteed).

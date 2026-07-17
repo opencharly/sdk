@@ -9,15 +9,18 @@ import (
 	"github.com/opencharly/sdk/kit"
 )
 
-// intermediates.go — the PURE-compute half of the auto-intermediate-image
-// subsystem, relocated from charly core (P8b). These functions operate over
-// deploykit.CandyModel + buildkit.ResolvedBox (the candy-graph model), so they
-// belong beside the graph funcs in graph.go. The HOST-COUPLED half —
-// ComputeIntermediates / processSiblingGroup / createIntermediate / walkTrieScoped
-// / resolvePlatforms — stays in charly core (it reads *Config cfg.Defaults) and
-// calls back into these via the charly/intermediates_shim.go wrappers. Behaviour
-// is byte-identical to the former charly/intermediates.go (kit.SortStrings is the
-// SAME lexicographic sort core aliased as sortStrings).
+// intermediates.go — the PURE-compute candy-graph/trie half of the
+// auto-intermediate-image subsystem, relocated from charly core (P8b). These
+// functions operate over deploykit.CandyModel + buildkit.ResolvedBox (the
+// candy-graph model), so they belong beside the graph funcs in graph.go. The
+// formerly HOST-COUPLED half — ComputeIntermediates / processSiblingGroup /
+// createIntermediate / walkTrieScoped / pickAutoName / resolvePlatforms /
+// distroBuilderMap — lives in intermediates_compute.go in this SAME package
+// (W3): it consumes the scalar defaults through IntermediateDefaults instead
+// of reading *Config, so the whole subsystem is now deploykit-resident and
+// charly/intermediates_shim.go is only the thin cfg.Defaults-lifting entry
+// point. Behaviour is byte-identical to the former charly/intermediates.go
+// (kit.SortStrings is the SAME lexicographic sort core aliased as sortStrings).
 
 // PixiBoundCandies identifies candies that have install files (user.yml/root.yml)
 // but depend on a pixi environment from their including parent meta-candy.
