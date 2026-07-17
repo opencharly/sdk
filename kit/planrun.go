@@ -21,16 +21,6 @@ import (
 // (endpoint/venue/container resolution, HTTP-do, the provider registry, the CUE loader) STAY
 // in core behind those seams; only the vocabulary-independent walk lives here.
 
-// DoMode is the act/assert/instruct axis. act = perform a side-effect; assert = run the
-// matchers (read-only); instruct = hand free-form text to the agent grader.
-type DoMode string
-
-const (
-	DoAct      DoMode = "act"
-	DoAssert   DoMode = "assert"
-	DoInstruct DoMode = "instruct"
-)
-
 // GraderRequest is the agent grader's input for one agent-run:/agent-check: step.
 type GraderRequest struct {
 	Description string
@@ -63,9 +53,9 @@ type VerbResolver interface {
 
 // PlanContext is the host-driver surface the plan walk consumes. The core *Runner implements
 // it; a plugin running a plan in-proc supplies its own impl. Every method is kind-blind — no
-// concrete kind, no provider word, no ExecContext crosses this interface (ExecContext lives
-// in deploykit, which imports kit; the grammar that consults it stays core behind
-// ContextSkipReason / EffectiveDo).
+// concrete kind, no provider word crosses this interface (spec.ExecContext is a plain
+// vocabulary type; the grammar that consults it stays core behind ContextSkipReason /
+// EffectiveDo).
 type PlanContext interface {
 	// Distros is the image's distro tag list, for the exclude_distros: skip.
 	Distros() []string
@@ -83,7 +73,7 @@ type PlanContext interface {
 	ContextSkipReason(op *spec.Op) string
 	// EffectiveDo resolves the op's do-mode (the keyword-stamped intentDo, else the verb's
 	// VerbCatalog default, else DoAssert). Wraps the core grammar.
-	EffectiveDo(op *spec.Op) DoMode
+	EffectiveDo(op *spec.Op) spec.DoMode
 	// EffectiveEnv builds the variable-expansion env for the current step (the resolver base
 	// overlaid with cross-deployment ${HOST:…} addresses + the scenario captures).
 	EffectiveEnv() map[string]string
@@ -203,7 +193,7 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 		// do-mode branch: a do:act state-provision verb executes its create/configure. Action
 		// verbs (command/http/dbus/cdp/…) act in their own handler, so do:act there falls
 		// through to the assert dispatch below (the handler IS the act).
-		if pc.EffectiveDo(&expanded) == DoAct {
+		if pc.EffectiveDo(&expanded) == spec.DoAct {
 			if act, ok := pc.Verbs().RunProvisionAct(ctx, &expanded, kind); ok {
 				return act
 			}

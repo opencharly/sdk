@@ -44,7 +44,7 @@ const runnerProbeNeverHangFallback = 90 * time.Second
 type PlanGrammar interface {
 	// EffectiveDo resolves op's do-mode (the keyword-stamped intentDo wins, else the verb's
 	// VerbCatalog default, else DoAssert).
-	EffectiveDo(op *spec.Op) DoMode
+	EffectiveDo(op *spec.Op) spec.DoMode
 	// InContext reports whether op is legal in the run's active context: runtime=true → the
 	// live (runtime) context, runtime=false → the box (build) context.
 	InContext(op *spec.Op, runtime bool) bool
@@ -199,9 +199,9 @@ func (r *Runner) Verbs() VerbResolver { return r.verbs }
 func (r *Runner) Grader() StepGrader  { return r.grader }
 
 // EffectiveDo resolves op's do-mode via the injected grammar (DoAssert when no grammar is wired).
-func (r *Runner) EffectiveDo(op *spec.Op) DoMode {
+func (r *Runner) EffectiveDo(op *spec.Op) spec.DoMode {
 	if r.grammar == nil {
-		return DoAssert
+		return spec.DoAssert
 	}
 	return r.grammar.EffectiveDo(op)
 }
