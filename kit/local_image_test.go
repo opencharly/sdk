@@ -1,6 +1,10 @@
 package kit
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/opencharly/sdk/spec"
+)
 
 // local_image_test.go — P12a: relocated from charly/local_image_test.go.
 
@@ -77,5 +81,76 @@ func TestShortNameMatchesRef(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("shortNameMatchesRef(%q, %q) = %v, want %v", tc.fullRef, tc.short, got, tc.want)
 		}
+	}
+}
+
+// ResolveShellImageRef branch coverage (sdk#68 review round — the helper shipped
+// with none; these five cases FAIL without the function's branch logic).
+// ListLocalImages is stubbed via its package-level var (same pattern as
+// LocalImageExists/DetectGPU testability notes on the var itself).
+func TestResolveShellImageRef_TagEmptyLocalHit(t *testing.T) {
+	orig := ListLocalImages
+	defer func() { ListLocalImages = orig }()
+	ListLocalImages = func(engine string) ([]LocalImageInfo, error) {
+		return []LocalImageInfo{{
+			ID:    "sha256:aa",
+			Names: []string{"localhost/jupyter:2026.190.1200", "localhost/jupyter:2026.191.0800"},
+			Labels: map[string]string{
+				spec.LabelBox:     "jupyter",
+				spec.LabelVersion: "2026.185.0000",
+			},
+		}}, nil
+	}
+	got := ResolveShellImageRef("ghcr.io/opencharly", "jupyter", "")
+	// Local CalVer resolution wins over the registry fallback; newest tag-CalVer picked.
+	if got != "localhost/jupyter:2026.191.0800" {
+		t.Errorf("tag-empty local-hit: got %q, want the newest local CalVer ref", got)
+	}
+}
+
+func TestResolveShellImageRef_TagEmptyLocalMissWithRegistry(t *testing.T) {
+	orig := ListLocalImages
+	defer func() { ListLocalImages = orig }()
+	ListLocalImages = func(engine string) ([]LocalImageInfo, error) { return nil, nil }
+	got := ResolveShellImageRef("ghcr.io/opencharly", "jupyter", "")
+	if got != "ghcr.io/opencharly/jupyter" {
+		t.Errorf("tag-empty local-miss + registry: got %q, want tagless registry/name", got)
+	}
+}
+
+func TestResolveShellImageRef_TagEmptyLocalMissNoRegistry(t *testing.T) {
+	orig := ListLocalImages
+	defer func() { ListLocalImages = orig }()
+	ListLocalImages = func(engine string) ([]LocalImageInfo, error) { return nil, nil }
+	got := ResolveShellImageRef("", "jupyter", "")
+	if got != "jupyter" {
+		t.Errorf("tag-empty local-miss no-registry: got %q, want bare short name", got)
+	}
+}
+
+func TestResolveShellImageRef_TagSetWithRegistry(t *testing.T) {
+	// tag-set paths must NOT consult local storage at all.
+	orig := ListLocalImages
+	defer func() { ListLocalImages = orig }()
+	ListLocalImages = func(engine string) ([]LocalImageInfo, error) {
+		t.Fatal("tag-set branch must not list local images")
+		return nil, nil
+	}
+	got := ResolveShellImageRef("ghcr.io/opencharly", "jupyter", "2026.198.0001")
+	if got != "ghcr.io/opencharly/jupyter:2026.198.0001" {
+		t.Errorf("tag-set + registry: got %q", got)
+	}
+}
+
+func TestResolveShellImageRef_TagSetNoRegistry(t *testing.T) {
+	orig := ListLocalImages
+	defer func() { ListLocalImages = orig }()
+	ListLocalImages = func(engine string) ([]LocalImageInfo, error) {
+		t.Fatal("tag-set branch must not list local images")
+		return nil, nil
+	}
+	got := ResolveShellImageRef("", "jupyter", "2026.198.0001")
+	if got != "jupyter:2026.198.0001" {
+		t.Errorf("tag-set no-registry: got %q", got)
 	}
 }

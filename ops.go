@@ -60,6 +60,19 @@ const (
 
 	OpStatusCollect = "status-collect" // command:status: programmatic status collection → []spec.DeploymentStatus (distinct from lifecycle OpStatus)
 
+	// OpStatusCollectAll is the K6 whole-subsystem status FAN-OUT + deploy-cone ENRICHMENT
+	// selector: verb:status-fanout (candy/plugin-substrate) serves it, taking a
+	// spec.StatusSubstrateRequest and returning a spec.StatusSubstrateReply — the SAME wire
+	// shape the "status-substrate" HostBuild seam already carries. The host's thin forward
+	// (charly/status_substrate_host.go) is pure dispatch (no status business logic); the
+	// plugin owns the fan-out (calling its own per-word OpStatusCollect handlers directly, an
+	// in-package call — no registry needed for that leg), the pod/vm deploy-cone enrichment
+	// (kit.ExtractMetadata/kit.ResolveBoxName/deploykit.QuadletDir/deploykit.
+	// ResolveBoxEngineForDeploy — all sdk-portable), and the sort. Distinct from
+	// OpStatusCollect (the single-word per-substrate collector op the SAME provider ALSO
+	// serves on kind:pod/vm/k8s/local/android).
+	OpStatusCollectAll = "status-collect-all"
+
 	// OpPreresolve is the generalized host-side deploy preresolver (F6): a substrate plugin
 	// declares a preresolve step the host runs BEFORE apply, returning the opaque JSON the host
 	// ships in DeployVenue.Substrate (the wire-backed generalization of the in-core k8s/android

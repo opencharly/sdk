@@ -377,6 +377,35 @@ func ResolveNewestLocalCalVer(engine, short string) (string, error) {
 	return ResolveLocalImageRef(engine, short)
 }
 
+// ResolveShellImageRef builds the full image reference from registry, name, and tag, for a
+// caller about to run an engine command (podman/docker) against it. When tag is empty, it
+// resolves to the newest local CalVer for the given short name via ResolveNewestLocalCalVer —
+// the CalVer-only contract (`/charly-build:build` "Cache Efficiency"). A caller that wants a
+// specific tag passes it; a caller whose `--tag` flag is empty gets the newest CalVer with no
+// extra work. When registry is set AND tag is empty, there's no way to guess a remote CalVer
+// without a registry-list call, so the caller gets `<registry>/<name>` back with no tag suffix —
+// the engine resolves it locally first (matching any single local tag) or errors.
+// (P14: relocated from charly/shell.go's resolveShellImageRef, which now delegates here — R3,
+// single source for every caller: candy/plugin-box's `merge` command plus charly core's own
+// bundle_add/config_image/ensure_image/remote_image/pod_lifecycle_resolve/update_deploy_dispatch.)
+func ResolveShellImageRef(registry, name, tag string) string {
+	if tag == "" {
+		// Try local CalVer resolution. Best-effort: if nothing local matches, fall back to a
+		// tagless ref so the engine's own resolution path can error with its canonical message.
+		if resolved, err := ResolveNewestLocalCalVer("podman", name); err == nil && resolved != "" {
+			return resolved
+		}
+		if registry != "" {
+			return fmt.Sprintf("%s/%s", registry, name)
+		}
+		return name
+	}
+	if registry != "" {
+		return fmt.Sprintf("%s/%s:%s", registry, name, tag)
+	}
+	return fmt.Sprintf("%s:%s", name, tag)
+}
+
 // InspectImageLabels reads a local image's OCI labels via engine inspect (promoted here from
 // charly/labels.go's defaultInspectLabels, K3 reentry-class dissolution — box_labels_cmd.go's
 // ONLY host-exclusive need was this + ResolveRuntime/ResolveLocalImageRef/LocalImageExists, all
