@@ -35,6 +35,15 @@ func NewSpecCandyModel(m spec.CandyModel, v spec.CandyView) CandyModel {
 	return &specCandyAdapter{m: m, v: v, sd: m.SourceDir}
 }
 
+// RawCandy returns the underlying (CandyModel, CandyView) pair this adapter wraps — the escape
+// hatch a caller that needs the RAW wire structs (not the narrower CandyReader method set) can
+// reach via a type assertion (W9: charly core's ResolvedProject.CandyModels/.Candies are typed as
+// raw struct maps, populated directly from the scan pipeline's own (m, v) — since ScanAllCandy's
+// FINAL return is the wrapped spec.CandyReader, this is how the ONE caller that still needs the
+// pre-wrap shape gets it back, without a parallel "raw scan" entry point or widening CandyReader
+// with identity-only fields (Description/Status/Info/Plugin) no OTHER consumer needs).
+func (a *specCandyAdapter) RawCandy() (spec.CandyModel, spec.CandyView) { return a.m, a.v }
+
 // identity / scalars
 func (a *specCandyAdapter) GetName() string      { return a.m.Name }
 func (a *specCandyAdapter) GetSourceDir() string { return a.sd }
@@ -81,6 +90,7 @@ func (a *specCandyAdapter) Service() []ServiceEntry        { return a.m.Service 
 // graph refs (spec.CandyRef is a bare-string alias -> deploykit.CandyRef)
 func (a *specCandyAdapter) GetIncludedCandy() []CandyRef { return specRefsToDk(a.v.IncludedCandy) }
 func (a *specCandyAdapter) GetRequire() []CandyRef       { return specRefsToDk(a.v.Require) }
+func (a *specCandyAdapter) GetBakePlugin() []CandyRef    { return specRefsToDk(a.m.BakePlugin) }
 
 func specRefsToDk(in []spec.CandyRef) []CandyRef {
 	if len(in) == 0 {
@@ -130,6 +140,7 @@ func (a *specCandyAdapter) HasInstallFiles() bool {
 	// bound intermediate detection gates on this narrower predicate).
 	return a.m.HasInstallFiles
 }
+
 // HasInit reports whether this candy triggers the NAMED init system — the per-init-system lookup
 // (W9 finding): CandyView.InitSystems is the host-completed cross-candy map PopulateCandyInitSystem
 // (charly) / its loaderkit port populates once, after every candy in the project is scanned,
@@ -142,6 +153,11 @@ func (a *specCandyAdapter) HasInit(initName string) bool {
 }
 
 func (a *specCandyAdapter) GetExternalBuilder() string { return a.m.ExternalBuilder }
+
+// Identity-view scalars (W9): widely-needed enough for a real interface method — see the
+// CandyReader interface doc.
+func (a *specCandyAdapter) GetStatus() string      { return a.v.Status }
+func (a *specCandyAdapter) GetDescription() string { return a.v.Description }
 
 // GetSubPathPrefix — the parent dir within the repo for a remote candy's COPY-source
 // (RepoPath + SubPathPrefix + ref). Filled on the CandyView by the resolve projector (#67
@@ -189,6 +205,11 @@ func (a *specCandyAdapter) HasMCPProvides() bool             { return len(a.v.MC
 func (a *specCandyAdapter) HasMCPRequires() bool             { return len(a.m.MCPRequire) > 0 }
 func (a *specCandyAdapter) HasSecretAccepts() bool           { return len(a.m.SecretAccept) > 0 }
 func (a *specCandyAdapter) HasSecretRequires() bool          { return len(a.m.SecretRequire) > 0 }
+
+// Plugin declaration (W9): the candy's OWN `plugin:` block, read off the identity/graph view.
+func (a *specCandyAdapter) IsPluginCandy() bool          { return a.v.IsPlugin }
+func (a *specCandyAdapter) GetPluginSource() string      { return a.v.PluginSource }
+func (a *specCandyAdapter) GetPluginProviders() []string { return a.v.PluginProviders }
 
 // LocalPkgFormats returns the sorted list of package formats with a bundled local source
 // (localpkg: map keys) — the envelope carries the same map CollectLocalPkg needs.

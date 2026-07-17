@@ -32,6 +32,11 @@ type CandyReader interface {
 	// implementer; the three already-methods keep their names.
 	GetIncludedCandy() []CandyRefEntry // candy: composition refs (splicing)
 	GetRequire() []CandyRefEntry       // require: deps (ordering + resolution)
+	// GetBakePlugin (W9): bake_plugin: out-of-tree plugin candies baked into composing images
+	// (generate.go emitBakedPlugins). Same bare-string-wrapped-as-CandyRefEntry shape as
+	// GetRequire/GetIncludedCandy above (CandyModel.BakePlugin is the FINAL bare-string wire
+	// form; the adapter re-wraps it so callers keep using .Bare() uniformly).
+	GetBakePlugin() []CandyRefEntry
 	HasContent() bool
 	HasInstallFiles() bool // at least one install file (drives pixi-bound detection)
 	PixiManifest() string
@@ -106,4 +111,20 @@ type CandyReader interface {
 	HasPorts() bool
 	HasSecretAccepts() bool
 	HasSecretRequires() bool
+
+	// W9 pipeline-retype fill: the candy's OWN `plugin:` declaration (registerExternalVerbsFromCandies'
+	// data-read half, findCommandPluginCandy) — the provider REGISTRATION itself stays core-M
+	// (touches the providerRegistry), but recognizing which capability words a scanned candy
+	// declares is a plain data read the interface must expose once *Candy is gone.
+	IsPluginCandy() bool
+	GetPluginSource() string
+	GetPluginProviders() []string
+
+	// W9 pipeline-retype fill: identity-view scalars multiple OCI-label-collector consumers
+	// (render_baked_metadata.go's candyStatus/worst-of-status + info-parts walk) need directly —
+	// widely-needed enough to earn a real interface method, unlike the FULL identity view
+	// (Description/Info/IsPlugin's sibling fields + the FormatSections/TagSections/RunOps maps)
+	// resolved_project_host.go alone needs via the RawCandy() escape hatch.
+	GetStatus() string
+	GetDescription() string
 }
