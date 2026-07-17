@@ -93,6 +93,45 @@
 // available (rides the RPC error, not a reply field).
 #EnsureImageReply: {}
 
+// #DeployOverlayRequest asks the host for the PER-HOST deploy-config overlay (K4:
+// deploykit.LoadDeployConfigForRead — the runtime ledger at ~/.config/charly/charly.yml, NOT the
+// project charly.yml the resolved-project envelope projects; Mode Purity keeps the two apart, same
+// distinction #PodDisposableRequest documents). Unlike #PodDisposableRequest (a single overlay
+// BIT), several pod-lifecycle resolvers need CROSS-DEPLOYMENT visibility (deploykit.BundleConfig's
+// GlobalEnvForImage/OccupiedHostPorts/DeployedContainerNames all read OTHER deploys' entries, not
+// just the caller's own), so a single-field extraction can't serve them — the host returns the
+// WHOLE marshaled *deploykit.BundleConfig and the plugin calls the SAME already-portable
+// deploykit methods locally. Re-fetched on EVERY call (no caching): the ledger can change between
+// invocations (an intervening `charly config`), and PrepareVenue-time data is stale by the time
+// OpStart/OpStop/OpShell run much later — this is NOT threaded through the one-shot
+// LifecyclePrepareInput. Class-generic action noun "deploy-overlay" (F11 — never a substrate
+// word); the SAME need config_image.go's eventual move has (R3 — one seam, not two).
+#DeployOverlayRequest: {
+	context!: string @go(Context) // caller label for host-side diagnostics, e.g. "charly start tunnel"
+}
+
+// #DeployOverlayReply carries the marshaled per-host BundleConfig. config_json is the JSON
+// encoding of *deploykit.BundleConfig (nil-safe: absent/null when no per-host overlay file
+// exists yet, matching LoadDeployConfigForRead's own nil-BundleConfig contract).
+#DeployOverlayReply: {
+	config_json?: bytes @go(ConfigJSON,type=RawBody)
+}
+
+// #ResolveStartDirectRequest asks the host to resolve the DIRECT-mode (non-quadlet) `charly start`
+// plan — a TRANSITIONAL seam (K4 in-flight): the quadlet-mode START inverted to plugin-side
+// self-resolution first (resolveStartQuadlet, resolve.go); direct-mode's resolution (image/
+// metadata/volumes/env/security/ports/network/agent-forwarding/BuildStartArgs — heavier than the
+// quadlet path, RDD-scoped as its own step) still needs the project loader + Config a plugin cannot
+// hold, so it rides this seam UNTIL that resolution ALSO moves plugin-side in the same K4 cutover —
+// exactly the ensure-image precedent (a seam over UNCHANGED host logic, not a permanent placement).
+// Class-generic action noun "resolve-start-direct" (F11 — never a substrate word); reply reuses
+// #PodLifecyclePlan (the existing fully-resolved carrier) rather than inventing a second shape.
+#ResolveStartDirectRequest: {
+	box!:      string        @go(Box)
+	instance?: string        @go(Instance)
+	opts?:     #PodStartOpts @go(Opts)
+}
+
 // #ConfigPersistRequest is the WRITE twin of config-resolve: a command plugin
 // asks the host to persist (or remove) an entity's deploy-ledger entry. The host
 // owns the ledger + its blocking acquireDeployConfigLock (a core Mechanism — the
@@ -353,6 +392,26 @@
 	unmount?:        bool                 @go(Unmount)        // `charly stop --unmount` — enc FUSE teardown
 	enc?:     bytes @go(Enc, type=RawBody) // pre-built spec.EncExecInput (Method ensure@start / unmount@stop)
 	tunnel?:  #TunnelConfig @go(Tunnel,optional=nillable) // resolved tunnel config (nil ⇒ no tunnel) — TunnelStart@start / TunnelStop@stop
+}
+
+// #PodStartOpts carries `charly start`'s direct-mode CLI extras (K4 inversion, quadlet-mode
+// first): the plugin now SELF-RESOLVES the #PodLifecyclePlan (over the deploy-overlay HostBuild
+// seam + the already-portable sdk resolvers) using these opts + the deploy key already on
+// lifecycleParams.Name — replacing the former host-side resolvePodStartPlan. The quadlet path
+// ignores every field (mirrors the pre-inversion contract — CLI extras apply only to direct mode).
+#PodStartOpts: {
+	env?:            [...string] @go(Env)
+	env_file?:       string      @go(EnvFile)
+	port?:           [...string] @go(Port)
+	volume_flag?:    [...string] @go(VolumeFlag)
+	bind?:           [...string] @go(Bind)
+	no_auto_detect?: bool        @go(NoAutoDetect)
+}
+
+// #PodStopOpts carries `charly stop --unmount` (K4 inversion): the plugin self-resolves the STOP
+// #PodLifecyclePlan using this + the deploy key, replacing the former host-side resolvePodStopPlan.
+#PodStopOpts: {
+	unmount?: bool @go(Unmount)
 }
 
 // #PodLiveStdioPlan is the F12 host-resolved LIVE-STDIO carrier — ONE carrier for shell + cmd + logs

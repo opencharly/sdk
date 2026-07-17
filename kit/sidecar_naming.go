@@ -6,9 +6,20 @@ package kit
 // remaining callers (config_image.go, quadlet.go), which now import kit directly (K3 ZERO-ALIASES
 // — no alias file).
 
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
 // PodName returns the container name for a pod's primary container.
 func PodName(boxName string) string {
 	return ContainerName(boxName)
+}
+
+// PodNameInstance returns the container name for a pod's primary container, instance-aware.
+func PodNameInstance(boxName, instance string) string {
+	return ContainerNameInstance(boxName, instance)
 }
 
 // SidecarContainerName returns the container name for a named sidecar.
@@ -19,4 +30,15 @@ func SidecarContainerName(boxName, sidecarName string) string {
 // SidecarContainerNameInstance returns the container name for a named sidecar, instance-aware.
 func SidecarContainerNameInstance(boxName, instance, sidecarName string) string {
 	return ContainerNameInstance(boxName, instance) + "-" + sidecarName
+}
+
+// SidecarConfigDir returns the per-user directory where sidecar companion
+// config files live (e.g. charly-foo-tailscale-serve.json), used by the
+// `charly config remove` sidecar-config sweep.
+func SidecarConfigDir() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("determining config directory: %w", err)
+	}
+	return filepath.Join(configDir, "charly", "sidecar"), nil
 }
