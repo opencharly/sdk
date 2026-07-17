@@ -145,16 +145,10 @@ func TestSecurityArgsMemoryCapsWithPrivileged(t *testing.T) {
 }
 
 // The tests below migrated from charly/security_test.go with the W9 CollectSecurity split:
-// AppendUniqueString/IpcModeBlocksShmSize/the byte-size merge helpers now live in this package
-// exclusively (parseShmBytes/maxShmSize/minCap/minCpus back MergeCandySecurity above).
-
-func TestAppendUniqueString(t *testing.T) {
-	result := AppendUniqueString([]string{"a", "b"}, "b", "c", "a", "d")
-	want := []string{"a", "b", "c", "d"}
-	if !reflect.DeepEqual(result, want) {
-		t.Errorf("AppendUniqueString = %v, want %v", result, want)
-	}
-}
+// IpcModeBlocksShmSize/the byte-size merge helpers now live in this package exclusively
+// (parseShmBytes/maxShmSize/minCap/minCpus back MergeCandySecurity above); the append-unique
+// helper's own test now lives with its implementation in kit/append_unique_test.go (this
+// package aliases it via kit_aliases.go).
 
 // TestIpcModeBlocksShmSize is the helper-level check for the gate.
 // Only "host" should trigger the drop.

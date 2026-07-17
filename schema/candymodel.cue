@@ -116,7 +116,7 @@
 	// candy.cue's own fields+shapes exactly; capability widens the CandyView's narrow
 	// (preserve_user-only) #CandyCapabilitiesView to the full authored #CandyCapability.
 	artifact?: [...#CandyArtifact] @go(Artifact)
-	requires_capability?: [...string] @go(RequiresCapability)
+	requires_capability?: [...(string & !="")] @go(RequiresCapability)
 	capability?: #CandyCapability @go(Capability,optional=nillable)
 	secret?: [...#CandySecret] @go(Secret)
 	// port mirrors candy.cue's own union shape exactly (a plain int OR a "proto:port" string,

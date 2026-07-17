@@ -25,4 +25,12 @@ const (
 	JumpVirshConsole = kit.JumpVirshConsole
 )
 
-var VmSshAlias = kit.VmSshAlias
+var (
+	VmSshAlias = kit.VmSshAlias
+
+	// AppendUnique — deploykit's own security.go merge logic + charly core's
+	// (deploykit-consuming) call sites both use this unqualified/via `deploykit.`
+	// (R3: security.go carried its own byte-identical copy of this helper under a
+	// divergent name before this alias — see CHANGELOG).
+	AppendUnique = kit.AppendUnique
+)

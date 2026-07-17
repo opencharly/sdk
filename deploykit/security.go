@@ -50,11 +50,11 @@ func MergeCandySecurity(candies []CandyModel, override *SecurityConfig) Security
 		if sec.IpcMode != "" {
 			merged.IpcMode = sec.IpcMode
 		}
-		merged.CapAdd = AppendUniqueString(merged.CapAdd, sec.CapAdd...)
-		merged.Devices = AppendUniqueString(merged.Devices, sec.Devices...)
-		merged.SecurityOpt = AppendUniqueString(merged.SecurityOpt, sec.SecurityOpt...)
-		merged.GroupAdd = AppendUniqueString(merged.GroupAdd, sec.GroupAdd...)
-		merged.Mounts = AppendUniqueString(merged.Mounts, sec.Mounts...)
+		merged.CapAdd = AppendUnique(merged.CapAdd, sec.CapAdd...)
+		merged.Devices = AppendUnique(merged.Devices, sec.Devices...)
+		merged.SecurityOpt = AppendUnique(merged.SecurityOpt, sec.SecurityOpt...)
+		merged.GroupAdd = AppendUnique(merged.GroupAdd, sec.GroupAdd...)
+		merged.Mounts = AppendUnique(merged.Mounts, sec.Mounts...)
 		if sec.ShmSize != "" {
 			merged.ShmSize = maxShmSize(merged.ShmSize, sec.ShmSize)
 		}
@@ -82,22 +82,22 @@ func MergeCandySecurity(candies []CandyModel, override *SecurityConfig) Security
 		merged.IpcMode = override.IpcMode
 	}
 	if len(override.CapAdd) > 0 {
-		merged.CapAdd = AppendUniqueString(merged.CapAdd, override.CapAdd...)
+		merged.CapAdd = AppendUnique(merged.CapAdd, override.CapAdd...)
 	}
 	if len(override.Devices) > 0 {
-		merged.Devices = AppendUniqueString(merged.Devices, override.Devices...)
+		merged.Devices = AppendUnique(merged.Devices, override.Devices...)
 	}
 	if len(override.SecurityOpt) > 0 {
-		merged.SecurityOpt = AppendUniqueString(merged.SecurityOpt, override.SecurityOpt...)
+		merged.SecurityOpt = AppendUnique(merged.SecurityOpt, override.SecurityOpt...)
 	}
 	if override.ShmSize != "" {
 		merged.ShmSize = override.ShmSize
 	}
 	if len(override.GroupAdd) > 0 {
-		merged.GroupAdd = AppendUniqueString(merged.GroupAdd, override.GroupAdd...)
+		merged.GroupAdd = AppendUnique(merged.GroupAdd, override.GroupAdd...)
 	}
 	if len(override.Mounts) > 0 {
-		merged.Mounts = AppendUniqueString(merged.Mounts, override.Mounts...)
+		merged.Mounts = AppendUnique(merged.Mounts, override.Mounts...)
 	}
 	if override.MemoryMax != "" {
 		merged.MemoryMax = override.MemoryMax
@@ -112,21 +112,6 @@ func MergeCandySecurity(candies []CandyModel, override *SecurityConfig) Security
 		merged.Cpus = override.Cpus
 	}
 	return merged
-}
-
-// AppendUniqueString appends items to a slice, skipping duplicates.
-func AppendUniqueString(dst []string, items ...string) []string {
-	seen := make(map[string]bool, len(dst))
-	for _, v := range dst {
-		seen[v] = true
-	}
-	for _, v := range items {
-		if !seen[v] {
-			dst = append(dst, v)
-			seen[v] = true
-		}
-	}
-	return dst
 }
 
 // parseShmBytes parses a size string like "256m", "1g", "1024" into bytes.
