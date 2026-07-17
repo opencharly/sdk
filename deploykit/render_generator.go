@@ -41,7 +41,7 @@ type Generator struct {
 
 	// DevLocalPkg makes localpkg candies (the charly toolchain) build from LOCAL
 	// in-development source instead of the published release — set ONLY for
-	// disposable check-bed image builds. See renderLocalPkgImageInstall.
+	// disposable check-bed image builds. See RenderLocalPkgImageInstall (localpkg.go).
 	DevLocalPkg bool
 
 	// externalBuilderReplies caches each candy's external-builder OpResolve reply
@@ -103,9 +103,10 @@ type Generator struct {
 
 	// RenderLocalPkgImageInstall renders a candy's localpkg OS-package install for
 	// the image build. The PRODUCTION path is pure render (a curl+install RUN); the
-	// DevLocalPkg path builds the in-development package on the HOST (makepkg). Wraps
-	// core renderLocalPkgImageInstall (host-coupled dev leg stays core). Used by
-	// WriteCandySteps.
+	// DevLocalPkg path builds the in-development package on the HOST (makepkg). This
+	// is a PURE sdk/deploykit function now (W3, deploykit.RenderLocalPkgImageInstall
+	// in localpkg.go) — NOT a host-coupled seam like its siblings above; the bare
+	// constructor wires it directly (no core closure needed). Used by WriteCandySteps.
 	RenderLocalPkgImageInstall func(step *LocalPkgInstallStep, devLocalPkg bool, imageDir, boxName string) (string, error)
 
 	// ResolveInlineBuilder connects + OpResolves an externalized INLINE builder and
