@@ -5,75 +5,42 @@ import (
 )
 
 // render_seam.go — the per-method param/result structs for the HostBuild("render-seam")
-// dispatch (#67 render-DRIVE move). plugin-build wires each deploykit.Generator seam that
-// needs a host callback (RenderService, the builder resolves, ValidateEgress, EmitPluginOp,
-// localpkg, header-copy, ensure-builders) to HostBuild("render-seam", RenderSeamRequest{Method,
-// Params}) where Params is ONE of the structs below marshalled to JSON. The host
-// (host_build_render_seam.go) unmarshals Params by Method, calls the corresponding CORE
-// function (byte-parity by construction — the EXACT funcs the core toDeploykit closures call),
-// and returns RenderSeamReply{Result, Error} where Result is the marshalled result struct.
+// dispatch (#67 render-DRIVE move). plugin-build wires each deploykit.Generator seam that STILL
+// needs a host callback (EmitPluginOp, localpkg, inline-builder, ensure-builders) to
+// HostBuild("render-seam", RenderSeamRequest{Method, Params}) where Params is ONE of the structs
+// below marshalled to JSON. The host (host_build_render_seam.go) unmarshals Params by Method,
+// calls the corresponding CORE function (byte-parity by construction — the EXACT funcs the core
+// toDeploykit closures call), and returns RenderSeamReply{Result, Error} where Result is the
+// marshalled result struct.
+//
+// K3 render-seam production move: RenderService, the two detection/external builder resolves,
+// ValidateEgress, and RewriteHeaderCopy were PURE providerRegistry.resolve+Invoke dispatch (or,
+// for RewriteHeaderCopy, pure data + host-fs I/O over data the CandyModel envelope already
+// carries) — proven to need no host callback at all (RDD-spiked live on the external-builder
+// leg) — so candy/plugin-build now calls them directly (render_generator_from_project.go) and
+// their render-seam methods + param/result structs are GONE. The four REMAINING host-coupled
+// seams below have a genuine host-only dependency: EnsureBuilders/InlineBuilder need the live
+// loader's scan+connect machinery (rides K1, #40); EmitPluginOp needs a Go-level type-assertion
+// (ProvisionActor/BuildEmitter) against a BUILTIN provider's concrete type, which only charly
+// core holds (a builtin provider's generic Invoke() is an intentional error-stub — the perf
+// invariant that lets a builtin skip the wire envelope, sdk/deploykit "InvokeProvider" doc).
 //
 // These structs live in deploykit (shared by charly core + candy/plugin-build, both of which
 // import deploykit) and may reference spec types (BuilderDef = spec.Builder, BuildStageContext,
-// ServiceEntry, ResolvedInit, ServiceRenderContext, Op — all CUE-sourced, json-tagged). They
-// ride INSIDE the opaque RenderSeamRequest.Params bytes (a deploykit-internal dispatch detail,
-// NOT a boundary-validated wire contract — the CUE wire type is RenderSeamRequest itself), so
-// they are plain Go structs, not CUE-sourced. The one non-spec rich input — LocalPkgInstallStep
-// (no json tags) — is NOT carried: the local-pkg method carries scalars + the host rebuilds the
-// step via the SAME CompileLocalPkgStep the deploykit render used (byte-exact).
+// Op — all CUE-sourced, json-tagged). They ride INSIDE the opaque RenderSeamRequest.Params bytes
+// (a deploykit-internal dispatch detail, NOT a boundary-validated wire contract — the CUE wire
+// type is RenderSeamRequest itself), so they are plain Go structs, not CUE-sourced. The one
+// non-spec rich input — LocalPkgInstallStep (no json tags) — is NOT carried: the local-pkg
+// method carries scalars + the host rebuilds the step via the SAME CompileLocalPkgStep the
+// deploykit render used (byte-exact).
 
 // RenderSeam method discriminators (the RenderSeamRequest.Method values).
 const (
-	RenderSeamRenderService     = "render-service"
-	RenderSeamDetectionBuilder  = "detection-builder"
-	RenderSeamExternalBuilder   = "external-builder"
-	RenderSeamInlineBuilder     = "inline-builder"
-	RenderSeamLocalPkg          = "local-pkg"
-	RenderSeamRewriteHeaderCopy = "rewrite-header-copy"
-	RenderSeamEnsureBuilders    = "ensure-builders"
-	RenderSeamEmitPluginOp      = "emit-plugin-op"
-	RenderSeamValidateEgress    = "validate-egress"
+	RenderSeamInlineBuilder  = "inline-builder"
+	RenderSeamLocalPkg       = "local-pkg"
+	RenderSeamEnsureBuilders = "ensure-builders"
+	RenderSeamEmitPluginOp   = "emit-plugin-op"
 )
-
-// RenderServiceParams carries the inputs to core RenderService.
-type RenderServiceParams struct {
-	Dir     string                    `json:"dir"`
-	BoxName string                    `json:"box_name"`
-	Entry   *spec.ServiceEntry        `json:"entry"`
-	Def     *spec.ResolvedInit        `json:"def"`
-	Ctx     spec.ServiceRenderContext `json:"ctx"`
-}
-
-// RenderServiceResult carries the RenderedService.
-type RenderServiceResult struct {
-	Rendered *spec.RenderedService `json:"rendered"`
-}
-
-// DetectionBuilderParams carries the inputs to core resolveDetectionBuilderStageSeam.
-type DetectionBuilderParams struct {
-	Dir         string                   `json:"dir"`
-	BoxName     string                   `json:"box_name"`
-	BuilderName string                   `json:"builder_name"`
-	In          spec.BuilderResolveInput `json:"in"`
-}
-
-// DetectionBuilderResult carries the BuilderResolveReply.
-type DetectionBuilderResult struct {
-	Reply spec.BuilderResolveReply `json:"reply"`
-}
-
-// ExternalBuilderParams carries the inputs to core resolveExternalBuilderStageSeam.
-type ExternalBuilderParams struct {
-	Dir       string `json:"dir"`
-	BoxName   string `json:"box_name"`
-	Word      string `json:"word"`
-	CandyName string `json:"candy_name"`
-}
-
-// ExternalBuilderResult carries the BuilderResolveReply.
-type ExternalBuilderResult struct {
-	Reply spec.BuilderResolveReply `json:"reply"`
-}
 
 // InlineBuilderParams carries the inputs to core resolveInlineBuilderSeam. BDef is spec.Builder
 // (BuilderDef = spec.Builder); Ctx is spec.BuildStageContext — both CUE-sourced, json-tagged.
@@ -108,18 +75,6 @@ type LocalPkgResult struct {
 	Fragment string `json:"fragment"`
 }
 
-// RewriteHeaderCopyParams carries the header-copy string to core rewriteHeaderCopyForRemote.
-type RewriteHeaderCopyParams struct {
-	Dir        string `json:"dir"`
-	BoxName    string `json:"box_name"`
-	HeaderCopy string `json:"header_copy"`
-}
-
-// RewriteHeaderCopyResult carries the rewritten header copy.
-type RewriteHeaderCopyResult struct {
-	HeaderCopy string `json:"header_copy"`
-}
-
 // EnsureBuildersParams carries the builder words to core ensureBuildersConnected.
 type EnsureBuildersParams struct {
 	Dir   string   `json:"dir"`
@@ -139,15 +94,4 @@ type EmitPluginOpParams struct {
 type EmitPluginOpResult struct {
 	Out      string `json:"out"`
 	IsScript bool   `json:"is_script"`
-}
-
-// ValidateEgressParams carries the inputs to core egressValidate (the unexported core dispatcher
-// behind ValidateEgress/validateTextEgress/ValidateXMLEgress). Mode is "bytes" (YAML/JSON, e.g.
-// traefik routes), "text" (rendered_text — the Containerfile + service units), or "xml". The host
-// calls egressValidate(Kind, Label, Mode, string(Data)) — one path for every egress call site.
-type ValidateEgressParams struct {
-	Kind  string `json:"kind"`
-	Mode  string `json:"mode"`
-	Label string `json:"label"`
-	Data  []byte `json:"data"`
 }

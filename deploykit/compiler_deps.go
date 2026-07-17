@@ -6,6 +6,7 @@ package deploykit
 import (
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
 )
 
@@ -29,19 +30,10 @@ type BuilderPreresolved struct {
 // ShellAllowlist enumerates valid per-shell sub-block keys inside `shell:`.
 var ShellAllowlist = map[string]bool{"bash": true, "zsh": true, "fish": true, "sh": true}
 
-// ExecContext + Ctx consts — the op-context classification enum, moved from charly with
-// the compiler.
-type ExecContext string
-
-const (
-	CtxBuild   ExecContext = "build"
-	CtxDeploy  ExecContext = "deploy"
-	CtxRuntime ExecContext = "runtime"
-)
-
 // OpInContext reports whether an op runs in the given exec context. Its fallback
 // consults the kernel VerbCatalog (charly), so charly injects the impl at init.
-var OpInContext func(op *Op, ctx ExecContext) bool
+// ExecContext (+ Ctx consts) is spec.ExecContext — a plain shared vocabulary type (K3, #39).
+var OpInContext func(op *Op, ctx spec.ExecContext) bool
 
 // BuilderCtxKey keys the per-(candy,builder) pre-resolved builder context.
 func BuilderCtxKey(candy, builder string) string { return candy + "\x00" + builder }
