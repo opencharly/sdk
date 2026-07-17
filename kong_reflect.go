@@ -55,7 +55,9 @@ func KongSubcommands(v any) []CLISubcommand {
 // (strings.ToLower(dashedString(s)), kong.go + build.go in github.com/alecthomas/kong) so a field
 // with no explicit `name:` tag gets the IDENTICAL name Kong would assign it — never an
 // independently-invented convention that could drift from what actually dispatches.
-func kongDefaultFieldName(s string) string { return strings.ToLower(strings.Join(kongCamelCase(s), "-")) }
+func kongDefaultFieldName(s string) string {
+	return strings.ToLower(strings.Join(kongCamelCase(s), "-"))
+}
 
 // kongCamelCase is a straight reimplementation of Kong's vendored camelCase splitter (itself
 // github.com/fatih/camelcase, MIT) — Kong's unexported function cannot be imported directly, and
