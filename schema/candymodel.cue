@@ -89,6 +89,11 @@
 	volumes?: [...#CandyVolume] @go(Volumes)
 	aliases?: [...#CandyAlias] @go(Aliases)
 
+	// --- security / hooks (the OCI-label-collector surface: CollectSecurity/CollectHooks
+	// read this per-candy field then apply the box-level #ResolvedBoxView.security override) ---
+	security?: #Security  @go(Security,optional=nillable)
+	hook?:     #CandyHook @go(Hook,optional=nillable)
+
 	// --- validate read-surface (candy-local config the validate ENGINE checks) ---
 	// external_builder: the reserved word of an EXTERNAL builder plugin this candy selects
 	// (from the candy manifest external_builder:). validateCandyContents reads it to accept a
@@ -104,4 +109,22 @@
 	secret_accept?: [...#EnvDependency] @go(SecretAccept)
 	mcp_require?: [...#EnvDependency] @go(MCPRequire)
 	mcp_accept?: [...#EnvDependency] @go(MCPAccept)
+
+	// --- W9 mass-edit interface-completeness fill: the remaining fields the 42-file
+	// CandyReader repoint needs, already authored on #Candy (candy.cue) but not yet
+	// projected onto the build model. artifact/requires_capability/secret/port mirror
+	// candy.cue's own fields+shapes exactly; capability widens the CandyView's narrow
+	// (preserve_user-only) #CandyCapabilitiesView to the full authored #CandyCapability.
+	artifact?: [...#CandyArtifact] @go(Artifact)
+	requires_capability?: [...(string & !="")] @go(RequiresCapability)
+	capability?: #CandyCapability @go(Capability,optional=nillable)
+	secret?: [...#CandySecret] @go(Secret)
+	// port mirrors candy.cue's own union shape exactly (a plain int OR a "proto:port" string,
+	// normalized Go-side to PortSpec — there is no reusable #PortSpec def, per candy.cue's own note).
+	port?: [...(int & >0 & <=65535 | string & =~"^[a-z+-]+:[0-9]+$")] @go(Port,type=[]PortSpec)
+	// bake_plugin: the FINAL bare-string form (post remote-sibling qualification — see
+	// spec.CandyRefs, the hand-written pipeline-state type carrying the rich pre-qualification
+	// form). generate.go's emitBakedPlugins reads this to COPY the plugin's pre-built provider
+	// binary into every composing image.
+	bake_plugin?: [...#CandyRef] @go(BakePlugin)
 }

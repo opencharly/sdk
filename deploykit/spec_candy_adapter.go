@@ -15,6 +15,8 @@ package deploykit
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 
 	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
@@ -32,6 +34,15 @@ type specCandyAdapter struct {
 func NewSpecCandyModel(m spec.CandyModel, v spec.CandyView) CandyModel {
 	return &specCandyAdapter{m: m, v: v, sd: m.SourceDir}
 }
+
+// RawCandy returns the underlying (CandyModel, CandyView) pair this adapter wraps — the escape
+// hatch a caller that needs the RAW wire structs (not the narrower CandyReader method set) can
+// reach via a type assertion (W9: charly core's ResolvedProject.CandyModels/.Candies are typed as
+// raw struct maps, populated directly from the scan pipeline's own (m, v) — since ScanAllCandy's
+// FINAL return is the wrapped spec.CandyReader, this is how the ONE caller that still needs the
+// pre-wrap shape gets it back, without a parallel "raw scan" entry point or widening CandyReader
+// with identity-only fields (Description/Status/Info/Plugin) no OTHER consumer needs).
+func (a *specCandyAdapter) RawCandy() (spec.CandyModel, spec.CandyView) { return a.m, a.v }
 
 // identity / scalars
 func (a *specCandyAdapter) GetName() string      { return a.m.Name }
@@ -79,6 +90,7 @@ func (a *specCandyAdapter) Service() []ServiceEntry        { return a.m.Service 
 // graph refs (spec.CandyRef is a bare-string alias -> deploykit.CandyRef)
 func (a *specCandyAdapter) GetIncludedCandy() []CandyRef { return specRefsToDk(a.v.IncludedCandy) }
 func (a *specCandyAdapter) GetRequire() []CandyRef       { return specRefsToDk(a.v.Require) }
+func (a *specCandyAdapter) GetBakePlugin() []CandyRef    { return specRefsToDk(a.m.BakePlugin) }
 
 func specRefsToDk(in []spec.CandyRef) []CandyRef {
 	if len(in) == 0 {
@@ -128,16 +140,113 @@ func (a *specCandyAdapter) HasInstallFiles() bool {
 	// bound intermediate detection gates on this narrower predicate).
 	return a.m.HasInstallFiles
 }
-func (a *specCandyAdapter) HasInit(string) bool {
-	return len(a.m.ServiceFiles) > 0 || len(a.m.Service) > 0
+
+// HasInit reports whether this candy triggers the NAMED init system — the per-init-system lookup
+// (W9 finding): CandyView.InitSystems is the host-completed cross-candy map PopulateCandyInitSystem
+// (charly) / its loaderkit port populates once, after every candy in the project is scanned,
+// mirroring the live *Candy.HasInit(initName) exactly. Previously approximated via ServiceFiles/
+// Service non-empty (ignoring initName entirely) because the envelope carried no per-init field —
+// that approximation silently mismatched the live *Candy for any consumer asking about a SPECIFIC
+// init system (e.g. this package's own EmitInitFragmentStages).
+func (a *specCandyAdapter) HasInit(initName string) bool {
+	return a.v.InitSystems[initName]
 }
 
 func (a *specCandyAdapter) GetExternalBuilder() string { return a.m.ExternalBuilder }
+
+// Identity-view scalars (W9): widely-needed enough for a real interface method — see the
+// CandyReader interface doc.
+func (a *specCandyAdapter) GetStatus() string      { return a.v.Status }
+func (a *specCandyAdapter) GetDescription() string { return a.v.Description }
 
 // GetSubPathPrefix — the parent dir within the repo for a remote candy's COPY-source
 // (RepoPath + SubPathPrefix + ref). Filled on the CandyView by the resolve projector (#67
 // build-render move); the build-mode render (candyCopySource) reads it to reproduce remote
 // COPY sources WITHOUT the live *Candy. (Was stubbed "" while build-mode was host-only.)
 func (a *specCandyAdapter) GetSubPathPrefix() string { return a.v.SubPathPrefix }
+
+// OCI-label-collector surface (CollectSecurity/CollectHooks/layer_secrets): direct
+// field reads over the build model, same snapshot-safe shape as every other
+// CandyModel field above.
+func (a *specCandyAdapter) Security() *SecurityConfig      { return a.m.Security }
+func (a *specCandyAdapter) Hooks() *HooksConfig            { return a.m.Hook }
+func (a *specCandyAdapter) EnvRequire() []EnvDependency    { return a.m.EnvRequire }
+func (a *specCandyAdapter) EnvAccept() []EnvDependency     { return a.m.EnvAccept }
+func (a *specCandyAdapter) SecretRequire() []EnvDependency { return a.m.SecretRequire }
+func (a *specCandyAdapter) SecretAccept() []EnvDependency  { return a.m.SecretAccept }
+func (a *specCandyAdapter) MCPRequire() []EnvDependency    { return a.m.MCPRequire }
+func (a *specCandyAdapter) MCPAccept() []EnvDependency     { return a.m.MCPAccept }
+
+// W9 mass-edit interface-completeness fill: the 42-file repoint's remaining accessors.
+// Alias/Volume/EnvProvides/MCPProvide read off CandyView (the identity/graph half — these
+// carry the LIST-subcommand detail, not the build model); Artifact/Capabilities/
+// RequiresCapabilities/Engine/Libvirt/Secret/PortSpecs read off CandyModel (the build half,
+// widened with the same 5 fields added to #CandyModel alongside this fill).
+func (a *specCandyAdapter) Alias() []AliasYAML               { return a.v.Aliases }
+func (a *specCandyAdapter) HasAliases() bool                 { return len(a.v.Aliases) > 0 }
+func (a *specCandyAdapter) Volume() []VolumeYAML             { return a.v.Volumes }
+func (a *specCandyAdapter) HasVolumes() bool                 { return len(a.v.Volumes) > 0 }
+func (a *specCandyAdapter) EnvProvides() map[string]string   { return a.v.EnvProvides }
+func (a *specCandyAdapter) MCPProvide() []MCPServerYAML      { return a.v.MCPProvide }
+func (a *specCandyAdapter) Artifact() []CandyArtifact        { return a.m.Artifact }
+func (a *specCandyAdapter) Capabilities() *CandyCapabilities { return a.m.Capability }
+func (a *specCandyAdapter) RequiresCapabilities() []string   { return a.m.RequiresCapability }
+func (a *specCandyAdapter) Engine() string                   { return a.m.Engine }
+func (a *specCandyAdapter) Libvirt() []string                { return a.m.Libvirt }
+func (a *specCandyAdapter) HasLibvirt() bool                 { return len(a.m.Libvirt) > 0 }
+func (a *specCandyAdapter) Secret() []SecretYAML             { return a.m.Secret }
+func (a *specCandyAdapter) PortSpecs() []PortSpec            { return a.m.Port }
+func (a *specCandyAdapter) HasPorts() bool                   { return len(a.m.Port) > 0 }
+func (a *specCandyAdapter) HasEnvAccepts() bool              { return len(a.m.EnvAccept) > 0 }
+func (a *specCandyAdapter) HasEnvProvides() bool             { return len(a.v.EnvProvides) > 0 }
+func (a *specCandyAdapter) HasEnvRequires() bool             { return len(a.m.EnvRequire) > 0 }
+func (a *specCandyAdapter) HasMCPAccepts() bool              { return len(a.m.MCPAccept) > 0 }
+func (a *specCandyAdapter) HasMCPProvides() bool             { return len(a.v.MCPProvide) > 0 }
+func (a *specCandyAdapter) HasMCPRequires() bool             { return len(a.m.MCPRequire) > 0 }
+func (a *specCandyAdapter) HasSecretAccepts() bool           { return len(a.m.SecretAccept) > 0 }
+func (a *specCandyAdapter) HasSecretRequires() bool          { return len(a.m.SecretRequire) > 0 }
+
+// Plugin declaration (W9): the candy's OWN `plugin:` block, read off the identity/graph view.
+func (a *specCandyAdapter) IsPluginCandy() bool          { return a.v.IsPlugin }
+func (a *specCandyAdapter) GetPluginSource() string      { return a.v.PluginSource }
+func (a *specCandyAdapter) GetPluginProviders() []string { return a.v.PluginProviders }
+
+// LocalPkgFormats returns the sorted list of package formats with a bundled local source
+// (localpkg: map keys) — the envelope carries the same map CollectLocalPkg needs.
+func (a *specCandyAdapter) LocalPkgFormats() []string {
+	if len(a.m.LocalPkg) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(a.m.LocalPkg))
+	for f := range a.m.LocalPkg {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Port returns the OCI/publish-oriented port list — bare "8080", or "47998/udp" ONLY when
+// Protocol=="udp" — the pre-normalization sibling of PortSpecs(), re-derived from it since the
+// envelope carries only the normalized PortSpec form. Every OTHER protocol value (tcp,
+// https+insecure, …) is a routing/scheme hint for a DIFFERENT consumer (route generation reads
+// PortSpecs() directly) and publishes as a bare port — matching the pre-move *Candy.Port()
+// semantics (populateCandyFromYAML: udp gets the "/udp" suffix, everything else stays bare) that
+// CollectBoxPorts' kit.StripPortSuffix parsing depends on. Error return kept for interface/API-
+// stability parity with the charly *Candy.Port() signature (never non-nil here — the envelope has
+// no I/O to fail on).
+func (a *specCandyAdapter) Port() ([]string, error) {
+	if len(a.m.Port) == 0 {
+		return nil, nil
+	}
+	out := make([]string, len(a.m.Port))
+	for i, p := range a.m.Port {
+		if p.Protocol == "udp" {
+			out[i] = strconv.Itoa(p.Port) + "/udp"
+		} else {
+			out[i] = strconv.Itoa(p.Port)
+		}
+	}
+	return out, nil
+}
 
 var _ CandyModel = (*specCandyAdapter)(nil)
