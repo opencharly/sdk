@@ -3764,25 +3764,27 @@ type DeploymentStatus struct {
 
 // #StatusSubstrateRequest — the host-collection request the command:status plugin sends over
 // HostBuild("status-substrate"). single=true selects the pod-scoped detail path (box+instance);
-// otherwise the full multi-substrate fan-out (include_all mirrors --all, nested mirrors --nested).
+// otherwise the full multi-substrate fan-out (include_all mirrors --all). The declared nested tree
+// (formerly resolved here via `nested`) is now resolved PLUGIN-SIDE (candy/plugin-status's own
+// buildStatusRootsTree, K5) directly off the resolved-project envelope + deploykit.LoadBundleConfig
+// — no host round-trip, so this request carries no nested flag anymore.
 type StatusSubstrateRequest struct {
 	Single bool `yaml:"single,omitempty" json:"single,omitempty"`
 
 	IncludeAll bool `yaml:"include_all,omitempty" json:"include_all,omitempty"`
-
-	Nested bool `yaml:"nested,omitempty" json:"nested,omitempty"`
 
 	Box string `yaml:"box,omitempty" json:"box,omitempty"`
 
 	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
 }
 
-// #StatusNestedNode — one pre-resolved node of the DECLARED nested tree. The host resolves
-// everything the candy's PURE overlay needs (kind via classifyTarget, the flat-row match keys via
-// [dotted-path, NestedContainerName(dotted-path)], and — when nested was requested — the live
-// probe result), so the candy folds WITHOUT any core type / ResolveDeployChain / classifyTarget.
-// key is the declared child key (the Image cell). match_keys index the flat rows; for a ROOT node
-// key itself is the flat match. RECURSIVE self-reference mirrors the deploy tree nesting.
+// #StatusNestedNode — one pre-resolved node of the DECLARED nested tree, now built PLUGIN-SIDE
+// (candy/plugin-status/nested_tree.go, K5) directly from the resolved-project envelope +
+// deploykit.LoadBundleConfig/MergeDeployConfigs/ClassifyTarget/ResolveDeployChain — all sdk-portable,
+// so this is no longer a host-computed wire payload; it stays a CUE def only because
+// #StatusNestedNode is self-recursive and the plugin still needs the generated Go type. key is the
+// declared child key (the Image cell). match_keys index the flat rows; for a ROOT node key itself is
+// the flat match. RECURSIVE self-reference mirrors the deploy tree nesting.
 type StatusNestedNode struct {
 	Key string `yaml:"key,omitempty" json:"key"`
 
@@ -3800,12 +3802,11 @@ type StatusNestedNode struct {
 }
 
 // #StatusSubstrateReply — the host-collection result: the flat rows (all substrates, already
-// probed), the pre-resolved declared roots (only roots with children matter), and — on the single
-// path — the one detail row. The candy applies the PURE overlay(rows, roots) then renders.
+// probed) and — on the single path — the one detail row. The declared nested roots are no longer
+// carried here (K5: resolved plugin-side, see #StatusNestedNode) — the candy computes its own roots
+// and applies the PURE overlay(rows, roots) then renders.
 type StatusSubstrateReply struct {
 	Rows []DeploymentStatus `yaml:"rows,omitempty" json:"rows,omitempty"`
-
-	Roots []StatusNestedNode `yaml:"roots,omitempty" json:"roots,omitempty"`
 
 	Single DeploymentStatus `yaml:"single,omitempty" json:"single,omitempty"`
 }
