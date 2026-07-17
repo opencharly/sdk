@@ -17,16 +17,16 @@ import (
 const HostVar = "HOST"
 
 // StepDoMode maps the step keyword to the act/assert/instruct dispatch enum.
-func StepDoMode(s *spec.Step) DoMode {
+func StepDoMode(s *spec.Step) spec.DoMode {
 	switch {
 	case s.Run != "":
-		return DoAct
+		return spec.DoAct
 	case s.Check != "":
-		return DoAssert
+		return spec.DoAssert
 	case s.AgentRun != "", s.AgentCheck != "":
-		return DoInstruct
+		return spec.DoInstruct
 	}
-	return DoAssert
+	return spec.DoAssert
 }
 
 // StepID returns the stable identifier used for plan-overlay merge lookups, depends_on

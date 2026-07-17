@@ -377,6 +377,31 @@ func ResolveNewestLocalCalVer(engine, short string) (string, error) {
 	return ResolveLocalImageRef(engine, short)
 }
 
+// InspectImageLabels reads a local image's OCI labels via engine inspect (promoted here from
+// charly/labels.go's defaultInspectLabels, K3 reentry-class dissolution — box_labels_cmd.go's
+// ONLY host-exclusive need was this + ResolveRuntime/ResolveLocalImageRef/LocalImageExists, all
+// already kit-owned, so candy/plugin-box's `labels` command now calls this directly and the
+// `__box-labels` reentry is gone). Pure container-storage probe: no charly-core coupling.
+func InspectImageLabels(engine, imageRef string) (map[string]string, error) {
+	binary := EngineBinary(engine)
+	cmd := exec.Command(binary, "inspect", "--format", "{{json .Config.Labels}}", imageRef)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("inspecting %s: %w", imageRef, err)
+	}
+
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "null" || trimmed == "" {
+		return nil, nil
+	}
+
+	var labels map[string]string
+	if err := json.Unmarshal([]byte(trimmed), &labels); err != nil {
+		return nil, fmt.Errorf("parsing labels from %s: %w", imageRef, err)
+	}
+	return labels, nil
+}
+
 // shortNameMatchesRef reports whether a short name like "jupyter" matches a
 // full ref like "ghcr.io/opencharly/jupyter:latest" by comparing the trailing
 // repo component (after the last "/", before the tag).
