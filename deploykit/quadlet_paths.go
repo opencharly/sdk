@@ -1,0 +1,77 @@
+package deploykit
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/opencharly/sdk/kit"
+)
+
+// quadlet_paths.go — the on-disk quadlet/systemd PATH + filename helpers (K4 lane B: relocated
+// from charly/quadlet.go — genuinely pure host-filesystem-path mechanisms, no project-loader
+// dependency). Distinct from this package's OWN quadlet.go (the config-WRITE MECHANISM —
+// GenerateQuadlet + its emitters). Shared between charly core (quadlet.go/start.go/
+// status_collector.go/preempt.go/config_image.go — group 3 + generic, not moving yet) and
+// candy/plugin-deploy-pod (pod_lifecycle_resolve.go's quadlet-mode move) via the
+// deploykit_pod_aliases.go passthrough.
+
+// QuadletDir returns the user-level quadlet directory.
+func QuadletDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("determining home directory: %w", err)
+	}
+	return filepath.Join(home, ".config", "containers", "systemd"), nil
+}
+
+// SystemdUserDir returns the user-level systemd unit directory (~/.config/systemd/user/).
+func SystemdUserDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("determining home directory: %w", err)
+	}
+	return filepath.Join(home, ".config", "systemd", "user"), nil
+}
+
+// QuadletFilename returns the quadlet filename for an image.
+func QuadletFilename(boxName string) string {
+	return kit.ContainerName(boxName) + ".container"
+}
+
+// QuadletFilenameInstance returns the quadlet filename for an image with optional instance.
+func QuadletFilenameInstance(boxName, instance string) string {
+	return kit.ContainerNameInstance(boxName, instance) + ".container"
+}
+
+// ServiceName returns the systemd service name for an image.
+func ServiceName(boxName string) string {
+	return kit.ContainerName(boxName) + ".service"
+}
+
+// ServiceNameInstance returns the systemd service name for an image with optional instance.
+func ServiceNameInstance(boxName, instance string) string {
+	return kit.ContainerNameInstance(boxName, instance) + ".service"
+}
+
+// QuadletExists checks whether a .container file exists for the given image.
+func QuadletExists(boxName string) (bool, error) {
+	return QuadletExistsInstance(boxName, "")
+}
+
+// QuadletExistsInstance checks whether a .container file exists for the given image/instance.
+func QuadletExistsInstance(boxName, instance string) (bool, error) {
+	qdir, err := QuadletDir()
+	if err != nil {
+		return false, err
+	}
+	qpath := filepath.Join(qdir, QuadletFilenameInstance(boxName, instance))
+	_, err = os.Stat(qpath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
