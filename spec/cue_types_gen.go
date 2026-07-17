@@ -2954,6 +2954,66 @@ type PodDisposableReply struct {
 	Disposable bool `yaml:"disposable,omitempty" json:"disposable,omitempty"`
 }
 
+// #EnsureImageRequest asks the host to ensure an image is present locally — pulling a remote ref
+// or building it locally as needed (K4: EnsureImagePresent, unchanged core logic — resolving a
+// remote ref, pulling, or falling back to a local `charly box build`, all of which need the
+// project loader / Config / the provider registry a plugin cannot hold). The two portable tiers
+// (LocalImageExists / TransferImage) run plugin-side BEFORE this seam is reached; this covers only
+// the "not present on either engine" cold-start fallback. Class-generic action noun "ensure-image"
+// (F11 — never a substrate word); shared by every deploy substrate that resolves a runtime image
+// (pod, vm's builder-image path), not pod-exclusive.
+type EnsureImageRequest struct {
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
+
+	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine"`
+}
+
+// #EnsureImageReply is empty on success — a non-nil host error means the image could not be made
+// available (rides the RPC error, not a reply field).
+type EnsureImageReply struct {
+}
+
+// #DeployOverlayRequest asks the host for the PER-HOST deploy-config overlay (K4:
+// deploykit.LoadDeployConfigForRead — the runtime ledger at ~/.config/charly/charly.yml, NOT the
+// project charly.yml the resolved-project envelope projects; Mode Purity keeps the two apart, same
+// distinction #PodDisposableRequest documents). Unlike #PodDisposableRequest (a single overlay
+// BIT), several pod-lifecycle resolvers need CROSS-DEPLOYMENT visibility (deploykit.BundleConfig's
+// GlobalEnvForImage/OccupiedHostPorts/DeployedContainerNames all read OTHER deploys' entries, not
+// just the caller's own), so a single-field extraction can't serve them — the host returns the
+// WHOLE marshaled *deploykit.BundleConfig and the plugin calls the SAME already-portable
+// deploykit methods locally. Re-fetched on EVERY call (no caching): the ledger can change between
+// invocations (an intervening `charly config`), and PrepareVenue-time data is stale by the time
+// OpStart/OpStop/OpShell run much later — this is NOT threaded through the one-shot
+// LifecyclePrepareInput. Class-generic action noun "deploy-overlay" (F11 — never a substrate
+// word); the SAME need config_image.go's eventual move has (R3 — one seam, not two).
+type DeployOverlayRequest struct {
+	Context string `yaml:"context,omitempty" json:"context"`
+}
+
+// #DeployOverlayReply carries the marshaled per-host BundleConfig. config_json is the JSON
+// encoding of *deploykit.BundleConfig (nil-safe: absent/null when no per-host overlay file
+// exists yet, matching LoadDeployConfigForRead's own nil-BundleConfig contract).
+type DeployOverlayReply struct {
+	ConfigJSON RawBody `yaml:"config_json,omitempty" json:"config_json,omitempty"`
+}
+
+// #DevicePatternsRequest is empty — the embedded device_patterns/gpu_vendors directives are
+// baked into charly-core's binary (the embedded default charly.yml), not project- or host-scoped,
+// so nothing varies per call. Asks the host for the tables candy/plugin-gpu's detect-host-devices
+// action needs (K4: plugin-deploy-pod's device auto-detection reaching verb:gpu directly, the same
+// dispatch charly-core's gpu_shim.go already does — mirrors candy/plugin-vm/vm_gpu_shim.go's
+// existing InvokeProvider("verb","gpu",...) precedent). Class-generic action noun
+// "device-patterns" (F11 — never a substrate word); any substrate resolving devices needs it.
+type DevicePatternsRequest struct {
+}
+
+// #DevicePatternsReply carries the two embedded tables verbatim (see charly/devices.go).
+type DevicePatternsReply struct {
+	DevicePatterns []string `yaml:"device_patterns,omitempty" json:"device_patterns,omitempty"`
+
+	GpuVendors map[string]string `yaml:"gpu_vendors,omitempty" json:"gpu_vendors,omitempty"`
+}
+
 // #ConfigPersistRequest is the WRITE twin of config-resolve: a command plugin
 // asks the host to persist (or remove) an entity's deploy-ledger entry. The host
 // owns the ledger + its blocking acquireDeployConfigLock (a core Mechanism — the
@@ -3049,20 +3109,42 @@ type VmBuildReply struct {
 	Force bool `yaml:"force,omitempty" json:"force,omitempty"`
 }
 
-// #DeployAddRequest carries the `charly bundle add` command flags (the former
-// BundleAddCmd's authored fields). The command:bundle plugin (P13) owns the CLI
-// GRAMMAR but cannot drive the deploy KERNEL — the loader, the InstallPlan
-// compiler, ResolveTarget → externalDeployTarget, and the live-executor
-// composition (which threads host objects that cannot cross the process boundary)
-// are core Mechanisms. So the plugin's `charly bundle add` command is THIN — it
-// forwards these flags to HostBuild("deploy-add"), and the host runs the existing
-// add orchestration VERBATIM (Run → dispatchNode → compile → ResolveTarget → Add),
-// exactly as the box-build engine stayed core behind HostBuild("image") in P8 and
-// the VM-disk engine behind HostBuild("vm-build") in P10. The two per-node internal
-// fields (vmEntity, builderImageOverride) are NOT carried — the host derives them
-// during dispatch.
-type DeployAddRequest struct {
-	Name string `yaml:"name,omitempty" json:"name"`
+// #DeployTreeResolveRequest/#DeployTreeResolveReply — K4 lane A. candy/plugin-bundle now OWNS
+// the `charly bundle add` dispatch CONTROL FLOW (Run's target-path resolve + the pre-order tree
+// walk); resolveTreeRoot (reads LoadUnified, a core Mechanism the plugin cannot import) stays
+// host-side, returning the WHOLE merged project+operator deploy tree so the plugin walks it
+// itself via the already-pure sdk/deploykit WalkDeploymentTree/ResolveNodePath. Also connects the
+// deployment's out-of-tree plugin candies (loadDeployPlugins) — the ONE per-invocation preamble
+// every dispatch needs before ResolveTarget can route to an external substrate. root_venue_ssh
+// reports whether the resolved root's stamped descent traits are the "ssh" venue (a vm root) —
+// the plugin dispatches node-only in that case (nested pods deploy IN the guest), mirroring the
+// prior in-core check without needing the registry-backed nodeTraits call itself.
+type DeployTreeResolveRequest struct {
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	AddCandy []string `yaml:"add_candy,omitempty" json:"add_candy,omitempty"`
+}
+
+type DeployTreeResolveReply struct {
+	Tree map[string]*Deploy `yaml:"tree,omitempty" json:"tree,omitempty"`
+
+	RootVenueSSH bool `yaml:"root_venue_ssh,omitempty" json:"root_venue_ssh,omitempty"`
+}
+
+// #DeployNodeDispatchRequest/#DeployNodeDispatchReply — the per-node `charly bundle add`
+// terminal step (K4 lane A keystone, RDD-spike-proven): resolve+compile+ResolveTarget+Add for
+// ONE tree position, reached once per node from the plugin's own walk instead of core walking
+// in-process. ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain
+// the OLD in-core walk built (deriveChildExecutorForPath is pure Go over spec/kit types and is
+// re-run HOST-side here) — a live DeployExecutor never needs to cross the wire.
+type DeployNodeDispatchRequest struct {
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	AncestorPaths []string `yaml:"ancestor_paths,omitempty" json:"ancestor_paths,omitempty"`
+
+	AncestorNodes []Deploy `yaml:"ancestor_nodes,omitempty" json:"ancestor_nodes,omitempty"`
 
 	Ref string `yaml:"ref,omitempty" json:"ref,omitempty"`
 
@@ -3071,8 +3153,6 @@ type DeployAddRequest struct {
 	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
 
 	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
-
-	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
 
 	Format string `yaml:"format,omitempty" json:"format,omitempty"`
 
@@ -3097,20 +3177,41 @@ type DeployAddRequest struct {
 	Lifecycle string `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
 }
 
-// #DeployAddReply is the "deploy-add" host-builder reply — empty; the add prints its
-// own progress + dry-run output to the shared stdio (the compiled-in plugin's
-// HostBuild runs in charly's own process) and signals failure via the error return.
-type DeployAddReply struct {
+type DeployNodeDispatchReply struct {
 }
 
-// #DeployDelRequest carries the `charly bundle del` command flags. The plugin's
-// `charly bundle del` forwards these to HostBuild("deploy-del"); the host runs the
-// existing del orchestration VERBATIM (resolveDelNode → ResolveTarget → Del,
-// replaying the recorded ReverseOps). The live ReverseRunner is NOT carried — a
-// programmatic teardown that needs a specific runner (the vm guest-SSH reverse
-// runner) is a host-side path, resolved during dispatch, never authored on the CLI.
-type DeployDelRequest struct {
+// #DeployMembersRequest/#DeployMembersReply — bring up / tear down a deployment's sibling
+// members (bringUpMembers/tearDownMembers — providerRegistry + ledger + subprocess-dependent,
+// stays host-side), reached once at the end of Run() / the start of `charly bundle del`.
+type DeployMembersRequest struct {
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+}
+
+type DeployMembersReply struct {
+}
+
+// #DeployDelResolveRequest/#DeployDelResolveReply — resolve a `charly bundle del` target's
+// BundleNode (resolveDelNode: literal "host" / "vm:"-prefix legacy forms / a charly.yml tree
+// entry / a ref-based pod-artifact probe) — needs LoadUnified + the on-disk artifact probe, so
+// it stays host-side; the plugin's `charly bundle del` calls this FIRST.
+type DeployDelResolveRequest struct {
 	Name string `yaml:"name,omitempty" json:"name"`
+}
+
+type DeployDelResolveReply struct {
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
+}
+
+// #DeployNodeDelDispatchRequest/#DeployNodeDelDispatchReply — the `charly bundle del` terminal
+// step: ResolveTarget + target.Del, honoring the teardown gates (the prior "deploy-del"
+// host-builder's tail, unchanged; the live ReverseRunner is still never carried on the wire — a
+// programmatic teardown needing a specific runner is resolved host-side during dispatch).
+type DeployNodeDelDispatchRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
 
 	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
 
@@ -3123,9 +3224,7 @@ type DeployDelRequest struct {
 	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
 }
 
-// #DeployDelReply is the "deploy-del" host-builder reply — empty (prints host-side,
-// errors via the return).
-type DeployDelReply struct {
+type DeployNodeDelDispatchReply struct {
 }
 
 // #DeployFromBoxRequest carries the `charly bundle from-box` command flags (the
@@ -3219,12 +3318,15 @@ type PodConfigWriteReply struct {
 	WrittenPaths []string `yaml:"written_paths,omitempty" json:"written_paths,omitempty"`
 }
 
-// #PodLifecyclePlan is the host-resolved pod-lifecycle carrier (the K4 deep-body move): the pod
-// start/stop/shell RESOLUTION stays host-side (config_image/deploy/network/enc/tunnel = #59
-// inventory) and FILLS this plan, which the host threads on the F6 OpStart/OpStop/OpShell
-// op.Params; candy/plugin-deploy-pod EXECUTES it — running the container start/stop over the served
-// host executor and composing enc + tunnel via InvokeProvider(verb:enc/verb:tunnel), so the former
-// podCli("start"/"stop"/…) `charly`-reentries are DELETED (bodies, not shells). The pre-built enc
+// #PodLifecyclePlan is the pod-lifecycle carrier (the K4 deep-body move). Formerly host-resolved
+// and threaded on OpStart/OpStop; candy/plugin-deploy-pod now SELF-RESOLVES it (resolve.go's
+// resolveStartQuadlet/resolveStopPlan, resolve_direct.go's resolveStartDirect) from the deploy key +
+// the raw CLI opts (#PodStartOpts/#PodStopOpts), reaching the host only for genuinely host-only
+// mechanisms (the deploy-overlay HostBuild seam, verb:credential, verb:enc, verb:tunnel) — this type
+// is now built AND consumed entirely within the plugin process. It EXECUTES it — running the
+// container start/stop over the served host executor and composing enc + tunnel via
+// InvokeProvider(verb:enc/verb:tunnel), so the former podCli("start"/"stop"/…) `charly`-reentries
+// are DELETED (bodies, not shells). The pre-built enc
 // verb input (spec.EncExecInput — a hand-written wire type with no CUE def) rides as an opaque
 // RawBody envelope (empty ⇒ that leg is skipped, the common plain-pod case) with its Method set
 // per-op host-side; tunnel references the CUE-def'd #TunnelConfig directly and the plugin infers
@@ -3300,17 +3402,44 @@ type TunnelPort struct {
 	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
 }
 
-// #PodLiveStdioPlan is the F12 host-resolved LIVE-STDIO carrier — ONE carrier for shell + cmd + logs
-// (identical shape, R3; the OP + the executor method distinguish them). Like #PodLifecyclePlan the
-// RESOLUTION stays host-side (#59 inventory fills `script` with the exact venue command); the host
-// threads it on the F6 OpAttach (shell/cmd) / OpLogs (logs --follow) op.Params, and
-// candy/plugin-deploy-pod EXECUTES it over the served host executor via exec.RunInteractive
-// (OpAttach — inherited LIVE stdin/stdout/stderr; the child `podman exec -it`/`-i` owns the PTY +
-// resize + Ctrl-C) / exec.RunStream (OpLogs — inherited LIVE stdout/stderr, no stdin). UNARY: the
-// host reverse-server runs IN the charly process, so os.Stdin/os.Stdout = the operator's terminal —
-// stdio NEVER crosses the wire, only `script` + the session exit code (the hostBuildCli doctrine).
-// This takes the F12 exit for the shell/cmd/logs-follow rows of the #57 M-core register: the former
-// inline `charly shell`/`cmd` bodies + the podCli("logs") reentry are DELETED (bodies, not shells).
+// #PodStartOpts carries `charly start`'s direct-mode CLI extras (K4 inversion, quadlet-mode
+// first): the plugin now SELF-RESOLVES the #PodLifecyclePlan (over the deploy-overlay HostBuild
+// seam + the already-portable sdk resolvers) using these opts + the deploy key already on
+// lifecycleParams.Name — replacing the former host-side resolvePodStartPlan. The quadlet path
+// ignores every field (mirrors the pre-inversion contract — CLI extras apply only to direct mode).
+type PodStartOpts struct {
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
+
+	Port []string `yaml:"port,omitempty" json:"port,omitempty"`
+
+	VolumeFlag []string `yaml:"volume_flag,omitempty" json:"volume_flag,omitempty"`
+
+	Bind []string `yaml:"bind,omitempty" json:"bind,omitempty"`
+
+	NoAutoDetect bool `yaml:"no_auto_detect,omitempty" json:"no_auto_detect,omitempty"`
+}
+
+// #PodStopOpts carries `charly stop --unmount` (K4 inversion): the plugin self-resolves the STOP
+// #PodLifecyclePlan using this + the deploy key, replacing the former host-side resolvePodStopPlan.
+type PodStopOpts struct {
+	Unmount bool `yaml:"unmount,omitempty" json:"unmount,omitempty"`
+}
+
+// #PodLiveStdioPlan is the F12 LIVE-STDIO carrier — ONE carrier for shell + cmd + logs (identical
+// shape, R3; the op + the executor method distinguish them). Formerly host-resolved and threaded on
+// OpAttach/OpLogs op.Params; candy/plugin-deploy-pod now SELF-RESOLVES it (resolve_f12.go's
+// resolveAttachPlan/resolveShellPlan/resolveCmdPlan/resolveLogsPlan) from the deploy key +
+// #PodAttachOpts/#PodLogsOpts, so this type is now built AND consumed entirely within the plugin
+// process — no wire crossing for the plan itself, only for the opts that drive it. The plugin
+// EXECUTES it over the served host executor via exec.RunInteractive (OpAttach — inherited LIVE
+// stdin/stdout/stderr; the child `podman exec -it`/`-i` owns the PTY + resize + Ctrl-C) /
+// exec.RunStream (OpLogs — inherited LIVE stdout/stderr, no stdin). UNARY: the host reverse-server
+// runs IN the charly process, so os.Stdin/os.Stdout = the operator's terminal — stdio NEVER crosses
+// the wire, only the session exit code (the hostBuildCli doctrine). This takes the F12 exit for the
+// shell/cmd/logs-follow rows of the #57 M-core register: the former inline `charly shell`/`cmd`
+// bodies + the podCli("logs") reentry are DELETED (bodies, not shells).
 type PodLiveStdioPlan struct {
 	// resolved venue command:
 	//
@@ -3318,6 +3447,62 @@ type PodLiveStdioPlan struct {
 	//	cmd   → `<engine> exec [-e env] charly-<box>[-<sidecar>] sh -c <command>` (no -t; stdin piped)
 	//	logs  → `<engine> logs [-f] [-n N] charly-<box>` OR quadlet `journalctl --user -u <svc> [-f] [-n N]`
 	Script string `yaml:"script,omitempty" json:"script"`
+}
+
+// #PodShellOpts carries `charly shell`'s per-invocation CLI extras (K4/F12 inversion): the plugin
+// self-resolves the #PodLiveStdioPlan using these + the deploy key, replacing the former host-side
+// resolvePodShellPlan/buildShellArgs/buildExecArgs. interactive/wrap_pty are HOST-RESOLVED booleans
+// (interactive = force_tty || isTerminal(); wrap_pty = force_tty && !isTerminal()) — the plugin is a
+// subprocess whose own stdout is not the operator's terminal, so the tty check MUST happen host-side
+// at the moment of the real CLI invocation and cross the wire as data, never be re-derived
+// plugin-side.
+type PodShellOpts struct {
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	VolumeFlag []string `yaml:"volume_flag,omitempty" json:"volume_flag,omitempty"`
+
+	Bind []string `yaml:"bind,omitempty" json:"bind,omitempty"`
+
+	NoAutoDetect bool `yaml:"no_auto_detect,omitempty" json:"no_auto_detect,omitempty"`
+
+	Interactive bool `yaml:"interactive,omitempty" json:"interactive"`
+
+	WrapPTY bool `yaml:"wrap_pty,omitempty" json:"wrap_pty"`
+}
+
+// #PodCmdOpts carries `charly cmd`'s per-invocation extra (--sidecar), replacing the former
+// host-side resolvePodCmdPlan.
+type PodCmdOpts struct {
+	Sidecar string `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
+}
+
+// #PodAttachOpts carries the F12 Attach op's parameters (K4/F12 inversion): tty selects the shell
+// resolver (interactive `charly shell`) vs the cmd resolver (`charly cmd`'s non-interactive `-i`
+// exec) — mirrors the former host-side resolvePodAttachPlan dispatch, now run plugin-side.
+type PodAttachOpts struct {
+	Cmd []string `yaml:"cmd,omitempty" json:"cmd,omitempty"`
+
+	Tty bool `yaml:"tty,omitempty" json:"tty"`
+
+	Shell PodShellOpts `yaml:"shell,omitempty" json:"shell,omitempty"`
+
+	CmdOpts PodCmdOpts `yaml:"cmd_opts,omitempty" json:"cmd_opts,omitempty"`
+}
+
+// #PodLogsOpts carries `charly logs [-f]`'s parameters (K4/F12 inversion), replacing the former
+// host-side resolvePodLogsPlan. Mirrors charly-core's substrate-agnostic LogsOpts (Follow/Tail/
+// Sidecar) — a plugin-facing wire twin, since LogsOpts itself is a hand-written charly-core type
+// with no CUE def.
+type PodLogsOpts struct {
+	Follow bool `yaml:"follow,omitempty" json:"follow,omitempty"`
+
+	Tail int `yaml:"tail,omitempty" json:"tail,omitempty"`
+
+	Sidecar string `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
 }
 
 // #CheckRunRequest asks the host to RUN a check plan against a venue and return the

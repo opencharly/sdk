@@ -673,3 +673,31 @@ func TestGenerateTunnelUnitNilTunnel(t *testing.T) {
 		t.Errorf("expected empty string for nil tunnel, got: %s", got)
 	}
 }
+
+// TestLocalizePort relocated from charly/shell_test.go — a pure sdk function with no host
+// dependency, never actually host-coupled; it had no test here in the first place (K4/F12 move).
+func TestLocalizePort(t *testing.T) {
+	tests := []struct {
+		input    string
+		bindAddr string
+		want     string
+	}{
+		{"80:8000", "127.0.0.1", "127.0.0.1:80:8000"},
+		{"8080:8080", "127.0.0.1", "127.0.0.1:8080:8080"},
+		{"8080", "127.0.0.1", "127.0.0.1:8080:8080"},
+		{"9090", "127.0.0.1", "127.0.0.1:9090:9090"},
+		{"80:8000", "0.0.0.0", "0.0.0.0:80:8000"},
+		{"8080", "0.0.0.0", "0.0.0.0:8080:8080"},
+		{"47998:47998/udp", "127.0.0.1", "127.0.0.1:47998:47998/udp"},
+		{"48000/udp", "127.0.0.1", "127.0.0.1:48000:48000/udp"},
+		{"47990:47990/tcp", "127.0.0.1", "127.0.0.1:47990:47990/tcp"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.bindAddr+"/"+tt.input, func(t *testing.T) {
+			got := LocalizePort(tt.input, tt.bindAddr)
+			if got != tt.want {
+				t.Errorf("LocalizePort(%q, %q) = %q, want %q", tt.input, tt.bindAddr, got, tt.want)
+			}
+		})
+	}
+}
