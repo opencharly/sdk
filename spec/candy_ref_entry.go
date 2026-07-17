@@ -74,3 +74,32 @@ func BareCandyRef(ref string) string {
 	bare, _ := StripCandyRefVersion(ref)
 	return strings.TrimPrefix(bare, "@")
 }
+
+// FinalizeCandyRefs projects the RICH pre-qualification refs (CandyRefs) down to their
+// bare-string FINAL wire form — v.Require / v.IncludedCandy (CandyView) and m.BakePlugin
+// (CandyModel) — run ONCE, after any remote-sibling qualification (loaderkit.QualifyRemoteSiblingDeps)
+// has had the chance to set .Resolved. Mirrors the pre-move projectCandyView/projectCandyModel
+// bare-ref projection (charly/resolved_project_host.go's bareRefs() calls, pre-W9), which ran
+// AFTER qualifyRemoteSiblingDeps on the live *Candy. Lives in spec (not loaderkit, alongside its
+// sibling CandyRefEntry/ToCandyRefEntries) — a pure, non-registry-coupled data-shape transform
+// charly core must reach directly at the fix-point arbitration's final step (import-purity: core
+// imports spec but never an sdk mechanism kit).
+func FinalizeCandyRefs(m *CandyModel, v *CandyView, refs CandyRefs) {
+	v.Require = bareCandyRefEntries(refs.Require)
+	v.IncludedCandy = bareCandyRefEntries(refs.IncludedCandy)
+	m.BakePlugin = bareCandyRefEntries(refs.BakePlugin)
+}
+
+// bareCandyRefEntries projects a []CandyRefEntry down to its bare-string []CandyRef form (the
+// CandyView wire shape — identity/graph refs are bare strings, resolved-key details like a remote
+// candy's Resolved field are a build-model concern only).
+func bareCandyRefEntries(refs []CandyRefEntry) []CandyRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]CandyRef, len(refs))
+	for i, r := range refs {
+		out[i] = r.Bare()
+	}
+	return out
+}

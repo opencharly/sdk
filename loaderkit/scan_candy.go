@@ -297,31 +297,9 @@ func QualifyRemoteSiblingDeps(repoPath, subPathPrefix string, refs *spec.CandyRe
 	qualify(refs.BakePlugin)
 }
 
-// FinalizeCandyRefs projects the RICH pre-qualification refs (spec.CandyRefs) down to their
-// bare-string FINAL wire form — v.Require / v.IncludedCandy (spec.CandyView) and m.BakePlugin
-// (spec.CandyModel) — run ONCE, after any remote-sibling qualification (QualifyRemoteSiblingDeps)
-// has had the chance to set .Resolved. Mirrors the pre-move projectCandyView/projectCandyModel
-// bare-ref projection (charly/resolved_project_host.go's bareRefs() calls), which ran AFTER
-// qualifyRemoteSiblingDeps on the live *Candy — this is the scan-machinery-move analogue.
-func FinalizeCandyRefs(m *spec.CandyModel, v *spec.CandyView, refs spec.CandyRefs) {
-	v.Require = bareCandyRefEntries(refs.Require)
-	v.IncludedCandy = bareCandyRefEntries(refs.IncludedCandy)
-	m.BakePlugin = bareCandyRefEntries(refs.BakePlugin)
-}
-
-// bareCandyRefEntries projects a []spec.CandyRefEntry down to its bare-string []spec.CandyRef
-// form (the CandyView wire shape — identity/graph refs are bare strings, resolved-key details
-// like a remote candy's Resolved field are a build-model concern only).
-func bareCandyRefEntries(refs []spec.CandyRefEntry) []spec.CandyRef {
-	if len(refs) == 0 {
-		return nil
-	}
-	out := make([]spec.CandyRef, len(refs))
-	for i, r := range refs {
-		out[i] = r.Bare()
-	}
-	return out
-}
+// FinalizeCandyRefs moved to sdk/spec (spec.FinalizeCandyRefs) — charly core needs to reach it too,
+// at the fix-point arbitration's final step, and core imports spec but never loaderkit
+// (import-purity). See spec/candy_ref_entry.go.
 
 // derivePackageSections is the SOLE populator of the package surface (m.TagSections +
 // m.TopPackages, plus the arch `aur` format section) from package: + distro: — ported verbatim
