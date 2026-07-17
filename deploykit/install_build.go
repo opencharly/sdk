@@ -24,6 +24,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/opencharly/sdk/spec"
 )
 
 // HostContext carries host-side information the compiler needs to decide
@@ -683,7 +685,7 @@ func CompileOpSteps(layer CandyModel, img *ResolvedBox) []InstallStep {
 		op := &step.Op
 		// A run: step scoped runtime-only (and NOT build/deploy) is handled by
 		// the check Runner live; everything else is the install timeline.
-		if OpInContext(op, CtxRuntime) && !OpInContext(op, CtxBuild) && !OpInContext(op, CtxDeploy) {
+		if OpInContext(op, spec.CtxRuntime) && !OpInContext(op, spec.CtxBuild) && !OpInContext(op, spec.CtxDeploy) {
 			continue
 		}
 		if s := CompileActOp(op, layer, img); s != nil {

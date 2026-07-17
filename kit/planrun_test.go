@@ -31,7 +31,7 @@ type fakePlanContext struct {
 	verifyOnly bool
 	skipRun    bool
 	ctxSkip    string
-	do         DoMode
+	do         spec.DoMode
 	env        map[string]string
 	verbs      VerbResolver
 	grader     StepGrader
@@ -43,7 +43,7 @@ func (c *fakePlanContext) Mode() RunMode                         { return c.mode
 func (c *fakePlanContext) VerifyOnly() bool                      { return c.verifyOnly }
 func (c *fakePlanContext) SkipDeterministicRun() bool            { return c.skipRun }
 func (c *fakePlanContext) ContextSkipReason(*spec.Op) string     { return c.ctxSkip }
-func (c *fakePlanContext) EffectiveDo(*spec.Op) DoMode           { return c.do }
+func (c *fakePlanContext) EffectiveDo(*spec.Op) spec.DoMode      { return c.do }
 func (c *fakePlanContext) EffectiveEnv() map[string]string       { return c.env }
 func (c *fakePlanContext) ProbeNeverHang(*spec.Op) time.Duration { return time.Second }
 func (c *fakePlanContext) SwapVenue(*spec.Op) (func(), string)   { return nil, "" }
@@ -103,7 +103,7 @@ func TestRunOne_DispatchPass(t *testing.T) {
 
 func TestRunOne_ActDispatch(t *testing.T) {
 	vr := &fakeVerbResolver{actKnown: true, known: true, result: CheckResult{Status: StatusPass}}
-	pc := &fakePlanContext{env: map[string]string{}, do: DoAct, verbs: vr}
+	pc := &fakePlanContext{env: map[string]string{}, do: spec.DoAct, verbs: vr}
 	r := RunOne(context.Background(), pc, pluginOp())
 	if r.Status != StatusPass || r.Message != "acted plugin" {
 		t.Fatalf("do:act → %v %q, want the provision-act result", r.Status, r.Message)
