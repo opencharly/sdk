@@ -12,6 +12,7 @@ package spec
 import (
 	"context"
 	"errors"
+	"io"
 )
 
 // ErrNotSupported is returned by RunInteractive/RunStream on a venue that cannot host a
@@ -19,6 +20,29 @@ import (
 // "shell/logs not supported on this substrate" — an explicit, compile-forced failure, never
 // a silent no-op (F12; the honest form of the executor-matrix ErrNotSupported path).
 var ErrNotSupported = errors.New("live-stdio (interactive/stream) not supported on this venue")
+
+// Process is one exact-argv, full-duplex child running in a deployment venue.
+// It is deliberately a behaviour contract rather than a wire shape: target
+// routes and all data sent over the process are CUE-generated, while this seam
+// only exposes the OS pipes that carry the generated gRPC protocol.
+//
+// Close must be idempotent, close stdin, terminate the complete child process
+// group when it has not exited, and reap it. Wait may be called more than once.
+type Process interface {
+	Stdin() io.WriteCloser
+	Stdout() io.ReadCloser
+	Stderr() io.ReadCloser
+	Wait() error
+	Close() error
+}
+
+// ProcessExecutor is an optional capability implemented by deployment
+// executors that can host a bidirectional process. Keeping it separate from
+// DeployExecutor preserves compatibility with capture-only executors and test
+// doubles. Callers must return ErrNotSupported when this capability is absent.
+type ProcessExecutor interface {
+	StartProcess(ctx context.Context, launch ProcessLaunch) (Process, error)
+}
 
 // DeployExecutor is the in-process host-side executor: the concrete venue an
 // InstallPlan's steps are applied against (ShellExecutor on the operator's

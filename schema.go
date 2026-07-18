@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -61,6 +62,9 @@ type ProvidedCapability struct {
 	// (off node.Descent) — never by switching on the kind word. nil for every other
 	// capability (the zero-value → external-in-place semantics).
 	DeployTraits *spec.DeployTraits
+	// CommandModel is set ONLY for Class=="command". Its generated #CLIModel
+	// describes the plugin-owned leaf grammar for host and MCP reflection.
+	CommandModel *spec.CLIModel
 }
 
 // StepContract is the SDK-facing form of the proto StepContract — a class="step" plugin's
@@ -120,6 +124,19 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 	out := make([]*pb.ProvidedCapability, 0, len(provided))
 	for _, c := range provided {
 		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary}
+		if c.CommandModel != nil {
+			if c.Class != "command" {
+				return nil, fmt.Errorf("plugin capability %s:%s declares a command model outside class=command", c.Class, c.Word)
+			}
+			if err := ValidateGenerated("#CLIModel", c.CommandModel); err != nil {
+				return nil, fmt.Errorf("plugin command model %s: %w", c.Word, err)
+			}
+			model, err := json.Marshal(c.CommandModel)
+			if err != nil {
+				return nil, fmt.Errorf("plugin command model %s: %w", c.Word, err)
+			}
+			pc.CommandModelJson = model
+		}
 		if c.StepContract != nil {
 			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope, Venue: int32(c.StepContract.Venue), Gate: c.StepContract.Gate, Emits: c.StepContract.Emits}
 		}

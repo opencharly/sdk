@@ -84,6 +84,24 @@ func TestShortNameMatchesRef(t *testing.T) {
 	}
 }
 
+func TestResolveLocalImageRefShortTaggedPinsExactBuild(t *testing.T) {
+	orig := ListLocalImages
+	defer func() { ListLocalImages = orig }()
+	ListLocalImages = func(engine string) ([]LocalImageInfo, error) {
+		return []LocalImageInfo{
+			{ID: "old", Names: []string{"ghcr.io/opencharly/check-agent-box:check-agent-pod-2026.199.1646"}, Labels: map[string]string{spec.LabelBox: "check-agent-box", spec.LabelVersion: "2026.199.1330"}},
+			{ID: "new", Names: []string{"ghcr.io/opencharly/check-agent-box:check-agent-pod-2026.199.1700"}, Labels: map[string]string{spec.LabelBox: "check-agent-box", spec.LabelVersion: "2026.199.1330"}},
+		}, nil
+	}
+	got, err := ResolveLocalImageRef("podman", "check-agent-box:check-agent-pod-2026.199.1700")
+	if err != nil {
+		t.Fatalf("ResolveLocalImageRef(short:tag): %v", err)
+	}
+	if want := "ghcr.io/opencharly/check-agent-box:check-agent-pod-2026.199.1700"; got != want {
+		t.Fatalf("ResolveLocalImageRef(short:tag) = %q, want %q", got, want)
+	}
+}
+
 // ResolveShellImageRef branch coverage (sdk#68 review round — the helper shipped
 // with none; these five cases FAIL without the function's branch logic).
 // ListLocalImages is stubbed via its package-level var (same pattern as

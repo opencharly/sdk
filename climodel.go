@@ -1,48 +1,110 @@
 package sdk
 
-// climodel.go is the host-CLI-description contract emitted by `charly __cli-model`
-// (a hidden core command that reflects charly's kong model) and consumed by an
-// external COMMAND-class plugin that needs to mirror the WHOLE charly CLI without
-// importing the package-main `CLI` tree — the `charly mcp serve` MCP bridge is the
-// motivating consumer (candy/plugin-mcp). The host serializes its kong leaf set into
-// this shape; the plugin rebuilds its tool surface from it and drives each command by
-// fork/exec'ing `charly <path…> <args>`. Shared here (R3) so the emit + decode sides
-// cannot drift.
-//
-// This travels over fork/exec STDOUT as JSON (not the gRPC provider channel), so it is
-// a plain JSON contract, not a proto message.
+// Command-model reflection is implemented once in the SDK so every command
+// plugin and the host emit the same CUE-generated spec.CLIModel contract.
 
-// CLIModel is the full command-tree description of a `charly` binary.
-type CLIModel struct {
-	Name    string    `json:"name"`    // "charly"
-	Version string    `json:"version"` // CharlyVersion()
-	Leaves  []CLILeaf `json:"leaves"`  // one per runnable leaf command
+import (
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/alecthomas/kong"
+
+	"github.com/opencharly/sdk/spec"
+)
+
+// BuildCLIModel reflects a Kong command tree into the generated #CLIModel.
+// Prefix is a dotted command path prepended to every leaf (for example
+// "agent" when a command plugin reflects only its owned subtree).
+func BuildCLIModel(root any, name, version, prefix string, options ...kong.Option) (*spec.CLIModel, error) {
+	opts := append([]kong.Option{kong.Name(name), kong.UsageOnError()}, options...)
+	k, err := kong.New(root, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("building %s command model: %w", name, err)
+	}
+	model := &spec.CLIModel{Name: name, Version: version}
+	for _, leaf := range k.Model.Leaves(true) {
+		value := KongLeafToCLILeaf(leaf)
+		if prefix != "" {
+			value.Path = prefix + "." + value.Path
+		}
+		model.Leaves = append(model.Leaves, value)
+	}
+	return model, nil
 }
 
-// CLILeaf is one runnable leaf command (e.g. "box.build"), with its arg surface.
-type CLILeaf struct {
-	Path        string   `json:"path"`                  // dotted, e.g. "box.build"
-	Help        string   `json:"help,omitempty"`        // leaf help text
-	Hidden      bool     `json:"hidden,omitempty"`      // hidden leaf (e.g. __plugin / __cli-model)
-	Positionals []CLIArg `json:"positionals,omitempty"` // declared order — appended to argv as values
-	Flags       []CLIArg `json:"flags,omitempty"`       // flattened across ancestor branches
+// KongLeafToCLILeaf converts one Kong leaf into the generated wire shape.
+func KongLeafToCLILeaf(leaf *kong.Node) spec.CLILeaf {
+	out := spec.CLILeaf{Path: strings.ReplaceAll(leaf.Path(), " ", "."), Help: strings.TrimSpace(leaf.Help)}
+	if strings.HasPrefix(out.Path, "__") {
+		out.Hidden = true
+	}
+	for _, pos := range leaf.Positional {
+		out.Positionals = append(out.Positionals, kongValueToCLIArg(pos, "", pos.Required))
+	}
+	seen := map[string]bool{}
+	for _, pos := range leaf.Positional {
+		seen[sanitizeCLIPropName(pos.Name)] = true
+	}
+	for _, group := range leaf.AllFlags(true) {
+		for _, flag := range group {
+			if flag.Hidden || flag.Name == "help" || flag.Name == "help-all" {
+				continue
+			}
+			prop := sanitizeCLIPropName(flag.Name)
+			if seen[prop] {
+				continue
+			}
+			seen[prop] = true
+			arg := kongValueToCLIArg(flag.Value, flag.Name, flag.Required)
+			arg.IsBool = flag.IsBool()
+			arg.Negated = flag.Negated
+			out.Flags = append(out.Flags, arg)
+		}
+	}
+	return out
 }
 
-// CLIArg describes one positional or flag. `Prop` is the snake_case JSON-schema
-// property name an MCP tool exposes; `Name` is the original kong flag name used to
-// build `--Name=value` argv (unused for positionals, which are positional in argv).
-type CLIArg struct {
-	Prop       string   `json:"prop"`                  // snake_case schema property name
-	Name       string   `json:"name"`                  // original kong flag name (for --Name=…)
-	Type       string   `json:"type"`                  // json-schema primitive: string/boolean/integer/number/array/object
-	Help       string   `json:"help,omitempty"`        // arg help → schema description
-	Enum       []string `json:"enum,omitempty"`        // allowed values
-	Default    string   `json:"default,omitempty"`     // raw default string (coerced to Type by the consumer)
-	HasDefault bool     `json:"has_default,omitempty"` // a default was declared
-	Required   bool     `json:"required,omitempty"`    // required arg
-	IsBool     bool     `json:"is_bool,omitempty"`     // bool flag (emits --Name / --no-Name, no value)
-	IsSlice    bool     `json:"is_slice,omitempty"`    // accumulating slice (repeated --Name=… / multiple positionals)
-	IsMap      bool     `json:"is_map,omitempty"`      // map flag (object schema)
-	Negated    bool     `json:"negated,omitempty"`     // bool flag supports the --no- prefix
-	ElemType   string   `json:"elem_type,omitempty"`   // slice element json-schema type
+func kongValueToCLIArg(value *kong.Value, flagName string, required bool) spec.CLIArg {
+	arg := spec.CLIArg{Prop: sanitizeCLIPropName(value.Name), Name: flagName, Help: value.Help, Required: required}
+	if value.Enum != "" {
+		for _, enum := range value.EnumSlice() {
+			arg.Enum = append(arg.Enum, fmt.Sprint(enum))
+		}
+	}
+	if value.IsSlice() {
+		arg.Type, arg.IsSlice, arg.ElemType = "array", true, cliJSONType(value.Target.Type().Elem().Kind())
+		return arg
+	}
+	if value.IsMap() {
+		arg.Type, arg.IsMap = "object", true
+		return arg
+	}
+	arg.Type = cliJSONType(value.Target.Kind())
+	if value.HasDefault && value.Default != "" {
+		arg.HasDefault, arg.Default = true, value.Default
+	}
+	return arg
+}
+
+func sanitizeCLIPropName(value string) string {
+	return strings.ReplaceAll(strings.ToLower(value), "-", "_")
+}
+
+func cliJSONType(kind reflect.Kind) string {
+	switch kind {
+	case reflect.Bool:
+		return "boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "integer"
+	case reflect.Float32, reflect.Float64:
+		return "number"
+	case reflect.Slice, reflect.Array:
+		return "array"
+	case reflect.Map, reflect.Struct:
+		return "object"
+	default:
+		return "string"
+	}
 }

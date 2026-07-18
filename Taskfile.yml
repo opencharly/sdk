@@ -16,7 +16,7 @@ vars:
 
 tasks:
   # ---------------------------------------------------------------------------
-  # cue:gen — regenerate the single-source `spec` package from schema/*.cue.
+  # cue:gen — regenerate every CUE-owned SDK artifact.
   #
   #   spec/cue_types_gen.go  (cue exp gengotypes — the Go param structs)
   #   spec/vocab_gen.go      (internal/schemagen — the vocab lists)
@@ -29,9 +29,10 @@ tasks:
   # consecutive runs produce no diff (guarded by TestGenReproducible in spec).
   # ---------------------------------------------------------------------------
   cue:gen:
-    desc: Regenerate spec/ from schema/*.cue (self-bootstraps the pinned cue CLI into ./bin/cue)
+    desc: Regenerate all CUE-owned SDK artifacts, including the protobuf wire contract
     dir: "{{.ROOT_DIR}}"
     cmds:
+      - task: wire:gen
       - task: bootstrap-cue
       - |
         set -euo pipefail
@@ -95,30 +96,38 @@ tasks:
         echo "bootstrap-cue: bin/cue is $(bin/cue version | head -1)"
 
   # ---------------------------------------------------------------------------
-  # proto:gen — regenerate the plugin gRPC stubs from proto/plugin.proto.
+  # wire:gen — regenerate the protobuf IDL and Go stubs from protocol/schema.
   #
   #   proto/plugin.pb.go       (messages)
   #   proto/plugin_grpc.pb.go  (services)
   #
+  # proto/plugin.proto is generated output, never an authoring surface.
   # Self-bootstraps a checksum-pinned protoc + the two pinned Go codegen plugins
   # into ./bin (gitignored). Reproducible — verify with:
   #   rm -f bin/protoc bin/protoc-gen-go bin/protoc-gen-go-grpc
   #   task proto:gen && git diff --exit-code proto
   # ---------------------------------------------------------------------------
-  proto:gen:
-    desc: Regenerate proto/*.pb.go (self-bootstraps pinned protoc + gen plugins into ./bin)
+  wire:gen:
+    desc: Regenerate proto/plugin.proto and Go stubs from protocol/schema/*.cue
     dir: "{{.ROOT_DIR}}"
     cmds:
       - task: bootstrap-protoc
       - |
         set -euo pipefail
         export PATH="$PWD/bin:$PATH"
+        go run ./internal/wiregen -schema=protocol/schema -out=proto/plugin.proto
         bin/protoc \
           --go_out=. --go_opt=module=github.com/opencharly/sdk \
           --go-grpc_out=. --go-grpc_opt=module=github.com/opencharly/sdk \
           --proto_path=proto proto/plugin.proto
         gofmt -w proto/plugin.pb.go proto/plugin_grpc.pb.go
-        echo "proto:gen: regenerated proto/{plugin.pb.go,plugin_grpc.pb.go}"
+        echo "wire:gen: regenerated proto/plugin.proto and Go stubs from CUE"
+
+  # Compatibility alias for existing callers. The protobuf source is CUE.
+  proto:gen:
+    desc: Alias for wire:gen
+    cmds:
+      - task: wire:gen
 
   bootstrap-protoc:
     desc: Ensure ./bin has the pinned protoc + protoc-gen-go + protoc-gen-go-grpc

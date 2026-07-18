@@ -145,7 +145,11 @@ func (e *SSHExecutor) PutFile(ctx context.Context, localPath, remotePath string,
 
 	// scp <local> <user>@<host>:<tmpRemote>
 	scpArgs := e.scpBaseArgs()
-	scpArgs = append(scpArgs, localPath, fmt.Sprintf("%s@%s:%s", e.User, e.Host, tmpRemote))
+	destination := e.Host
+	if e.User != "" {
+		destination = e.User + "@" + e.Host
+	}
+	scpArgs = append(scpArgs, localPath, destination+":"+tmpRemote)
 	scpCmd := exec.CommandContext(ctx, "scp", scpArgs...)
 	scpCmd.Stderr = os.Stderr
 	if err := scpCmd.Run(); err != nil {

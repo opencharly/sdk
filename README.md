@@ -8,7 +8,8 @@ core itself consumes. It owns:
   reverse-channel client (`Executor`), capability building
   (`BuildCapabilities`, `ProvidedCapability`, `StepContract`), and shared
   verb/deploy helpers.
-- **`proto/`** — `plugin.proto` + generated gRPC stubs: the four services
+- **`protocol/schema/`** — authoritative CUE model for every protobuf message,
+  field, service, and streaming method. `proto/` is generated output only.
   (`PluginMeta`, `Provider`, `ExecutorService`, `CheckContextService`).
 - **`spec/`** — the GENERATED Go param + wire types (`cue exp gengotypes` over
   `schema/`), plus the hand-written union/alias/method files. Never hand-edit
@@ -41,7 +42,8 @@ generated from `schema/version.cue`, advertised in `Capabilities.calver`).
 - `task cue:gen` — regenerates `spec/{cue_types_gen,vocab_gen,version_gen}.go`
   from `schema/*.cue` (self-bootstraps the pinned cue CLI into `./bin/cue`).
   Reproducibility-gated by `TestGenReproducible`.
-- `task proto:gen` — regenerates `proto/*.pb.go` from `proto/plugin.proto`
+- `task wire:gen` — regenerates `proto/plugin.proto` and Go stubs from CUE
+- `task proto:gen` — compatibility alias for `wire:gen`
   (self-bootstraps the pinned protoc + Go codegen plugins into `./bin`).
 
 ## Consumers

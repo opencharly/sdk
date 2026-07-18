@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/sdk/vmshared"
 )
 
 // Tests for the localpkg subsystem relocated from charly core (W3): ResolveLocalPkgDir,
@@ -267,6 +268,32 @@ func TestBuildLocalPkgOnHost_DryRunAndEmpty(t *testing.T) {
 	empty := &LocalPkgDef{PkgGlob: "*.pkg.tar.zst"}
 	if _, err := BuildLocalPkgOnHost(context.Background(), empty, "/src", EmitOpts{DryRun: true}); err == nil {
 		t.Error("empty build_template should error")
+	}
+}
+
+func TestCleanupBuiltPackageFilesIsScopedAndIdempotent(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	dir, err := os.MkdirTemp("", "charly-localpkg-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "charly.pkg.tar.zst")
+	if err := os.WriteFile(file, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vmshared.RegisterTempCleanup(dir)
+	if err := CleanupBuiltPackageFiles([]string{file}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("artifact directory survived cleanup: %v", err)
+	}
+	if err := CleanupBuiltPackageFiles([]string{file}); err != nil {
+		t.Fatalf("idempotent cleanup: %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "important.pkg.tar.zst")
+	if err := CleanupBuiltPackageFiles([]string{outside}); err == nil {
+		t.Fatal("cleanup accepted a path outside the Charly temp namespaces")
 	}
 }
 
