@@ -198,13 +198,20 @@ func serviceFromProto(input *protobuf.Service) (serviceModel, error) {
 	return service, nil
 }
 
+// commentText joins the FULL comment block attached to an element. emicklei/
+// proto merges a run of consecutive // lines into one Comment whose Lines hold
+// every line, but Comment.Message() returns only Lines[0] — using it here
+// silently truncated every multi-line doc to its first line (the bootstrap
+// defect that cut design rationale out of protocol/schema/plugin.cue).
 func commentText(leading, inline *protobuf.Comment) string {
 	var parts []string
-	if leading != nil {
-		parts = append(parts, strings.TrimSpace(leading.Message()))
-	}
-	if inline != nil {
-		parts = append(parts, strings.TrimSpace(inline.Message()))
+	for _, comment := range []*protobuf.Comment{leading, inline} {
+		if comment == nil {
+			continue
+		}
+		for _, line := range comment.Lines {
+			parts = append(parts, strings.TrimSpace(line))
+		}
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
@@ -364,10 +371,20 @@ func renderProto(model *protocolModel) []byte {
 	return append(bytes.TrimRight(out.Bytes(), "\n"), '\n')
 }
 
+// writeDoc renders a doc string as a block of // comment lines. Internal
+// blank lines are preserved as bare // lines so paragraph breaks survive the
+// round trip; only the block's leading/trailing whitespace is trimmed. An
+// empty doc renders nothing at all.
 func writeDoc(out io.Writer, doc, indent string) {
-	for _, line := range strings.Split(strings.TrimSpace(doc), "\n") {
-		if strings.TrimSpace(line) != "" {
-			fmt.Fprintf(out, "%s// %s\n", indent, strings.TrimSpace(line))
+	block := strings.TrimSpace(doc)
+	if block == "" {
+		return
+	}
+	for _, line := range strings.Split(block, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			fmt.Fprintf(out, "%s// %s\n", indent, trimmed)
+		} else {
+			fmt.Fprintf(out, "%s//\n", indent)
 		}
 	}
 }

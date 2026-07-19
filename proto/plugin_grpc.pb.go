@@ -876,12 +876,26 @@ type CheckContextServiceClient interface {
 	HTTPDo(ctx context.Context, in *HTTPDoRequest, opts ...grpc.CallOption) (*HTTPDoReply, error)
 	AddBackground(ctx context.Context, in *AddBackgroundRequest, opts ...grpc.CallOption) (*Empty, error)
 	// ResolveEndpoint: resolve the check target's venue (container / VM / ssh / local) and
+	// return a host-reachable address for an in-venue TCP port — opening (and host-side
+	// tracking, for post-Invoke teardown) any ssh -L forward a VM/ssh venue needs. Class-
+	// generic: ANY endpoint check verb (cdp/vnc/spice/…) declares its port and dials the addr.
 	ResolveEndpoint(ctx context.Context, in *ResolveEndpointRequest, opts ...grpc.CallOption) (*ResolveEndpointReply, error)
 	// ResolveGraphicsEndpoint: resolve a VM's <graphics type='<kind>'> listener (kind = "vnc"
+	// | "spice") to a dialable endpoint — the host owns the go-libvirt resolution, any
+	// qemu+ssh:// tunnel (tracked for post-Invoke teardown), the socket->TCP bridge a TCP-only
+	// client needs, and the credential-store password. Class-generic: parameterized by kind,
+	// shared by the vnc + spice verbs (never a per-verb RPC).
 	ResolveGraphicsEndpoint(ctx context.Context, in *ResolveGraphicsEndpointRequest, opts ...grpc.CallOption) (*ResolveGraphicsEndpointReply, error)
 	// ResolveClusterContext: map a charly k8s cluster-profile NAME to its kubeconfig context by
+	// reading the project's kind:k8s spec (findK8sSpec) — the host owns the project loader the
+	// out-of-process plugin cannot reach. Class-generic (concept-named, not verb-named): any
+	// cluster-probing verb declares its cluster profile and gets the context. Empty context (no
+	// matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
 	ResolveClusterContext(ctx context.Context, in *ResolveClusterContextRequest, opts ...grpc.CallOption) (*ResolveClusterContextReply, error)
 	// ResolveImageLabel: read one OCI label value off the deployment-under-test's image — the
+	// host owns the podman engine + container→image resolution the out-of-process plugin cannot
+	// reach. Class-generic (parameterized by label name): the mcp verb reads ai.opencharly.mcp_provide;
+	// any verb needing a baked label uses it. Empty value (label absent) is a valid reply.
 	ResolveImageLabel(ctx context.Context, in *ResolveImageLabelRequest, opts ...grpc.CallOption) (*ResolveImageLabelReply, error)
 }
 
@@ -954,12 +968,26 @@ type CheckContextServiceServer interface {
 	HTTPDo(context.Context, *HTTPDoRequest) (*HTTPDoReply, error)
 	AddBackground(context.Context, *AddBackgroundRequest) (*Empty, error)
 	// ResolveEndpoint: resolve the check target's venue (container / VM / ssh / local) and
+	// return a host-reachable address for an in-venue TCP port — opening (and host-side
+	// tracking, for post-Invoke teardown) any ssh -L forward a VM/ssh venue needs. Class-
+	// generic: ANY endpoint check verb (cdp/vnc/spice/…) declares its port and dials the addr.
 	ResolveEndpoint(context.Context, *ResolveEndpointRequest) (*ResolveEndpointReply, error)
 	// ResolveGraphicsEndpoint: resolve a VM's <graphics type='<kind>'> listener (kind = "vnc"
+	// | "spice") to a dialable endpoint — the host owns the go-libvirt resolution, any
+	// qemu+ssh:// tunnel (tracked for post-Invoke teardown), the socket->TCP bridge a TCP-only
+	// client needs, and the credential-store password. Class-generic: parameterized by kind,
+	// shared by the vnc + spice verbs (never a per-verb RPC).
 	ResolveGraphicsEndpoint(context.Context, *ResolveGraphicsEndpointRequest) (*ResolveGraphicsEndpointReply, error)
 	// ResolveClusterContext: map a charly k8s cluster-profile NAME to its kubeconfig context by
+	// reading the project's kind:k8s spec (findK8sSpec) — the host owns the project loader the
+	// out-of-process plugin cannot reach. Class-generic (concept-named, not verb-named): any
+	// cluster-probing verb declares its cluster profile and gets the context. Empty context (no
+	// matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
 	ResolveClusterContext(context.Context, *ResolveClusterContextRequest) (*ResolveClusterContextReply, error)
 	// ResolveImageLabel: read one OCI label value off the deployment-under-test's image — the
+	// host owns the podman engine + container→image resolution the out-of-process plugin cannot
+	// reach. Class-generic (parameterized by label name): the mcp verb reads ai.opencharly.mcp_provide;
+	// any verb needing a baked label uses it. Empty value (label absent) is a valid reply.
 	ResolveImageLabel(context.Context, *ResolveImageLabelRequest) (*ResolveImageLabelReply, error)
 	mustEmbedUnimplementedCheckContextServiceServer()
 }

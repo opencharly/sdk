@@ -137,6 +137,10 @@ func (x *Capabilities) GetSchemaCue() string {
 }
 
 // ProvidedCapability — one served capability plus the CUE def that validates its
+// plugin_input. The schema travels with the plugin over Describe (the same channel
+// for in-proc builtin and out-of-proc external — zero distinction), so the host
+// validates authored plugin_input against `base ++ served` without ever reading a
+// candy's schema/ dir. `input_def` is explicit (no Title-case naming convention).
 type ProvidedCapability struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// "verb" / "kind" / "deploy" / "step" / "builder"
@@ -282,6 +286,12 @@ func (x *ProvidedCapability) GetCommandModelJson() []byte {
 }
 
 // DeployTraits — a SUBSTRATE kind's DECLARED deploy behaviour (P9), advertised per substrate
+// word over Describe and stamped by kit.StampDescent onto the node's DescentDescriptor. This is
+// the SINGLE plugin-declared source for "how does this substrate behave in the deploy chain",
+// so the kernel consults it BY TRAIT (off node.Descent) — never by switching on the kind word.
+// Canonical table: pod=container+image_backed+image_context; vm=ssh+machine_venue+exclusive_venue;
+// local=shell+machine_venue; k8s=shell+image_context+leaf_only; android=parent; zero value =
+// external-in-place. Empty/absent for every non-kind (or non-substrate kind) capability.
 type DeployTraits struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// "container" | "ssh" | "shell" | "parent" | "none": how commands physically execute in this substrate's venue
@@ -373,6 +383,11 @@ func (x *DeployTraits) GetLeafOnly() bool {
 }
 
 // StepContract — a class="step" plugin's DECLARED install-step contract (F3): where the
+// step's effect lands (scope) + where its commands execute (venue) + the opt-in gate it
+// needs. This is what makes an external step kind a first-class IR step whose privilege /
+// gating the host applies WITHOUT a compiled-in case (the open default arm). Reverse is NOT
+// declared — an external step's teardown ops are DYNAMIC, recorded from its OpExecute reply
+// (the same record-and-replay as ExternalPluginStep). Empty/absent for non-step capabilities.
 type StepContract struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// "system" | "user" | "user-profile"
@@ -535,6 +550,7 @@ func (x *InvokeRequest) GetExecutorBrokerId() uint32 {
 	return 0
 }
 
+// CheckResult / InstallPlan / Diagnostics, JSON
 type InvokeReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ResultJson    []byte                 `protobuf:"bytes,1,opt,name=result_json,json=resultJson,proto3" json:"result_json,omitempty"`
@@ -579,7 +595,7 @@ func (x *InvokeReply) GetResultJson() []byte {
 	return nil
 }
 
-// CheckResult / InstallPlan / Diagnostics, JSON
+// one streamed result frame (single-shot sends one)
 type Frame struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ResultJson    []byte                 `protobuf:"bytes,1,opt,name=result_json,json=resultJson,proto3" json:"result_json,omitempty"`
@@ -802,6 +818,7 @@ func (x *ChannelFrame) GetReplayFrom() uint64 {
 }
 
 // InvokeProviderRequest mirrors InvokeRequest minus the broker id (the host already holds the
+// reverse context): dispatch op `op` on provider (class, reserved) with params/env (F10).
 type InvokeProviderRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Class         string                 `protobuf:"bytes,1,opt,name=class,proto3" json:"class,omitempty"`
@@ -879,6 +896,8 @@ func (x *InvokeProviderRequest) GetEnvJson() []byte {
 }
 
 // HostBuildRequest names a registered host-builder `kind` (e.g. "plugin-binary", and — added by
+// M13/M14 — "kustomize"/"image") + an opaque `spec_json` it interprets (F10). HostBuildReply
+// carries the builder's opaque result (e.g. an artifact path/handle JSON) or an error.
 type HostBuildRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
@@ -984,6 +1003,9 @@ func (x *HostBuildReply) GetError() string {
 }
 
 // C9 resource-arbiter reverse channel (ExecutorService.HostArbiter). action names one of the
+// 7 arbiter host-seams (spec.ArbiterSeam*); params_json is the seam's spec request; result_json
+// is the seam's spec reply. error = an infra failure of the RPC handler itself (a seam OP failure
+// rides the reply's own error field, like RunReply/HostBuildReply).
 type HostArbiterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
@@ -1132,6 +1154,7 @@ func (x *VenueReply) GetVenue() string {
 	return ""
 }
 
+// opts_json = EmitOpts, JSON
 type RunRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Script        string                 `protobuf:"bytes,1,opt,name=script,proto3" json:"script,omitempty"`
@@ -1184,7 +1207,7 @@ func (x *RunRequest) GetOptsJson() []byte {
 	return nil
 }
 
-// opts_json = EmitOpts, JSON
+// empty error = success
 type RunReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Error         string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"`
@@ -1229,7 +1252,7 @@ func (x *RunReply) GetError() string {
 	return ""
 }
 
-// empty error = success
+// content placed at path; mode = octal perms; opts_json = EmitOpts
 type PutFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -1306,7 +1329,7 @@ func (x *PutFileRequest) GetOptsJson() []byte {
 	return nil
 }
 
-// content placed at path; mode = octal perms; opts_json = EmitOpts
+// empty error = success
 type PutFileReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Error         string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"`
@@ -1351,7 +1374,7 @@ func (x *PutFileReply) GetError() string {
 	return ""
 }
 
-// empty error = success
+// error = execution failure, NOT a non-zero exit
 type CaptureReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Stdout        string                 `protobuf:"bytes,1,opt,name=stdout,proto3" json:"stdout,omitempty"`
@@ -1420,7 +1443,7 @@ func (x *CaptureReply) GetError() string {
 	return ""
 }
 
-// error = execution failure, NOT a non-zero exit
+// F12 RunInteractive/RunStream: stdout/stderr/stdin went LIVE to the operator's terminal (host-held), so no buffers — only the session's exit code; error = execution/spawn failure, NOT a non-zero exit (CaptureReply's split, sans buffers)
 type LiveReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExitCode      int32                  `protobuf:"varint,1,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
@@ -1473,7 +1496,6 @@ func (x *LiveReply) GetError() string {
 	return ""
 }
 
-// F12 RunInteractive/RunStream: stdout/stderr/stdin went LIVE to the operator's terminal (host-held), so no buffers — only the session's exit code; error = execution/spawn failure, NOT a non-zero exit (CaptureReply's split, sans buffers)
 type GetFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -1587,6 +1609,11 @@ func (x *GetFileReply) GetError() string {
 }
 
 // step_json = ONE spec.InstallStepView (a HOST-ENGINE step kind — Builder, LocalPkgInstall,
+// SystemPackages, an act-verb Op, or ExternalPlugin — projected by stepToView); opts_json =
+// EmitOpts. reverse_ops_json = the step's recorded []spec.ReverseOp (the plugin folds them
+// into its DeployReply for record-and-replay teardown). error = a host-engine/apply FAILURE
+// on the venue (the RPC itself succeeds — the failure rides the reply field, like
+// RunReply/CaptureReply).
 type HostStepRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StepJson      []byte                 `protobuf:"bytes,1,opt,name=step_json,json=stepJson,proto3" json:"step_json,omitempty"`
@@ -1692,6 +1719,8 @@ func (x *HostStepReply) GetError() string {
 }
 
 // HTTPDoRequest carries the FULL request + per-request policy the host needs to build the
+// client (httpClientFor) host-side: ca_pem is the resolved CA PEM bytes (the candy reads its
+// authored ca_file host-side and ships the bytes), timeout is a Go duration string ("" = base).
 type HTTPDoRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Method            string                 `protobuf:"bytes,1,opt,name=method,proto3" json:"method,omitempty"`
@@ -1793,6 +1822,7 @@ func (x *HTTPDoRequest) GetCaPem() []byte {
 }
 
 // HTTPDoReply: status + body + response headers, or a transport-level error (the RPC itself
+// succeeds — a failed request rides the error field, like RunReply/CaptureReply).
 type HTTPDoReply struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Status int32                  `protobuf:"varint,1,opt,name=status,proto3" json:"status,omitempty"`
@@ -2050,6 +2080,8 @@ func (x *ResolveGraphicsEndpointRequest) GetKind() string {
 }
 
 // ResolveGraphicsEndpointReply: the dialable endpoint. Exactly one of addr / socket is set;
+// password is the resolved ticket (empty = no auth). skip=true with skip_message signals a
+// deployment with no graphics device of that kind (an N/A skip, not a failure).
 type ResolveGraphicsEndpointReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Addr          string                 `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
