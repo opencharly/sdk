@@ -5,7 +5,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,29 +44,49 @@ func TestTargetkitHelperProcess(t *testing.T) {
 // fixed remote endpoint argv. This catches regressions hidden by argv-only unit
 // tests.
 func TestGRPCOverProcessTransports(t *testing.T) {
+	execDir := t.TempDir()
+	remoteOnlyDir := filepath.Join(t.TempDir(), "remote-only-missing")
+	const localEnvKey = "CHARLY_TARGETKIT_LOCAL_SENTINEL"
+	const remoteEnvKey = "CHARLY_TARGETKIT_REMOTE_ONLY_SENTINEL"
 	cases := []struct {
-		name   string
-		target spec.TargetSpec
-		check  func(*testing.T, string, []string)
+		name         string
+		target       spec.TargetSpec
+		check        func(*testing.T, string, []string)
+		wantDir      string
+		wantEnvKey   string
+		wantEnvValue string
+		forbiddenEnv string
 	}{
 		{
-			name:   "exec",
-			target: spec.TargetSpec{Hops: []spec.TargetHop{{Transport: "exec"}, {Transport: "grpc"}}},
+			name: "exec",
+			target: spec.TargetSpec{WorkingDir: execDir, Hops: []spec.TargetHop{
+				{Transport: "exec", Env: spec.StrMap{localEnvKey: "local"}},
+				{Transport: "grpc"},
+			}},
 			check: func(t *testing.T, name string, args []string) {
 				if name != "charly" || !reflect.DeepEqual(args, []string{"__agent-target", "serve", "--stdio"}) {
 					t.Fatalf("exec endpoint = %q %q", name, args)
 				}
 			},
+			wantDir:      execDir,
+			wantEnvKey:   localEnvKey,
+			wantEnvValue: "local",
 		},
 		{
-			name:   "ssh",
-			target: spec.TargetSpec{Hops: []spec.TargetHop{{Transport: "ssh", Address: "box", User: "agent"}, {Transport: "grpc"}, {Transport: "tmux"}}},
+			name: "ssh",
+			target: spec.TargetSpec{WorkingDir: remoteOnlyDir, Hops: []spec.TargetHop{
+				{Transport: "ssh", Address: "box", User: "agent", Env: spec.StrMap{remoteEnvKey: "remote"}},
+				{Transport: "grpc"},
+				{Transport: "tmux"},
+			}},
 			check: func(t *testing.T, name string, args []string) {
-				want := []string{"-T", "agent@box", "'charly' '__agent-target' 'serve' '--stdio'"}
+				remote := "cd " + shellQuote(remoteOnlyDir) + " && env " + shellQuote(remoteEnvKey+"=remote") + " 'charly' '__agent-target' 'serve' '--stdio'"
+				want := []string{"-T", "agent@box", remote}
 				if name != "ssh" || !reflect.DeepEqual(args, want) {
 					t.Fatalf("ssh endpoint = %q %q, want ssh %q", name, args, want)
 				}
 			},
+			forbiddenEnv: remoteEnvKey + "=remote",
 		},
 	}
 
@@ -72,16 +94,35 @@ func TestGRPCOverProcessTransports(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
+			var launched *exec.Cmd
 			conn, client, err := DialProvider(ctx, tc.target, DialOptions{
 				Command: func(ctx context.Context, name string, args ...string) *exec.Cmd {
 					tc.check(t, name, args)
 					cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestTargetkitHelperProcess$")
-					cmd.Env = append(os.Environ(), "CHARLY_TARGETKIT_HELPER=1")
+					cmd.Env = append(os.Environ(), "CHARLY_TARGETKIT_HELPER=1", localEnvKey+"=factory")
+					launched = cmd
 					return cmd
 				},
 			})
 			if err != nil {
 				t.Fatalf("dial: %v", err)
+			}
+			if launched == nil {
+				t.Fatal("dial did not construct a carrier process")
+			}
+			if launched.Dir != tc.wantDir {
+				t.Fatalf("local carrier cwd = %q, want %q", launched.Dir, tc.wantDir)
+			}
+			if !containsEnv(launched.Env, "CHARLY_TARGETKIT_HELPER=1") {
+				t.Fatal("target env overlay discarded the command factory environment")
+			}
+			if tc.wantEnvKey != "" {
+				if got := effectiveEnv(launched.Env, tc.wantEnvKey); got != tc.wantEnvValue {
+					t.Fatalf("local carrier env %s = %q, want %q", tc.wantEnvKey, got, tc.wantEnvValue)
+				}
+			}
+			if tc.forbiddenEnv != "" && containsEnv(launched.Env, tc.forbiddenEnv) {
+				t.Fatalf("remote-only env leaked to local carrier: %q", tc.forbiddenEnv)
 			}
 			t.Cleanup(func() {
 				if err := conn.Close(); err != nil {
@@ -97,6 +138,26 @@ func TestGRPCOverProcessTransports(t *testing.T) {
 			}
 		})
 	}
+}
+
+func containsEnv(env []string, want string) bool {
+	for _, pair := range env {
+		if pair == want {
+			return true
+		}
+	}
+	return false
+}
+
+func effectiveEnv(env []string, key string) string {
+	prefix := key + "="
+	value := ""
+	for _, pair := range env {
+		if strings.HasPrefix(pair, prefix) {
+			value = strings.TrimPrefix(pair, prefix)
+		}
+	}
+	return value
 }
 
 func TestGRPCOverRealOpenSSH(t *testing.T) {

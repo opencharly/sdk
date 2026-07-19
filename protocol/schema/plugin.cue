@@ -118,7 +118,7 @@ protocol: {
 				{
 					"name":   "command_model_json"
 					"type":   "bytes"
-					"number": 12
+					"number": 13
 					"doc":    "CUE #CLIModel JSON for class=command; lets CLI and MCP reflect plugin-owned leaves without importing plugin code"
 				},
 			]

@@ -162,7 +162,7 @@ type ProvidedCapability struct {
 	// set ONLY for class="kind" (P9): a SUBSTRATE kind's DECLARED deploy behaviour traits, the SINGLE plugin-declared source kit.StampDescent stamps onto node.Descent — the consult sites read the traits off node.Descent instead of switching on the substrate kind word
 	DeployTraits *DeployTraits `protobuf:"bytes,11,opt,name=deploy_traits,json=deployTraits,proto3" json:"deploy_traits,omitempty"`
 	// CUE #CLIModel JSON for class=command; lets CLI and MCP reflect plugin-owned leaves without importing plugin code
-	CommandModelJson []byte `protobuf:"bytes,12,opt,name=command_model_json,json=commandModelJson,proto3" json:"command_model_json,omitempty"`
+	CommandModelJson []byte `protobuf:"bytes,13,opt,name=command_model_json,json=commandModelJson,proto3" json:"command_model_json,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -2359,7 +2359,7 @@ const file_plugin_proto_rawDesc = "" +
 	"\aprimary\x18\n" +
 	" \x01(\tR\aprimary\x12?\n" +
 	"\rdeploy_traits\x18\v \x01(\v2\x1a.charlyplugin.DeployTraitsR\fdeployTraits\x12,\n" +
-	"\x12command_model_json\x18\f \x01(\fR\x10commandModelJson\"\xd7\x01\n" +
+	"\x12command_model_json\x18\r \x01(\fR\x10commandModelJson\"\xd7\x01\n" +
 	"\fDeployTraits\x12\x14\n" +
 	"\x05venue\x18\x01 \x01(\tR\x05venue\x12!\n" +
 	"\fimage_backed\x18\x02 \x01(\bR\vimageBacked\x12#\n" +

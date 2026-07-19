@@ -47,7 +47,7 @@ type DialOptions struct {
 // hops are carried as TargetSpec on the first Provider.Channel frame and are
 // resolved by the responsible Charly node.
 func DialProvider(ctx context.Context, target spec.TargetSpec, opts DialOptions) (*grpc.ClientConn, pb.ProviderClient, error) {
-	argv, err := StdioCommand(target, opts)
+	launch, err := stdioLaunchPlan(target, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -55,10 +55,10 @@ func DialProvider(ctx context.Context, target spec.TargetSpec, opts DialOptions)
 	if command == nil {
 		command = exec.CommandContext
 	}
-	cmd := command(ctx, argv[0], argv[1:]...)
-	cmd.Dir = target.WorkingDir
-	if len(target.Hops) > 0 && len(target.Hops[0].Env) > 0 {
-		cmd.Env = append(os.Environ(), sortedEnv(target.Hops[0].Env)...)
+	cmd := command(ctx, launch.argv[0], launch.argv[1:]...)
+	cmd.Dir = launch.dir
+	if launch.env != nil {
+		cmd.Env = append(cmd.Environ(), launch.env...)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdin, err := cmd.StdinPipe()
@@ -115,8 +115,26 @@ func dialProviderConn(ctx context.Context, processConn net.Conn, extra []grpc.Di
 // interpolation. Hops after the first grpc marker—including tmux, another SSH
 // node, or an exec/container hop—are nested routing data, not special cases.
 func StdioCommand(target spec.TargetSpec, opts DialOptions) ([]string, error) {
+	launch, err := stdioLaunchPlan(target, opts)
+	if err != nil {
+		return nil, err
+	}
+	return launch.argv, nil
+}
+
+type stdioLaunch struct {
+	argv []string
+	dir  string
+	env  []string
+}
+
+// stdioLaunchPlan keeps endpoint attributes on the side that owns them. An
+// exec hop launches the endpoint directly, so cwd/env belong to the local
+// child. An SSH hop renders cwd/env into the remote command; applying either
+// to the local ssh carrier would conflate controller and target state.
+func stdioLaunchPlan(target spec.TargetSpec, opts DialOptions) (stdioLaunch, error) {
 	if len(target.Hops) == 0 {
-		return nil, errors.New("targetkit: target route has no hops")
+		return stdioLaunch{}, errors.New("targetkit: target route has no hops")
 	}
 	grpcAt := -1
 	for i, hop := range target.Hops {
@@ -126,7 +144,7 @@ func StdioCommand(target spec.TargetSpec, opts DialOptions) ([]string, error) {
 		}
 	}
 	if grpcAt < 0 {
-		return nil, errors.New("targetkit: target route requires a grpc hop")
+		return stdioLaunch{}, errors.New("targetkit: target route requires a grpc hop")
 	}
 	first := target.Hops[0]
 	charly := opts.CharlyBinary
@@ -136,15 +154,20 @@ func StdioCommand(target spec.TargetSpec, opts DialOptions) ([]string, error) {
 	switch first.Transport {
 	case "exec":
 		if grpcAt != 1 && grpcAt != 0 {
-			return nil, fmt.Errorf("targetkit: exec transport must connect directly to grpc, got grpc at hop %d", grpcAt)
+			return stdioLaunch{}, fmt.Errorf("targetkit: exec transport must connect directly to grpc, got grpc at hop %d", grpcAt)
 		}
+		argv := []string{charly, stdioServeGroup, stdioServeLeaf, "--stdio"}
 		if len(first.Command) > 0 {
-			return append([]string(nil), first.Command...), nil
+			argv = append([]string(nil), first.Command...)
 		}
-		return []string{charly, stdioServeGroup, stdioServeLeaf, "--stdio"}, nil
+		launch := stdioLaunch{argv: argv, dir: target.WorkingDir}
+		if len(first.Env) > 0 {
+			launch.env = sortedEnv(first.Env)
+		}
+		return launch, nil
 	case "ssh":
 		if first.Address == "" {
-			return nil, errors.New("targetkit: ssh hop requires address")
+			return stdioLaunch{}, errors.New("targetkit: ssh hop requires address")
 		}
 		ssh := opts.SSHBinary
 		if ssh == "" {
@@ -192,9 +215,9 @@ func StdioCommand(target spec.TargetSpec, opts DialOptions) ([]string, error) {
 			remote += shellQuote(arg)
 		}
 		argv = append(argv, remote)
-		return argv, nil
+		return stdioLaunch{argv: argv}, nil
 	default:
-		return nil, fmt.Errorf("targetkit: outer transport %q cannot carry gRPC stdio", first.Transport)
+		return stdioLaunch{}, fmt.Errorf("targetkit: outer transport %q cannot carry gRPC stdio", first.Transport)
 	}
 }
 

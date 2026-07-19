@@ -47,7 +47,7 @@ message ProvidedCapability {
   // set ONLY for class="kind" (P9): a SUBSTRATE kind's DECLARED deploy behaviour traits, the SINGLE plugin-declared source kit.StampDescent stamps onto node.Descent — the consult sites read the traits off node.Descent instead of switching on the substrate kind word
   DeployTraits deploy_traits = 11;
   // CUE #CLIModel JSON for class=command; lets CLI and MCP reflect plugin-owned leaves without importing plugin code
-  bytes command_model_json = 12;
+  bytes command_model_json = 13;
 }
 
 // DeployTraits — a SUBSTRATE kind's DECLARED deploy behaviour (P9), advertised per substrate
