@@ -15,7 +15,22 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/renameio/v2"
+	sdk "github.com/opencharly/sdk"
 	"github.com/opencharly/sdk/spec"
+)
+
+const (
+	agentAbortControlDefinition = "#AgentAbortControl"
+	agentEventDefinition        = "#AgentEvent"
+	agentFederationDefinition   = "#AgentFederationRecord"
+	agentRunDefinition          = "#AgentRunRequest"
+	agentSessionDefinition      = "#AgentSession"
+	agentTeamDefinition         = "#AgentTeamRecord"
+	incidentDefinition          = "#Incident"
+	rcaDefinition               = "#RCARecord"
+	recoveryDefinition          = "#RecoveryDecision"
+	terminalFrameDefinition     = "#TerminalFrame"
+	uuidV7Definition            = "#UUIDv7"
 )
 
 // Store is a daemon-free durable agent state directory. Every record is a
@@ -37,22 +52,24 @@ func OpenStore(dir string) (*Store, error) {
 	}
 	for _, sub := range []string{"sessions", "runs", "events", "terminal", "teams", "federation", "incidents", "rcas", "recoveries", "evidence"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("agent store: create %s directory: %w", sub, err)
 		}
 	}
 	return &Store{Dir: dir}, nil
 }
 
-func (s *Store) PutTeam(v spec.AgentTeamRecord) error { return s.put("teams", string(v.ID), v) }
+func (s *Store) PutTeam(v spec.AgentTeamRecord) error {
+	return s.put("teams", agentTeamDefinition, v.ID, v)
+}
 func (s *Store) Team(id spec.UUIDv7) (spec.AgentTeamRecord, error) {
 	var v spec.AgentTeamRecord
-	return v, s.get("teams", string(id), &v)
+	return v, s.get("teams", agentTeamDefinition, id, &v, func() spec.UUIDv7 { return v.ID })
 }
 func (s *Store) Teams() ([]spec.AgentTeamRecord, error) {
 	var out []spec.AgentTeamRecord
 	err := s.list("teams", func(path string) error {
 		var v spec.AgentTeamRecord
-		if err := readJSON(path, &v); err != nil {
+		if err := readRecord(path, agentTeamDefinition, &v, func() spec.UUIDv7 { return v.ID }); err != nil {
 			return err
 		}
 		out = append(out, v)
@@ -62,16 +79,18 @@ func (s *Store) Teams() ([]spec.AgentTeamRecord, error) {
 	return out, err
 }
 
-func (s *Store) PutSession(v spec.AgentSession) error { return s.put("sessions", string(v.ID), v) }
+func (s *Store) PutSession(v spec.AgentSession) error {
+	return s.put("sessions", agentSessionDefinition, v.ID, v)
+}
 func (s *Store) Session(id spec.UUIDv7) (spec.AgentSession, error) {
 	var v spec.AgentSession
-	return v, s.get("sessions", string(id), &v)
+	return v, s.get("sessions", agentSessionDefinition, id, &v, func() spec.UUIDv7 { return v.ID })
 }
 func (s *Store) Sessions() ([]spec.AgentSession, error) {
 	var out []spec.AgentSession
 	err := s.list("sessions", func(path string) error {
 		var v spec.AgentSession
-		if err := readJSON(path, &v); err != nil {
+		if err := readRecord(path, agentSessionDefinition, &v, func() spec.UUIDv7 { return v.ID }); err != nil {
 			return err
 		}
 		out = append(out, v)
@@ -81,14 +100,24 @@ func (s *Store) Sessions() ([]spec.AgentSession, error) {
 	return out, err
 }
 
-func (s *Store) PutRun(v spec.AgentRunRequest) error { return s.put("runs", string(v.ID), v) }
+func (s *Store) PutRun(v spec.AgentRunRequest) error {
+	return s.put("runs", agentRunDefinition, v.ID, v)
+}
 
 // CreateRunOnce atomically reserves an idempotency key across concurrent
 // controller processes. It returns the existing record without overwriting it.
 func (s *Store) CreateRunOnce(v spec.AgentRunRequest) (spec.AgentRunRequest, bool, error) {
 	var result spec.AgentRunRequest
 	created := false
-	err := s.withLock(func() error {
+	name, err := validatedRecordName(v.ID)
+	if err != nil {
+		return result, false, err
+	}
+	b, err := marshalGenerated(agentRunDefinition, v, true)
+	if err != nil {
+		return result, false, err
+	}
+	err = s.withLock(func() error {
 		entries, err := os.ReadDir(filepath.Join(s.Dir, "runs"))
 		if err != nil {
 			return err
@@ -98,7 +127,12 @@ func (s *Store) CreateRunOnce(v spec.AgentRunRequest) (spec.AgentRunRequest, boo
 				continue
 			}
 			var existing spec.AgentRunRequest
-			if err := readJSON(filepath.Join(s.Dir, "runs", entry.Name()), &existing); err != nil {
+			if err := readRecord(
+				filepath.Join(s.Dir, "runs", entry.Name()),
+				agentRunDefinition,
+				&existing,
+				func() spec.UUIDv7 { return existing.ID },
+			); err != nil {
 				return err
 			}
 			if existing.IdempotencyKey == v.IdempotencyKey {
@@ -106,11 +140,7 @@ func (s *Store) CreateRunOnce(v spec.AgentRunRequest) (spec.AgentRunRequest, boo
 				return nil
 			}
 		}
-		b, err := json.MarshalIndent(v, "", "  ")
-		if err != nil {
-			return err
-		}
-		path := filepath.Join(s.Dir, "runs", safeName(string(v.ID))+".json")
+		path := filepath.Join(s.Dir, "runs", name+".json")
 		if err := atomicWrite(path, append(b, '\n')); err != nil {
 			return err
 		}
@@ -121,13 +151,13 @@ func (s *Store) CreateRunOnce(v spec.AgentRunRequest) (spec.AgentRunRequest, boo
 }
 func (s *Store) Run(id spec.UUIDv7) (spec.AgentRunRequest, error) {
 	var v spec.AgentRunRequest
-	return v, s.get("runs", string(id), &v)
+	return v, s.get("runs", agentRunDefinition, id, &v, func() spec.UUIDv7 { return v.ID })
 }
 func (s *Store) Runs() ([]spec.AgentRunRequest, error) {
 	var out []spec.AgentRunRequest
 	err := s.list("runs", func(path string) error {
 		var v spec.AgentRunRequest
-		if err := readJSON(path, &v); err != nil {
+		if err := readRecord(path, agentRunDefinition, &v, func() spec.UUIDv7 { return v.ID }); err != nil {
 			return err
 		}
 		out = append(out, v)
@@ -138,9 +168,12 @@ func (s *Store) Runs() ([]spec.AgentRunRequest, error) {
 }
 func (s *Store) FindIdempotency(key string) (spec.AgentRunRequest, bool, error) {
 	var found spec.AgentRunRequest
+	if key == "" {
+		return found, false, errors.New("agent store: empty idempotency key")
+	}
 	err := s.list("runs", func(path string) error {
 		var v spec.AgentRunRequest
-		if err := readJSON(path, &v); err != nil {
+		if err := readRecord(path, agentRunDefinition, &v, func() spec.UUIDv7 { return v.ID }); err != nil {
 			return err
 		}
 		if v.IdempotencyKey == key {
@@ -155,8 +188,15 @@ func (s *Store) AppendEvent(v spec.AgentEvent) error {
 	if v.Sequence < 1 {
 		return errors.New("agent store: event sequence must be >= 1")
 	}
+	name, err := validatedRecordName(v.RunID)
+	if err != nil {
+		return err
+	}
+	if err := validateGenerated(agentEventDefinition, v); err != nil {
+		return err
+	}
 	return s.withLock(func() error {
-		path := filepath.Join(s.Dir, "events", safeName(string(v.RunID))+".jsonl")
+		path := filepath.Join(s.Dir, "events", name+".jsonl")
 		events, err := readEvents(path)
 		if err != nil {
 			return err
@@ -170,7 +210,7 @@ func (s *Store) AppendEvent(v spec.AgentEvent) error {
 			return err
 		}
 		if err := useFile(f, func() error {
-			b, err := json.Marshal(v)
+			b, err := marshalGenerated(agentEventDefinition, v, false)
 			if err != nil {
 				return err
 			}
@@ -186,14 +226,22 @@ func (s *Store) AppendEvent(v spec.AgentEvent) error {
 }
 
 func (s *Store) Events(runID spec.UUIDv7) ([]spec.AgentEvent, error) {
-	return readEvents(filepath.Join(s.Dir, "events", safeName(string(runID))+".jsonl"))
+	name, err := validatedRecordName(runID)
+	if err != nil {
+		return nil, err
+	}
+	return readEvents(filepath.Join(s.Dir, "events", name+".jsonl"))
 }
 
 // AppendTerminalFrame assigns the next durable per-run sequence under the
 // cross-process store lock and appends one generated terminal evidence frame.
 func (s *Store) AppendTerminalFrame(v spec.TerminalFrame) (spec.TerminalFrame, error) {
-	err := s.withLock(func() error {
-		path := filepath.Join(s.Dir, "terminal", safeName(string(v.RunID))+".jsonl")
+	name, err := validatedRecordName(v.RunID)
+	if err != nil {
+		return v, err
+	}
+	err = s.withLock(func() error {
+		path := filepath.Join(s.Dir, "terminal", name+".jsonl")
 		frames, err := readTerminalFrames(path)
 		if err != nil {
 			return err
@@ -207,12 +255,15 @@ func (s *Store) AppendTerminalFrame(v spec.TerminalFrame) (spec.TerminalFrame, e
 		} else if v.Sequence != want && (v.Kind != "resync" || v.Sequence <= want) {
 			return fmt.Errorf("agent store: terminal sequence %d, want %d", v.Sequence, want)
 		}
+		if err := validateGenerated(terminalFrameDefinition, v); err != nil {
+			return err
+		}
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return err
 		}
 		if err := useFile(f, func() error {
-			data, err := json.Marshal(v)
+			data, err := marshalGenerated(terminalFrameDefinition, v, false)
 			if err != nil {
 				return err
 			}
@@ -229,28 +280,43 @@ func (s *Store) AppendTerminalFrame(v spec.TerminalFrame) (spec.TerminalFrame, e
 }
 
 func (s *Store) TerminalFrames(runID spec.UUIDv7) ([]spec.TerminalFrame, error) {
-	return readTerminalFrames(filepath.Join(s.Dir, "terminal", safeName(string(runID))+".jsonl"))
+	name, err := validatedRecordName(runID)
+	if err != nil {
+		return nil, err
+	}
+	return readTerminalFrames(filepath.Join(s.Dir, "terminal", name+".jsonl"))
 }
 
 // RequestAbort records cross-process cancellation intent for the synchronous,
 // ephemeral controller currently owning a run. No agent daemon is involved.
 func (s *Store) RequestAbort(v spec.AgentAbortControl) error {
+	name, err := validatedRecordName(v.RunID)
+	if err != nil {
+		return err
+	}
+	data, err := marshalGenerated(agentAbortControlDefinition, v, false)
+	if err != nil {
+		return err
+	}
 	return s.withLock(func() error {
-		path := filepath.Join(s.Dir, "runs", safeName(string(v.RunID))+".abort")
-		data, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
+		path := filepath.Join(s.Dir, "runs", name+".abort")
 		return atomicWrite(path, append(data, '\n'))
 	})
 }
 
 func (s *Store) AbortRequested(runID spec.UUIDv7) (*spec.AgentAbortControl, error) {
-	path := filepath.Join(s.Dir, "runs", safeName(string(runID))+".abort")
+	name, err := validatedRecordName(runID)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(s.Dir, "runs", name+".abort")
 	var v spec.AgentAbortControl
-	err := readJSON(path, &v)
+	err = readGeneratedJSON(path, agentAbortControlDefinition, &v)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
+	}
+	if err == nil && v.RunID != runID {
+		return nil, recordIDMismatch(path, string(v.RunID))
 	}
 	return &v, err
 }
@@ -295,23 +361,29 @@ func (s *Store) WaitAbort(ctx context.Context, runID spec.UUIDv7) (*spec.AgentAb
 }
 
 func (s *Store) ClearAbort(runID spec.UUIDv7) error {
-	err := os.Remove(filepath.Join(s.Dir, "runs", safeName(string(runID))+".abort"))
+	name, err := validatedRecordName(runID)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(filepath.Join(s.Dir, "runs", name+".abort"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	return err
 }
 
-func (s *Store) PutIncident(v spec.Incident) error { return s.put("incidents", string(v.ID), v) }
+func (s *Store) PutIncident(v spec.Incident) error {
+	return s.put("incidents", incidentDefinition, v.ID, v)
+}
 func (s *Store) Incident(id spec.UUIDv7) (spec.Incident, error) {
 	var v spec.Incident
-	return v, s.get("incidents", string(id), &v)
+	return v, s.get("incidents", incidentDefinition, id, &v, func() spec.UUIDv7 { return v.ID })
 }
 func (s *Store) Incidents() ([]spec.Incident, error) {
 	var out []spec.Incident
 	err := s.list("incidents", func(path string) error {
 		var v spec.Incident
-		if err := readJSON(path, &v); err != nil {
+		if err := readRecord(path, incidentDefinition, &v, func() spec.UUIDv7 { return v.ID }); err != nil {
 			return err
 		}
 		out = append(out, v)
@@ -319,16 +391,18 @@ func (s *Store) Incidents() ([]spec.Incident, error) {
 	})
 	return out, err
 }
-func (s *Store) PutRCA(v spec.RCARecord) error { return s.put("rcas", string(v.ID), v) }
+func (s *Store) PutRCA(v spec.RCARecord) error {
+	return s.put("rcas", rcaDefinition, v.ID, v)
+}
 func (s *Store) RCA(id spec.UUIDv7) (spec.RCARecord, error) {
 	var v spec.RCARecord
-	return v, s.get("rcas", string(id), &v)
+	return v, s.get("rcas", rcaDefinition, id, &v, func() spec.UUIDv7 { return v.ID })
 }
 func (s *Store) RCAs() ([]spec.RCARecord, error) {
 	var out []spec.RCARecord
 	err := s.list("rcas", func(path string) error {
 		var v spec.RCARecord
-		if err := readJSON(path, &v); err != nil {
+		if err := readRecord(path, rcaDefinition, &v, func() spec.UUIDv7 { return v.ID }); err != nil {
 			return err
 		}
 		out = append(out, v)
@@ -337,17 +411,17 @@ func (s *Store) RCAs() ([]spec.RCARecord, error) {
 	return out, err
 }
 func (s *Store) PutRecovery(v spec.RecoveryDecision) error {
-	return s.put("recoveries", string(v.ID), v)
+	return s.put("recoveries", recoveryDefinition, v.ID, v)
 }
 func (s *Store) Recovery(id spec.UUIDv7) (spec.RecoveryDecision, error) {
 	var v spec.RecoveryDecision
-	return v, s.get("recoveries", string(id), &v)
+	return v, s.get("recoveries", recoveryDefinition, id, &v, func() spec.UUIDv7 { return v.ID })
 }
 func (s *Store) Recoveries() ([]spec.RecoveryDecision, error) {
 	var out []spec.RecoveryDecision
 	err := s.list("recoveries", func(path string) error {
 		var v spec.RecoveryDecision
-		if err := readJSON(path, &v); err != nil {
+		if err := readRecord(path, recoveryDefinition, &v, func() spec.UUIDv7 { return v.ID }); err != nil {
 			return err
 		}
 		out = append(out, v)
@@ -356,13 +430,13 @@ func (s *Store) Recoveries() ([]spec.RecoveryDecision, error) {
 	return out, err
 }
 func (s *Store) PutFederation(v spec.AgentFederationRecord) error {
-	return s.put("federation", string(v.ID), v)
+	return s.put("federation", agentFederationDefinition, v.ID, v)
 }
 func (s *Store) Federation() ([]spec.AgentFederationRecord, error) {
 	var out []spec.AgentFederationRecord
 	err := s.list("federation", func(path string) error {
 		var v spec.AgentFederationRecord
-		if err := readJSON(path, &v); err != nil {
+		if err := readRecord(path, agentFederationDefinition, &v, func() spec.UUIDv7 { return v.ID }); err != nil {
 			return err
 		}
 		out = append(out, v)
@@ -372,16 +446,17 @@ func (s *Store) Federation() ([]spec.AgentFederationRecord, error) {
 	return out, err
 }
 
-func (s *Store) put(sub, id string, value any) error {
-	if id == "" {
-		return errors.New("agent store: empty record id")
+func (s *Store) put(sub, definition string, id spec.UUIDv7, value any) error {
+	name, err := validatedRecordName(id)
+	if err != nil {
+		return err
+	}
+	b, err := marshalGenerated(definition, value, true)
+	if err != nil {
+		return err
 	}
 	return s.withLock(func() error {
-		b, err := json.MarshalIndent(value, "", "  ")
-		if err != nil {
-			return err
-		}
-		path := filepath.Join(s.Dir, sub, safeName(id)+".json")
+		path := filepath.Join(s.Dir, sub, name+".json")
 		return atomicWrite(path, append(b, '\n'))
 	})
 }
@@ -405,8 +480,18 @@ func syncDirectory(path string) (returnErr error) {
 	return nil
 }
 
-func (s *Store) get(sub, id string, dst any) error {
-	return readJSON(filepath.Join(s.Dir, sub, safeName(id)+".json"), dst)
+func (s *Store) get(
+	sub string,
+	definition string,
+	id spec.UUIDv7,
+	dst any,
+	recordID func() spec.UUIDv7,
+) error {
+	name, err := validatedRecordName(id)
+	if err != nil {
+		return err
+	}
+	return readRecord(filepath.Join(s.Dir, sub, name+".json"), definition, dst, recordID)
 }
 
 func (s *Store) list(sub string, fn func(string) error) error {
@@ -443,15 +528,63 @@ func useFile(file *os.File, operation func() error) (returnErr error) {
 	return operation()
 }
 
-func readJSON(path string, dst any) error {
+func validateGenerated(definition string, value any) error {
+	if err := sdk.ValidateGenerated(definition, value); err != nil {
+		return fmt.Errorf("agent store: validate %s: %w", definition, err)
+	}
+	return nil
+}
+
+func marshalGenerated(definition string, value any, indent bool) ([]byte, error) {
+	if err := validateGenerated(definition, value); err != nil {
+		return nil, err
+	}
+	if indent {
+		return json.MarshalIndent(value, "", "  ")
+	}
+	return json.Marshal(value)
+}
+
+func validatedRecordName(id spec.UUIDv7) (string, error) {
+	if err := validateGenerated(uuidV7Definition, id); err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func readGeneratedJSON(path, definition string, dst any) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(b, dst); err != nil {
-		return fmt.Errorf("agent store %s: %w", path, err)
+	if err := sdk.DecodeGeneratedJSON(definition, b, dst); err != nil {
+		return fmt.Errorf("agent store: decode and validate %s as %s: %w", path, definition, err)
 	}
 	return nil
+}
+
+func readRecord(path, definition string, dst any, recordID func() spec.UUIDv7) error {
+	if err := readGeneratedJSON(path, definition, dst); err != nil {
+		return err
+	}
+	if got := string(recordID()); got != recordNameFromPath(path) {
+		return recordIDMismatch(path, got)
+	}
+	return nil
+}
+
+func recordNameFromPath(path string) string {
+	base := filepath.Base(path)
+	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+func recordIDMismatch(path, got string) error {
+	return fmt.Errorf(
+		"agent store: record id %q does not match filename id %q in %s",
+		got,
+		recordNameFromPath(path),
+		path,
+	)
 }
 
 func readEvents(path string) (out []spec.AgentEvent, returnErr error) {
@@ -466,9 +599,22 @@ func readEvents(path string) (out []spec.AgentEvent, returnErr error) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
+		line := len(out) + 1
 		var event spec.AgentEvent
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			return nil, err
+		if err := sdk.DecodeGeneratedJSON(agentEventDefinition, scanner.Bytes(), &event); err != nil {
+			return nil, fmt.Errorf("agent store: decode and validate %s line %d as %s: %w", path, line, agentEventDefinition, err)
+		}
+		if got := string(event.RunID); got != recordNameFromPath(path) {
+			return nil, recordIDMismatch(path, got)
+		}
+		if event.Sequence != int64(line) {
+			return nil, fmt.Errorf(
+				"agent store: event sequence %d at %s line %d, want %d",
+				event.Sequence,
+				path,
+				line,
+				line,
+			)
 		}
 		out = append(out, event)
 	}
@@ -490,20 +636,28 @@ func readTerminalFrames(path string) (out []spec.TerminalFrame, returnErr error)
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
+		line := len(out) + 1
 		var frame spec.TerminalFrame
-		if err := json.Unmarshal(scanner.Bytes(), &frame); err != nil {
-			return nil, err
+		if err := sdk.DecodeGeneratedJSON(terminalFrameDefinition, scanner.Bytes(), &frame); err != nil {
+			return nil, fmt.Errorf("agent store: decode and validate %s line %d as %s: %w", path, line, terminalFrameDefinition, err)
+		}
+		if got := string(frame.RunID); got != recordNameFromPath(path) {
+			return nil, recordIDMismatch(path, got)
+		}
+		want := int64(1)
+		if len(out) > 0 {
+			want = out[len(out)-1].Sequence + 1
+		}
+		if frame.Sequence != want && (frame.Kind != "resync" || frame.Sequence <= want) {
+			return nil, fmt.Errorf(
+				"agent store: terminal sequence %d at %s line %d, want %d",
+				frame.Sequence,
+				path,
+				line,
+				want,
+			)
 		}
 		out = append(out, frame)
 	}
 	return out, scanner.Err()
-}
-
-func safeName(value string) string {
-	for _, r := range value {
-		if r != '-' && r != '_' && r != '.' && (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
-			return "invalid"
-		}
-	}
-	return value
 }

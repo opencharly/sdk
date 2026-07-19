@@ -1,7 +1,11 @@
 package sdk
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"sync"
 
@@ -59,6 +63,35 @@ var generatedSchema struct {
 // CUE definition. Command plugins use the same embedded schema as core, so
 // moving command ownership never creates a hand-maintained validation copy.
 func ValidateGenerated(definition string, value any) error {
+	if err := loadGeneratedSchema(); err != nil {
+		return err
+	}
+	return validateCUEValue(generatedSchema.ctx, generatedSchema.value, definition, value)
+}
+
+// DecodeGeneratedJSON strictly decodes one persisted or received JSON value
+// into its generated Go type, then validates that typed value against the
+// authoritative CUE definition. Typed decoding is required for fields such as
+// []byte, whose standard JSON representation is base64 text but whose CUE value
+// is bytes. Unknown fields and trailing JSON values are rejected before CUE
+// validation so decoding cannot silently discard persisted input.
+func DecodeGeneratedJSON(definition string, payload []byte, dst any) error {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return fmt.Errorf("decode JSON for %s: %w", definition, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("decode JSON for %s: trailing JSON value", definition)
+		}
+		return fmt.Errorf("decode JSON for %s: trailing data: %w", definition, err)
+	}
+	return ValidateGenerated(definition, dst)
+}
+
+func loadGeneratedSchema() error {
 	generatedSchema.Do(func() {
 		generatedSchema.ctx = cuecontext.New()
 		body, _, err := schemaconcat.ConcatSchema(schema.FS, ".", nil)
@@ -72,7 +105,7 @@ func ValidateGenerated(definition string, value any) error {
 	if generatedSchema.err != nil {
 		return fmt.Errorf("compile SDK CUE schema: %w", generatedSchema.err)
 	}
-	return validateCUEValue(generatedSchema.ctx, generatedSchema.value, definition, value)
+	return nil
 }
 
 func validateCUEValue(ctx *cue.Context, schemaValue cue.Value, definition string, value any) error {
