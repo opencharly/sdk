@@ -7,16 +7,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 	"sync"
-	"syscall"
-	"time"
 
 	"github.com/opencharly/sdk/spec"
 )
-
-const processCloseGrace = 2 * time.Second
 
 // commandProcess is the shared lifecycle implementation for exact-argv
 // processes started by ShellExecutor, SSHExecutor, and NestedExecutor.
@@ -33,29 +28,12 @@ type commandProcess struct {
 }
 
 func startCommandProcess(cmd *exec.Cmd) (spec.Process, error) {
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("process stdin: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		_ = stdin.Close()
-		return nil, fmt.Errorf("process stdout: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		_ = stdin.Close()
-		_ = stdout.Close()
-		return nil, fmt.Errorf("process stderr: %w", err)
-	}
 	bindProcessGroupKill(cmd)
-	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
-		_ = stdout.Close()
-		_ = stderr.Close()
+	pipes, err := startProcessPipes(cmd)
+	if err != nil {
 		return nil, err
 	}
-	p := &commandProcess{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderr, done: make(chan struct{})}
+	p := &commandProcess{cmd: cmd, stdin: pipes.stdin, stdout: pipes.stdout, stderr: pipes.stderr, done: make(chan struct{})}
 	go func() {
 		err := cmd.Wait()
 		p.mu.Lock()
@@ -79,15 +57,7 @@ func (p *commandProcess) Wait() error {
 
 func (p *commandProcess) Close() error {
 	p.close.Do(func() {
-		_ = p.stdin.Close()
-		select {
-		case <-p.done:
-		case <-time.After(processCloseGrace):
-			if p.cmd.Process != nil {
-				_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
-			}
-			<-p.done
-		}
+		ShutdownProcessGroup(p.cmd, p.stdin, p.done)
 	})
 	err := p.Wait()
 	var exit *exec.ExitError
@@ -131,7 +101,7 @@ func (ShellExecutor) StartProcess(ctx context.Context, launch spec.ProcessLaunch
 	}
 	cmd := exec.CommandContext(ctx, launch.Argv[0], launch.Argv[1:]...)
 	cmd.Dir = launch.WorkingDir
-	cmd.Env = append(os.Environ(), processEnvPairs(launch.Env)...)
+	cmd.Env = append(os.Environ(), SortedEnvPairs(launch.Env)...)
 	return startCommandProcess(cmd)
 }
 
@@ -143,30 +113,8 @@ func (e *SSHExecutor) StartProcess(ctx context.Context, launch spec.ProcessLaunc
 		return nil, err
 	}
 	args := e.SSHBaseArgs()
-	remote := remoteLaunchCommand(launch)
-	args = append(args, remote)
+	args = append(args, RemoteLaunchCommand(launch))
 	return startCommandProcess(exec.CommandContext(ctx, "ssh", args...))
-}
-
-func remoteLaunchCommand(launch spec.ProcessLaunch) string {
-	remote := ""
-	if launch.WorkingDir != "" {
-		remote = "cd " + ShellQuote(launch.WorkingDir) + " && "
-	}
-	if len(launch.Env) > 0 {
-		remote += "env"
-		for _, pair := range processEnvPairs(launch.Env) {
-			remote += " " + ShellQuote(pair)
-		}
-		remote += " "
-	}
-	for i, arg := range launch.Argv {
-		if i > 0 {
-			remote += " "
-		}
-		remote += ShellQuote(arg)
-	}
-	return remote
 }
 
 // StartProcess composes the leaf argv into one argv for the parent process
@@ -190,7 +138,7 @@ func (n *NestedExecutor) StartProcess(ctx context.Context, launch spec.ProcessLa
 		if launch.WorkingDir != "" {
 			outer = append(outer, "--workdir", launch.WorkingDir)
 		}
-		for _, pair := range processEnvPairs(launch.Env) {
+		for _, pair := range SortedEnvPairs(launch.Env) {
 			outer = append(outer, "--env", pair)
 		}
 		outer = append(outer, n.Jump.Target)
@@ -199,7 +147,7 @@ func (n *NestedExecutor) StartProcess(ctx context.Context, launch spec.ProcessLa
 		if launch.WorkingDir != "" {
 			outer = append(outer, "--workdir", launch.WorkingDir)
 		}
-		for _, pair := range processEnvPairs(launch.Env) {
+		for _, pair := range SortedEnvPairs(launch.Env) {
 			outer = append(outer, "--env", pair)
 		}
 		outer = append(outer, n.Jump.Target)
@@ -207,7 +155,7 @@ func (n *NestedExecutor) StartProcess(ctx context.Context, launch spec.ProcessLa
 		outer = append([]string{"ssh", "-T"}, nestedSSHLogArgs()...)
 		outer = append(outer, n.Jump.ExtraArgs...)
 		outer = append(outer, n.Jump.Target)
-		outer = append(outer, remoteLaunchCommand(launch))
+		outer = append(outer, RemoteLaunchCommand(launch))
 	case JumpVirshConsole:
 		return nil, fmt.Errorf("NestedExecutor process over virsh console: %w", spec.ErrNotSupported)
 	default:
@@ -217,17 +165,4 @@ func (n *NestedExecutor) StartProcess(ctx context.Context, launch spec.ProcessLa
 		outer = append(outer, launch.Argv...)
 	}
 	return parent.StartProcess(ctx, spec.ProcessLaunch{Argv: outer})
-}
-
-func processEnvPairs(env map[string]string) []string {
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, key+"="+env[key])
-	}
-	return out
 }

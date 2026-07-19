@@ -11,9 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -21,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/opencharly/sdk/kit"
 	pb "github.com/opencharly/sdk/proto"
 	"github.com/opencharly/sdk/spec"
 )
@@ -61,21 +60,40 @@ func DialProvider(ctx context.Context, target spec.TargetSpec, opts DialOptions)
 		cmd.Env = append(cmd.Environ(), launch.env...)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stdin, err := cmd.StdinPipe()
+	// The pipes are created with os.Pipe and assigned directly, so they belong
+	// to the caller: os/exec's Wait closes only pipes it created itself (the
+	// StdinPipe/StdoutPipe helpers), which is exactly the race its docs warn
+	// about — "incorrect to call Wait before all reads from the pipe have
+	// completed". Here the Wait monitor may run concurrently with the gRPC
+	// reader without ever closing stdout under it ("read |0: file already
+	// closed"). The parent's copies of the child-side ends are closed as soon
+	// as Start succeeds (the child holds its own duplicates), so the reader
+	// sees EOF the instant the carrier exits.
+	stdinR, stdinW, err := os.Pipe()
 	if err != nil {
 		return nil, nil, err
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
+		_ = stdinR.Close()
+		_ = stdinW.Close()
 		return nil, nil, err
 	}
+	cmd.Stdin = stdinR
+	cmd.Stdout = stdoutW
 	if opts.Stderr != nil {
 		cmd.Stderr = opts.Stderr
 	}
 	if err := cmd.Start(); err != nil {
+		_ = stdinR.Close()
+		_ = stdinW.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return nil, nil, err
 	}
-	processConn := newProcessConn(cmd, stdout, stdin)
+	_ = stdinR.Close()
+	_ = stdoutW.Close()
+	processConn := newProcessConn(cmd, stdoutR, stdinW)
 	return dialProviderConn(ctx, processConn, opts.ExtraGRPC)
 }
 
@@ -162,7 +180,7 @@ func stdioLaunchPlan(target spec.TargetSpec, opts DialOptions) (stdioLaunch, err
 		}
 		launch := stdioLaunch{argv: argv, dir: target.WorkingDir}
 		if len(first.Env) > 0 {
-			launch.env = sortedEnv(first.Env)
+			launch.env = kit.SortedEnvPairs(first.Env)
 		}
 		return launch, nil
 	case "ssh":
@@ -180,7 +198,7 @@ func stdioLaunchPlan(target spec.TargetSpec, opts DialOptions) (stdioLaunch, err
 		if first.IdentityFile != "" {
 			argv = append(argv, "-i", first.IdentityFile)
 		}
-		for _, option := range sortedEnv(first.Options) {
+		for _, option := range kit.SortedEnvPairs(first.Options) {
 			argv = append(argv, "-o", option)
 		}
 		destination := first.Address
@@ -196,45 +214,17 @@ func stdioLaunchPlan(target spec.TargetSpec, opts DialOptions) (stdioLaunch, err
 		if remoteCharly == "" {
 			remoteCharly = defaultCharlyBinary
 		}
-		launch := []string{remoteCharly, stdioServeGroup, stdioServeLeaf, "--stdio"}
-		remote := ""
-		if target.WorkingDir != "" {
-			remote = "cd " + shellQuote(target.WorkingDir) + " && "
-		}
-		if len(first.Env) > 0 {
-			remote += "env"
-			for _, pair := range sortedEnv(first.Env) {
-				remote += " " + shellQuote(pair)
-			}
-			remote += " "
-		}
-		for i, arg := range launch {
-			if i > 0 {
-				remote += " "
-			}
-			remote += shellQuote(arg)
-		}
+		remote := kit.RemoteLaunchCommand(spec.ProcessLaunch{
+			Argv:       []string{remoteCharly, stdioServeGroup, stdioServeLeaf, "--stdio"},
+			WorkingDir: target.WorkingDir,
+			Env:        first.Env,
+		})
 		argv = append(argv, remote)
 		return stdioLaunch{argv: argv}, nil
 	default:
 		return stdioLaunch{}, fmt.Errorf("targetkit: outer transport %q cannot carry gRPC stdio", first.Transport)
 	}
 }
-
-func sortedEnv(env map[string]string) []string {
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, key+"="+env[key])
-	}
-	return out
-}
-
-func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 // ServeStdio runs a gRPC server on one full-duplex stdio connection. stdout is
 // exclusively HTTP/2 protocol data; diagnostics belong on stderr.
@@ -280,7 +270,7 @@ func (a stdioAddr) String() string  { return string(a) }
 type processConn struct {
 	*stdioConn
 	cmd  *exec.Cmd
-	done chan error
+	done chan struct{}
 }
 
 type externalProcessConn struct {
@@ -299,21 +289,10 @@ func newExternalProcessConn(process spec.Process) *externalProcessConn {
 }
 
 func newProcessConn(cmd *exec.Cmd, stdout io.ReadCloser, stdin io.WriteCloser) *processConn {
-	p := &processConn{cmd: cmd, done: make(chan error, 1)}
+	p := &processConn{cmd: cmd, done: make(chan struct{})}
 	p.stdioConn = &stdioConn{Reader: stdout, Writer: stdin, local: stdioAddr("controller"), remote: stdioAddr("target")}
-	p.closeFn = func() {
-		_ = stdin.Close()
-		select {
-		case <-p.done:
-			return
-		case <-time.After(2 * time.Second):
-			if cmd.Process != nil {
-				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			}
-			<-p.done
-		}
-	}
-	go func() { p.done <- cmd.Wait() }()
+	p.closeFn = func() { kit.ShutdownProcessGroup(cmd, stdin, p.done) }
+	go func() { _ = cmd.Wait(); close(p.done) }()
 	return p
 }
 
