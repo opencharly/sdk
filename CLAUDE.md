@@ -2,9 +2,12 @@
 
 You are in the **OpenCharly plugin SDK + contract repo**
 (`github.com/opencharly/sdk`): the go-plugin serve surface (root package
-`sdk`), the gRPC contract (`proto/`), the CUE schema source (`schema/`), the
-generated spec types (`spec/`), the plugin-author helpers (`kit/`), the shared
-schema concatenation (`schemaconcat/`), and the shared VM types (`vmshared/`).
+`sdk`), the gRPC contract (`proto/`, generated from `protocol/schema/` by
+`internal/wiregen` via `task wire:gen`), the CUE schema source (`schema/`),
+the generated spec types (`spec/`), the plugin-author helpers (`kit/`), the
+agent control plane (`agentkit/`), the target dial/serve transports
+(`targetkit/`), the shared test fixtures (`testkit/`), the shared schema
+concatenation (`schemaconcat/`), and the shared VM types (`vmshared/`).
 
 **Load these skills FIRST (R0):**
 
