@@ -271,6 +271,101 @@ func TestBuildLocalPkgOnHost_DryRunAndEmpty(t *testing.T) {
 	}
 }
 
+func TestBuildLocalPkgOnHostUsesImmutableSourceCopy(t *testing.T) {
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "pkg", "arch")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("pkgver=committed\n")
+	if err := os.WriteFile(filepath.Join(srcDir, "PKGBUILD"), original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "build-helper"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "project-marker"), []byte("project-input\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lp := &LocalPkgDef{
+		PkgGlob: "*.pkg",
+		BuildTemplate: `set -eu
+test -x {{.SrcDir}}/build-helper
+test "$(cat {{.SourceDir}}/../../project-marker)" = project-input
+printf 'pkgver=mutated\n' > {{.SrcDir}}/PKGBUILD
+mkdir -p {{.SrcDir}}/src {{.SrcDir}}/pkg
+printf artifact > {{.PkgDest}}/opencharly.pkg`,
+	}
+	files, err := BuildLocalPkgOnHost(context.Background(), lp, srcDir, EmitOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := CleanupBuiltPackageFiles(files); err != nil {
+			t.Error(err)
+		}
+	})
+	got, err := os.ReadFile(filepath.Join(srcDir, "PKGBUILD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("authored PKGBUILD mutated: got %q, want %q", got, original)
+	}
+	for _, generated := range []string{"src", "pkg"} {
+		if _, err := os.Stat(filepath.Join(srcDir, generated)); !os.IsNotExist(err) {
+			t.Fatalf("build directory leaked into source at %s: %v", generated, err)
+		}
+	}
+	if len(files) != 1 {
+		t.Fatalf("built files = %v, want one artifact", files)
+	}
+}
+
+func TestBuildLocalPkgOnHostCleansStagingAfterFailure(t *testing.T) {
+	tempRoot := t.TempDir()
+	t.Setenv("TMPDIR", tempRoot)
+	srcDir := filepath.Join(t.TempDir(), "pkg")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "PKGBUILD"), []byte("unchanged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lp := &LocalPkgDef{PkgGlob: "*.pkg", BuildTemplate: "printf changed > {{.SrcDir}}/PKGBUILD; exit 19"}
+	if _, err := BuildLocalPkgOnHost(context.Background(), lp, srcDir, EmitOpts{}); err == nil {
+		t.Fatal("failing build returned nil error")
+	}
+	entries, err := os.ReadDir(tempRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("failed build leaked temporary staging: %v", entries)
+	}
+	got, err := os.ReadFile(filepath.Join(srcDir, "PKGBUILD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "unchanged\n" {
+		t.Fatalf("failed build mutated authored source: %q", got)
+	}
+}
+
+func TestStageLocalPkgSourceRejectsEscapingSymlink(t *testing.T) {
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "pkg")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../outside", filepath.Join(srcDir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := stageLocalPkgSource(srcDir); err == nil || !strings.Contains(err.Error(), "escapes source") {
+		t.Fatalf("escaping symlink error = %v", err)
+	}
+}
+
 func TestCleanupBuiltPackageFilesIsScopedAndIdempotent(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	dir, err := os.MkdirTemp("", "charly-localpkg-")

@@ -41,6 +41,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,8 +97,9 @@ const localPkgGuestStage = "/tmp/charly-pkgs"
 
 // localPkgBuildContext is the template context for LocalPkgDef.BuildTemplate.
 type localPkgBuildContext struct {
-	SrcDir  string // resolved package source directory (the PKGBUILD dir for pac)
-	PkgDest string // per-build output dir the build writes package files into
+	SrcDir    string // isolated package-source copy used as the build working tree
+	SourceDir string // original package source, for intentional read-only project-relative inputs
+	PkgDest   string // per-build output dir the build writes package files into
 }
 
 // localPkgInstallContext is the template context for LocalPkgDef.InstallTemplate.
@@ -174,9 +176,11 @@ func ResolveLocalPkgDir(ref, candyDir, projectDir, sentinel string) string {
 
 // BuildLocalPkgOnHost builds the package(s) defined by the source dir on the
 // HOST by rendering LocalPkgDef.BuildTemplate and returns the produced
-// package-file paths (globbed via LocalPkgDef.PkgGlob). The build output lands
-// in a per-call temp dir (passed as {{.PkgDest}}) so the glob is deterministic
-// and the source tree is never polluted.
+// package-file paths (globbed via LocalPkgDef.PkgGlob). Both the build working
+// tree ({{.SrcDir}}) and output ({{.PkgDest}}) are per-call temporary
+// directories, so package tools cannot rewrite tracked definitions or leave
+// build trees in the authored source. {{.SourceDir}} names the original source
+// only for templates that intentionally read project-relative inputs.
 //
 // The build command (e.g. makepkg) comes ENTIRELY from config — this function
 // renders LocalPkgDef.BuildTemplate via the existing RenderTemplate engine and
@@ -188,15 +192,44 @@ func BuildLocalPkgOnHost(ctx context.Context, lp *LocalPkgDef, srcDir string, op
 	if lp == nil {
 		return nil, fmt.Errorf("BuildLocalPkgOnHost: nil LocalPkgDef")
 	}
-	// Serialize concurrent builds of the SAME source dir (flock, cross-process):
-	// makepkg materializes shared src/ working copies inside pkg/<fmt>, so two
-	// concurrent builds would interleave in one directory — defensive mutual
-	// exclusion; one shared source dir is the design (single source of truth).
+	renderBuild := func(buildDir, sourceDir, pkgDest string) (string, error) {
+		buildCmd, err := buildkit.RenderTemplate("localpkg-build", lp.BuildTemplate, localPkgBuildContext{
+			SrcDir:    buildDir,
+			SourceDir: sourceDir,
+			PkgDest:   pkgDest,
+		})
+		if err != nil {
+			return "", fmt.Errorf("rendering localpkg build template: %w", err)
+		}
+		buildCmd = strings.TrimSpace(buildCmd)
+		if buildCmd == "" {
+			return "", fmt.Errorf("localpkg build template rendered empty (format config missing build_template?)")
+		}
+		return buildCmd, nil
+	}
+	if opts.DryRun {
+		pkgDest := filepath.Join(os.TempDir(), "charly-localpkg-dry-run")
+		buildCmd, err := renderBuild(srcDir, srcDir, pkgDest)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(os.Stderr, "[dry-run] localpkg build (isolated source at execution, PKGDEST=%s): %s\n", pkgDest, buildCmd)
+		return nil, nil
+	}
+	// Serialize concurrent builds of the SAME authored source (flock,
+	// cross-process). Package working trees are isolated below, but templates may
+	// intentionally share project-level generated inputs such as bin/plugins;
+	// one source-scoped lock keeps those declared inputs deterministic.
 	releaseLock, err := kit.AcquireLocalPkgBuildLock(srcDir)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = releaseLock() }()
+	buildDir, releaseBuildDir, err := stageLocalPkgSource(srcDir)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseBuildDir()
 	pkgDest, err := os.MkdirTemp("", "charly-localpkg-")
 	if err != nil {
 		return nil, fmt.Errorf("localpkg build output tempdir: %w", err)
@@ -210,21 +243,9 @@ func BuildLocalPkgOnHost(ctx context.Context, lp *LocalPkgDef, srcDir string, op
 		}
 	}()
 
-	buildCmd, err := buildkit.RenderTemplate("localpkg-build", lp.BuildTemplate, localPkgBuildContext{
-		SrcDir:  srcDir,
-		PkgDest: pkgDest,
-	})
+	buildCmd, err := renderBuild(buildDir, srcDir, pkgDest)
 	if err != nil {
-		return nil, fmt.Errorf("rendering localpkg build template: %w", err)
-	}
-	buildCmd = strings.TrimSpace(buildCmd)
-	if buildCmd == "" {
-		return nil, fmt.Errorf("localpkg build template rendered empty (format config missing build_template?)")
-	}
-
-	if opts.DryRun {
-		fmt.Fprintf(os.Stderr, "[dry-run] localpkg build (PKGDEST=%s): %s\n", pkgDest, buildCmd)
-		return nil, nil
+		return nil, err
 	}
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", buildCmd)
@@ -240,6 +261,91 @@ func BuildLocalPkgOnHost(ctx context.Context, lp *LocalPkgDef, srcDir string, op
 	}
 	keepArtifacts = true
 	return matches, nil
+}
+
+func stageLocalPkgSource(srcDir string) (string, func(), error) {
+	info, err := os.Stat(srcDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("localpkg source %s: %w", srcDir, err)
+	}
+	if !info.IsDir() {
+		return "", nil, fmt.Errorf("localpkg source %s is not a directory", srcDir)
+	}
+	stageRoot, err := os.MkdirTemp("", "charly-localpkg-src-")
+	if err != nil {
+		return "", nil, fmt.Errorf("localpkg source tempdir: %w", err)
+	}
+	vmshared.RegisterTempCleanup(stageRoot)
+	release := func() {
+		_ = os.RemoveAll(stageRoot)
+		vmshared.UnregisterTempCleanup(stageRoot)
+	}
+	stageDir := filepath.Join(stageRoot, "source")
+	if err := copyLocalPkgSource(srcDir, stageDir); err != nil {
+		release()
+		return "", nil, err
+	}
+	return stageDir, release, nil
+}
+
+func copyLocalPkgSource(srcDir, dstDir string) error {
+	return filepath.WalkDir(srcDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("localpkg source walk %s: %w", path, walkErr)
+		}
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("localpkg source path %s escapes %s", path, srcDir)
+		}
+		dst := filepath.Join(dstDir, rel)
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("localpkg source metadata %s: %w", path, err)
+		}
+		if entry.IsDir() {
+			if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
+				return fmt.Errorf("localpkg source directory %s: %w", dst, err)
+			}
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return fmt.Errorf("localpkg source symlink %s: %w", path, err)
+			}
+			if filepath.IsAbs(target) {
+				return fmt.Errorf("localpkg source symlink %s has absolute target %q", path, target)
+			}
+			resolved := filepath.Clean(filepath.Join(filepath.Dir(path), target))
+			targetRel, err := filepath.Rel(srcDir, resolved)
+			if err != nil || targetRel == ".." || strings.HasPrefix(targetRel, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("localpkg source symlink %s escapes source via %q", path, target)
+			}
+			if err := os.Symlink(target, dst); err != nil {
+				return fmt.Errorf("localpkg source symlink copy %s: %w", path, err)
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("localpkg source %s has unsupported mode %s", path, info.Mode())
+		}
+		in, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("localpkg source open %s: %w", path, err)
+		}
+		out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+		if err != nil {
+			_ = in.Close()
+			return fmt.Errorf("localpkg source create %s: %w", dst, err)
+		}
+		_, copyErr := io.Copy(out, in)
+		closeOutErr := out.Close()
+		closeInErr := in.Close()
+		if err := errors.Join(copyErr, closeOutErr, closeInErr); err != nil {
+			return fmt.Errorf("localpkg source copy %s: %w", path, err)
+		}
+		return nil
+	})
 }
 
 // CleanupBuiltPackageFiles releases the temporary package directory returned by
