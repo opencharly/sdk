@@ -3,10 +3,13 @@ package kit
 import (
 	"context"
 	"io"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/sdk/testkit"
 )
 
 func TestShellExecutorStartProcessPreservesArgvAndPipes(t *testing.T) {
@@ -40,6 +43,82 @@ func TestShellExecutorStartProcessPreservesArgvAndPipes(t *testing.T) {
 	}
 }
 
+func TestSSHProcessExecutorsPreserveRemoteLaunchAndPipes(t *testing.T) {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		t.Skip("OpenSSH client unavailable")
+	}
+	server := testkit.StartSSHProcessServer(t, func(command string) *exec.Cmd {
+		return exec.Command("sh", "-c", command)
+	})
+	t.Setenv("HOME", server.Home)
+	remoteDir := t.TempDir()
+	sshOptions := []string{
+		"-i", server.IdentityFile,
+		"-o", "IdentitiesOnly=yes",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+	}
+	launch := spec.ProcessLaunch{
+		Argv:       []string{"sh", "-c", `IFS= read -r line; printf '%s|%s|%s|%s' "$1" "$line" "$CHARLY_PROCESS_TEST" "$PWD"; printf diagnostic >&2`, "sh", "space $' literal"},
+		WorkingDir: remoteDir,
+		Env:        spec.StrMap{"CHARLY_PROCESS_TEST": "environment value"},
+	}
+	tests := []struct {
+		name  string
+		start func(context.Context, spec.ProcessLaunch) (spec.Process, error)
+	}{
+		{
+			name: "direct",
+			start: (&SSHExecutor{
+				User: "agent", Host: server.Address, Port: int(server.Port), Args: sshOptions,
+			}).StartProcess,
+		},
+		{
+			name: "nested",
+			start: (&NestedExecutor{
+				Parent: ShellExecutor{},
+				Jump: NestedJump{
+					Kind: JumpSSH, Target: "agent@" + server.Address,
+					ExtraArgs: append([]string{"-p", strconv.FormatInt(server.Port, 10)}, sshOptions...),
+				},
+			}).StartProcess,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			process, err := tc.start(context.Background(), launch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.WriteString(process.Stdin(), "payload with spaces\n"); err != nil {
+				t.Fatal(err)
+			}
+			_ = process.Stdin().Close()
+			stdout, err := io.ReadAll(process.Stdout())
+			if err != nil {
+				t.Fatal(err)
+			}
+			stderr, err := io.ReadAll(process.Stderr())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := process.Wait(); err != nil {
+				t.Fatal(err)
+			}
+			want := "space $' literal|payload with spaces|environment value|" + remoteDir
+			if got := string(stdout); got != want {
+				t.Fatalf("stdout = %q, want %q", got, want)
+			}
+			if got := string(stderr); got != "diagnostic" {
+				t.Fatalf("stderr = %q, want diagnostic", got)
+			}
+			if err := process.Close(); err != nil {
+				t.Fatalf("idempotent close: %v", err)
+			}
+		})
+	}
+}
+
 type recordingProcessExecutor struct{ argv []string }
 
 func (r *recordingProcessExecutor) StartProcess(_ context.Context, launch spec.ProcessLaunch) (spec.Process, error) {
@@ -61,7 +140,7 @@ func TestNestedExecutorStartProcessComposesEveryHopAsArgv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"podman", "exec", "-i", "--env", "A=B C", "box", "ssh", "-T", "agent@inner", "'charly' '__agent-target' 'serve' '--stdio'"}
+	want := []string{"podman", "exec", "-i", "--env", "A=B C", "box", "ssh", "-T", "-o", "LogLevel=ERROR", "agent@inner", "'charly' '__agent-target' 'serve' '--stdio'"}
 	if got := strings.Join(recorder.argv, "\x00"); got != strings.Join(want, "\x00") {
 		t.Fatalf("argv = %#v, want %#v", recorder.argv, want)
 	}

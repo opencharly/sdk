@@ -204,7 +204,8 @@ func (n *NestedExecutor) StartProcess(ctx context.Context, launch spec.ProcessLa
 		}
 		outer = append(outer, n.Jump.Target)
 	case JumpSSH:
-		outer = append([]string{"ssh", "-T"}, n.Jump.ExtraArgs...)
+		outer = append([]string{"ssh", "-T"}, nestedSSHLogArgs()...)
+		outer = append(outer, n.Jump.ExtraArgs...)
 		outer = append(outer, n.Jump.Target)
 		outer = append(outer, remoteLaunchCommand(launch))
 	case JumpVirshConsole:

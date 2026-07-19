@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -35,7 +36,7 @@ type SSHProcessServer struct {
 	Home         string
 }
 
-func StartSSHProcessServer(t TestingT, process func() *exec.Cmd) *SSHProcessServer {
+func StartSSHProcessServer(t TestingT, process func(string) *exec.Cmd) *SSHProcessServer {
 	t.Helper()
 	_, hostPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -108,7 +109,7 @@ func StartSSHProcessServer(t TestingT, process func() *exec.Cmd) *SSHProcessServ
 	return &SSHProcessServer{Address: "127.0.0.1", Port: port, IdentityFile: identity, Home: home}
 }
 
-func serveSSHConnection(raw net.Conn, config *ssh.ServerConfig, process func() *exec.Cmd) {
+func serveSSHConnection(raw net.Conn, config *ssh.ServerConfig, process func(string) *exec.Cmd) {
 	connection, channels, requests, err := ssh.NewServerConn(raw, config)
 	if err != nil {
 		_ = raw.Close()
@@ -129,17 +130,22 @@ func serveSSHConnection(raw net.Conn, config *ssh.ServerConfig, process func() *
 	}
 }
 
-func serveSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, process func() *exec.Cmd) {
+func serveSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, process func(string) *exec.Cmd) {
 	defer channel.Close() //nolint:errcheck
 	for request := range requests {
 		if request.Type != "exec" {
 			_ = request.Reply(false, nil)
 			continue
 		}
+		var payload struct{ Command string }
+		if err := ssh.Unmarshal(request.Payload, &payload); err != nil || payload.Command == "" {
+			_ = request.Reply(false, nil)
+			return
+		}
 		if err := request.Reply(true, nil); err != nil {
 			return
 		}
-		cmd := process()
+		cmd := process(payload.Command)
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
 			return
@@ -158,7 +164,16 @@ func serveSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, process 
 		go func() { _, _ = io.Copy(stdin, channel); _ = stdin.Close() }()
 		go func() { _, _ = io.Copy(channel.Stderr(), stderr) }()
 		_, _ = io.Copy(channel, stdout)
-		_ = cmd.Wait()
+		waitErr := cmd.Wait()
+		status := uint32(0)
+		if waitErr != nil {
+			status = 255
+			var exitErr *exec.ExitError
+			if errors.As(waitErr, &exitErr) && exitErr.ExitCode() >= 0 {
+				status = uint32(exitErr.ExitCode())
+			}
+		}
+		_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
 		return
 	}
 }

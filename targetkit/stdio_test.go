@@ -2,6 +2,7 @@ package targetkit
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -21,6 +22,20 @@ import (
 type echoProvider struct{ pb.UnimplementedProviderServer }
 
 func (echoProvider) Invoke(_ context.Context, req *pb.InvokeRequest) (*pb.InvokeReply, error) {
+	if req.GetClass() == "fixture-state" {
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		result, err := json.Marshal(struct {
+			WorkingDir  string `json:"working_dir"`
+			Environment string `json:"environment"`
+		}{WorkingDir: workingDir, Environment: os.Getenv("CHARLY_TARGETKIT_REMOTE_SENTINEL")})
+		if err != nil {
+			return nil, err
+		}
+		return &pb.InvokeReply{ResultJson: result}, nil
+	}
 	return &pb.InvokeReply{ResultJson: append([]byte("echo:"), req.GetParamsJson()...)}, nil
 }
 
@@ -164,35 +179,75 @@ func TestGRPCOverRealOpenSSH(t *testing.T) {
 	if _, err := exec.LookPath("ssh"); err != nil {
 		t.Skip("OpenSSH client unavailable")
 	}
-	server := testkit.StartSSHProcessServer(t, func() *exec.Cmd {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestTargetkitHelperProcess$")
-		cmd.Env = append(os.Environ(), "CHARLY_TARGETKIT_HELPER=1")
-		return cmd
+	server := testkit.StartSSHProcessServer(t, func(command string) *exec.Cmd {
+		return exec.Command("sh", "-c", command)
 	})
 	t.Setenv("HOME", server.Home)
-	target := spec.TargetSpec{Hops: []spec.TargetHop{
-		{Transport: "ssh", Address: server.Address, User: "agent", Port: server.Port, IdentityFile: server.IdentityFile, Options: spec.StrMap{
+	remoteDir := t.TempDir()
+	remoteCharly := filepath.Join(t.TempDir(), "charly")
+	remoteScript := "#!/bin/sh\nexec " + shellQuote(os.Args[0]) + " -test.run=^TestTargetkitHelperProcess$\n"
+	if err := os.WriteFile(remoteCharly, []byte(remoteScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const remoteValue = "remote value with spaces"
+	target := spec.TargetSpec{WorkingDir: remoteDir, Hops: []spec.TargetHop{
+		{Transport: "ssh", Address: server.Address, User: "agent", Port: server.Port, IdentityFile: server.IdentityFile, Env: spec.StrMap{
+			"CHARLY_TARGETKIT_HELPER":          "1",
+			"CHARLY_TARGETKIT_REMOTE_SENTINEL": remoteValue,
+		}, Options: spec.StrMap{
 			"IdentitiesOnly": "yes", "LogLevel": "ERROR", "StrictHostKeyChecking": "no", "UserKnownHostsFile": "/dev/null",
 		}},
 		{Transport: "grpc"},
 	}}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, client, err := DialProvider(ctx, target, DialOptions{Stderr: io.Discard})
+	var launched *exec.Cmd
+	conn, client, err := DialProvider(ctx, target, DialOptions{
+		RemoteCharlyBinary: remoteCharly,
+		Stderr:             io.Discard,
+		Command: func(ctx context.Context, name string, args ...string) *exec.Cmd {
+			cmd := exec.CommandContext(ctx, name, args...)
+			cmd.Env = append(os.Environ(), "CHARLY_TARGETKIT_FACTORY_SENTINEL=preserved")
+			launched = cmd
+			return cmd
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if launched == nil {
+		t.Fatal("real OpenSSH carrier was not launched")
+	}
+	if launched.Dir != "" {
+		t.Fatalf("remote working directory leaked to local OpenSSH carrier: %q", launched.Dir)
+	}
+	if got := effectiveEnv(launched.Env, "CHARLY_TARGETKIT_REMOTE_SENTINEL"); got != "" {
+		t.Fatalf("remote environment leaked to local OpenSSH carrier: %q", got)
+	}
+	if got := effectiveEnv(launched.Env, "CHARLY_TARGETKIT_FACTORY_SENTINEL"); got != "preserved" {
+		t.Fatalf("OpenSSH command factory environment = %q, want preserved", got)
 	}
 	t.Cleanup(func() {
 		if err := conn.Close(); err != nil {
 			t.Errorf("close SSH target connection: %v", err)
 		}
 	})
-	reply, err := client.Invoke(ctx, &pb.InvokeRequest{Class: "fixture", Reserved: "echo", ParamsJson: []byte("through-openssh")})
+	reply, err := client.Invoke(ctx, &pb.InvokeRequest{Class: "fixture-state", Reserved: "echo"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := string(reply.GetResultJson()), "echo:through-openssh"; got != want {
-		t.Fatalf("real SSH gRPC response = %q, want %q", got, want)
+	var state struct {
+		WorkingDir  string `json:"working_dir"`
+		Environment string `json:"environment"`
+	}
+	if err := json.Unmarshal(reply.GetResultJson(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.WorkingDir != remoteDir {
+		t.Fatalf("remote working directory = %q, want %q", state.WorkingDir, remoteDir)
+	}
+	if state.Environment != remoteValue {
+		t.Fatalf("remote environment = %q, want %q", state.Environment, remoteValue)
 	}
 }
 
@@ -233,7 +288,7 @@ func TestSSHGRPCCommandUsesReplicatedRemoteEndpoint(t *testing.T) {
 	}
 }
 
-func TestSSHCommandPreservesWorkingDirectoryAndEnvironment(t *testing.T) {
+func TestSSHCommandRendersWorkingDirectoryAndEnvironment(t *testing.T) {
 	target := spec.TargetSpec{WorkingDir: "/work dir", Hops: []spec.TargetHop{{Transport: "ssh", Address: "box", Env: spec.StrMap{"TOKEN": "a b'$"}}, {Transport: "grpc"}}}
 	got, err := StdioCommand(target, DialOptions{})
 	if err != nil {

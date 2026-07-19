@@ -1,7 +1,9 @@
 package kit
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,9 +45,12 @@ func TestDoHTTPRequest(t *testing.T) {
 	})
 
 	t.Run("allow_insecure against self-signed TLS", func(t *testing.T) {
-		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		var serverLog bytes.Buffer
+		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(204)
 		}))
+		srv.Config.ErrorLog = log.New(&serverLog, "", 0)
+		srv.StartTLS()
 		defer srv.Close()
 		// Without AllowInsecure the self-signed cert fails verification.
 		if _, err := DoHTTPRequest(context.Background(), base, HTTPRequest{URL: srv.URL}); err == nil {
@@ -58,6 +63,13 @@ func TestDoHTTPRequest(t *testing.T) {
 		}
 		if resp.Status != 204 {
 			t.Errorf("AllowInsecure status = %d, want 204", resp.Status)
+		}
+		// Close joins the server's tracked connection goroutines. The rejected
+		// handshake log is written before their StateClosed notification, so the
+		// buffer is no longer being produced when it is read below.
+		srv.Close()
+		if got := serverLog.String(); !strings.Contains(got, "TLS handshake error") {
+			t.Fatalf("TLS server did not record the expected rejected handshake: %q", got)
 		}
 	})
 
