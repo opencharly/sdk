@@ -146,25 +146,59 @@ func serveSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, process 
 			return
 		}
 		cmd := process(payload.Command)
-		stdin, err := cmd.StdinPipe()
+		// Caller-owned os.Pipe ends, assigned directly: os/exec's Wait closes
+		// only pipes it created itself (the *Pipe helpers), so Wait can never
+		// discard a child's buffered trailing output under a pump that is
+		// still reading — the exact loss this fixture used to inflict on
+		// trailing stderr ("file already closed" swallowed by io.Copy,
+		// surfacing at the client as mysteriously empty stderr). The parent's
+		// child-side ends close right after Start (the child holds its own
+		// duplicates), so each pump sees EOF when the child exits.
+		stdinR, stdinW, err := os.Pipe()
 		if err != nil {
 			return
 		}
-		stdout, err := cmd.StdoutPipe()
+		stdoutR, stdoutW, err := os.Pipe()
 		if err != nil {
+			_ = stdinR.Close()
+			_ = stdinW.Close()
 			return
 		}
-		stderr, err := cmd.StderrPipe()
+		stderrR, stderrW, err := os.Pipe()
 		if err != nil {
+			_ = stdinR.Close()
+			_ = stdinW.Close()
+			_ = stdoutR.Close()
+			_ = stdoutW.Close()
 			return
 		}
+		cmd.Stdin = stdinR
+		cmd.Stdout = stdoutW
+		cmd.Stderr = stderrW
 		if err := cmd.Start(); err != nil {
+			_ = stdinR.Close()
+			_ = stdinW.Close()
+			_ = stdoutR.Close()
+			_ = stdoutW.Close()
+			_ = stderrR.Close()
+			_ = stderrW.Close()
 			return
 		}
-		go func() { _, _ = io.Copy(stdin, channel); _ = stdin.Close() }()
-		go func() { _, _ = io.Copy(channel.Stderr(), stderr) }()
-		_, _ = io.Copy(channel, stdout)
+		_ = stdinR.Close()
+		_ = stdoutW.Close()
+		_ = stderrW.Close()
+		// Drain BOTH output pumps to EOF before sending exit-status: the
+		// channel (and its extended-data stream) must carry every trailing
+		// byte before the client learns the command finished. Without
+		// pumps.Wait the return path's channel.Close could outrun the stderr
+		// pump's final write.
+		var pumps sync.WaitGroup
+		pumps.Add(2)
+		go func() { defer pumps.Done(); _, _ = io.Copy(channel, stdoutR); _ = stdoutR.Close() }()
+		go func() { defer pumps.Done(); _, _ = io.Copy(channel.Stderr(), stderrR); _ = stderrR.Close() }()
+		go func() { _, _ = io.Copy(stdinW, channel); _ = stdinW.Close() }()
 		waitErr := cmd.Wait()
+		pumps.Wait()
 		status := uint32(0)
 		if waitErr != nil {
 			status = 255
