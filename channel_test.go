@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 
@@ -135,8 +136,14 @@ func TestReplayBufferAcknowledgementAndResync(t *testing.T) {
 	if err := b.Add(&pb.ChannelFrame{Sequence: 2, Kind: ChannelStdout, Data: []byte("two")}); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Add(&pb.ChannelFrame{Sequence: 3}); err == nil {
+	err := b.Add(&pb.ChannelFrame{Sequence: 3})
+	if err == nil {
 		t.Fatal("unacknowledged eviction was silent")
+	}
+	// The diagnostic must name the unacknowledged OLDEST frame (1), not the
+	// incoming frame (3) that tripped the bound.
+	if got, want := err.Error(), "unacknowledged sequence 1"; !strings.Contains(got, want) {
+		t.Fatalf("eviction diagnostic = %q, want it to name %q", got, want)
 	}
 	b.Acknowledge(1)
 	if err := b.Add(&pb.ChannelFrame{Sequence: 3, Kind: ChannelExit}); err != nil {

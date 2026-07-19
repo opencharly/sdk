@@ -69,6 +69,19 @@ func (w *Workflow) CompleteRCA(rcaID spec.UUIDv7, rootCause string, findings []s
 	return rca, nil
 }
 
+// DecideRecovery plans the recovery for an incident whose RCA completed (or an
+// explicitly authorized emergency abort). The returned decision is deliberately
+// NOT recorded here and the incident deliberately STAYS in awaiting_recovery:
+// agentkit is the transport-independent invariant layer — executing a recovery
+// action (reattach/resume/restart/…) is transport work, and durability is the
+// agentkit.Store layer, so neither belongs in this state machine. The #Incident
+// state enum has no state between awaiting_recovery and resolved, so an
+// in-memory transition here would claim progress no execution produced.
+//
+// The owning durable component is the agent control plane's recovery leg —
+// candy/plugin-agent's applyRecovery — which persists the decision
+// (Store.PutRecovery: planned → applied/failed with applied_at), executes the
+// action, and only then moves the incident to resolved (Store.PutIncident).
 func (w *Workflow) DecideRecovery(incidentID, rcaID spec.UUIDv7, action string, emergencyAbort bool, params *spec.RecoveryParams) (spec.RecoveryDecision, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

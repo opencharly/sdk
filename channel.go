@@ -147,7 +147,15 @@ func (b *ReplayBuffer) Add(frame *pb.ChannelFrame) error {
 	size := proto.Size(cloned)
 	if (b.maxFrame > 0 && len(b.frames)+1 > b.maxFrame) || (b.maxBytes > 0 && b.bytes+size > b.maxBytes) {
 		if len(b.frames) == 0 || b.frames[0].GetSequence() > b.acked {
-			return fmt.Errorf("sdk channel: replay capacity exceeded with unacknowledged sequence %d", frame.GetSequence())
+			// The diagnostic names the UNACKNOWLEDGED OLDEST frame whose loss
+			// blocks the eviction, not the incoming frame that tripped the
+			// bound. With an empty buffer the incoming frame is itself the
+			// unacknowledged one.
+			unacknowledged := frame.GetSequence()
+			if len(b.frames) > 0 {
+				unacknowledged = b.frames[0].GetSequence()
+			}
+			return fmt.Errorf("sdk channel: replay capacity exceeded with unacknowledged sequence %d", unacknowledged)
 		}
 		b.dropAcknowledgedLocked()
 	}
@@ -218,6 +226,11 @@ func CopyChannel(dst interface{ Send(*pb.ChannelFrame) error }, src interface {
 // and the relay may return. If controller input ends first, CloseSend delivers
 // the protocol EOF and the relay drains provider output before returning. This
 // prevents a completed command from racing its successor's durable cursor.
+//
+// Cancellation ownership: when the provider-output direction finishes first,
+// RelayChannel returns while the input-copy goroutine may still be blocked in
+// upstream.Recv(). The CALLER owns upstream's lifecycle — after return, cancel
+// the context upstream carries (or close upstream) to release that goroutine.
 func RelayChannel(upstream ProviderChannel, downstream interface {
 	ProviderChannel
 	CloseSend() error

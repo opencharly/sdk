@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/renameio/v2"
@@ -75,8 +76,13 @@ func (s *Store) Teams() ([]spec.AgentTeamRecord, error) {
 		out = append(out, v)
 		return nil
 	})
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	if err := sortByTimestamp(out, func(v spec.AgentTeamRecord) string { return v.CreatedAt }); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (s *Store) PutSession(v spec.AgentSession) error {
@@ -96,8 +102,13 @@ func (s *Store) Sessions() ([]spec.AgentSession, error) {
 		out = append(out, v)
 		return nil
 	})
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	if err := sortByTimestamp(out, func(v spec.AgentSession) string { return v.CreatedAt }); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (s *Store) PutRun(v spec.AgentRunRequest) error {
@@ -315,10 +326,16 @@ func (s *Store) AbortRequested(runID spec.UUIDv7) (*spec.AgentAbortControl, erro
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
-	if err == nil && v.RunID != runID {
+	if err != nil {
+		// Never return a partially decoded record alongside the error: callers
+		// probe `control != nil || err != nil`, so a non-nil control here would
+		// masquerade as a valid abort request.
+		return nil, err
+	}
+	if v.RunID != runID {
 		return nil, recordIDMismatch(path, string(v.RunID))
 	}
-	return &v, err
+	return &v, nil
 }
 
 // WaitAbort blocks on fsnotify's platform-native directory notification stream
@@ -442,8 +459,40 @@ func (s *Store) Federation() ([]spec.AgentFederationRecord, error) {
 		out = append(out, v)
 		return nil
 	})
-	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt < out[j].UpdatedAt })
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	if err := sortByTimestamp(out, func(v spec.AgentFederationRecord) string { return v.UpdatedAt }); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// sortByTimestamp orders records ascending by an RFC3339Nano timestamp held
+// as a string. Lexicographic comparison is wrong for variable-width
+// fractional seconds ("...0.9Z" sorts AFTER "...0.10Z" as text even though it
+// is the later time), so the strings are parsed once and compared as
+// time.Time. Every record passes CUE validation at read ingress, but a
+// hand-edited store file still surfaces a parse error here instead of a
+// silently wrong order.
+func sortByTimestamp[T any](items []T, timestamp func(T) string) error {
+	type stamped struct {
+		item T
+		at   time.Time
+	}
+	stampedItems := make([]stamped, len(items))
+	for i, item := range items {
+		at, err := time.Parse(time.RFC3339Nano, timestamp(item))
+		if err != nil {
+			return fmt.Errorf("agent store: parse record timestamp %q: %w", timestamp(item), err)
+		}
+		stampedItems[i] = stamped{item: item, at: at}
+	}
+	sort.Slice(stampedItems, func(i, j int) bool { return stampedItems[i].at.Before(stampedItems[j].at) })
+	for i := range items {
+		items[i] = stampedItems[i].item
+	}
+	return nil
 }
 
 func (s *Store) put(sub, definition string, id spec.UUIDv7, value any) error {

@@ -2312,6 +2312,13 @@ type Candy struct {
 
 	AgentProvide []AgentRuntimeCapability `yaml:"agent_provide,omitempty" json:"agent_provide,omitempty"`
 
+	// terminal_profile keeps the authored-key convention: every collection-
+	// holding authored key in this block is singular (env_provide, mcp_provide,
+	// agent_provide, …). The baked wire/label shape is the PLURAL
+	// `terminal_profiles` (schema/boxmetadata.cue; spec.LabelTerminalProfiles
+	// "ai.opencharly.terminal_profiles") — a key burned into built images, so
+	// the singular-authored ↔ plural-wire mapping is deliberate and stable,
+	// not a typo to "align" (renaming either side is a format change).
 	TerminalProfiles map[string]TerminalProfile `yaml:"terminal_profile,omitempty" json:"terminal_profile,omitempty"`
 
 	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
