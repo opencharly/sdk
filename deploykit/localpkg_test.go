@@ -3,6 +3,7 @@ package deploykit
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -363,6 +364,52 @@ func TestStageLocalPkgSourceRejectsEscapingSymlink(t *testing.T) {
 	}
 	if _, _, err := stageLocalPkgSource(srcDir); err == nil || !strings.Contains(err.Error(), "escapes source") {
 		t.Fatalf("escaping symlink error = %v", err)
+	}
+}
+
+func TestStageLocalPkgSourceExcludesGitIgnoredBuildCaches(t *testing.T) {
+	srcDir := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = srcDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	for path, content := range map[string]string{
+		".gitignore":          "src/\npkg/\nsource-cache/\n",
+		"PKGBUILD":            "pkgname=fixture\n",
+		"local-input.patch":   "authored untracked input\n",
+		"src/stale-worktree":  "must not be staged\n",
+		"pkg/stale-artifact":  "must not be staged\n",
+		"source-cache/config": "must not be staged\n",
+	} {
+		fullPath := filepath.Join(srcDir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd = exec.Command("git", "add", ".gitignore", "PKGBUILD")
+	cmd.Dir = srcDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+
+	stageDir, release, err := stageLocalPkgSource(srcDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(release)
+	for _, included := range []string{".gitignore", "PKGBUILD", "local-input.patch"} {
+		if _, err := os.Stat(filepath.Join(stageDir, included)); err != nil {
+			t.Fatalf("authored source %s was not staged: %v", included, err)
+		}
+	}
+	for _, excluded := range []string{".git", "src", "pkg", "source-cache"} {
+		if _, err := os.Stat(filepath.Join(stageDir, excluded)); !os.IsNotExist(err) {
+			t.Fatalf("ignored build cache %s reached stage: %v", excluded, err)
+		}
 	}
 }
 

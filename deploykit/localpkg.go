@@ -38,6 +38,7 @@ package deploykit
 //      call this one helper.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -289,6 +290,26 @@ func stageLocalPkgSource(srcDir string) (string, func(), error) {
 }
 
 func copyLocalPkgSource(srcDir, dstDir string) error {
+	paths, gitWorktree, err := gitLocalPkgSourcePaths(srcDir)
+	if err != nil {
+		return err
+	}
+	if gitWorktree {
+		info, err := os.Stat(srcDir)
+		if err != nil {
+			return fmt.Errorf("localpkg source %s: %w", srcDir, err)
+		}
+		if err := os.MkdirAll(dstDir, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("localpkg source directory %s: %w", dstDir, err)
+		}
+		for _, rel := range paths {
+			if err := copyLocalPkgSourceEntry(srcDir, dstDir, rel); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	return filepath.WalkDir(srcDir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return fmt.Errorf("localpkg source walk %s: %w", path, walkErr)
@@ -297,55 +318,142 @@ func copyLocalPkgSource(srcDir, dstDir string) error {
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("localpkg source path %s escapes %s", path, srcDir)
 		}
-		dst := filepath.Join(dstDir, rel)
-		info, err := entry.Info()
-		if err != nil {
-			return fmt.Errorf("localpkg source metadata %s: %w", path, err)
-		}
 		if entry.IsDir() {
+			info, err := entry.Info()
+			if err != nil {
+				return fmt.Errorf("localpkg source metadata %s: %w", path, err)
+			}
+			dst := filepath.Join(dstDir, rel)
 			if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
 				return fmt.Errorf("localpkg source directory %s: %w", dst, err)
 			}
 			return nil
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(path)
-			if err != nil {
-				return fmt.Errorf("localpkg source symlink %s: %w", path, err)
-			}
-			if filepath.IsAbs(target) {
-				return fmt.Errorf("localpkg source symlink %s has absolute target %q", path, target)
-			}
-			resolved := filepath.Clean(filepath.Join(filepath.Dir(path), target))
-			targetRel, err := filepath.Rel(srcDir, resolved)
-			if err != nil || targetRel == ".." || strings.HasPrefix(targetRel, ".."+string(filepath.Separator)) {
-				return fmt.Errorf("localpkg source symlink %s escapes source via %q", path, target)
-			}
-			if err := os.Symlink(target, dst); err != nil {
-				return fmt.Errorf("localpkg source symlink copy %s: %w", path, err)
-			}
-			return nil
+		return copyLocalPkgSourceEntry(srcDir, dstDir, rel)
+	})
+}
+
+// gitLocalPkgSourcePaths returns the authored inputs from a Git worktree:
+// tracked files plus non-ignored untracked files. Package builders routinely
+// leave large ignored source, object, and package caches beside their recipe;
+// copying those caches into a fresh build stage is both wasteful and unsafe
+// because cached Git mirrors can contain stale refs or alternates. A directory
+// that is not in a Git worktree deliberately falls back to the filesystem
+// copier so Charly does not require package sources to use Git.
+func gitLocalPkgSourcePaths(srcDir string) ([]string, bool, error) {
+	cmd := exec.Command("git", "-C", srcDir, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".")
+	out, err := cmd.Output()
+	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, false, nil
 		}
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("localpkg source %s has unsupported mode %s", path, info.Mode())
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 128 && bytes.Contains(exitErr.Stderr, []byte("not a git repository")) {
+			return nil, false, nil
 		}
-		in, err := os.Open(path)
+		return nil, false, fmt.Errorf("localpkg source Git inventory for %s: %w: %s", srcDir, err, strings.TrimSpace(string(exitErrorStderr(err))))
+	}
+	fields := bytes.Split(out, []byte{0})
+	paths := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if len(field) == 0 {
+			continue
+		}
+		rel := string(field)
+		clean := filepath.Clean(rel)
+		if filepath.IsAbs(rel) || clean != rel || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil, false, fmt.Errorf("localpkg source Git inventory path %q escapes %s", rel, srcDir)
+		}
+		paths = append(paths, rel)
+	}
+	if len(paths) == 0 {
+		return nil, false, nil
+	}
+	return paths, true, nil
+}
+
+func exitErrorStderr(err error) []byte {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.Stderr
+	}
+	return nil
+}
+
+func copyLocalPkgSourceEntry(srcDir, dstDir, rel string) error {
+	path := filepath.Join(srcDir, rel)
+	dst := filepath.Join(dstDir, rel)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("localpkg source metadata %s: %w", path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("localpkg source Git inventory %s is a directory; nested repositories must expose authored files", path)
+	}
+	if err := ensureLocalPkgSourceParents(srcDir, dstDir, rel); err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
 		if err != nil {
-			return fmt.Errorf("localpkg source open %s: %w", path, err)
+			return fmt.Errorf("localpkg source symlink %s: %w", path, err)
 		}
-		out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
-		if err != nil {
-			_ = in.Close()
-			return fmt.Errorf("localpkg source create %s: %w", dst, err)
+		if filepath.IsAbs(target) {
+			return fmt.Errorf("localpkg source symlink %s has absolute target %q", path, target)
 		}
-		_, copyErr := io.Copy(out, in)
-		closeOutErr := out.Close()
-		closeInErr := in.Close()
-		if err := errors.Join(copyErr, closeOutErr, closeInErr); err != nil {
-			return fmt.Errorf("localpkg source copy %s: %w", path, err)
+		resolved := filepath.Clean(filepath.Join(filepath.Dir(path), target))
+		targetRel, err := filepath.Rel(srcDir, resolved)
+		if err != nil || targetRel == ".." || strings.HasPrefix(targetRel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("localpkg source symlink %s escapes source via %q", path, target)
+		}
+		if err := os.Symlink(target, dst); err != nil {
+			return fmt.Errorf("localpkg source symlink copy %s: %w", path, err)
 		}
 		return nil
-	})
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("localpkg source %s has unsupported mode %s", path, info.Mode())
+	}
+	in, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("localpkg source open %s: %w", path, err)
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
+		_ = in.Close()
+		return fmt.Errorf("localpkg source create %s: %w", dst, err)
+	}
+	_, copyErr := io.Copy(out, in)
+	closeOutErr := out.Close()
+	closeInErr := in.Close()
+	if err := errors.Join(copyErr, closeOutErr, closeInErr); err != nil {
+		return fmt.Errorf("localpkg source copy %s: %w", path, err)
+	}
+	return nil
+}
+
+func ensureLocalPkgSourceParents(srcDir, dstDir, rel string) error {
+	parent := filepath.Dir(rel)
+	if parent == "." {
+		return nil
+	}
+	srcParent := srcDir
+	dstParent := dstDir
+	for _, component := range strings.Split(parent, string(filepath.Separator)) {
+		srcParent = filepath.Join(srcParent, component)
+		dstParent = filepath.Join(dstParent, component)
+		info, err := os.Stat(srcParent)
+		if err != nil {
+			return fmt.Errorf("localpkg source directory metadata %s: %w", srcParent, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("localpkg source parent %s is not a directory", srcParent)
+		}
+		if err := os.Mkdir(dstParent, info.Mode().Perm()); err != nil && !errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("localpkg source directory %s: %w", dstParent, err)
+		}
+	}
+	return nil
 }
 
 // CleanupBuiltPackageFiles releases the temporary package directory returned by
