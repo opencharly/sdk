@@ -117,6 +117,15 @@
 	secret_accept?: [...(#EnvDependency & {name: string & =~"^[A-Za-z_][A-Za-z0-9_]*$", key?: string & =~"^charly/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9_-]*$"})] @go(SecretAccept,type=[]EnvDependency)
 	secret_require?: [...(#EnvDependency & {name: string & =~"^[A-Za-z_][A-Za-z0-9_]*$", key?: string & =~"^charly/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9_-]*$"})] @go(SecretRequire,type=[]EnvDependency)
 	mcp_provide?: [...#CandyMCPProvide] @go(MCPProvide)
+	agent_provide?: [...#AgentRuntimeCapability] @go(AgentProvide)
+	// terminal_profile keeps the authored-key convention: every collection-
+	// holding authored key in this block is singular (env_provide, mcp_provide,
+	// agent_provide, …). The baked wire/label shape is the PLURAL
+	// `terminal_profiles` (schema/boxmetadata.cue; spec.LabelTerminalProfiles
+	// "ai.opencharly.terminal_profiles") — a key burned into built images, so
+	// the singular-authored ↔ plural-wire mapping is deliberate and stable,
+	// not a typo to "align" (renaming either side is a format change).
+	terminal_profile?: {[string]: #TerminalProfile} @go(TerminalProfiles,type=map[string]TerminalProfile)
 	mcp_require?: [...#EnvDependency] @go(MCPRequire)
 	mcp_accept?: [...#EnvDependency] @go(MCPAccept)
 	secret?: [...#CandySecret] @go(SecretYAML)
@@ -136,9 +145,9 @@
 // rule (mixed-entry polymorphism allows the SAME name twice: one packaged form,
 // one exec form) — neither is required at the CUE layer.
 #CandyService: {
-	name:               string & !=""
-	use_packaged?:      string & !="" @go(UsePackaged)
-	exec?:              string & !=""
+	name:          string & !=""
+	use_packaged?: string & !="" @go(UsePackaged)
+	exec?:         string & !=""
 	// distro restricts this entry to the named distros — a bare distro name
 	// ("debian") or a versioned tag ("debian:13"). Empty = every distro (the
 	// backward-compatible default). The service analogue of a check step's
@@ -308,4 +317,4 @@
 
 // #PluginCapability — a "<class>:<word>" capability string. class ∈ the closed
 // ProviderClass set; word is lowercase-hyphenated.
-#PluginCapability: string & =~"^(kind|deploy|verb|step|build|builder|command|loader|refs):[a-z0-9][a-z0-9_-]*$"
+#PluginCapability: string & =~"^(kind|deploy|verb|step|build|builder|command|loader|refs|agent-runtime|terminal):[a-z0-9][a-z0-9_-]*$"

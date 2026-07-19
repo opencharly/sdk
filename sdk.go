@@ -18,7 +18,7 @@ import (
 
 // ProtocolVersion is the go-plugin/proto contract version — a thin secondary gate.
 // CalVer (charly's version.go) is the authority; matching CalVer ⇒ matching proto.
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 // DispenseKey is the single go-plugin plugin name; charly serves/dispenses ONE
 // gRPC plugin exposing the uniform Provider + PluginMeta services.

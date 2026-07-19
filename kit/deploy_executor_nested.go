@@ -98,6 +98,12 @@ type NestedJump struct {
 	ExtraArgs []string
 }
 
+const nestedSSHLogLevel = "LogLevel=ERROR"
+
+func nestedSSHLogArgs() []string { return []string{"-o", nestedSSHLogLevel} }
+
+func nestedSSHLogFlags() string { return strings.Join(escapeTokens(nestedSSHLogArgs()), " ") + " " }
+
 // String renders a jump as a human-readable venue segment. Used as a
 // component of NestedExecutor.Venue().
 func (j NestedJump) String() string {
@@ -428,11 +434,12 @@ func wrapWithJump(jump NestedJump, script string, asRoot bool) (string, error) {
 			userPrefix = user + "@"
 		}
 		extras := strings.Join(escapeTokens(jump.ExtraArgs), " ")
-		// ssh(1) reads ~/.ssh/config + agent — no -i / -o overrides
-		// from us. The Target is either an ssh-config alias (managed
+		// ssh(1) reads ~/.ssh/config + agent for identity and host-key
+		// policy. LogLevel is fixed per call so local diagnostics cannot
+		// contaminate the nested process stderr contract. The Target is either an ssh-config alias (managed
 		// charly-<vmname> stanza) or "[user@]host[:port]".
-		cmd := fmt.Sprintf("ssh %s%s %s%s %s",
-			portArg, extras, userPrefix, host, shell)
+		cmd := fmt.Sprintf("ssh %s%s%s %s%s %s",
+			nestedSSHLogFlags(), portArg, extras, userPrefix, host, shell)
 		return fmt.Sprintf("%s <<'%s'\n%s\n%s\n", cmd, delim, script, delim), nil
 
 	case JumpVirshConsole:
@@ -484,22 +491,23 @@ func copyIntoJumpCommand(jump NestedJump, stagePath, remotePath string, mode uin
 			userPrefix = user + "@"
 		}
 		target := fmt.Sprintf("%s%s:%s", userPrefix, host, remotePath)
-		// ssh(1)/scp(1) read ~/.ssh/config + agent — no -i / -o
-		// overrides from us. Target may be an ssh-config alias.
+		// ssh(1)/scp(1) read ~/.ssh/config + agent for identity and
+		// host-key policy. LogLevel is fixed per call so local diagnostics
+		// cannot contaminate command stderr. Target may be an ssh-config alias.
 		installCmd := ""
 		sshPort := ""
 		if port > 0 {
 			sshPort = fmt.Sprintf("-p %d ", port)
 		}
 		if ownerRoot {
-			installCmd = fmt.Sprintf(" && ssh %s%s%s 'sudo chown root:root %s && sudo chmod %s %s'",
-				sshPort, userPrefix, host, quote(remotePath), modeStr, quote(remotePath))
+			installCmd = fmt.Sprintf(" && ssh %s%s%s%s 'sudo chown root:root %s && sudo chmod %s %s'",
+				nestedSSHLogFlags(), sshPort, userPrefix, host, quote(remotePath), modeStr, quote(remotePath))
 		} else {
-			installCmd = fmt.Sprintf(" && ssh %s%s%s 'chmod %s %s'",
-				sshPort, userPrefix, host, modeStr, quote(remotePath))
+			installCmd = fmt.Sprintf(" && ssh %s%s%s%s 'chmod %s %s'",
+				nestedSSHLogFlags(), sshPort, userPrefix, host, modeStr, quote(remotePath))
 		}
-		return fmt.Sprintf("scp %s%s %s%s",
-			portArg, quote(stagePath), target, installCmd), nil
+		return fmt.Sprintf("scp %s%s%s %s%s",
+			nestedSSHLogFlags(), portArg, quote(stagePath), target, installCmd), nil
 	}
 
 	return "", fmt.Errorf("NestedJump: PutFile not supported for JumpKind %d", jump.Kind)

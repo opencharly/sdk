@@ -2,19 +2,24 @@ package kit
 
 // charly_install.go — deliver an invokable `charly` into a deployment venue (moved from charly core;
 // all its callers were the vm PrepareVenue + nested-pod delegation, now in candy/plugin-deploy-vm).
-// Two entry points share ONE decision (probe version → CalVer compare → deliver-if-absent-or-older):
+// Three entry points share ONE decision (probe version → CalVer compare → deliver-if-absent-or-older):
 //   - EnsureCharlyInVenue: over the generic DeployExecutor (container podman-cp / local cp / the
-//     reverse-channel guest executor) — used by the deploy walk + nested-pod delegation.
+//     reverse-channel guest executor) — used by plugin-side deploy walks.
+//   - EnsureCharlyInDeployVenue: over spec.DeployExecutor — used by host-side live process
+//     transports before starting the fixed gRPC stdio endpoint.
 //   - EnsureCharlyInGuest: host-surface ssh/scp against a managed VM alias — used by the vm deploy
 //     plugin's PrepareVenue, BEFORE the reverse channel serves a guest executor.
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/opencharly/sdk/spec"
 )
 
 // CharlyInstallStrategy is the resolved charly_install.strategy: "auto" | "scp" | "skip".
@@ -55,13 +60,17 @@ func HostCharlyIsNewer(hostVer, venueVerOut string) bool {
 
 // ensureCharly is the shared probe→compare→deliver decision behind both transports. probe() returns
 // the venue's `charly version` output (empty if absent); present(path) reports whether a delivered
-// copy at path already runs; deliver(remotePath) copies charlyBin in. Returns "charly" (venue PATH
-// charly current — never shadowed) or "/tmp/charly-<hostVer>" (idempotent: a still-good copy is reused).
-func ensureCharly(hostVer string, probe func() string, present func(path string) bool, deliver func(remotePath string) error) (string, error) {
+// copy at path already runs; replicaPath() identifies the active controller bytes; and
+// deliver(remotePath) copies charlyBin in. Returns "charly" (venue PATH charly current — never
+// shadowed) or a content-addressed /tmp path (idempotent: only a byte-identical copy is reused).
+func ensureCharly(hostVer string, probe func() string, replicaPath func() (string, error), present func(path string) bool, deliver func(remotePath string) error) (string, error) {
 	if venueVer := strings.TrimSpace(probe()); venueVer != "" && !HostCharlyIsNewer(hostVer, venueVer) {
 		return "charly", nil
 	}
-	tmp := "/tmp/charly-" + hostVer
+	tmp, err := replicaPath()
+	if err != nil {
+		return "", err
+	}
 	if present(tmp) {
 		return tmp, nil
 	}
@@ -69,6 +78,15 @@ func ensureCharly(hostVer string, probe func() string, present func(path string)
 		return "", err
 	}
 	return tmp, nil
+}
+
+func replicatedCharlyPath(charlyBin, hostVer string) (string, error) {
+	content, err := os.ReadFile(charlyBin)
+	if err != nil {
+		return "", fmt.Errorf("reading host charly %s for replication identity: %w", charlyBin, err)
+	}
+	digest := sha256.Sum256(content)
+	return fmt.Sprintf("/tmp/charly-%s-%x", hostVer, digest[:8]), nil
 }
 
 // EnsureCharlyInVenue is the GENERIC copy-in over the DeployExecutor abstraction (container podman-cp
@@ -82,6 +100,7 @@ func EnsureCharlyInVenue(ctx context.Context, ve DeployExecutor, charlyBin, host
 			out, _, _, _ := ve.RunCapture(ctx, `command -v charly >/dev/null 2>&1 && charly version 2>/dev/null || true`)
 			return out
 		},
+		func() (string, error) { return replicatedCharlyPath(charlyBin, hostVer) },
 		func(path string) bool {
 			_, _, exit, err := ve.RunCapture(ctx, ShellQuote(path)+" version >/dev/null 2>&1")
 			return err == nil && exit == 0
@@ -98,6 +117,33 @@ func EnsureCharlyInVenue(ctx context.Context, ve DeployExecutor, charlyBin, host
 		})
 }
 
+// EnsureCharlyInDeployVenue is the host-side sibling of EnsureCharlyInVenue for a live
+// spec.DeployExecutor. It gives every process-capable deployment the same Ansible-like bootstrap:
+// keep an equal/newer packaged Charly, otherwise place the active controller binary at a
+// versioned /tmp path and invoke that explicit path. It never changes PATH and never downgrades a
+// target package. The underlying probe/compare/deliver decision remains ensureCharly (one copy).
+func EnsureCharlyInDeployVenue(ctx context.Context, ve spec.DeployExecutor, charlyBin, hostVer string) (string, error) {
+	if ve == nil {
+		return "", fmt.Errorf("ensure charly in deploy venue: nil executor")
+	}
+	return ensureCharly(hostVer,
+		func() string {
+			out, _, _, _ := ve.RunCapture(ctx, `command -v charly >/dev/null 2>&1 && charly version 2>/dev/null || true`)
+			return out
+		},
+		func() (string, error) { return replicatedCharlyPath(charlyBin, hostVer) },
+		func(path string) bool {
+			_, _, exit, err := ve.RunCapture(ctx, ShellQuote(path)+" version >/dev/null 2>&1")
+			return err == nil && exit == 0
+		},
+		func(remotePath string) error {
+			if err := ve.PutFile(ctx, charlyBin, remotePath, 0o755, false, spec.EmitOpts{}); err != nil {
+				return fmt.Errorf("copying host charly into deploy venue %s: %w", remotePath, err)
+			}
+			return nil
+		})
+}
+
 // EnsureCharlyInGuest is the vm-deploy PrepareVenue-time coordinator: it layers the cloud-init
 // charly_install.strategy over a HOST-SURFACE delivery (os/exec ssh/scp against the managed alias),
 // because at PrepareVenue time the reverse channel has NOT yet served a guest executor. auto/scp:
@@ -109,6 +155,7 @@ func EnsureCharlyInGuest(ctx context.Context, ssh SSHArgs, charlyBin, hostVer, s
 			func() string {
 				return sshCapture(ctx, ssh, `command -v charly >/dev/null 2>&1 && charly version 2>/dev/null || true`)
 			},
+			func() (string, error) { return replicatedCharlyPath(charlyBin, hostVer) },
 			func(path string) bool { return sshOK(ctx, ssh, ShellQuote(path)+" version >/dev/null 2>&1") },
 			func(remotePath string) error { return scpInto(ctx, ssh, charlyBin, remotePath) })
 		if err != nil {

@@ -170,6 +170,7 @@ func ResolveLocalImageRef(engine, input string) (string, error) {
 		}
 		return input, nil
 	}
+	shortName, requestedTag := splitShortTaggedImage(input)
 
 	images, err := ListLocalImages(engine)
 	if err != nil {
@@ -180,8 +181,11 @@ func ResolveLocalImageRef(engine, input string) (string, error) {
 	for _, img := range images {
 		labelCalVer := img.Labels[spec.LabelVersion] // content-derived EffectiveVersion (primary key)
 		// Label-preferred: ai.opencharly.image equals the short name.
-		if img.Labels[spec.LabelBox] == input && input != "" {
+		if img.Labels[spec.LabelBox] == shortName && shortName != "" {
 			for _, n := range img.Names {
+				if requestedTag != "" && !refHasExactTag(n, requestedTag) {
+					continue
+				}
 				// label-CalVer is the PRIMARY ordering key; tag-CalVer (the
 				// per-build timestamp) is the TIEBREAKER that picks the newest
 				// BUILD among images sharing one content-stable label. No
@@ -199,7 +203,10 @@ func ResolveLocalImageRef(engine, input string) (string, error) {
 		// aliases (tagDeployAlias) on overlay images that inherited
 		// the base image's label.
 		for _, name := range img.Names {
-			if shortNameMatchesRef(name, input) {
+			if requestedTag != "" && !refHasExactTag(name, requestedTag) {
+				continue
+			}
+			if shortNameMatchesRef(name, shortName) {
 				nameCands = append(nameCands, resolverCandidate{
 					ref:         name,
 					labelCalVer: labelCalVer,
@@ -253,8 +260,8 @@ func ResolveLocalImageRef(engine, input string) (string, error) {
 		if c := compareCalVerKey(cands[i].tagCalVer, cands[j].tagCalVer); c != 0 {
 			return c > 0
 		}
-		iMatch := matchesShortName(cands[i].ref, input)
-		jMatch := matchesShortName(cands[j].ref, input)
+		iMatch := matchesShortName(cands[i].ref, shortName)
+		jMatch := matchesShortName(cands[j].ref, shortName)
 		if iMatch != jMatch {
 			return iMatch
 		}
@@ -275,6 +282,24 @@ func ResolveLocalImageRef(engine, input string) (string, error) {
 	}
 
 	return cands[0].ref, nil
+}
+
+// splitShortTaggedImage separates the standard registry-less `name:tag` form.
+// Registry-qualified references are handled before this helper, so a colon here
+// cannot be a registry port. Keeping the requested tag separate lets the local
+// resolver match the full stored ref while preserving label-based short-name
+// lookup.
+func splitShortTaggedImage(input string) (name, tag string) {
+	i := strings.LastIndex(input, ":")
+	if i <= 0 || i == len(input)-1 {
+		return input, ""
+	}
+	return input[:i], input[i+1:]
+}
+
+func refHasExactTag(ref, tag string) bool {
+	i := strings.LastIndex(ref, ":")
+	return i > strings.LastIndex(ref, "/") && i < len(ref)-1 && ref[i+1:] == tag
 }
 
 // resolverCandidate pairs a full image ref with its two CalVer keys: the

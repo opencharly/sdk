@@ -143,6 +143,8 @@ var sweepablePatterns = []string{
 	"charly-libvirt-screenshot-", // libvirt_ops.go
 	"charly-cidata-",             // cloud_init_iso.go
 	"charly-aur-",                // deploy_host_helpers.go
+	"charly-localpkg-",           // deploykit.BuildLocalPkgOnHost
+	"charly-pkgdep-",             // deploykit.BuildDepPkgsOnHost
 	"charly-priv-",               // privileged_runner.go
 }
 

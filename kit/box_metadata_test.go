@@ -73,6 +73,48 @@ func TestExtractMetadata_EnvAbsent(t *testing.T) {
 	}
 }
 
+// TestExtractMetadata_TerminalProfiles proves that the generated terminal
+// profile contract survives the OCI metadata boundary. This is the boundary
+// used by source-less deployments, including boxes reached through nested
+// SSH/gRPC routes.
+func TestExtractMetadata_TerminalProfiles(t *testing.T) {
+	orig := InspectLabels
+	defer func() { InspectLabels = orig }()
+
+	want := map[string]spec.TerminalProfile{
+		"codex": {
+			Name:            "codex",
+			Entrypoint:      []string{"codex", "--no-alt-screen"},
+			Cols:            120,
+			Rows:            40,
+			SemanticAdapter: "codex",
+			Keys:            []string{"Enter", "Escape"},
+			Signals:         []string{"SIGINT"},
+			Persistence:     "required",
+			Transcript:      "both",
+		},
+	}
+	payload, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	InspectLabels = func(engine, imageRef string) (map[string]string, error) {
+		return map[string]string{
+			spec.LabelVersion:          "2026.199.1330",
+			spec.LabelBox:              "agent-box",
+			spec.LabelTerminalProfiles: string(payload),
+		}, nil
+	}
+
+	meta, err := ExtractMetadata("podman", "agent-box")
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if !reflect.DeepEqual(meta.TerminalProfiles, want) {
+		t.Fatalf("terminal profiles: got %#v want %#v", meta.TerminalProfiles, want)
+	}
+}
+
 // TestExtractMetadata_SingularLabels proves the 2026-06 singular-label
 // contract end-to-end on the read path: ExtractMetadata reads the SINGULAR
 // `ai.opencharly.*` keys into the renamed BoxMetadata fields. The keys are
@@ -135,6 +177,8 @@ func TestLabelConstantsAreSingular(t *testing.T) {
 		{spec.LabelSecretAccept, "ai.opencharly.secret_accept"},
 		{spec.LabelSecretRequire, "ai.opencharly.secret_require"},
 		{spec.LabelMCPProvide, "ai.opencharly.mcp_provide"},
+		{spec.LabelAgentProvide, "ai.opencharly.agent_provide"},
+		{spec.LabelTerminalProfiles, "ai.opencharly.terminal_profiles"},
 		{spec.LabelMCPRequire, "ai.opencharly.mcp_require"},
 		{spec.LabelMCPAccept, "ai.opencharly.mcp_accept"},
 	}
