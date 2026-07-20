@@ -834,3 +834,98 @@
 
 // #PodServiceReply is the "pod-service" host-builder reply — empty, mirroring #PodStartReply.
 #PodServiceReply: {}
+
+// #PodConfigSetupRequest carries the `charly config [setup]` command flags (the former
+// BoxConfigSetupCmd's authored fields — EVERY field except ExplicitRef, a kong:"-" internal-only
+// field bundle_from_box_cmd.go sets programmatically, never authored). Forwarded to
+// HostBuild("pod-config-setup"), which reconstructs the UNCHANGED core BoxConfigSetupCmd (kept by
+// its exact name — bundle_from_box_cmd.go and host_build_deploy_from_box.go construct it directly
+// by name too, so it cannot rename/move) and runs its Run() body VERBATIM.
+#PodConfigSetupRequest: {
+	box?:              string @go(Box)
+	tag?:              string @go(Tag)
+	build?:            bool   @go(Build)
+	env?: [...string] @go(Env)
+	clean?:            bool   @go(Clean)
+	env_file?:         string @go(EnvFile)
+	instance?:         string @go(Instance)
+	port?: [...string] @go(Port)
+	keep_mounted?:     bool   @go(KeepMounted)
+	password?:         string @go(Password)
+	refresh_secret?: [...string] @go(RefreshSecret)
+	volume_flag?: [...string] @go(VolumeFlag)
+	bind?: [...string] @go(Bind)
+	encrypt?: [...string] @go(Encrypt)
+	memory_max?:       string @go(MemoryMax)
+	memory_high?:      string @go(MemoryHigh)
+	memory_swap_max?:  string @go(MemorySwapMax)
+	cpus?:             string @go(Cpus)
+	seed?:             bool   @go(Seed)
+	force_seed?:       bool   @go(ForceSeed)
+	data_from?:        string @go(DataFrom)
+	update_all?:       bool   @go(UpdateAll)
+	ssh_key?:          string @go(SshKey)
+	sidecar?: [...string] @go(Sidecar)
+	list_sidecars?:    bool   @go(ListSidecars)
+	no_autodetect?:    bool   @go(NoAutoDetect)
+}
+
+// #PodConfigSetupReply is the "pod-config-setup" host-builder reply — empty, mirroring
+// #PodStartReply.
+#PodConfigSetupReply: {}
+
+// #PodConfigStatusRequest carries `charly config status`'s flags. Forwarded to
+// HostBuild("pod-config-status"), which runs the existing encStatus(box,instance) call VERBATIM.
+#PodConfigStatusRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigStatusReply is the "pod-config-status" host-builder reply — empty.
+#PodConfigStatusReply: {}
+
+// #PodConfigMountRequest carries `charly config mount`'s flags. Forwarded to
+// HostBuild("pod-config-mount"), which runs the existing encMount(box,instance,volume) call
+// VERBATIM.
+#PodConfigMountRequest: {
+	box!:      string @go(Box)
+	volume?:   string @go(Volume)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigMountReply is the "pod-config-mount" host-builder reply — empty.
+#PodConfigMountReply: {}
+
+// #PodConfigUnmountRequest carries `charly config unmount`'s flags. Forwarded to
+// HostBuild("pod-config-unmount"), which runs the existing encUnmount(box,instance,volume) call
+// VERBATIM.
+#PodConfigUnmountRequest: {
+	box!:      string @go(Box)
+	volume?:   string @go(Volume)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigUnmountReply is the "pod-config-unmount" host-builder reply — empty.
+#PodConfigUnmountReply: {}
+
+// #PodConfigPasswdRequest carries `charly config passwd`'s flags. Forwarded to
+// HostBuild("pod-config-passwd"), which runs the existing encPasswd(box,instance) call VERBATIM.
+#PodConfigPasswdRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigPasswdReply is the "pod-config-passwd" host-builder reply — empty.
+#PodConfigPasswdReply: {}
+
+// #PodConfigRemoveRequest carries `charly config remove`'s flags (the former
+// BoxConfigRemoveCmd's authored fields — distinct from `charly remove`/#PodRemoveRequest, which
+// tears down the whole deploy; this removes only the quadlet + disables the service). Forwarded
+// to HostBuild("pod-config-remove"), which runs the existing remove orchestration VERBATIM.
+#PodConfigRemoveRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigRemoveReply is the "pod-config-remove" host-builder reply — empty.
+#PodConfigRemoveReply: {}
