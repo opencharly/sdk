@@ -192,8 +192,6 @@ func (a *specCandyAdapter) Artifact() []CandyArtifact        { return a.m.Artifa
 func (a *specCandyAdapter) Capabilities() *CandyCapabilities { return a.m.Capability }
 func (a *specCandyAdapter) RequiresCapabilities() []string   { return a.m.RequiresCapability }
 func (a *specCandyAdapter) Engine() string                   { return a.m.Engine }
-func (a *specCandyAdapter) Libvirt() []string                { return a.m.Libvirt }
-func (a *specCandyAdapter) HasLibvirt() bool                 { return len(a.m.Libvirt) > 0 }
 func (a *specCandyAdapter) Secret() []SecretYAML             { return a.m.Secret }
 func (a *specCandyAdapter) PortSpecs() []PortSpec            { return a.m.Port }
 func (a *specCandyAdapter) HasPorts() bool                   { return len(a.m.Port) > 0 }

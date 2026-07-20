@@ -20,8 +20,12 @@
 // value, steps as an unnamed `plan:` list, plugin-verb sugar replacing the
 // plugin:/plugin_input: envelope, live-verb fields relocated to plugin input
 // defs, box env as a map) — a format change on every authored wire surface,
-// migrated by the single `apply:` reshaper hook in candy/plugin-migrate.
-#SchemaVersion: #CanonCalVer & "2026.186.2323" @go(-)
+// migrated by the single `apply:` reshaper hook in candy/plugin-migrate. Then
+// bumped again by the candy-level `libvirt:` field removal (Cutover B unit
+// 3+4, R5 claim-keyed sweep): the field had zero live Go consumers, migrated
+// away by the `stripCandyLibvirtField` reshaper hook. PLACEHOLDER — the
+// fresh pr-validator overwrites this literal with the merge-time CalVer.
+#SchemaVersion: #CanonCalVer & "2026.201.2300" @go(-)
 
 // #SchemaFloor is the OLDEST schema version `charly migrate` can migrate FROM. At
 // the migration-baseline reset it EQUALS #SchemaVersion — the deleted 47-step chain

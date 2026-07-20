@@ -153,7 +153,7 @@ func scanFromParsed(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyModel
 		hasPixiToml || hasPyprojectToml || hasEnvironmentYml || hasPackageJson || hasCargoToml ||
 		hasApk
 	m.HasContent = m.HasInstallFiles || m.Env != nil || len(m.Port) > 0 || m.Route != nil ||
-		len(v.Volumes) > 0 || len(v.Aliases) > 0 || len(m.Extract) > 0 || len(m.Data) > 0 || len(m.Libvirt) > 0 ||
+		len(v.Volumes) > 0 || len(v.Aliases) > 0 || len(m.Extract) > 0 || len(m.Data) > 0 ||
 		len(m.PortRelayPorts) > 0 || len(m.ServiceFiles) > 0 || len(m.Service) > 0
 
 	return m, v, refs
@@ -240,7 +240,6 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	m.Extract = ly.Extract
 	m.Data = ly.Data
 	m.Security = ly.Security
-	m.Libvirt = ly.Libvirt
 	m.Hook = ly.Hook
 	m.Plan = ly.Plan
 	m.Artifact = ly.Artifact

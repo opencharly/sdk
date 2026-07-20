@@ -1910,8 +1910,8 @@ type CandyModel struct {
 	// candy whose only content is an external-builder selection (deploykit EmitExternalBuilderStages).
 	ExternalBuilder string `yaml:"external_builder,omitempty" json:"external_builder,omitempty"`
 
-	Libvirt []string `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
-
+	// (the candy-level `libvirt:` field was removed here alongside #Candy — see
+	// candy.cue's note; CollectLibvirtSnippets, its only reader, was already dead.)
 	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
 
 	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
@@ -2293,10 +2293,13 @@ type Candy struct {
 
 	Data []CandyData `yaml:"data,omitempty" json:"data,omitempty"`
 
-	// --- security / libvirt / hooks ---
+	// --- security / hooks ---
+	// (the candy-level `libvirt:` raw-XML-snippet field was removed — zero live Go
+	// consumers, retired alongside the box-level libvirt hard-cutover; migrated
+	// away by candy/plugin-migrate's stripCandyLibvirtField. The paired `kind: vm`
+	// entity's OWN `libvirt: {...}` domain config, sdk/schema/vm.cue #Vm.libvirt,
+	// is unrelated and unaffected.)
 	Security *Security `yaml:"security,omitempty" json:"security,omitempty"`
-
-	Libvirt []string `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
 
 	Hook *CandyHook `yaml:"hook,omitempty" json:"hook,omitempty"`
 
