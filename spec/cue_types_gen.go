@@ -3632,6 +3632,12 @@ type DeployNodeDispatchRequest struct {
 
 	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
 
+	// node_only mirrors `charly bundle add --node-only`: threaded onto the resolved
+	// *externalDeployTarget so its Add skips the substrate's PostApply (e.g. a vm's nested
+	// target:pod children) — the walk itself already dispatches only this ONE node either way,
+	// this flag additionally suppresses the SUBSTRATE's own post-apply fan-out.
+	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
+
 	Format string `yaml:"format,omitempty" json:"format,omitempty"`
 
 	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
@@ -4304,90 +4310,6 @@ type DeployCompileReply struct {
 	Base string `yaml:"base,omitempty" json:"base,omitempty"`
 
 	CandySet []string `yaml:"candy_set,omitempty" json:"candy_set,omitempty"`
-}
-
-// #DeployDispatchRequest is the K4-C deploy-DISPATCH seam (P13-KERNEL spike #1 + the del
-// increment): the ONE new seam this wave adds, anchoring the single genuinely-irreducible
-// dispatch step — ResolveTarget(node,name) → UnifiedDeployTarget.Add/Del — which resolves a live
-// provider-registry handle bound to THIS process's broker and threads a live Executor into it
-// (verified by the P13-KERNEL scoping pass to be the ONE piece of the deploy kernel that
-// genuinely cannot leave the host process; everything else around it either already moved via
-// OpCompile (K4-B) or was a stale "stays core" claim). The host reconstructs
-// loadConfigForDeploy(Dir) itself — Cfg/DistroCfg/BuilderCfg are core-loader-coupled (K1-blocked)
-// and never marshaled — and rebuilds the DeployContext from Node + Dir + Base + those configs
-// before dispatching (add only; del needs no DeployContext). Node is nil for a ref-based deploy
-// with no charly.yml entry; Target lets the host synthesize the SAME fallback node dispatchNode
-// already does (&spec.BundleNode{Target: target}) in that case. Plans ride as an opaque RawBody
-// envelope (marshalled []spec.InstallPlanView, matching the DeployCompileReply idiom); the
-// EmitOpts/DelOpts scalar gates ride as plain fields (NOT the whole deploykit.EmitOpts struct,
-// which carries the live, non-marshalable ParentExec/ParentNode — the "add" op is wired ONLY for
-// the root-level, non-nested path in spike #1; a nested Add dispatch keeps the direct in-process
-// call until a later increment threads a parent executor across the wire too; "del" has no
-// nested-executor concept — deployDelCmd.Run never threads ParentExec — so every del dispatch
-// routes through this seam unconditionally). "test"/"update" are reserved enum members for
-// UnifiedDeployTarget.Test/Update, which have NO current caller anywhere in the codebase (no
-// `charly check live`/`charly bundle update` command exists yet) — the host handler errors
-// loudly on them rather than serving unreachable code.
-type DeployDispatchRequest struct {
-	Dir string `yaml:"dir,omitempty" json:"dir"`
-
-	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
-
-	DeployName string `yaml:"deploy_name,omitempty" json:"deploy_name"`
-
-	Op string `yaml:"op,omitempty" json:"op"`
-
-	Target string `yaml:"target,omitempty" json:"target,omitempty"`
-
-	Base string `yaml:"base,omitempty" json:"base,omitempty"`
-
-	PlansJSON RawBody `yaml:"plans,omitempty" json:"plans,omitempty"`
-
-	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
-
-	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
-
-	FormatJSON bool `yaml:"format_json,omitempty" json:"format_json,omitempty"`
-
-	AllowRepoChanges bool `yaml:"allow_repo_changes,omitempty" json:"allow_repo_changes,omitempty"`
-
-	AllowRootTasks bool `yaml:"allow_root_tasks,omitempty" json:"allow_root_tasks,omitempty"`
-
-	WithServices bool `yaml:"with_services,omitempty" json:"with_services,omitempty"`
-
-	SkipIncompatible bool `yaml:"skip_incompatible,omitempty" json:"skip_incompatible,omitempty"`
-
-	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
-
-	Verify bool `yaml:"verify,omitempty" json:"verify,omitempty"`
-
-	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
-
-	BuilderImageOverride string `yaml:"builder_image_override,omitempty" json:"builder_image_override,omitempty"`
-
-	// Del-only: the adapter-level teardown gates (set on the resolved *externalDeployTarget,
-	// mirroring the host-initiated path in deployDelCmd.Run) + DelOpts' own KeepLedger/RemoveVolumes.
-	KeepRepoChanges bool `yaml:"keep_repo_changes,omitempty" json:"keep_repo_changes,omitempty"`
-
-	KeepServices bool `yaml:"keep_services,omitempty" json:"keep_services,omitempty"`
-
-	KeepImage bool `yaml:"keep_image,omitempty" json:"keep_image,omitempty"`
-
-	KeepLedger bool `yaml:"keep_ledger,omitempty" json:"keep_ledger,omitempty"`
-
-	RemoveVolumes bool `yaml:"remove_volumes,omitempty" json:"remove_volumes,omitempty"`
-
-	// Add-only, NESTED dispatch (the K4-C venue-descriptor generalization): the marshalled
-	// *spec.VenueDescriptor for opts.ParentExec — nil/absent for a root-level dispatch. A
-	// hand-written sdk/spec type with no CUE def (self-referential — Parent nests), so it rides
-	// as an opaque RawBody envelope like PlansJSON/HostContextJSON.
-	ParentVenueJSON RawBody `yaml:"parent_venue,omitempty" json:"parent_venue,omitempty"`
-}
-
-// #DeployDispatchReply is the HostBuild("deploy-dispatch") reply — empty on success (mirroring
-// hostDeploySeam's convention: the host performs the actual deploy side-effects and progress
-// output in-process; failure surfaces via the RPC error itself).
-type DeployDispatchReply struct {
 }
 
 // #PodStartRequest carries the `charly start` command flags (the former StartCmd's authored
