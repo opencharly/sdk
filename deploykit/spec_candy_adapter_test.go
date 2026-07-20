@@ -62,3 +62,37 @@ func TestSpecCandyAdapter_HasInit_PerInitLookup(t *testing.T) {
 		t.Errorf("HasInit(systemd) = %v, want false (InitSystems carries only supervisord)", got)
 	}
 }
+
+// TestSpecCandyAdapter_AgentProvideAndTerminalProfiles proves the federated-control-plane
+// accessors (AgentProvide/HasAgentProvides/TerminalProfiles) read the identity/graph view's
+// AgentProvide/TerminalProfiles fields — the W9 gap surfaced merging origin/main's control-plane
+// commit into the CandyReader retype: render_baked_metadata.go needs this data through
+// spec.CandyReader with no live *Candy left to read a private field from.
+func TestSpecCandyAdapter_AgentProvideAndTerminalProfiles(t *testing.T) {
+	empty := NewSpecCandyModel(spec.CandyModel{Name: "plain"}, spec.CandyView{Name: "plain"})
+	if empty.HasAgentProvides() {
+		t.Error("HasAgentProvides() = true for a candy with no agent_provide:, want false")
+	}
+	if got := empty.AgentProvide(); len(got) != 0 {
+		t.Errorf("AgentProvide() = %v, want empty", got)
+	}
+	if got := empty.TerminalProfiles(); len(got) != 0 {
+		t.Errorf("TerminalProfiles() = %v, want empty", got)
+	}
+
+	provides := []spec.AgentRuntimeCapability{{Provider: "pi"}}
+	profiles := map[string]spec.TerminalProfile{"claude-code": {Name: "claude-code", Entrypoint: []string{"claude"}}}
+	v := spec.CandyView{Name: "agent-candy", AgentProvide: provides, TerminalProfiles: profiles}
+	adapter := NewSpecCandyModel(spec.CandyModel{Name: "agent-candy"}, v)
+
+	if !adapter.HasAgentProvides() {
+		t.Error("HasAgentProvides() = false for a candy declaring agent_provide:, want true")
+	}
+	if got := adapter.AgentProvide(); len(got) != 1 || got[0].Provider != "pi" {
+		t.Errorf("AgentProvide() = %v, want [{Provider: pi}]", got)
+	}
+	tp, ok := adapter.TerminalProfiles()["claude-code"]
+	if !ok || len(tp.Entrypoint) != 1 || tp.Entrypoint[0] != "claude" {
+		t.Errorf("TerminalProfiles()[\"claude-code\"] = %+v, ok=%v, want {Entrypoint: [claude]}, true", tp, ok)
+	}
+}
