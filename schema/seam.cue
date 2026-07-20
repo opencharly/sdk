@@ -733,6 +733,61 @@
 	candy_set?: [...string] @go(CandySet)
 }
 
+// #DeployDispatchRequest is the K4-C deploy-DISPATCH seam (P13-KERNEL spike #1 + the del
+// increment): the ONE new seam this wave adds, anchoring the single genuinely-irreducible
+// dispatch step — ResolveTarget(node,name) → UnifiedDeployTarget.Add/Del — which resolves a live
+// provider-registry handle bound to THIS process's broker and threads a live Executor into it
+// (verified by the P13-KERNEL scoping pass to be the ONE piece of the deploy kernel that
+// genuinely cannot leave the host process; everything else around it either already moved via
+// OpCompile (K4-B) or was a stale "stays core" claim). The host reconstructs
+// loadConfigForDeploy(Dir) itself — Cfg/DistroCfg/BuilderCfg are core-loader-coupled (K1-blocked)
+// and never marshaled — and rebuilds the DeployContext from Node + Dir + Base + those configs
+// before dispatching (add only; del needs no DeployContext). Node is nil for a ref-based deploy
+// with no charly.yml entry; Target lets the host synthesize the SAME fallback node dispatchNode
+// already does (&spec.BundleNode{Target: target}) in that case. Plans ride as an opaque RawBody
+// envelope (marshalled []spec.InstallPlanView, matching the DeployCompileReply idiom); the
+// EmitOpts/DelOpts scalar gates ride as plain fields (NOT the whole deploykit.EmitOpts struct,
+// which carries the live, non-marshalable ParentExec/ParentNode — the "add" op is wired ONLY for
+// the root-level, non-nested path in spike #1; a nested Add dispatch keeps the direct in-process
+// call until a later increment threads a parent executor across the wire too; "del" has no
+// nested-executor concept — deployDelCmd.Run never threads ParentExec — so every del dispatch
+// routes through this seam unconditionally). "test"/"update" are reserved enum members for
+// UnifiedDeployTarget.Test/Update, which have NO current caller anywhere in the codebase (no
+// `charly check live`/`charly bundle update` command exists yet) — the host handler errors
+// loudly on them rather than serving unreachable code.
+#DeployDispatchRequest: {
+	dir!:                    string  @go(Dir)
+	node?:                   #Deploy @go(Node, optional=nillable)
+	deploy_name!:            string  @go(DeployName)
+	op!:                     "add" | "del" | "test" | "update" @go(Op)
+	target?:                 string  @go(Target)
+	base?:                   string  @go(Base)
+	plans?:                  bytes   @go(PlansJSON, type=RawBody)
+	node_only?:              bool    @go(NodeOnly)
+	dry_run?:                bool    @go(DryRun)
+	format_json?:            bool    @go(FormatJSON)
+	allow_repo_changes?:     bool    @go(AllowRepoChanges)
+	allow_root_tasks?:       bool    @go(AllowRootTasks)
+	with_services?:          bool    @go(WithServices)
+	skip_incompatible?:      bool    @go(SkipIncompatible)
+	assume_yes?:             bool    @go(AssumeYes)
+	verify?:                 bool    @go(Verify)
+	pull?:                   bool    @go(Pull)
+	builder_image_override?: string  @go(BuilderImageOverride)
+	// Del-only: the adapter-level teardown gates (set on the resolved *externalDeployTarget,
+	// mirroring the host-initiated path in deployDelCmd.Run) + DelOpts' own KeepLedger/RemoveVolumes.
+	keep_repo_changes?: bool @go(KeepRepoChanges)
+	keep_services?:     bool @go(KeepServices)
+	keep_image?:        bool @go(KeepImage)
+	keep_ledger?:       bool @go(KeepLedger)
+	remove_volumes?:    bool @go(RemoveVolumes)
+}
+
+// #DeployDispatchReply is the HostBuild("deploy-dispatch") reply — empty on success (mirroring
+// hostDeploySeam's convention: the host performs the actual deploy side-effects and progress
+// output in-process; failure surfaces via the RPC error itself).
+#DeployDispatchReply: {}
+
 // #PodStartRequest carries the `charly start` command flags (the former StartCmd's authored
 // fields, DEPLOY-wave CLI-struct port). The command:pod plugin owns the CLI GRAMMAR but cannot
 // drive the LifecycleTarget dispatch (ResolveTarget, the plugin loader — core Mechanisms), so
