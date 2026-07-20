@@ -3802,34 +3802,25 @@ type DeployFromBoxRequest struct {
 type DeployFromBoxReply struct {
 }
 
-// #DeployConfigRequest carries a `charly bundle` CONFIG-MANAGEMENT subcommand
-// (show/export/import/reset/status) — the per-host deploy-overlay read/write ops
-// that consult LoadUnified (a core Mechanism the plugin cannot import). Op selects
-// the subcommand; the remaining fields carry that subcommand's authored inputs. The
-// plugin forwards these to HostBuild("deploy-config"); the host runs the existing
-// handler VERBATIM, printing to the shared stdio. (`path` is NOT here — it resolves
-// via kit.DefaultDeployConfigPath entirely plugin-side, no seam.)
-type DeployConfigRequest struct {
-	Op string `yaml:"op,omitempty" json:"op"`
-
-	Box string `yaml:"box,omitempty" json:"box,omitempty"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	Boxes []string `yaml:"boxes,omitempty" json:"boxes,omitempty"`
-
-	Output string `yaml:"output,omitempty" json:"output,omitempty"`
-
-	All bool `yaml:"all,omitempty" json:"all,omitempty"`
-
-	Files []string `yaml:"files,omitempty" json:"files,omitempty"`
-
-	Replace bool `yaml:"replace,omitempty" json:"replace,omitempty"`
+// #DeployConfigSaveRequest is the K4-C narrow seam for saveBundleConfigNodeForm — the
+// `charly bundle import`/`reset` deploy-state WRITE step. command:bundle's show/export/status
+// leaves moved to the plugin outright (deploykit.LoadBundleConfig/ExportAllBox/ParseDeployKey
+// etc. are already sdk-portable, and export's project-load touch reuses the existing
+// HostBuild("resolved-project") seam) — only the SAVE step still needs a seam: its per-entry
+// marshal callback (marshalBundleNode, deploy_nodeform.go) resugars each plan step's internal
+// plugin/plugin_input pair back to the authored `<word>: <input>` sugar via the host-owned
+// pluginPrimaries registry (populated at compiled-in plugin init() + the byte-gated external
+// prescan) — a live, in-process registry a separate-module plugin cannot reach directly.
+// Config carries the marshalled deploykit.BundleConfig as an opaque RawBody envelope (a
+// hand-written sdk/deploykit type with no CUE def, matching the DeployCompileRequest
+// HostContextJSON idiom).
+type DeployConfigSaveRequest struct {
+	ConfigJSON RawBody `yaml:"config,omitempty" json:"config"`
 }
 
-// #DeployConfigReply is the "deploy-config" host-builder reply — empty (the handler
-// prints its output to the shared stdio, errors via the return).
-type DeployConfigReply struct {
+// #DeployConfigSaveReply is the "deploy-config-save" host-builder reply — empty (failure
+// surfaces via the RPC error itself).
+type DeployConfigSaveReply struct {
 }
 
 // #PodConfigWriteRequest carries the POD config-WRITE (P11). Under Ruling C the config-WRITE

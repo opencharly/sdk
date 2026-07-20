@@ -363,27 +363,25 @@
 // host-side, errors via the return).
 #DeployFromBoxReply: {}
 
-// #DeployConfigRequest carries a `charly bundle` CONFIG-MANAGEMENT subcommand
-// (show/export/import/reset/status) — the per-host deploy-overlay read/write ops
-// that consult LoadUnified (a core Mechanism the plugin cannot import). Op selects
-// the subcommand; the remaining fields carry that subcommand's authored inputs. The
-// plugin forwards these to HostBuild("deploy-config"); the host runs the existing
-// handler VERBATIM, printing to the shared stdio. (`path` is NOT here — it resolves
-// via kit.DefaultDeployConfigPath entirely plugin-side, no seam.)
-#DeployConfigRequest: {
-	op!:        string @go(Op) // show | export | import | reset | status
-	box?:       string @go(Box)
-	instance?:  string @go(Instance)
-	boxes?: [...string] @go(Boxes)
-	output?:    string @go(Output)
-	all?:       bool   @go(All)
-	files?: [...string] @go(Files)
-	replace?:   bool   @go(Replace)
+// #DeployConfigSaveRequest is the K4-C narrow seam for saveBundleConfigNodeForm — the
+// `charly bundle import`/`reset` deploy-state WRITE step. command:bundle's show/export/status
+// leaves moved to the plugin outright (deploykit.LoadBundleConfig/ExportAllBox/ParseDeployKey
+// etc. are already sdk-portable, and export's project-load touch reuses the existing
+// HostBuild("resolved-project") seam) — only the SAVE step still needs a seam: its per-entry
+// marshal callback (marshalBundleNode, deploy_nodeform.go) resugars each plan step's internal
+// plugin/plugin_input pair back to the authored `<word>: <input>` sugar via the host-owned
+// pluginPrimaries registry (populated at compiled-in plugin init() + the byte-gated external
+// prescan) — a live, in-process registry a separate-module plugin cannot reach directly.
+// Config carries the marshalled deploykit.BundleConfig as an opaque RawBody envelope (a
+// hand-written sdk/deploykit type with no CUE def, matching the DeployCompileRequest
+// HostContextJSON idiom).
+#DeployConfigSaveRequest: {
+	config!: bytes @go(ConfigJSON, type=RawBody)
 }
 
-// #DeployConfigReply is the "deploy-config" host-builder reply — empty (the handler
-// prints its output to the shared stdio, errors via the return).
-#DeployConfigReply: {}
+// #DeployConfigSaveReply is the "deploy-config-save" host-builder reply — empty (failure
+// surfaces via the RPC error itself).
+#DeployConfigSaveReply: {}
 
 // #PodConfigWriteRequest carries the POD config-WRITE (P11). Under Ruling C the config-WRITE
 // (the quadlet/.pod/sidecar/tunnel file generation) moved to the deploy:pod plugin, while the
