@@ -782,3 +782,19 @@
 
 // #PodLogsReply is the "pod-logs" host-builder reply — empty, mirroring #PodStartReply.
 #PodLogsReply: {}
+
+// #PodRemoveRequest carries the `charly remove` command flags (the former RemoveCmd's authored
+// fields). Forwarded to HostBuild("pod-remove"), which runs the existing remove orchestration
+// VERBATIM (quadlet/companion-service teardown, pre_remove hooks, purge, deploy-entry cleanup —
+// deeply core-type-coupled: BoxMetadata/ExtractMetadata/sidecar resolution/deploykit.
+// CleanDeployEntry — not registry-bound, but not portable either).
+#PodRemoveRequest: {
+	box!:         string @go(Box)
+	instance?:    string @go(Instance)
+	purge?:       bool   @go(Purge)
+	keep_deploy?: bool   @go(KeepDeploy)
+	env?: [...string] @go(Env)
+}
+
+// #PodRemoveReply is the "pod-remove" host-builder reply — empty, mirroring #PodStartReply.
+#PodRemoveReply: {}

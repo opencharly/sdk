@@ -4374,6 +4374,27 @@ type PodLogsRequest struct {
 type PodLogsReply struct {
 }
 
+// #PodRemoveRequest carries the `charly remove` command flags (the former RemoveCmd's authored
+// fields). Forwarded to HostBuild("pod-remove"), which runs the existing remove orchestration
+// VERBATIM (quadlet/companion-service teardown, pre_remove hooks, purge, deploy-entry cleanup —
+// deeply core-type-coupled: BoxMetadata/ExtractMetadata/sidecar resolution/deploykit.
+// CleanDeployEntry — not registry-bound, but not portable either).
+type PodRemoveRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Purge bool `yaml:"purge,omitempty" json:"purge,omitempty"`
+
+	KeepDeploy bool `yaml:"keep_deploy,omitempty" json:"keep_deploy,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// #PodRemoveReply is the "pod-remove" host-builder reply — empty, mirroring #PodStartReply.
+type PodRemoveReply struct {
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
