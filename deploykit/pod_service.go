@@ -102,3 +102,41 @@ func StartPodService(boxName, instance string) error {
 	fmt.Fprintf(os.Stderr, "Started %s\n", name)
 	return nil
 }
+
+// RestartPodService restarts a service container. In quadlet mode it issues a single `systemctl
+// --user restart`, which is atomic from systemd's perspective — ExecStopPost (e.g. tailscale
+// serve --off) runs before ExecStartPost (tailscale serve), and the unit ends in either active or
+// failed, never the silent stopped state a manual stop+start sequence can produce when start
+// fails. Direct mode delegates to the resolved engine's restart. Used by `charly restart`.
+func RestartPodService(boxName, instance string) error {
+	rt, err := kit.ResolveRuntime()
+	if err != nil {
+		return err
+	}
+
+	quadletActive, _ := kit.QuadletExistsInstance(boxName, instance)
+	if quadletActive {
+		svc := kit.ServiceNameInstance(boxName, instance)
+		cmd := exec.Command("systemctl", "--user", "restart", svc)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("restarting %s: %w", svc, err)
+		}
+		fmt.Fprintf(os.Stderr, "Restarted %s\n", svc)
+		return nil
+	}
+
+	// Direct mode: delegate to engine restart.
+	runEngine := ResolveBoxEngineForDeploy(boxName, instance, rt.RunEngine)
+	engine := kit.EngineBinary(runEngine)
+	name := kit.ContainerNameInstance(boxName, instance)
+
+	cmd := exec.Command(engine, "restart", name)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s restart %s failed: %w\n%s", engine, name, err, strings.TrimSpace(string(output)))
+	}
+	fmt.Fprintf(os.Stderr, "Restarted %s\n", name)
+	return nil
+}

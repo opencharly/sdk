@@ -732,3 +732,39 @@
 	base?:      string    @go(Base)
 	candy_set?: [...string] @go(CandySet)
 }
+
+// #PodStartRequest carries the `charly start` command flags (the former StartCmd's authored
+// fields, DEPLOY-wave CLI-struct port). The command:pod plugin owns the CLI GRAMMAR but cannot
+// drive the LifecycleTarget dispatch (ResolveTarget, the plugin loader — core Mechanisms), so
+// `charly start`'s command is THIN — it forwards these flags to HostBuild("pod-start"), and the
+// host runs the existing startViaLifecycle orchestration VERBATIM, exactly as `charly bundle add`
+// stayed core behind HostBuild("deploy-add").
+#PodStartRequest: {
+	box!:            string @go(Box)
+	tag?:             string @go(Tag)
+	build?:           bool   @go(Build)
+	env?: [...string] @go(Env)
+	env_file?:        string @go(EnvFile)
+	instance?:        string @go(Instance)
+	port?: [...string] @go(Port)
+	volume_flag?: [...string] @go(VolumeFlag)
+	bind?: [...string] @go(Bind)
+	no_autodetect?:   bool @go(NoAutoDetect)
+}
+
+// #PodStartReply is the "pod-start" host-builder reply — empty; the start prints its own
+// progress to the shared stdio (the compiled-in plugin's HostBuild runs in charly's own process)
+// and signals failure via the error return.
+#PodStartReply: {}
+
+// #PodStopRequest carries the `charly stop` command flags (the former StopCmd's authored fields).
+// Forwarded to HostBuild("pod-stop"), which runs the existing stopViaLifecycle orchestration
+// VERBATIM.
+#PodStopRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+	unmount?:  bool   @go(Unmount)
+}
+
+// #PodStopReply is the "pod-stop" host-builder reply — empty, mirroring #PodStartReply.
+#PodStopReply: {}

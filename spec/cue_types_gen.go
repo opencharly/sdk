@@ -4307,6 +4307,55 @@ type DeployCompileReply struct {
 	CandySet []string `yaml:"candy_set,omitempty" json:"candy_set,omitempty"`
 }
 
+// #PodStartRequest carries the `charly start` command flags (the former StartCmd's authored
+// fields, DEPLOY-wave CLI-struct port). The command:pod plugin owns the CLI GRAMMAR but cannot
+// drive the LifecycleTarget dispatch (ResolveTarget, the plugin loader — core Mechanisms), so
+// `charly start`'s command is THIN — it forwards these flags to HostBuild("pod-start"), and the
+// host runs the existing startViaLifecycle orchestration VERBATIM, exactly as `charly bundle add`
+// stayed core behind HostBuild("deploy-add").
+type PodStartRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Build bool `yaml:"build,omitempty" json:"build,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Port []string `yaml:"port,omitempty" json:"port,omitempty"`
+
+	VolumeFlag []string `yaml:"volume_flag,omitempty" json:"volume_flag,omitempty"`
+
+	Bind []string `yaml:"bind,omitempty" json:"bind,omitempty"`
+
+	NoAutoDetect bool `yaml:"no_autodetect,omitempty" json:"no_autodetect,omitempty"`
+}
+
+// #PodStartReply is the "pod-start" host-builder reply — empty; the start prints its own
+// progress to the shared stdio (the compiled-in plugin's HostBuild runs in charly's own process)
+// and signals failure via the error return.
+type PodStartReply struct {
+}
+
+// #PodStopRequest carries the `charly stop` command flags (the former StopCmd's authored fields).
+// Forwarded to HostBuild("pod-stop"), which runs the existing stopViaLifecycle orchestration
+// VERBATIM.
+type PodStopRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Unmount bool `yaml:"unmount,omitempty" json:"unmount,omitempty"`
+}
+
+// #PodStopReply is the "pod-stop" host-builder reply — empty, mirroring #PodStartReply.
+type PodStopReply struct {
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
