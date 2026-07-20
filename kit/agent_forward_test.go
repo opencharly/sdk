@@ -99,3 +99,16 @@ func TestResolveAgentForwarding_DeployOverride(t *testing.T) {
 		t.Errorf("expected no env when deploy override disables forwarding, got %v", result.Env)
 	}
 }
+
+func TestResolveGPGAgentForward_ContainerHome(t *testing.T) {
+	// Test that the container socket path uses the provided home directory
+	// We can't easily test the full function without a real socket,
+	// but we can verify the path construction logic
+	vol, ok := resolveGPGAgentForward("/root")
+	if ok {
+		if !strings.Contains(vol, "/root/.gnupg/S.gpg-agent") {
+			t.Errorf("expected /root/.gnupg/S.gpg-agent in volume, got %q", vol)
+		}
+	}
+	// ok=false is acceptable if no GPG agent is running on the test system
+}

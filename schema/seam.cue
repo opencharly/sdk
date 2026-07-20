@@ -732,3 +732,218 @@
 	base?:      string    @go(Base)
 	candy_set?: [...string] @go(CandySet)
 }
+
+// #PodStartRequest carries the `charly start` command flags (the former StartCmd's authored
+// fields, DEPLOY-wave CLI-struct port). The command:pod plugin owns the CLI GRAMMAR but cannot
+// drive the LifecycleTarget dispatch (ResolveTarget, the plugin loader — core Mechanisms), so
+// `charly start`'s command is THIN — it forwards these flags to HostBuild("pod-start"), and the
+// host runs the existing startViaLifecycle orchestration VERBATIM, exactly as `charly bundle add`
+// stayed core behind HostBuild("deploy-add").
+#PodStartRequest: {
+	box!:            string @go(Box)
+	tag?:             string @go(Tag)
+	build?:           bool   @go(Build)
+	env?: [...string] @go(Env)
+	env_file?:        string @go(EnvFile)
+	instance?:        string @go(Instance)
+	port?: [...string] @go(Port)
+	volume_flag?: [...string] @go(VolumeFlag)
+	bind?: [...string] @go(Bind)
+	no_autodetect?:   bool @go(NoAutoDetect)
+}
+
+// #PodStartReply is the "pod-start" host-builder reply — empty; the start prints its own
+// progress to the shared stdio (the compiled-in plugin's HostBuild runs in charly's own process)
+// and signals failure via the error return.
+#PodStartReply: {}
+
+// #PodStopRequest carries the `charly stop` command flags (the former StopCmd's authored fields).
+// Forwarded to HostBuild("pod-stop"), which runs the existing stopViaLifecycle orchestration
+// VERBATIM.
+#PodStopRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+	unmount?:  bool   @go(Unmount)
+}
+
+// #PodStopReply is the "pod-stop" host-builder reply — empty, mirroring #PodStartReply.
+#PodStopReply: {}
+
+// #PodLogsRequest carries the `charly logs` command flags (the former LogsCmd's authored
+// fields). Forwarded to HostBuild("pod-logs"), which runs the existing dispatchLifecycleTarget +
+// LifecycleTarget.Logs orchestration VERBATIM (F12 — the host resolves the journalctl/`<engine>
+// logs` stream command, the owning plugin streams it live to the operator's stdio).
+#PodLogsRequest: {
+	box!:      string @go(Box)
+	follow?:   bool   @go(Follow)
+	instance?: string @go(Instance)
+	sidecar?:  string @go(Sidecar)
+}
+
+// #PodLogsReply is the "pod-logs" host-builder reply — empty, mirroring #PodStartReply.
+#PodLogsReply: {}
+
+// #PodRemoveRequest carries the `charly remove` command flags (the former RemoveCmd's authored
+// fields). Forwarded to HostBuild("pod-remove"), which runs the existing remove orchestration
+// VERBATIM (quadlet/companion-service teardown, pre_remove hooks, purge, deploy-entry cleanup —
+// deeply core-type-coupled: BoxMetadata/ExtractMetadata/sidecar resolution/deploykit.
+// CleanDeployEntry — not registry-bound, but not portable either).
+#PodRemoveRequest: {
+	box!:         string @go(Box)
+	instance?:    string @go(Instance)
+	purge?:       bool   @go(Purge)
+	keep_deploy?: bool   @go(KeepDeploy)
+	env?: [...string] @go(Env)
+}
+
+// #PodRemoveReply is the "pod-remove" host-builder reply — empty, mirroring #PodStartReply.
+#PodRemoveReply: {}
+
+// #PodShellRequest carries the `charly shell` command flags (the former ShellCmd's authored
+// fields). Forwarded to HostBuild("pod-shell"), which runs the existing dispatchLifecycleTarget +
+// LifecycleTarget.Attach orchestration VERBATIM (F12 — the host resolves the venue command, the
+// owning plugin runs it over the served venue executor via RunInteractive, stdio host-held).
+#PodShellRequest: {
+	box!:            string @go(Box)
+	tag?:             string @go(Tag)
+	command?:         string @go(Command)
+	build?:           bool   @go(Build)
+	tty?:             bool   @go(TTY)
+	env?: [...string] @go(Env)
+	env_file?:        string @go(EnvFile)
+	instance?:        string @go(Instance)
+	volume_flag?: [...string] @go(VolumeFlag)
+	bind?: [...string] @go(Bind)
+	no_autodetect?:   bool @go(NoAutoDetect)
+}
+
+// #PodShellReply is the "pod-shell" host-builder reply — empty, mirroring #PodStartReply.
+#PodShellReply: {}
+
+// #PodServiceRequest carries the `charly service start/stop/status/restart` command flags (the
+// former ServiceStartCmd/ServiceStopCmd/ServiceStatusCmd/ServiceRestartCmd's authored fields,
+// unified behind ONE seam by an `operation` discriminator — all four leaves share the identical
+// resolveServiceInit + execInitCommand body, differing only in which init-management verb runs).
+// Forwarded to HostBuild("pod-service"), which runs the existing service orchestration VERBATIM.
+#PodServiceRequest: {
+	operation!: "start" | "stop" | "status" | "restart" @go(Operation)
+	box!:       string                                  @go(Box)
+	service?:   string                                  @go(Service)
+	instance?:  string                                  @go(Instance)
+}
+
+// #PodServiceReply is the "pod-service" host-builder reply — empty, mirroring #PodStartReply.
+#PodServiceReply: {}
+
+// #PodConfigSetupRequest carries the `charly config [setup]` command flags (the former
+// BoxConfigSetupCmd's authored fields — EVERY field except ExplicitRef, a kong:"-" internal-only
+// field bundle_from_box_cmd.go sets programmatically, never authored). Forwarded to
+// HostBuild("pod-config-setup"), which reconstructs the UNCHANGED core BoxConfigSetupCmd (kept by
+// its exact name — bundle_from_box_cmd.go and host_build_deploy_from_box.go construct it directly
+// by name too, so it cannot rename/move) and runs its Run() body VERBATIM.
+#PodConfigSetupRequest: {
+	box?:              string @go(Box)
+	tag?:              string @go(Tag)
+	build?:            bool   @go(Build)
+	env?: [...string] @go(Env)
+	clean?:            bool   @go(Clean)
+	env_file?:         string @go(EnvFile)
+	instance?:         string @go(Instance)
+	port?: [...string] @go(Port)
+	keep_mounted?:     bool   @go(KeepMounted)
+	password?:         string @go(Password)
+	refresh_secret?: [...string] @go(RefreshSecret)
+	volume_flag?: [...string] @go(VolumeFlag)
+	bind?: [...string] @go(Bind)
+	encrypt?: [...string] @go(Encrypt)
+	memory_max?:       string @go(MemoryMax)
+	memory_high?:      string @go(MemoryHigh)
+	memory_swap_max?:  string @go(MemorySwapMax)
+	cpus?:             string @go(Cpus)
+	seed?:             bool   @go(Seed)
+	force_seed?:       bool   @go(ForceSeed)
+	data_from?:        string @go(DataFrom)
+	update_all?:       bool   @go(UpdateAll)
+	ssh_key?:          string @go(SshKey)
+	sidecar?: [...string] @go(Sidecar)
+	list_sidecars?:    bool   @go(ListSidecars)
+	no_autodetect?:    bool   @go(NoAutoDetect)
+}
+
+// #PodConfigSetupReply is the "pod-config-setup" host-builder reply — empty, mirroring
+// #PodStartReply.
+#PodConfigSetupReply: {}
+
+// #PodConfigStatusRequest carries `charly config status`'s flags. Forwarded to
+// HostBuild("pod-config-status"), which runs the existing encStatus(box,instance) call VERBATIM.
+#PodConfigStatusRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigStatusReply is the "pod-config-status" host-builder reply — empty.
+#PodConfigStatusReply: {}
+
+// #PodConfigMountRequest carries `charly config mount`'s flags. Forwarded to
+// HostBuild("pod-config-mount"), which runs the existing encMount(box,instance,volume) call
+// VERBATIM.
+#PodConfigMountRequest: {
+	box!:      string @go(Box)
+	volume?:   string @go(Volume)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigMountReply is the "pod-config-mount" host-builder reply — empty.
+#PodConfigMountReply: {}
+
+// #PodConfigUnmountRequest carries `charly config unmount`'s flags. Forwarded to
+// HostBuild("pod-config-unmount"), which runs the existing encUnmount(box,instance,volume) call
+// VERBATIM.
+#PodConfigUnmountRequest: {
+	box!:      string @go(Box)
+	volume?:   string @go(Volume)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigUnmountReply is the "pod-config-unmount" host-builder reply — empty.
+#PodConfigUnmountReply: {}
+
+// #PodConfigPasswdRequest carries `charly config passwd`'s flags. Forwarded to
+// HostBuild("pod-config-passwd"), which runs the existing encPasswd(box,instance) call VERBATIM.
+#PodConfigPasswdRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigPasswdReply is the "pod-config-passwd" host-builder reply — empty.
+#PodConfigPasswdReply: {}
+
+// #PodConfigRemoveRequest carries `charly config remove`'s flags (the former
+// BoxConfigRemoveCmd's authored fields — distinct from `charly remove`/#PodRemoveRequest, which
+// tears down the whole deploy; this removes only the quadlet + disables the service). Forwarded
+// to HostBuild("pod-config-remove"), which runs the existing remove orchestration VERBATIM.
+#PodConfigRemoveRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+
+// #PodConfigRemoveReply is the "pod-config-remove" host-builder reply — empty.
+#PodConfigRemoveReply: {}
+
+// #PodUpdateRequest carries the `charly update` command flags (the former UpdateCmd's
+// authored fields). Forwarded to HostBuild("pod-update"), which runs the existing
+// dispatchByDeployTarget orchestration VERBATIM — resolveTreeRoot/loadDeployPlugins/
+// ResolveTarget are core Mechanisms (the project loader + provider registry) a plugin
+// cannot import or hold.
+#PodUpdateRequest: {
+	box!:        string @go(Box)
+	tag?:        string @go(Tag)
+	build?:      bool   @go(Build)
+	instance?:   string @go(Instance)
+	seed?:       bool   @go(Seed)
+	force_seed?: bool   @go(ForceSeed)
+	data_from?:  string @go(DataFrom)
+}
+
+// #PodUpdateReply is the "pod-update" host-builder reply — empty, mirroring #PodStartReply.
+#PodUpdateReply: {}

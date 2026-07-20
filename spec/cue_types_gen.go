@@ -4307,6 +4307,303 @@ type DeployCompileReply struct {
 	CandySet []string `yaml:"candy_set,omitempty" json:"candy_set,omitempty"`
 }
 
+// #PodStartRequest carries the `charly start` command flags (the former StartCmd's authored
+// fields, DEPLOY-wave CLI-struct port). The command:pod plugin owns the CLI GRAMMAR but cannot
+// drive the LifecycleTarget dispatch (ResolveTarget, the plugin loader — core Mechanisms), so
+// `charly start`'s command is THIN — it forwards these flags to HostBuild("pod-start"), and the
+// host runs the existing startViaLifecycle orchestration VERBATIM, exactly as `charly bundle add`
+// stayed core behind HostBuild("deploy-add").
+type PodStartRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Build bool `yaml:"build,omitempty" json:"build,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Port []string `yaml:"port,omitempty" json:"port,omitempty"`
+
+	VolumeFlag []string `yaml:"volume_flag,omitempty" json:"volume_flag,omitempty"`
+
+	Bind []string `yaml:"bind,omitempty" json:"bind,omitempty"`
+
+	NoAutoDetect bool `yaml:"no_autodetect,omitempty" json:"no_autodetect,omitempty"`
+}
+
+// #PodStartReply is the "pod-start" host-builder reply — empty; the start prints its own
+// progress to the shared stdio (the compiled-in plugin's HostBuild runs in charly's own process)
+// and signals failure via the error return.
+type PodStartReply struct {
+}
+
+// #PodStopRequest carries the `charly stop` command flags (the former StopCmd's authored fields).
+// Forwarded to HostBuild("pod-stop"), which runs the existing stopViaLifecycle orchestration
+// VERBATIM.
+type PodStopRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Unmount bool `yaml:"unmount,omitempty" json:"unmount,omitempty"`
+}
+
+// #PodStopReply is the "pod-stop" host-builder reply — empty, mirroring #PodStartReply.
+type PodStopReply struct {
+}
+
+// #PodLogsRequest carries the `charly logs` command flags (the former LogsCmd's authored
+// fields). Forwarded to HostBuild("pod-logs"), which runs the existing dispatchLifecycleTarget +
+// LifecycleTarget.Logs orchestration VERBATIM (F12 — the host resolves the journalctl/`<engine>
+// logs` stream command, the owning plugin streams it live to the operator's stdio).
+type PodLogsRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Follow bool `yaml:"follow,omitempty" json:"follow,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Sidecar string `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
+}
+
+// #PodLogsReply is the "pod-logs" host-builder reply — empty, mirroring #PodStartReply.
+type PodLogsReply struct {
+}
+
+// #PodRemoveRequest carries the `charly remove` command flags (the former RemoveCmd's authored
+// fields). Forwarded to HostBuild("pod-remove"), which runs the existing remove orchestration
+// VERBATIM (quadlet/companion-service teardown, pre_remove hooks, purge, deploy-entry cleanup —
+// deeply core-type-coupled: BoxMetadata/ExtractMetadata/sidecar resolution/deploykit.
+// CleanDeployEntry — not registry-bound, but not portable either).
+type PodRemoveRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Purge bool `yaml:"purge,omitempty" json:"purge,omitempty"`
+
+	KeepDeploy bool `yaml:"keep_deploy,omitempty" json:"keep_deploy,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// #PodRemoveReply is the "pod-remove" host-builder reply — empty, mirroring #PodStartReply.
+type PodRemoveReply struct {
+}
+
+// #PodShellRequest carries the `charly shell` command flags (the former ShellCmd's authored
+// fields). Forwarded to HostBuild("pod-shell"), which runs the existing dispatchLifecycleTarget +
+// LifecycleTarget.Attach orchestration VERBATIM (F12 — the host resolves the venue command, the
+// owning plugin runs it over the served venue executor via RunInteractive, stdio host-held).
+type PodShellRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Command string `yaml:"command,omitempty" json:"command,omitempty"`
+
+	Build bool `yaml:"build,omitempty" json:"build,omitempty"`
+
+	TTY bool `yaml:"tty,omitempty" json:"tty,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	VolumeFlag []string `yaml:"volume_flag,omitempty" json:"volume_flag,omitempty"`
+
+	Bind []string `yaml:"bind,omitempty" json:"bind,omitempty"`
+
+	NoAutoDetect bool `yaml:"no_autodetect,omitempty" json:"no_autodetect,omitempty"`
+}
+
+// #PodShellReply is the "pod-shell" host-builder reply — empty, mirroring #PodStartReply.
+type PodShellReply struct {
+}
+
+// #PodServiceRequest carries the `charly service start/stop/status/restart` command flags (the
+// former ServiceStartCmd/ServiceStopCmd/ServiceStatusCmd/ServiceRestartCmd's authored fields,
+// unified behind ONE seam by an `operation` discriminator — all four leaves share the identical
+// resolveServiceInit + execInitCommand body, differing only in which init-management verb runs).
+// Forwarded to HostBuild("pod-service"), which runs the existing service orchestration VERBATIM.
+type PodServiceRequest struct {
+	Operation string `yaml:"operation,omitempty" json:"operation"`
+
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Service string `yaml:"service,omitempty" json:"service,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #PodServiceReply is the "pod-service" host-builder reply — empty, mirroring #PodStartReply.
+type PodServiceReply struct {
+}
+
+// #PodConfigSetupRequest carries the `charly config [setup]` command flags (the former
+// BoxConfigSetupCmd's authored fields — EVERY field except ExplicitRef, a kong:"-" internal-only
+// field bundle_from_box_cmd.go sets programmatically, never authored). Forwarded to
+// HostBuild("pod-config-setup"), which reconstructs the UNCHANGED core BoxConfigSetupCmd (kept by
+// its exact name — bundle_from_box_cmd.go and host_build_deploy_from_box.go construct it directly
+// by name too, so it cannot rename/move) and runs its Run() body VERBATIM.
+type PodConfigSetupRequest struct {
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Build bool `yaml:"build,omitempty" json:"build,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Clean bool `yaml:"clean,omitempty" json:"clean,omitempty"`
+
+	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Port []string `yaml:"port,omitempty" json:"port,omitempty"`
+
+	KeepMounted bool `yaml:"keep_mounted,omitempty" json:"keep_mounted,omitempty"`
+
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+
+	RefreshSecret []string `yaml:"refresh_secret,omitempty" json:"refresh_secret,omitempty"`
+
+	VolumeFlag []string `yaml:"volume_flag,omitempty" json:"volume_flag,omitempty"`
+
+	Bind []string `yaml:"bind,omitempty" json:"bind,omitempty"`
+
+	Encrypt []string `yaml:"encrypt,omitempty" json:"encrypt,omitempty"`
+
+	MemoryMax string `yaml:"memory_max,omitempty" json:"memory_max,omitempty"`
+
+	MemoryHigh string `yaml:"memory_high,omitempty" json:"memory_high,omitempty"`
+
+	MemorySwapMax string `yaml:"memory_swap_max,omitempty" json:"memory_swap_max,omitempty"`
+
+	Cpus string `yaml:"cpus,omitempty" json:"cpus,omitempty"`
+
+	Seed bool `yaml:"seed,omitempty" json:"seed,omitempty"`
+
+	ForceSeed bool `yaml:"force_seed,omitempty" json:"force_seed,omitempty"`
+
+	DataFrom string `yaml:"data_from,omitempty" json:"data_from,omitempty"`
+
+	UpdateAll bool `yaml:"update_all,omitempty" json:"update_all,omitempty"`
+
+	SshKey string `yaml:"ssh_key,omitempty" json:"ssh_key,omitempty"`
+
+	Sidecar []string `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
+
+	ListSidecars bool `yaml:"list_sidecars,omitempty" json:"list_sidecars,omitempty"`
+
+	NoAutoDetect bool `yaml:"no_autodetect,omitempty" json:"no_autodetect,omitempty"`
+}
+
+// #PodConfigSetupReply is the "pod-config-setup" host-builder reply — empty, mirroring
+// #PodStartReply.
+type PodConfigSetupReply struct {
+}
+
+// #PodConfigStatusRequest carries `charly config status`'s flags. Forwarded to
+// HostBuild("pod-config-status"), which runs the existing encStatus(box,instance) call VERBATIM.
+type PodConfigStatusRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #PodConfigStatusReply is the "pod-config-status" host-builder reply — empty.
+type PodConfigStatusReply struct {
+}
+
+// #PodConfigMountRequest carries `charly config mount`'s flags. Forwarded to
+// HostBuild("pod-config-mount"), which runs the existing encMount(box,instance,volume) call
+// VERBATIM.
+type PodConfigMountRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Volume string `yaml:"volume,omitempty" json:"volume,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #PodConfigMountReply is the "pod-config-mount" host-builder reply — empty.
+type PodConfigMountReply struct {
+}
+
+// #PodConfigUnmountRequest carries `charly config unmount`'s flags. Forwarded to
+// HostBuild("pod-config-unmount"), which runs the existing encUnmount(box,instance,volume) call
+// VERBATIM.
+type PodConfigUnmountRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Volume string `yaml:"volume,omitempty" json:"volume,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #PodConfigUnmountReply is the "pod-config-unmount" host-builder reply — empty.
+type PodConfigUnmountReply struct {
+}
+
+// #PodConfigPasswdRequest carries `charly config passwd`'s flags. Forwarded to
+// HostBuild("pod-config-passwd"), which runs the existing encPasswd(box,instance) call VERBATIM.
+type PodConfigPasswdRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #PodConfigPasswdReply is the "pod-config-passwd" host-builder reply — empty.
+type PodConfigPasswdReply struct {
+}
+
+// #PodConfigRemoveRequest carries `charly config remove`'s flags (the former
+// BoxConfigRemoveCmd's authored fields — distinct from `charly remove`/#PodRemoveRequest, which
+// tears down the whole deploy; this removes only the quadlet + disables the service). Forwarded
+// to HostBuild("pod-config-remove"), which runs the existing remove orchestration VERBATIM.
+type PodConfigRemoveRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #PodConfigRemoveReply is the "pod-config-remove" host-builder reply — empty.
+type PodConfigRemoveReply struct {
+}
+
+// #PodUpdateRequest carries the `charly update` command flags (the former UpdateCmd's
+// authored fields). Forwarded to HostBuild("pod-update"), which runs the existing
+// dispatchByDeployTarget orchestration VERBATIM — resolveTreeRoot/loadDeployPlugins/
+// ResolveTarget are core Mechanisms (the project loader + provider registry) a plugin
+// cannot import or hold.
+type PodUpdateRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Build bool `yaml:"build,omitempty" json:"build,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Seed bool `yaml:"seed,omitempty" json:"seed,omitempty"`
+
+	ForceSeed bool `yaml:"force_seed,omitempty" json:"force_seed,omitempty"`
+
+	DataFrom string `yaml:"data_from,omitempty" json:"data_from,omitempty"`
+}
+
+// #PodUpdateReply is the "pod-update" host-builder reply — empty, mirroring #PodStartReply.
+type PodUpdateReply struct {
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
