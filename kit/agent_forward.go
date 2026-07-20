@@ -12,10 +12,15 @@ import (
 
 // agent_forward.go — the SSH/GPG agent-forwarding resolution mechanism (K4 lane B: relocated from
 // charly/agent_forward.go, a genuinely pure host-probe mechanism with no project-loader
-// dependency). Consumed directly by candy/plugin-pod and by charly core's remaining caller
-// (pod_lifecycle_resolve.go), which imports kit directly (K3 ZERO-ALIASES — no alias file; the
-// charly-side duplicate this comment once referenced via a "kit_aliases.go passthrough" was an
-// incomplete cutover — that file never existed — swept in the DEPLOY wave).
+// dependency).
+//
+// CURRENT STATE (corrected 2026-07-20): as of this commit, charly main STILL carries the bare
+// charly/agent_forward.go duplicate (+ its own test file) and pod_lifecycle_resolve.go still
+// calls the unqualified ResolveAgentForwarding at 3 call sites — the companion DEPLOY-wave
+// charly PR deletes that duplicate and repoints all 3 call sites to kit.ResolveAgentForwarding
+// directly (K3 ZERO-ALIASES — no alias file), tracked there, not yet true on main today. The
+// prior "kit_aliases.go passthrough" this header once claimed never existed either — that file
+// was never created; the bare charly-side duplicate was simply never swept.
 
 // AgentForwardMounts holds the resolved bind mounts and env vars needed to
 // forward SSH and GPG agent sockets from the host into a container.

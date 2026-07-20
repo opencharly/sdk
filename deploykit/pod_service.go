@@ -9,12 +9,17 @@ import (
 	"github.com/opencharly/sdk/kit"
 )
 
-// pod_service.go — the already-configured-pod service start/stop (K4: relocated from
+// pod_service.go — the already-configured-pod service start/stop/restart (K4: relocated from
 // charly/start.go). Homed in deploykit (not kit) because they need ResolveBoxEngineForDeploy, a
-// deploykit-only mechanism (kit cannot import deploykit — see box_engine.go). Shared between
-// charly core's remaining caller (the resource arbiter, preempt.go — a bare, reversible
-// service stop/restore that leaves the holder's disk/container intact) and
-// candy/plugin-deploy-pod, which import deploykit directly (K3 ZERO-ALIASES — no alias file).
+// deploykit-only mechanism (kit cannot import deploykit — see box_engine.go).
+//
+// CURRENT STATE (corrected 2026-07-20): as of this commit, charly main STILL carries the
+// original bare stopPodService/startPodService in charly/start.go, called directly by the
+// resource arbiter (preempt.go) — a bare, reversible service stop/restore that leaves the
+// holder's disk/container intact — and by StartCmd/StopCmd's own bodies. The companion
+// DEPLOY-wave charly PR deletes those bare originals and repoints preempt.go (+ every other
+// caller) to deploykit.StopPodService/StartPodService/RestartPodService directly (K3
+// ZERO-ALIASES — no alias file), tracked there, not yet true on main today.
 
 // StopPodService stops a running pod deployment — the quadlet service when
 // one exists (always via systemctl, so podman-stop + Restart=always can't

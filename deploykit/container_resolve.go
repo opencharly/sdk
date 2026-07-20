@@ -18,9 +18,11 @@ import (
 // host_build_check_run.go, pod_lifecycle_resolve.go, and android_deploy_cmd.go (verified by grep,
 // not assumed) — every one of those is CHECK-wave or android-wave territory, so the dedup sweep
 // (repoint each caller to deploykit.ResolveContainer/.ResolveSidecarContainer, delete the core
-// duplicates) is tracked to the CHECK wave's inventory, not done here. candy/plugin-pod (the
-// DEPLOY wave's CLI-struct port) is the one confirmed consumer that imports these deploykit
-// functions directly today (its VolumeCmd/CpCmd leaves, K3 ZERO-ALIASES — no alias file).
+// duplicates) is tracked to the CHECK wave's inventory, not done here. candy/plugin-pod does
+// NOT exist on charly main as of this commit — it is a new candy born on the companion
+// DEPLOY-wave charly PR, whose VolumeCmd/CpCmd leaves will be the first confirmed consumer to
+// import these deploykit functions directly (K3 ZERO-ALIASES — no alias file), once that PR
+// merges.
 
 // ResolveContainer resolves engine + container name, verifying the container is running.
 // Use "." as image name for local mode (returns empty engine and name).

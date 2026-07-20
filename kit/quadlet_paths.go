@@ -8,9 +8,13 @@ import (
 
 // quadlet_paths.go — the on-disk quadlet/systemd path + filename helpers (K4:
 // relocated from charly/quadlet.go — pure string/path formatting + a host
-// existence probe, no project-loader dependency). Consumed by
-// candy/plugin-deploy-pod and by charly core's remaining callers, which
-// import kit directly (K3 ZERO-ALIASES — no alias file).
+// existence probe, no project-loader dependency).
+//
+// CURRENT STATE (corrected 2026-07-20): as of this commit, charly main STILL carries the
+// original self-contained charly/quadlet.go — the companion DEPLOY-wave charly PR deletes it
+// and repoints every caller (bundle_add_cmd.go, bundle_cmd.go, preempt.go, config_image.go,
+// commands.go, and the pod-lifecycle files) to kit.QuadletDir/kit.QuadletFilenameInstance/etc.
+// directly (K3 ZERO-ALIASES — no alias file), tracked there, not yet true on main today.
 
 // QuadletDir returns the user-level quadlet directory.
 func QuadletDir() (string, error) {
