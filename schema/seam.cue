@@ -798,3 +798,24 @@
 
 // #PodRemoveReply is the "pod-remove" host-builder reply — empty, mirroring #PodStartReply.
 #PodRemoveReply: {}
+
+// #PodShellRequest carries the `charly shell` command flags (the former ShellCmd's authored
+// fields). Forwarded to HostBuild("pod-shell"), which runs the existing dispatchLifecycleTarget +
+// LifecycleTarget.Attach orchestration VERBATIM (F12 — the host resolves the venue command, the
+// owning plugin runs it over the served venue executor via RunInteractive, stdio host-held).
+#PodShellRequest: {
+	box!:            string @go(Box)
+	tag?:             string @go(Tag)
+	command?:         string @go(Command)
+	build?:           bool   @go(Build)
+	tty?:             bool   @go(TTY)
+	env?: [...string] @go(Env)
+	env_file?:        string @go(EnvFile)
+	instance?:        string @go(Instance)
+	volume_flag?: [...string] @go(VolumeFlag)
+	bind?: [...string] @go(Bind)
+	no_autodetect?:   bool @go(NoAutoDetect)
+}
+
+// #PodShellReply is the "pod-shell" host-builder reply — empty, mirroring #PodStartReply.
+#PodShellReply: {}

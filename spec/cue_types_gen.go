@@ -4395,6 +4395,38 @@ type PodRemoveRequest struct {
 type PodRemoveReply struct {
 }
 
+// #PodShellRequest carries the `charly shell` command flags (the former ShellCmd's authored
+// fields). Forwarded to HostBuild("pod-shell"), which runs the existing dispatchLifecycleTarget +
+// LifecycleTarget.Attach orchestration VERBATIM (F12 — the host resolves the venue command, the
+// owning plugin runs it over the served venue executor via RunInteractive, stdio host-held).
+type PodShellRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Command string `yaml:"command,omitempty" json:"command,omitempty"`
+
+	Build bool `yaml:"build,omitempty" json:"build,omitempty"`
+
+	TTY bool `yaml:"tty,omitempty" json:"tty,omitempty"`
+
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	VolumeFlag []string `yaml:"volume_flag,omitempty" json:"volume_flag,omitempty"`
+
+	Bind []string `yaml:"bind,omitempty" json:"bind,omitempty"`
+
+	NoAutoDetect bool `yaml:"no_autodetect,omitempty" json:"no_autodetect,omitempty"`
+}
+
+// #PodShellReply is the "pod-shell" host-builder reply — empty, mirroring #PodStartReply.
+type PodShellReply struct {
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
