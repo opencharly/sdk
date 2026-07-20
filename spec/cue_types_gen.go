@@ -4432,19 +4432,19 @@ type PodShellRequest struct {
 type PodShellReply struct {
 }
 
-// #PodServiceRequest carries the `charly service start/stop/status/restart` command flags (the
-// former ServiceStartCmd/ServiceStopCmd/ServiceStatusCmd/ServiceRestartCmd's authored fields,
-// unified behind ONE seam by an `operation` discriminator — all four leaves share the identical
-// resolveServiceInit + execInitCommand body, differing only in which init-management verb runs).
-// Forwarded to HostBuild("pod-service"), which runs the existing service orchestration VERBATIM.
+// #PodServiceRequest carries the FULLY plugin-resolved argv for `charly service
+// start/stop/status/restart` (Cutover B unit 2 completion): the plugin now performs
+// resolveServiceInit/validateServiceName/execInitCommand's argv-building itself (all portable —
+// spec.ResolvedInit is already an sdk alias, buildkit.RenderTemplate is sdk-portable) and sends
+// the FINAL `<engine> exec <container> <tool> <op> [svc]` argv; the host does ONLY the
+// irreducible dispatchLifecycleTarget + LifecycleTarget.Shell step (host_build_pod_lifecycle_dispatch.go's
+// hostBuildPodService), mirroring start/stop/logs/update exactly.
 type PodServiceRequest struct {
-	Operation string `yaml:"operation,omitempty" json:"operation"`
-
 	Box string `yaml:"box,omitempty" json:"box"`
 
-	Service string `yaml:"service,omitempty" json:"service,omitempty"`
-
 	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Argv []string `yaml:"argv,omitempty" json:"argv"`
 }
 
 // #PodServiceReply is the "pod-service" host-builder reply — empty, mirroring #PodStartReply.
@@ -4834,6 +4834,24 @@ type PodConfigSaveDeployStateRequest struct {
 }
 
 type PodConfigSaveDeployStateReply struct {
+}
+
+// #PodConfigCleanDeployEntryRequest / Reply: deploykit.CleanDeployEntry(box, instance,
+// marshalDeployNode) — the `charly remove` deploy-entry cleanup (Cutover B unit 2 remove-verb
+// completion). Mirrors #PodConfigSaveDeployStateRequest's shape ({box!, instance?} → {}, the host
+// owns the entire load+lock+mutate+save internally) — deliberately NOT a reuse of
+// #DeployConfigSaveRequest (the `deploy-config-save` seam), which persists an ALREADY-LOADED,
+// already-mutated whole BundleConfig with no internal load/lock/entry-removal logic (bundle
+// import/reset's use case) — a genuinely different, narrower operation CleanDeployEntry's own
+// internal file-lock + entry-removal + provides-cleanup + empty-file-delete logic cannot be
+// reduced to.
+type PodConfigCleanDeployEntryRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigCleanDeployEntryReply struct {
 }
 
 // #PodConfigHookSecretEnvRequest / Reply: resolveHookSecretEnv(box,instance,meta) — the
@@ -5904,3 +5922,106 @@ type LibvirtListenOne struct {
 
 // PCI source address component: 0x-hex OR bare decimal (hexUintPtr accepts both).
 type LibvirtPCIHex string
+
+// #VmSnapshotCreateOpts parameterizes the creation of a snapshot — the host-resolved payload for
+// the snapshot-internal "create"/"create-external" ops.
+type VmSnapshotCreateOpts struct {
+	VmName string `yaml:"vm_name,omitempty" json:"vm_name"`
+
+	SnapName string `yaml:"snap_name,omitempty" json:"snap_name"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Quiesce bool `yaml:"quiesce,omitempty" json:"quiesce,omitempty"`
+
+	LibvirtBackend string `yaml:"libvirt_backend,omitempty" json:"libvirt_backend,omitempty"`
+}
+
+// #VmSnapshotEntry is one snapshot record (mirrors sdk/vmshared's SnapshotEntry, the on-disk
+// registry shape) — carried on delete/revert/promote ops so the plugin's go-libvirt call has the
+// full record without re-reading the host-side registry itself.
+type VmSnapshotEntry struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode"`
+
+	LibvirtName string `yaml:"libvirt_name,omitempty" json:"libvirt_name,omitempty"`
+
+	DiskPath string `yaml:"disk_path,omitempty" json:"disk_path,omitempty"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Created string `yaml:"created,omitempty" json:"created,omitempty"`
+
+	Parent string `yaml:"parent,omitempty" json:"parent,omitempty"`
+
+	Refcount int `yaml:"refcount,omitempty" json:"refcount"`
+
+	Quiesced bool `yaml:"quiesced,omitempty" json:"quiesced,omitempty"`
+}
+
+// #VmSnapInternalReq is the snapshot-internal op payload (create/delete/revert/promote/
+// create-external/delete-external/revert-external), threaded via #VmPluginEnv.snap.
+type VmSnapInternalReq struct {
+	SnapOp string `yaml:"snap_op,omitempty" json:"snap_op"`
+
+	VmName string `yaml:"vm_name,omitempty" json:"vm_name"`
+
+	Opts *VmSnapshotCreateOpts `yaml:"opts,omitempty" json:"opts,omitempty"`
+
+	Entry *VmSnapshotEntry `yaml:"entry,omitempty" json:"entry,omitempty"`
+
+	OutPath string `yaml:"out_path,omitempty" json:"out_path,omitempty"`
+}
+
+// #VmPluginEnv is the host→plugin env for an internal VM-resolution RPC (domain-state/
+// list-domains/resolve-spice/resolve-vnc/qemu-shutdown/snapshot-internal). Matches the SUBSET of
+// candy/plugin-vm's own (richer) internal vmEnv decode struct that charly-core's dispatch
+// actually sends — plugin-vm's vmEnv carries an ADDITIONAL `create` field (the `charly vm create`
+// CLI's own in-process construction, never sent by charly-core), which stays a plugin-local
+// concern outside this shared def (containing *VmSpec/VmRuntimeParams, neither CUE-sourced yet).
+type VmPluginEnv struct {
+	VmOp string `yaml:"vm_op,omitempty" json:"vm_op"`
+
+	VmName string `yaml:"vm_name,omitempty" json:"vm_name,omitempty"`
+
+	URI string `yaml:"uri,omitempty" json:"uri,omitempty"`
+
+	Force bool `yaml:"force,omitempty" json:"force,omitempty"`
+
+	DeleteDisk bool `yaml:"delete_disk,omitempty" json:"delete_disk,omitempty"`
+
+	Snap *VmSnapInternalReq `yaml:"snap,omitempty" json:"snap,omitempty"`
+
+	StateDir string `yaml:"state_dir,omitempty" json:"state_dir,omitempty"`
+}
+
+// #VmDisplayEndpoint describes how to reach one graphics channel (SPICE or VNC) of a running VM.
+// Shared by candy/plugin-vm's own DisplayEndpoint (a running-VM's resolved endpoint, kind="spice"|
+// "vnc") and charly-core's decode of the resolve-spice/resolve-vnc RPC reply — ONE shape, R3.
+type VmDisplayEndpoint struct {
+	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
+
+	IsSocket bool `yaml:"is_socket,omitempty" json:"is_socket,omitempty"`
+
+	SocketPath string `yaml:"socket_path,omitempty" json:"socket_path,omitempty"`
+
+	Host string `yaml:"host,omitempty" json:"host,omitempty"`
+
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+
+	TunnelNeeded bool `yaml:"tunnel_needed,omitempty" json:"tunnel_needed,omitempty"`
+}
+
+// #VmResolveResult decodes a resolve-spice/resolve-vnc reply.
+type VmResolveResult struct {
+	Endpoint VmDisplayEndpoint `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+
+	TunnelTarget string `yaml:"tunnel_target,omitempty" json:"tunnel_target,omitempty"`
+}
