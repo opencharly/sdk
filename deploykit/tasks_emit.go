@@ -223,14 +223,13 @@ func EmitSetcapBatch(b *strings.Builder, tasks []vmshared.Op, img *buildkit.Reso
 }
 
 // TaskCacheMounts renders a task's candy-declared `cache:` paths as BuildKit
-// cache-mount flags. Ownership follows the task's user (root → shared, non-root →
-// uid/gid-owned).
+// cache-mount flags. Ownership follows the task's stage user (root → shared,
+// non-root → uid/gid-owned).
 func TaskCacheMounts(t vmshared.Op, img *buildkit.ResolvedBox) []string {
 	if len(t.Cache) == 0 {
 		return nil
 	}
-	directive, _ := ResolveUserSpec(t.RunAs, img)
-	root := directive == "0"
+	root := taskRunsAsRoot(t.RunAs, img)
 	out := make([]string, 0, len(t.Cache))
 	for _, p := range t.Cache {
 		p = TaskSubstPath(p, img)
@@ -241,6 +240,21 @@ func TaskCacheMounts(t vmshared.Op, img *buildkit.ResolvedBox) []string {
 		}
 	}
 	return out
+}
+
+// taskRunsAsRoot reports whether a task's stage user is root: an explicit root
+// RunAs, or — with RunAs empty — the image's build user being root (a task RUN
+// inherits the stage's USER, which is the image build user). ResolveUserSpec
+// alone cannot decide this: it maps an EMPTY RunAs to "0" for USER-directive
+// purposes, which would wrongly root-ify every default task's cache ownership
+// (the curl-23 build failure: a root-owned shared downloads cache breaks every
+// non-root stage's download).
+func taskRunsAsRoot(runAs string, img *buildkit.ResolvedBox) bool {
+	if strings.TrimSpace(runAs) == "" {
+		return img.UID == 0
+	}
+	directive, _ := ResolveUserSpec(runAs, img)
+	return directive == "0"
 }
 
 // EmitDownload emits one RUN per download task: fetch to a content-addressed
@@ -313,7 +327,17 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 
 	cacheMounts := TaskCacheMounts(t, img)
 	mounts := make([]string, 0, 1+len(cacheMounts))
-	mounts = append(mounts, buildkit.SharedCacheMount("/tmp/downloads", "").String())
+	// The downloads cache follows the task's stage user exactly like a
+	// candy-declared `cache:` mount (TaskCacheMounts, taskRunsAsRoot): a
+	// NON-ROOT stage gets an uid/gid-owned cache (per-uid id namespace, the
+	// pixi/npm-cache pattern) — a shared root-owned backing permanently breaks
+	// non-root downloads the moment any root stage has written to it (the
+	// curl-23 build failure).
+	if taskRunsAsRoot(t.RunAs, img) {
+		mounts = append(mounts, buildkit.SharedCacheMount("/tmp/downloads", "").String())
+	} else {
+		mounts = append(mounts, buildkit.OwnedCacheMount("/tmp/downloads", img.UID, img.GID).String())
+	}
 	mounts = append(mounts, cacheMounts...)
 	b.WriteString("RUN " + strings.Join(mounts, " ") + " bash -c " + kit.ShellQuote(cmd) + "\n")
 	return nil
