@@ -174,11 +174,73 @@ func RepoGitURL(repoPath string) string {
 	return "https://" + repoPath + ".git"
 }
 
+// IsMutableRef reports whether a repo ref version can ADVANCE upstream (a
+// branch name such as main, or an empty version that resolves to the default
+// branch). Immutable coordinates — CalVer/semver tags (v…) and full commit
+// SHAs — never change what they point at; the project's tags are add-only.
+// Mutable refs must re-resolve on every access: a cache hit on a branch
+// otherwise freezes it at first-download content forever (the pre-#146 @main
+// protocol skew — a stale main export served protocol-v1 plugin sources
+// indefinitely).
+func IsMutableRef(version string) bool {
+	if version == "" {
+		return true
+	}
+	if strings.HasPrefix(version, "v") {
+		return false
+	}
+	if len(version) == 40 && isHex(version) {
+		return false
+	}
+	return true
+}
+
+// refProvenancePath is the sidecar recording the commit a cache export was
+// cloned from.
+func refProvenancePath(cachePath string) string {
+	return cachePath + ".ref"
+}
+
+// writeRefProvenance records the clone's resolved commit next to the export.
+func writeRefProvenance(cachePath, commit string) error {
+	return os.WriteFile(refProvenancePath(cachePath), []byte(commit+"\n"), 0o644)
+}
+
+// repoCacheFresh reports whether the cache at cachePath is a complete export
+// cloned from exactly commit. A missing export, a missing provenance sidecar
+// (a cache written before this contract), or a sidecar naming a different
+// commit (the ref moved upstream) all count as stale.
+func repoCacheFresh(cachePath, commit string) bool {
+	if commit == "" {
+		return false
+	}
+	if st, err := os.Stat(cachePath); err != nil || !st.IsDir() {
+		return false
+	}
+	recorded, err := os.ReadFile(refProvenancePath(cachePath))
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(recorded)) == commit
+}
+
 // DownloadRepo downloads a remote repo to the cache.
 // Returns the cache path where the repo was stored.
+//
+// Freshness contract: the cache is reused ONLY when its recorded provenance
+// (the commit the export was cloned from) equals the ref's CURRENTLY resolved
+// commit — so a branch that advanced upstream (main) is re-downloaded instead
+// of silently serving stale content. The check costs the one ls-remote
+// GitResolveRef already performs; for immutable tags the provenance always
+// matches, so their cache-hit behavior is unchanged. A cache written before
+// this contract has no provenance and is re-downloaded once, then self-heals.
 func DownloadRepo(repoPath string, version string) (string, error) {
-	repoURL := RepoGitURL(repoPath)
+	return downloadRepoFrom(RepoGitURL(repoPath), repoPath, version)
+}
 
+// downloadRepoFrom is DownloadRepo with the clone URL explicit, so the
+// freshness contract is testable against a local file:// remote.
+func downloadRepoFrom(repoURL, repoPath, version string) (string, error) {
 	// Resolve the ref to a commit hash
 	commit, err := GitResolveRef(repoURL, version)
 	if err != nil {
@@ -190,22 +252,57 @@ func DownloadRepo(repoPath string, version string) (string, error) {
 		return "", err
 	}
 
-	// Check if already cached
-	if _, err := os.Stat(cachePath); err == nil {
+	// Serialize concurrent download/refresh of the SAME cache path (a blocking
+	// per-path file lock, the plugin build-cache pattern): the loser re-checks
+	// provenance under the lock and reuses the winner's fresh export instead of
+	// cloning over it.
+	release, err := AcquireFileLock(cachePath+".lock", true)
+	if err != nil {
+		return "", fmt.Errorf("acquiring repo cache lock %s: %w", cachePath, err)
+	}
+	defer func() { _ = release() }()
+
+	if repoCacheFresh(cachePath, commit) {
 		return cachePath, nil
 	}
 
 	fmt.Fprintf(os.Stderr, "Downloading %s:%s...\n", repoPath, version)
 
-	// Clone into cache
-	if err := GitClone(repoURL, version, commit, cachePath); err != nil {
+	// Clone into a sibling temp dir first, then swap: readers see either the
+	// complete old export or the complete new one, never a half-cloned tree.
+	tmpPath := cachePath + ".download"
+	_ = os.RemoveAll(tmpPath) // leftover from an interrupted earlier download
+	if err := GitClone(repoURL, version, commit, tmpPath); err != nil {
+		_ = os.RemoveAll(tmpPath)
 		return "", fmt.Errorf("downloading %s:%s: %w", repoPath, version, err)
 	}
 
 	// Remove .git directory to save space (cache is read-only)
-	_ = os.RemoveAll(filepath.Join(cachePath, ".git"))
+	_ = os.RemoveAll(filepath.Join(tmpPath, ".git"))
 
-	return cachePath, nil
+	// Publish: swing any old export aside, move the fresh one in, then drop the
+	// old — the no-tree window is the single rename between them, and a publish
+	// failure restores the old export.
+	gcPath := cachePath + ".gc"
+	_ = os.RemoveAll(gcPath)
+	hadOld := false
+	if _, err := os.Stat(cachePath); err == nil {
+		hadOld = true
+		if err := os.Rename(cachePath, gcPath); err != nil {
+			_ = os.RemoveAll(tmpPath)
+			return "", fmt.Errorf("parking old repo cache %s: %w", cachePath, err)
+		}
+	}
+	if err := os.Rename(tmpPath, cachePath); err != nil {
+		if hadOld {
+			_ = os.Rename(gcPath, cachePath)
+		}
+		_ = os.RemoveAll(tmpPath)
+		return "", fmt.Errorf("publishing repo cache %s: %w", cachePath, err)
+	}
+	_ = os.RemoveAll(gcPath)
+
+	return cachePath, writeRefProvenance(cachePath, commit)
 }
 
 // DiscoverRemoteCandy returns the list of candy names in a remote repo directory
