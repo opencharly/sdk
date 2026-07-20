@@ -4356,6 +4356,24 @@ type PodStopRequest struct {
 type PodStopReply struct {
 }
 
+// #PodLogsRequest carries the `charly logs` command flags (the former LogsCmd's authored
+// fields). Forwarded to HostBuild("pod-logs"), which runs the existing dispatchLifecycleTarget +
+// LifecycleTarget.Logs orchestration VERBATIM (F12 — the host resolves the journalctl/`<engine>
+// logs` stream command, the owning plugin streams it live to the operator's stdio).
+type PodLogsRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Follow bool `yaml:"follow,omitempty" json:"follow,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Sidecar string `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
+}
+
+// #PodLogsReply is the "pod-logs" host-builder reply — empty, mirroring #PodStartReply.
+type PodLogsReply struct {
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.

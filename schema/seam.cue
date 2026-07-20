@@ -768,3 +768,17 @@
 
 // #PodStopReply is the "pod-stop" host-builder reply — empty, mirroring #PodStartReply.
 #PodStopReply: {}
+
+// #PodLogsRequest carries the `charly logs` command flags (the former LogsCmd's authored
+// fields). Forwarded to HostBuild("pod-logs"), which runs the existing dispatchLifecycleTarget +
+// LifecycleTarget.Logs orchestration VERBATIM (F12 — the host resolves the journalctl/`<engine>
+// logs` stream command, the owning plugin streams it live to the operator's stdio).
+#PodLogsRequest: {
+	box!:      string @go(Box)
+	follow?:   bool   @go(Follow)
+	instance?: string @go(Instance)
+	sidecar?:  string @go(Sidecar)
+}
+
+// #PodLogsReply is the "pod-logs" host-builder reply — empty, mirroring #PodStartReply.
+#PodLogsReply: {}
