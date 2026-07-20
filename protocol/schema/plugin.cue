@@ -122,10 +122,40 @@ protocol: {
 					"doc":    "set ONLY for class=\"kind\" (P9): a SUBSTRATE kind's DECLARED deploy behaviour traits, the SINGLE plugin-declared source kit.StampDescent stamps onto node.Descent — the consult sites read the traits off node.Descent instead of switching on the substrate kind word"
 				},
 				{
+					"name":     "subcommands"
+					"type":     "CLISubcommand"
+					"number":   12
+					"doc":      "set ONLY for class=\"command\": the plugin's DECLARED one-level-deep CLI subcommand catalog (name+help). Lets the host build a REAL nested Kong grammar (in place of the opaque `[<args>...]` pass-through holder every command-class capability otherwise gets) and synthesize a dotted \"<word>.<name>\" CLI-model leaf per entry for `charly __cli-model` / MCP tool generation. Empty (the default) preserves today's flat pass-through behavior byte-for-byte."
+					"repeated": true
+				},
+				{
 					"name":   "command_model_json"
 					"type":   "bytes"
 					"number": 13
 					"doc":    "CUE #CLIModel JSON for class=command; lets CLI and MCP reflect plugin-owned leaves without importing plugin code"
+				},
+			]
+		},
+		{
+			"name": "CLISubcommand"
+			"doc":  """
+				CLISubcommand — one DECLARED child of a class="command" capability's own CLI word (F-CLI-NEST).
+				A plain name+help pair, not a full grammar: the host renders it as a Kong `cmd:""` child whose
+				OWN body is still a pass-through Args leaf (the plugin's real internal flag/positional shape
+				stays invisible to the host, exactly like today's flat holder — only the NAMING becomes real).
+				"""
+			"fields": [
+				{
+					"name":   "name"
+					"type":   "string"
+					"number": 1
+					"doc":    "the subcommand word, e.g. \"live\", \"boxes\""
+				},
+				{
+					"name":   "help"
+					"type":   "string"
+					"number": 2
+					"doc":    "one-line help text, shown in `--help` and used as the MCP tool description"
 				},
 			]
 		},
