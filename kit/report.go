@@ -194,6 +194,25 @@ func ReportStepResults(w io.Writer, results []StepResult, format string) {
 	}
 }
 
+// ReportStepResultsCount renders results per format via ReportStepResults and returns how many
+// results ended in a FAIL verdict (no infra/check split — a caller needing that split uses
+// ClassifyStepFailures directly). Moved from charly/check_feature_run.go's
+// reportSteps+stepFailCount (CHECK-wave) — that pair had DRIFTED from this file's own comment
+// above (which already claimed "both [check_cmd.go and check_feature_run.go] now delegate
+// here"): check_feature_run.go's reportSteps still re-implemented the same format switch instead
+// of calling ReportStepResults. Both callers already imported kit and had zero core-state
+// coupling — a plain report+count wrapper.
+func ReportStepResultsCount(w io.Writer, results []StepResult, format string) int {
+	ReportStepResults(w, results, format)
+	fails := 0
+	for i := range results {
+		if results[i].Result.Status == StatusFail {
+			fails++
+		}
+	}
+	return fails
+}
+
 // ClassifyStepFailures splits FAIL results into genuine check failures vs. container-setup
 // INFRA failures (IsContainerInfraResult) — the shared discriminator every check-run caller
 // (box/live/feature, in-core and externalized) uses to map its own exit-code error type. An
