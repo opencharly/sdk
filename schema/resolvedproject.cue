@@ -164,6 +164,7 @@
 	env_provide?: {[string]: string} @go(EnvProvides)
 	mcp_provide?: [...#CandyMCPProvide] @go(MCPProvide)
 	agent_provide?: [...#AgentRuntimeCapability] @go(AgentProvide)
+	terminal_profiles?: {[string]: #TerminalProfile} @go(TerminalProfiles,type=map[string]TerminalProfile)
 	port?: [...int] @go(Ports)
 	service_name?: [...string] @go(ServiceNames)
 

@@ -257,6 +257,8 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	m.MCPAccept = ly.MCPAccept
 	v.EnvProvides = ly.EnvProvides
 	v.MCPProvide = ly.MCPProvide
+	v.AgentProvide = ly.AgentProvide
+	v.TerminalProfiles = ly.TerminalProfiles
 	m.Engine = ly.Engine
 	m.Vars = ly.Vars
 	m.Apk = ly.Apk

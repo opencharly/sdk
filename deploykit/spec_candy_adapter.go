@@ -211,6 +211,14 @@ func (a *specCandyAdapter) IsPluginCandy() bool          { return a.v.IsPlugin }
 func (a *specCandyAdapter) GetPluginSource() string      { return a.v.PluginSource }
 func (a *specCandyAdapter) GetPluginProviders() []string { return a.v.PluginProviders }
 
+// Federated-control-plane declarations (W9): the candy's `agent_provide:`/`terminal_profile:`
+// surfaces, read off the identity/graph view.
+func (a *specCandyAdapter) AgentProvide() []spec.AgentRuntimeCapability { return a.v.AgentProvide }
+func (a *specCandyAdapter) HasAgentProvides() bool                      { return len(a.v.AgentProvide) > 0 }
+func (a *specCandyAdapter) TerminalProfiles() map[string]spec.TerminalProfile {
+	return a.v.TerminalProfiles
+}
+
 // LocalPkgFormats returns the sorted list of package formats with a bundled local source
 // (localpkg: map keys) — the envelope carries the same map CollectLocalPkg needs.
 func (a *specCandyAdapter) LocalPkgFormats() []string {
