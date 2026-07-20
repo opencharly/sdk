@@ -22,16 +22,6 @@ const (
 	// re-materializes. A generic action selector (never a provider word — F11).
 	OpCompile = "compile"
 
-	// OpDispatch is the K4-C deploy-DISPATCH selector (command:bundle, P13-KERNEL spike #1):
-	// deployAddCmd.dispatchNode, for the root-level (non-nested) Add path, Invokes the
-	// command:bundle plugin's OpDispatch with a spec.DeployDispatchRequest instead of calling
-	// ResolveTarget(...).Add(...) directly in-process. The plugin relays the request VERBATIM
-	// to HostBuild("deploy-dispatch"), where the host reconstructs the config + DeployContext
-	// and runs the actual ResolveTarget → UnifiedDeployTarget.Add/Del/Test/Update — proving the
-	// reverse-channel broker nests correctly when the OUTER call originates from a plugin
-	// (rather than the host, as OpCompile's HostBuild("resolved-project") call does today).
-	OpDispatch = "dispatch"
-
 	// OpCollectContext + OpReverse are the DEPLOY-TIME builder-IR legs of an externalized
 	// detection-builder plugin (cargo/npm/pixi/aur). A builder's build-time multi-stage is
 	// resolved by its OpResolve leg (C10); these two carry the per-builder deploy-time IR
