@@ -19,13 +19,12 @@ import (
 
 const cueVersion = "v0.16.1"
 
-// findCue resolves the pinned cue CLI: ../../bin/cue (repo bin), the RDD scratch
-// binary, or a PATH `cue` — whichever reports cueVersion. Returns "" if none.
+// findCue resolves the pinned cue CLI: ../bin/cue (repo bin) or a PATH `cue` —
+// whichever reports cueVersion. Returns "" if none.
 func findCue(t *testing.T) string {
 	t.Helper()
 	candidates := []string{
 		filepath.Join("..", "bin", "cue"), // repoRoot/bin/cue (cwd = spec/)
-		"/tmp/cue-rdd/cue",
 	}
 	if p, err := exec.LookPath("cue"); err == nil {
 		candidates = append(candidates, p)
