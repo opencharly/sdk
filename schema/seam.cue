@@ -929,3 +929,21 @@
 
 // #PodConfigRemoveReply is the "pod-config-remove" host-builder reply — empty.
 #PodConfigRemoveReply: {}
+
+// #PodUpdateRequest carries the `charly update` command flags (the former UpdateCmd's
+// authored fields). Forwarded to HostBuild("pod-update"), which runs the existing
+// dispatchByDeployTarget orchestration VERBATIM — resolveTreeRoot/loadDeployPlugins/
+// ResolveTarget are core Mechanisms (the project loader + provider registry) a plugin
+// cannot import or hold.
+#PodUpdateRequest: {
+	box!:        string @go(Box)
+	tag?:        string @go(Tag)
+	build?:      bool   @go(Build)
+	instance?:   string @go(Instance)
+	seed?:       bool   @go(Seed)
+	force_seed?: bool   @go(ForceSeed)
+	data_from?:  string @go(DataFrom)
+}
+
+// #PodUpdateReply is the "pod-update" host-builder reply — empty, mirroring #PodStartReply.
+#PodUpdateReply: {}

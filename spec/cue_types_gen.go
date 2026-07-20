@@ -4579,6 +4579,31 @@ type PodConfigRemoveRequest struct {
 type PodConfigRemoveReply struct {
 }
 
+// #PodUpdateRequest carries the `charly update` command flags (the former UpdateCmd's
+// authored fields). Forwarded to HostBuild("pod-update"), which runs the existing
+// dispatchByDeployTarget orchestration VERBATIM — resolveTreeRoot/loadDeployPlugins/
+// ResolveTarget are core Mechanisms (the project loader + provider registry) a plugin
+// cannot import or hold.
+type PodUpdateRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Build bool `yaml:"build,omitempty" json:"build,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Seed bool `yaml:"seed,omitempty" json:"seed,omitempty"`
+
+	ForceSeed bool `yaml:"force_seed,omitempty" json:"force_seed,omitempty"`
+
+	DataFrom string `yaml:"data_from,omitempty" json:"data_from,omitempty"`
+}
+
+// #PodUpdateReply is the "pod-update" host-builder reply — empty, mirroring #PodStartReply.
+type PodUpdateReply struct {
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
