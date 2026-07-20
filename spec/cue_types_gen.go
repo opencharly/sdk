@@ -4427,6 +4427,25 @@ type PodShellRequest struct {
 type PodShellReply struct {
 }
 
+// #PodServiceRequest carries the `charly service start/stop/status/restart` command flags (the
+// former ServiceStartCmd/ServiceStopCmd/ServiceStatusCmd/ServiceRestartCmd's authored fields,
+// unified behind ONE seam by an `operation` discriminator — all four leaves share the identical
+// resolveServiceInit + execInitCommand body, differing only in which init-management verb runs).
+// Forwarded to HostBuild("pod-service"), which runs the existing service orchestration VERBATIM.
+type PodServiceRequest struct {
+	Operation string `yaml:"operation,omitempty" json:"operation"`
+
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Service string `yaml:"service,omitempty" json:"service,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #PodServiceReply is the "pod-service" host-builder reply — empty, mirroring #PodStartReply.
+type PodServiceReply struct {
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.

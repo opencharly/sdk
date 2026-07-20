@@ -819,3 +819,18 @@
 
 // #PodShellReply is the "pod-shell" host-builder reply — empty, mirroring #PodStartReply.
 #PodShellReply: {}
+
+// #PodServiceRequest carries the `charly service start/stop/status/restart` command flags (the
+// former ServiceStartCmd/ServiceStopCmd/ServiceStatusCmd/ServiceRestartCmd's authored fields,
+// unified behind ONE seam by an `operation` discriminator — all four leaves share the identical
+// resolveServiceInit + execInitCommand body, differing only in which init-management verb runs).
+// Forwarded to HostBuild("pod-service"), which runs the existing service orchestration VERBATIM.
+#PodServiceRequest: {
+	operation!: "start" | "stop" | "status" | "restart" @go(Operation)
+	box!:       string                                  @go(Box)
+	service?:   string                                  @go(Service)
+	instance?:  string                                  @go(Instance)
+}
+
+// #PodServiceReply is the "pod-service" host-builder reply — empty, mirroring #PodStartReply.
+#PodServiceReply: {}
