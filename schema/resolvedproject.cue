@@ -42,8 +42,8 @@
 	tags?: [...string]
 	candy?: [...string]
 	user?:         string
-	uid?:          int  @go(UID)
-	gid?:          int  @go(GID)
+	uid?:          int @go(UID)
+	gid?:          int @go(GID)
 	home?:         string
 	user_adopted?: bool      @go(UserAdopted)
 	merge?:        #BoxMerge @go(Merge,optional=nillable)
@@ -51,8 +51,8 @@
 	builder_capabilities?: [...string] @go(BuilderCapabilities)
 	auto?:             bool
 	network?:          string
-	data_image?:       bool @go(DataImage)
-	is_external_base?: bool @go(IsExternalBase)
+	data_image?:       bool   @go(DataImage)
+	is_external_base?: bool   @go(IsExternalBase)
 	full_tag?:         string @go(FullTag)
 
 	// box-AGGREGATES — the cross-candy effective values `charly box inspect --format
@@ -82,9 +82,9 @@
 	// above; these three + description are the additions. Filled by projectBoxAggregates from
 	// cfg.BoxConfig(name), alongside plan/authored_aliases.
 	description?: string & !=""
-	env?:       {PATH?: _|_, [string]: #StrVal} @go(Env,type=map[string]string)
-	env_file?:  string & !=""              @go(EnvFile)
-	security?:  #Security                 @go(Security,optional=nillable)
+	env?: {PATH?: _|_, [string]: #StrVal} @go(Env,type=map[string]string)
+	env_file?: string & !="" @go(EnvFile)
+	security?: #Security     @go(Security,optional=nillable)
 
 	// build-render label carriers (#67, the build_resolve RENDER-leg death). The host projector runs
 	// the label collectors + caps + init resolve + skill probe + status into a fully-baked #BakedLabelSet
@@ -108,9 +108,9 @@
 	// sequence; init_system/init_def the active init; active_inits the full active-init map
 	// (EmitInitFragmentStages + EmitInitAssembly read it).
 	render_candy_order?: [...string] @go(RenderCandyOrder)
-	init_system?:         string     @go(InitSystem)
-	init_def?:             _         @go(InitDef,type=*ResolvedInit)
-	active_inits?:         {[string]: _} @go(ActiveInits,type=map[string]*ResolvedInit)
+	init_system?: string @go(InitSystem)
+	init_def?:    _      @go(InitDef,type=*ResolvedInit)
+	active_inits?: {[string]: _} @go(ActiveInits,type=map[string]*ResolvedInit)
 }
 
 // #AggregatedCandyCapsView — the box-level aggregated candy capability surface the build RENDER reads
@@ -152,17 +152,18 @@
 	// specCandyAdapter returns it so the plugin-side render reproduces remote COPY sources
 	// WITHOUT the live *Candy (K3-D render move, #67 — the GetSubPathPrefix deferral).
 	sub_path_prefix?: string @go(SubPathPrefix)
-	is_plugin?:   bool   @go(IsPlugin)
+	is_plugin?:       bool   @go(IsPlugin)
 	// the candy's OWN declared plugin block (validatePluginCandy SUBJECT, task #60): the
 	// `plugin.providers:` capability strings + `plugin.source:` so the validate plugin can check each
 	// declared BUILTIN `<class>:<word>` is a member of ResolvedProject.ProviderCapabilities (the TARGET
 	// set). Empty for a non-plugin candy. is_plugin stays the cheap presence bool for inspect/list.
 	plugin_providers?: [...string] @go(PluginProviders)
-	plugin_source?:    string      @go(PluginSource)
+	plugin_source?: string @go(PluginSource)
 	require?: [...#CandyRef] @go(Require)
 	candy?: [...#CandyRef] @go(IncludedCandy)
 	env_provide?: {[string]: string} @go(EnvProvides)
 	mcp_provide?: [...#CandyMCPProvide] @go(MCPProvide)
+	agent_provide?: [...#AgentRuntimeCapability] @go(AgentProvide)
 	port?: [...int] @go(Ports)
 	service_name?: [...string] @go(ServiceNames)
 
@@ -170,7 +171,7 @@
 	// route/volumes/aliases carry the authored detail each subcommand prints (their presence IS
 	// the RouteCandy/VolumeCandy/AliasCandy predicate). has_init + port_relay reconstruct the
 	// InitCandy predicate (HasAnyInit() || PortRelayPorts>0) for `list services`.
-	route?:    #RouteConfig @go(Route,optional=nillable)
+	route?: #RouteConfig @go(Route,optional=nillable)
 	volumes?: [...#CandyVolume] @go(Volumes)
 	aliases?: [...#CandyAlias] @go(Aliases)
 	has_init?: bool @go(HasInit)
@@ -217,9 +218,9 @@
 	// build vocabulary (the validate ENGINE consumer): distro/init PIN the hand wire structs
 	// (spec.ResolvedDistro/ResolvedInit — the distro/init de-type OpResolve envelopes, no #CUE def);
 	// #Builder is a clean def. Pointer maps for parity with DistroConfig/BuilderConfig/InitConfig.Init.
-	distro?:  {[string]: _} @go(Distro,type=map[string]*ResolvedDistro)
+	distro?: {[string]: _} @go(Distro,type=map[string]*ResolvedDistro)
 	builder?: {[string]: _} @go(Builder,type=map[string]*Builder)
-	init?:    {[string]: _} @go(Init,type=map[string]*ResolvedInit)
+	init?: {[string]: _} @go(Init,type=map[string]*ResolvedInit)
 	// kind templates (validate localtemplates + check-include pod/vm arms + status k8s/adb enumeration).
 	templates?: #ProjectTemplates @go(Templates,optional=nillable)
 	// kind:agent catalog (the harness AI-CLI pick — plugin-check reads it off this envelope; charly feature list-agent).
@@ -268,10 +269,10 @@
 // (validate localtemplates, check-include pod/vm arms, status k8s/adb) decode a RawBody into the
 // concrete spec kind type themselves — a plugin MAY know kinds, the kernel may not.
 #ProjectTemplates: {
-	local?:   {[string]: bytes} @go(Local,type=map[string]RawBody)
-	k8s?:     {[string]: bytes} @go(K8s,type=map[string]RawBody)
-	pod?:     {[string]: bytes} @go(Pod,type=map[string]RawBody)
-	vm?:      {[string]: bytes} @go(VM,type=map[string]RawBody)
+	local?: {[string]: bytes} @go(Local,type=map[string]RawBody)
+	k8s?: {[string]: bytes} @go(K8s,type=map[string]RawBody)
+	pod?: {[string]: bytes} @go(Pod,type=map[string]RawBody)
+	vm?: {[string]: bytes} @go(VM,type=map[string]RawBody)
 	android?: {[string]: bytes} @go(Android,type=map[string]RawBody)
 }
 
@@ -285,6 +286,11 @@
 // #ResolvedProjectRequest — the `resolved-project` HostBuild request: which project dir to resolve
 // (empty = the host's cwd) and whether to include enabled:false boxes. The reply is #ResolvedProject.
 #ResolvedProjectRequest: {
-	dir?:              string @go(Dir)
-	include_disabled?: bool   @go(IncludeDisabled)
+	dir?:                string @go(Dir)
+	include_disabled?:   bool   @go(IncludeDisabled)
+	// Check commands resolving a distro-submodule project must see the parent
+	// superproject's in-development candies before bed classification. The host
+	// applies the same local override used by the later R10 session only for the
+	// duration of this projection.
+	local_superproject?: bool @go(LocalSuperproject)
 }

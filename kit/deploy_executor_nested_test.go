@@ -86,8 +86,8 @@ func TestWrapWithJump_SSH(t *testing.T) {
 	if !strings.Contains(out, "-p 2224") {
 		t.Errorf("missing port flag: %s", out)
 	}
-	// Post-cutover: no -i / -o overrides — ssh(1) reads ~/.ssh/config
-	// + ssh-agent for keys and host-key checking.
+	// Identity and host-key policy remain config-owned; the fixed LogLevel
+	// option only keeps local OpenSSH diagnostics out of command stderr.
 	if strings.Contains(out, "-i ") {
 		t.Errorf("unexpected `-i` flag — ssh-config supplies IdentityFile: %s", out)
 	}

@@ -169,6 +169,12 @@ func (g *Generator) WriteLabels(b *strings.Builder, meta *spec.BakedLabelSet, bo
 	if len(meta.MCPProvide) > 0 {
 		writeJSONLabel(b, spec.LabelMCPProvide, meta.MCPProvide)
 	}
+	if len(meta.AgentProvide) > 0 {
+		writeJSONLabel(b, spec.LabelAgentProvide, meta.AgentProvide)
+	}
+	if len(meta.TerminalProfiles) > 0 {
+		writeJSONLabel(b, spec.LabelTerminalProfiles, meta.TerminalProfiles)
+	}
 	if len(meta.MCPRequire) > 0 {
 		writeJSONLabel(b, spec.LabelMCPRequire, meta.MCPRequire)
 	}

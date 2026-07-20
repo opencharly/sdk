@@ -3,11 +3,13 @@ package deploykit
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/sdk/vmshared"
 )
 
 // Tests for the localpkg subsystem relocated from charly core (W3): ResolveLocalPkgDir,
@@ -267,6 +269,173 @@ func TestBuildLocalPkgOnHost_DryRunAndEmpty(t *testing.T) {
 	empty := &LocalPkgDef{PkgGlob: "*.pkg.tar.zst"}
 	if _, err := BuildLocalPkgOnHost(context.Background(), empty, "/src", EmitOpts{DryRun: true}); err == nil {
 		t.Error("empty build_template should error")
+	}
+}
+
+func TestBuildLocalPkgOnHostUsesImmutableSourceCopy(t *testing.T) {
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "pkg", "arch")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("pkgver=committed\n")
+	if err := os.WriteFile(filepath.Join(srcDir, "PKGBUILD"), original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "build-helper"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "project-marker"), []byte("project-input\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lp := &LocalPkgDef{
+		PkgGlob: "*.pkg",
+		BuildTemplate: `set -eu
+test -x {{.SrcDir}}/build-helper
+test "$(cat {{.SourceDir}}/../../project-marker)" = project-input
+printf 'pkgver=mutated\n' > {{.SrcDir}}/PKGBUILD
+mkdir -p {{.SrcDir}}/src {{.SrcDir}}/pkg
+printf artifact > {{.PkgDest}}/opencharly.pkg`,
+	}
+	files, err := BuildLocalPkgOnHost(context.Background(), lp, srcDir, EmitOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := CleanupBuiltPackageFiles(files); err != nil {
+			t.Error(err)
+		}
+	})
+	got, err := os.ReadFile(filepath.Join(srcDir, "PKGBUILD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("authored PKGBUILD mutated: got %q, want %q", got, original)
+	}
+	for _, generated := range []string{"src", "pkg"} {
+		if _, err := os.Stat(filepath.Join(srcDir, generated)); !os.IsNotExist(err) {
+			t.Fatalf("build directory leaked into source at %s: %v", generated, err)
+		}
+	}
+	if len(files) != 1 {
+		t.Fatalf("built files = %v, want one artifact", files)
+	}
+}
+
+func TestBuildLocalPkgOnHostCleansStagingAfterFailure(t *testing.T) {
+	tempRoot := t.TempDir()
+	t.Setenv("TMPDIR", tempRoot)
+	srcDir := filepath.Join(t.TempDir(), "pkg")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "PKGBUILD"), []byte("unchanged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lp := &LocalPkgDef{PkgGlob: "*.pkg", BuildTemplate: "printf changed > {{.SrcDir}}/PKGBUILD; exit 19"}
+	if _, err := BuildLocalPkgOnHost(context.Background(), lp, srcDir, EmitOpts{}); err == nil {
+		t.Fatal("failing build returned nil error")
+	}
+	entries, err := os.ReadDir(tempRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("failed build leaked temporary staging: %v", entries)
+	}
+	got, err := os.ReadFile(filepath.Join(srcDir, "PKGBUILD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "unchanged\n" {
+		t.Fatalf("failed build mutated authored source: %q", got)
+	}
+}
+
+func TestStageLocalPkgSourceRejectsEscapingSymlink(t *testing.T) {
+	root := t.TempDir()
+	srcDir := filepath.Join(root, "pkg")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../outside", filepath.Join(srcDir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := stageLocalPkgSource(srcDir); err == nil || !strings.Contains(err.Error(), "escapes source") {
+		t.Fatalf("escaping symlink error = %v", err)
+	}
+}
+
+func TestStageLocalPkgSourceExcludesGitIgnoredBuildCaches(t *testing.T) {
+	srcDir := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = srcDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	for path, content := range map[string]string{
+		".gitignore":          "src/\npkg/\nsource-cache/\n",
+		"PKGBUILD":            "pkgname=fixture\n",
+		"local-input.patch":   "authored untracked input\n",
+		"src/stale-worktree":  "must not be staged\n",
+		"pkg/stale-artifact":  "must not be staged\n",
+		"source-cache/config": "must not be staged\n",
+	} {
+		fullPath := filepath.Join(srcDir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd = exec.Command("git", "add", ".gitignore", "PKGBUILD")
+	cmd.Dir = srcDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+
+	stageDir, release, err := stageLocalPkgSource(srcDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(release)
+	for _, included := range []string{".gitignore", "PKGBUILD", "local-input.patch"} {
+		if _, err := os.Stat(filepath.Join(stageDir, included)); err != nil {
+			t.Fatalf("authored source %s was not staged: %v", included, err)
+		}
+	}
+	for _, excluded := range []string{".git", "src", "pkg", "source-cache"} {
+		if _, err := os.Stat(filepath.Join(stageDir, excluded)); !os.IsNotExist(err) {
+			t.Fatalf("ignored build cache %s reached stage: %v", excluded, err)
+		}
+	}
+}
+
+func TestCleanupBuiltPackageFilesIsScopedAndIdempotent(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	dir, err := os.MkdirTemp("", "charly-localpkg-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "charly.pkg.tar.zst")
+	if err := os.WriteFile(file, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vmshared.RegisterTempCleanup(dir)
+	if err := CleanupBuiltPackageFiles([]string{file}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("artifact directory survived cleanup: %v", err)
+	}
+	if err := CleanupBuiltPackageFiles([]string{file}); err != nil {
+		t.Fatalf("idempotent cleanup: %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "important.pkg.tar.zst")
+	if err := CleanupBuiltPackageFiles([]string{outside}); err == nil {
+		t.Fatal("cleanup accepted a path outside the Charly temp namespaces")
 	}
 }
 

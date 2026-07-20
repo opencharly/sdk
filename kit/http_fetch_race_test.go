@@ -60,13 +60,24 @@ func TestFetchQcow2_StaleResumedPartialInvalidated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := FetchQcow2(VmSource{
-		URL:      url,
-		Cache:    cacheDir,
-		Checksum: spec.VmChecksum{Type: "sha256", Value: hex.EncodeToString(sum[:])},
+	var got FetchedImage
+	var err error
+	stderr := captureStderr(t, func() {
+		got, err = FetchQcow2(VmSource{
+			URL:      url,
+			Cache:    cacheDir,
+			Checksum: spec.VmChecksum{Type: "sha256", Value: hex.EncodeToString(sum[:])},
+		})
 	})
 	if err != nil {
 		t.Fatalf("FetchQcow2 must invalidate the stale resumed partial and refetch, got: %v", err)
+	}
+	if strings.Count(stderr, "resumed partial failed verification") != 1 ||
+		strings.Count(stderr, "refetching "+url+" from zero") != 1 {
+		t.Fatalf("stale resume diagnostic = %q, want one invalidation and refetch", stderr)
+	}
+	if got := strings.Count(stderr, "Fetching "); got != 2 {
+		t.Fatalf("fetch progress count = %d, want resume plus clean refetch; stderr=%q", got, stderr)
 	}
 	if got.SHA256 != hex.EncodeToString(sum[:]) {
 		t.Fatalf("sha mismatch after refetch: %s", got.SHA256)
@@ -93,13 +104,22 @@ func TestFetchQcow2_CleanFullMismatchIsHardError(t *testing.T) {
 
 	cacheDir := t.TempDir()
 	wrong := sha256.Sum256([]byte("something else entirely"))
-	_, err := FetchQcow2(VmSource{
-		URL:      srv.URL + "/img.qcow2",
-		Cache:    cacheDir,
-		Checksum: spec.VmChecksum{Type: "sha256", Value: hex.EncodeToString(wrong[:])},
+	var err error
+	stderr := captureStderr(t, func() {
+		_, err = FetchQcow2(VmSource{
+			URL:      srv.URL + "/img.qcow2",
+			Cache:    cacheDir,
+			Checksum: spec.VmChecksum{Type: "sha256", Value: hex.EncodeToString(wrong[:])},
+		})
 	})
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("clean full-download mismatch must be a hard checksum error, got: %v", err)
+	}
+	if strings.Contains(stderr, "refetching") {
+		t.Fatalf("clean mismatch unexpectedly retried: %q", stderr)
+	}
+	if got := strings.Count(stderr, "Fetching "); got != 1 {
+		t.Fatalf("fetch progress count = %d, want one clean attempt; stderr=%q", got, stderr)
 	}
 }
 

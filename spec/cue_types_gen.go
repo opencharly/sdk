@@ -322,6 +322,360 @@ type CredentialMount struct {
 	Optional bool `yaml:"optional,omitempty" json:"optional,omitempty"`
 }
 
+type UUIDv7 string
+
+type TargetHop struct {
+	Transport string `yaml:"transport,omitempty" json:"transport"`
+
+	Address string `yaml:"address,omitempty" json:"address,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	Port int64 `yaml:"port,omitempty" json:"port,omitempty"`
+
+	IdentityFile string `yaml:"identity_file,omitempty" json:"identity_file,omitempty"`
+
+	Command []string `yaml:"command,omitempty" json:"command,omitempty"`
+
+	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
+
+	// Transport-native argv options expressed as deterministic key/value
+	// data. SSH renders these as repeated `-o key=value` arguments; no shell
+	// interpolation is involved.
+	Options StrMap `yaml:"options,omitempty" json:"options,omitempty"`
+}
+
+type TargetSpec struct {
+	// Ordered outer-to-inner route after placement. An empty route is the
+	// selected process. deployment/instance first place that process in any
+	// Charly deployment; the remaining route composes identically there.
+	Hops []TargetHop `yaml:"hops,omitempty" json:"hops,omitempty"`
+
+	Deployment string `yaml:"deployment,omitempty" json:"deployment,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	WorkingDir string `yaml:"working_dir,omitempty" json:"working_dir,omitempty"`
+}
+
+type ProcessLaunch struct {
+	Argv []string `yaml:"argv,omitempty" json:"argv"`
+
+	WorkingDir string `yaml:"working_dir,omitempty" json:"working_dir,omitempty"`
+
+	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+type AgentRuntimeCapability struct {
+	Provider string `yaml:"provider,omitempty" json:"provider"`
+
+	ProtocolVersion int `yaml:"protocol_version,omitempty" json:"protocol_version"`
+
+	Entrypoint []string `yaml:"entrypoint,omitempty" json:"entrypoint,omitempty"`
+
+	Profiles []string `yaml:"profiles,omitempty" json:"profiles,omitempty"`
+
+	InteractionModes []string `yaml:"interaction_modes,omitempty" json:"interaction_modes,omitempty"`
+
+	Persistence string `yaml:"persistence,omitempty" json:"persistence,omitempty"`
+
+	SemanticCompletion bool `yaml:"semantic_completion,omitempty" json:"semantic_completion,omitempty"`
+}
+
+type AgentSession struct {
+	ID UUIDv7 `yaml:"id,omitempty" json:"id"`
+
+	Runtime string `yaml:"runtime,omitempty" json:"runtime"`
+
+	Target TargetSpec `yaml:"target,omitempty" json:"target"`
+
+	State string `yaml:"state,omitempty" json:"state"`
+
+	CreatedAt string `yaml:"created_at,omitempty" json:"created_at"`
+
+	UpdatedAt string `yaml:"updated_at,omitempty" json:"updated_at"`
+
+	StorageRef string `yaml:"storage_ref,omitempty" json:"storage_ref,omitempty"`
+
+	Metadata StrMap `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+
+	TerminalProfile *TerminalProfile `yaml:"terminal_profile,omitempty" json:"terminal_profile,omitempty"`
+}
+
+type TerminalProfile struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Entrypoint []string `yaml:"entrypoint,omitempty" json:"entrypoint"`
+
+	WorkingDir string `yaml:"working_dir,omitempty" json:"working_dir,omitempty"`
+
+	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Cols int64 `yaml:"cols,omitempty" json:"cols"`
+
+	Rows int64 `yaml:"rows,omitempty" json:"rows"`
+
+	Readiness map[string]any `yaml:"readiness,omitempty" json:"readiness,omitempty"`
+
+	SemanticAdapter string `yaml:"semantic_adapter,omitempty" json:"semantic_adapter,omitempty"`
+
+	Keys []string `yaml:"keys,omitempty" json:"keys,omitempty"`
+
+	Signals []string `yaml:"signals,omitempty" json:"signals,omitempty"`
+
+	Persistence string `yaml:"persistence,omitempty" json:"persistence,omitempty"`
+
+	Transcript string `yaml:"transcript,omitempty" json:"transcript,omitempty"`
+}
+
+type AgentRunRequest struct {
+	ID UUIDv7 `yaml:"id,omitempty" json:"id"`
+
+	SessionID UUIDv7 `yaml:"session_id,omitempty" json:"session_id"`
+
+	RequestID UUIDv7 `yaml:"request_id,omitempty" json:"request_id"`
+
+	IdempotencyKey string `yaml:"idempotency_key,omitempty" json:"idempotency_key"`
+
+	Prompt string `yaml:"prompt,omitempty" json:"prompt,omitempty"`
+
+	Params map[string]any `yaml:"params,omitempty" json:"params,omitempty"`
+
+	Resume bool `yaml:"resume,omitempty" json:"resume,omitempty"`
+}
+
+// Provider-reported durable session correlation. Runtime-specific session
+// state remains on the target; this is the only binding replicated to the
+// controller.
+type AgentSessionBinding struct {
+	StorageRef string `yaml:"storage_ref,omitempty" json:"storage_ref"`
+}
+
+type AgentAbortControl struct {
+	RunID UUIDv7 `yaml:"run_id,omitempty" json:"run_id"`
+
+	RequestID UUIDv7 `yaml:"request_id,omitempty" json:"request_id"`
+
+	RequestedAt string `yaml:"requested_at,omitempty" json:"requested_at"`
+}
+
+type AgentEvent struct {
+	RunID UUIDv7 `yaml:"run_id,omitempty" json:"run_id"`
+
+	Sequence int64 `yaml:"sequence,omitempty" json:"sequence"`
+
+	Type string `yaml:"type,omitempty" json:"type"`
+
+	Time string `yaml:"time,omitempty" json:"time"`
+
+	Payload map[string]any `yaml:"payload,omitempty" json:"payload,omitempty"`
+}
+
+type AgentTeamMember struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Runtime string `yaml:"runtime,omitempty" json:"runtime"`
+
+	Role string `yaml:"role,omitempty" json:"role,omitempty"`
+
+	Target TargetSpec `yaml:"target,omitempty" json:"target,omitempty"`
+
+	TerminalProfile *TerminalProfile `yaml:"terminal_profile,omitempty" json:"terminal_profile,omitempty"`
+}
+
+type AgentDelegationEdge struct {
+	From string `yaml:"from,omitempty" json:"from"`
+
+	To string `yaml:"to,omitempty" json:"to"`
+
+	Allow []string `yaml:"allow,omitempty" json:"allow,omitempty"`
+}
+
+type AgentTeam struct {
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Agents []AgentTeamMember `yaml:"agents,omitempty" json:"agents"`
+
+	Edges []AgentDelegationEdge `yaml:"edges,omitempty" json:"edges,omitempty"`
+
+	Coordinator string `yaml:"coordinator,omitempty" json:"coordinator,omitempty"`
+
+	Concurrency int64 `yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
+
+	EvidencePolicy string `yaml:"evidence_policy,omitempty" json:"evidence_policy,omitempty"`
+}
+
+// Durable control-plane projection of a declarative team. The authored graph
+// remains #AgentTeam; this record binds each member name to the ephemeral
+// session created for one dispatch so later delegation can re-check authority.
+type AgentTeamRecord struct {
+	ID UUIDv7 `yaml:"id,omitempty" json:"id"`
+
+	Team AgentTeam `yaml:"team,omitempty" json:"team"`
+
+	Sessions map[string]UUIDv7 `yaml:"sessions,omitempty" json:"sessions"`
+
+	CreatedAt string `yaml:"created_at,omitempty" json:"created_at"`
+}
+
+type AgentFederationRecord struct {
+	ID UUIDv7 `yaml:"id,omitempty" json:"id"`
+
+	Node string `yaml:"node,omitempty" json:"node"`
+
+	Owner string `yaml:"owner,omitempty" json:"owner"`
+
+	SessionID UUIDv7 `yaml:"session_id,omitempty" json:"session_id,omitempty"`
+
+	RunID UUIDv7 `yaml:"run_id,omitempty" json:"run_id,omitempty"`
+
+	State string `yaml:"state,omitempty" json:"state"`
+
+	UpdatedAt string `yaml:"updated_at,omitempty" json:"updated_at"`
+
+	Metadata StrMap `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+}
+
+type Incident struct {
+	ID UUIDv7 `yaml:"id,omitempty" json:"id"`
+
+	RunID UUIDv7 `yaml:"run_id,omitempty" json:"run_id,omitempty"`
+
+	State string `yaml:"state,omitempty" json:"state"`
+
+	Summary string `yaml:"summary,omitempty" json:"summary"`
+
+	CreatedAt string `yaml:"created_at,omitempty" json:"created_at"`
+
+	EvidenceRefs []string `yaml:"evidence_refs,omitempty" json:"evidence_refs,omitempty"`
+}
+
+type RCARecord struct {
+	ID UUIDv7 `yaml:"id,omitempty" json:"id"`
+
+	IncidentID UUIDv7 `yaml:"incident_id,omitempty" json:"incident_id"`
+
+	State string `yaml:"state,omitempty" json:"state"`
+
+	Findings []string `yaml:"findings,omitempty" json:"findings,omitempty"`
+
+	RootCause string `yaml:"root_cause,omitempty" json:"root_cause,omitempty"`
+
+	CompletedAt string `yaml:"completed_at,omitempty" json:"completed_at,omitempty"`
+}
+
+type RecoveryParams struct {
+	RunID UUIDv7 `yaml:"run_id,omitempty" json:"run_id,omitempty"`
+
+	SessionID UUIDv7 `yaml:"session_id,omitempty" json:"session_id,omitempty"`
+
+	Target *TargetSpec `yaml:"target,omitempty" json:"target,omitempty"`
+
+	TerminalProfile *TerminalProfile `yaml:"terminal_profile,omitempty" json:"terminal_profile,omitempty"`
+
+	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
+
+	Prompt string `yaml:"prompt,omitempty" json:"prompt,omitempty"`
+
+	Runtime string `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+
+	Deployment string `yaml:"deployment,omitempty" json:"deployment,omitempty"`
+
+	Note string `yaml:"note,omitempty" json:"note,omitempty"`
+}
+
+type RecoveryDecision struct {
+	ID UUIDv7 `yaml:"id,omitempty" json:"id"`
+
+	IncidentID UUIDv7 `yaml:"incident_id,omitempty" json:"incident_id"`
+
+	RCAID UUIDv7 `yaml:"rca_id,omitempty" json:"rca_id,omitempty"`
+
+	Action string `yaml:"action,omitempty" json:"action"`
+
+	AuthorizedEmergencyAbort bool `yaml:"authorized_emergency_abort,omitempty" json:"authorized_emergency_abort,omitempty"`
+
+	Params *RecoveryParams `yaml:"params,omitempty" json:"params,omitempty"`
+
+	State string `yaml:"state,omitempty" json:"state"`
+
+	DecidedAt string `yaml:"decided_at,omitempty" json:"decided_at"`
+
+	AppliedAt string `yaml:"applied_at,omitempty" json:"applied_at,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+type TerminalInput struct {
+	Kind string `yaml:"kind,omitempty" json:"kind"`
+
+	Text string `yaml:"text,omitempty" json:"text,omitempty"`
+
+	Key string `yaml:"key,omitempty" json:"key,omitempty"`
+
+	Cols int64 `yaml:"cols,omitempty" json:"cols,omitempty"`
+
+	Rows int64 `yaml:"rows,omitempty" json:"rows,omitempty"`
+
+	Signal string `yaml:"signal,omitempty" json:"signal,omitempty"`
+}
+
+type TerminalKey struct {
+	Key string `yaml:"key,omitempty" json:"key"`
+}
+
+type TerminalResize struct {
+	Cols int64 `yaml:"cols,omitempty" json:"cols"`
+
+	Rows int64 `yaml:"rows,omitempty" json:"rows"`
+}
+
+type TerminalFrame struct {
+	RunID UUIDv7 `yaml:"run_id,omitempty" json:"run_id"`
+
+	Sequence int64 `yaml:"sequence,omitempty" json:"sequence"`
+
+	Kind string `yaml:"kind,omitempty" json:"kind"`
+
+	Stream string `yaml:"stream,omitempty" json:"stream,omitempty"`
+
+	Data []byte `yaml:"data,omitempty" json:"data,omitempty"`
+
+	Snapshot string `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
+
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
+
+	ExitCode *int `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+type TerminalSnapshot struct {
+	RunID UUIDv7 `yaml:"run_id,omitempty" json:"run_id"`
+
+	Sequence int64 `yaml:"sequence,omitempty" json:"sequence"`
+
+	Cols int64 `yaml:"cols,omitempty" json:"cols"`
+
+	Rows int64 `yaml:"rows,omitempty" json:"rows"`
+
+	Screen string `yaml:"screen,omitempty" json:"screen"`
+
+	CursorCol int64 `yaml:"cursor_col,omitempty" json:"cursor_col,omitempty"`
+
+	CursorRow int64 `yaml:"cursor_row,omitempty" json:"cursor_row,omitempty"`
+}
+
+type TerminalExit struct {
+	RunID UUIDv7 `yaml:"run_id,omitempty" json:"run_id"`
+
+	ExitCode int64 `yaml:"exit_code,omitempty" json:"exit_code"`
+
+	Reason string `yaml:"reason,omitempty" json:"reason,omitempty"`
+
+	Time string `yaml:"time,omitempty" json:"time"`
+}
+
 // CUE schema for the `android` kind. #Android validates ONE kind:android entity
 // (a device). A device is EITHER an in-pod emulator hosted by a kind:box (box)
 // XOR a remote/physical adb endpoint (adb) — never both, never neither. Shared
@@ -746,6 +1100,10 @@ type BoxMetadata struct {
 
 	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
 
+	AgentProvide []AgentRuntimeCapability `yaml:"agent_provide,omitempty" json:"agent_provide,omitempty"`
+
+	TerminalProfiles map[string]TerminalProfile `yaml:"terminal_profiles,omitempty" json:"terminal_profiles,omitempty"`
+
 	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
 
 	MCPAccept []EnvDependency `yaml:"mcp_accept,omitempty" json:"mcp_accept,omitempty"`
@@ -886,6 +1244,10 @@ type BakedLabelSet struct {
 	SecretAccept []EnvDependency `yaml:"secret_accept,omitempty" json:"secret_accept,omitempty"`
 
 	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
+
+	AgentProvide []AgentRuntimeCapability `yaml:"agent_provide,omitempty" json:"agent_provide,omitempty"`
+
+	TerminalProfiles map[string]TerminalProfile `yaml:"terminal_profiles,omitempty" json:"terminal_profiles,omitempty"`
 
 	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
 
@@ -1408,6 +1770,8 @@ type CandyView struct {
 	EnvProvides map[string]string `yaml:"env_provide,omitempty" json:"env_provide,omitempty"`
 
 	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
+
+	AgentProvide []AgentRuntimeCapability `yaml:"agent_provide,omitempty" json:"agent_provide,omitempty"`
 
 	Ports []int64 `yaml:"port,omitempty" json:"port,omitempty"`
 
@@ -1946,6 +2310,17 @@ type Candy struct {
 
 	MCPProvide []CandyMCPProvide `yaml:"mcp_provide,omitempty" json:"mcp_provide,omitempty"`
 
+	AgentProvide []AgentRuntimeCapability `yaml:"agent_provide,omitempty" json:"agent_provide,omitempty"`
+
+	// terminal_profile keeps the authored-key convention: every collection-
+	// holding authored key in this block is singular (env_provide, mcp_provide,
+	// agent_provide, …). The baked wire/label shape is the PLURAL
+	// `terminal_profiles` (schema/boxmetadata.cue; spec.LabelTerminalProfiles
+	// "ai.opencharly.terminal_profiles") — a key burned into built images, so
+	// the singular-authored ↔ plural-wire mapping is deliberate and stable,
+	// not a typo to "align" (renaming either side is a format change).
+	TerminalProfiles map[string]TerminalProfile `yaml:"terminal_profile,omitempty" json:"terminal_profile,omitempty"`
+
 	MCPRequire []EnvDependency `yaml:"mcp_require,omitempty" json:"mcp_require,omitempty"`
 
 	MCPAccept []EnvDependency `yaml:"mcp_accept,omitempty" json:"mcp_accept,omitempty"`
@@ -1990,6 +2365,56 @@ type CandyRoute struct {
 	Host string `yaml:"host,omitempty" json:"host"`
 
 	Port int `yaml:"port,omitempty" json:"port"`
+}
+
+// CLI reflection is a wire contract between command plugins, the Charly host,
+// and MCP. It is CUE-owned like every other authored or transported shape.
+type CLIArg struct {
+	Prop string `yaml:"prop,omitempty" json:"prop"`
+
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Type string `yaml:"type,omitempty" json:"type"`
+
+	Help string `yaml:"help,omitempty" json:"help,omitempty"`
+
+	Enum []string `yaml:"enum,omitempty" json:"enum,omitempty"`
+
+	Default string `yaml:"default,omitempty" json:"default,omitempty"`
+
+	HasDefault bool `yaml:"has_default,omitempty" json:"has_default,omitempty"`
+
+	Required bool `yaml:"required,omitempty" json:"required,omitempty"`
+
+	IsBool bool `yaml:"is_bool,omitempty" json:"is_bool,omitempty"`
+
+	IsSlice bool `yaml:"is_slice,omitempty" json:"is_slice,omitempty"`
+
+	IsMap bool `yaml:"is_map,omitempty" json:"is_map,omitempty"`
+
+	Negated bool `yaml:"negated,omitempty" json:"negated,omitempty"`
+
+	ElemType string `yaml:"elem_type,omitempty" json:"elem_type,omitempty"`
+}
+
+type CLILeaf struct {
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	Help string `yaml:"help,omitempty" json:"help,omitempty"`
+
+	Hidden bool `yaml:"hidden,omitempty" json:"hidden,omitempty"`
+
+	Positionals []CLIArg `yaml:"positionals,omitempty" json:"positionals,omitempty"`
+
+	Flags []CLIArg `yaml:"flags,omitempty" json:"flags,omitempty"`
+}
+
+type CLIModel struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Version string `yaml:"version,omitempty" json:"version"`
+
+	Leaves []CLILeaf `yaml:"leaves,omitempty" json:"leaves"`
 }
 
 // #DeployTraits is a SUBSTRATE kind's DECLARED deploy behaviour (P9): a substrate plugin
@@ -2912,6 +3337,12 @@ type ResolvedProjectRequest struct {
 	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
 
 	IncludeDisabled bool `yaml:"include_disabled,omitempty" json:"include_disabled,omitempty"`
+
+	// Check commands resolving a distro-submodule project must see the parent
+	// superproject's in-development candies before bed classification. The host
+	// applies the same local override used by the later R10 session only for the
+	// duration of this projection.
+	LocalSuperproject bool `yaml:"local_superproject,omitempty" json:"local_superproject,omitempty"`
 }
 
 type Resource struct {
