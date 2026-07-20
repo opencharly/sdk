@@ -127,4 +127,11 @@ type CandyReader interface {
 	// resolved_project_host.go alone needs via the RawCandy() escape hatch.
 	GetStatus() string
 	GetDescription() string
+
+	// W9 federated-control-plane fill: the candy-declared `agent_provide:`/`terminal_profile:`
+	// surfaces (56b1a6b) the OCI-label-collector (render_baked_metadata.go's per-box
+	// agent/terminal aggregation) needs once *Candy is gone.
+	AgentProvide() []AgentRuntimeCapability
+	HasAgentProvides() bool
+	TerminalProfiles() map[string]TerminalProfile
 }

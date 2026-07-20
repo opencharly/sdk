@@ -1773,6 +1773,8 @@ type CandyView struct {
 
 	AgentProvide []AgentRuntimeCapability `yaml:"agent_provide,omitempty" json:"agent_provide,omitempty"`
 
+	TerminalProfiles map[string]TerminalProfile `yaml:"terminal_profiles,omitempty" json:"terminal_profiles,omitempty"`
+
 	Ports []int64 `yaml:"port,omitempty" json:"port,omitempty"`
 
 	ServiceNames []string `yaml:"service_name,omitempty" json:"service_name,omitempty"`
