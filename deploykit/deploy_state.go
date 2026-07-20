@@ -309,6 +309,52 @@ func FindVmDeployNode(deploys map[string]BundleNode, name, vmName string) (Bundl
 	return BundleNode{}, false
 }
 
+// FindBundleNode locates a deploy node by key across the WHOLE tree — every
+// top-level root, plus its nested Children and peer Members, at any depth.
+// Returns nil when no node with that key exists anywhere in the tree. The
+// SDK-side twin of ResolveNodePath (which descends a known DOTTED path) and
+// FindVmDeployNode (which searches only the top level) — this one searches
+// for an unqualified NAME anywhere, needed when the caller only has the
+// node's bare key, not its path from a root.
+//
+// Moved from charly/k3s_post.go (Cutover B unit 5, P13-KERNEL-B): a pure
+// BundleNode-tree search with zero loader/registry dependency — the
+// scoping-map re-audit found this was the ONLY genuinely movable piece of
+// its family; the LoadUnified-coupled orchestration around it (resolving
+// which deploy owns a VM entity, reading the persisted port-forward
+// allocation) stays host-side, since LoadUnified/materialize is
+// K1-permanent core (R-E2).
+func FindBundleNode(bundle map[string]BundleNode, name string) *BundleNode {
+	for k := range bundle {
+		n := bundle[k]
+		if k == name {
+			return &n
+		}
+		if r := findBundleNodePtr(n.Children, name); r != nil {
+			return r
+		}
+		if r := findBundleNodePtr(n.Members, name); r != nil {
+			return r
+		}
+	}
+	return nil
+}
+
+func findBundleNodePtr(m map[string]*BundleNode, name string) *BundleNode {
+	for k, n := range m {
+		if k == name {
+			return n
+		}
+		if r := findBundleNodePtr(n.Children, name); r != nil {
+			return r
+		}
+		if r := findBundleNodePtr(n.Members, name); r != nil {
+			return r
+		}
+	}
+	return nil
+}
+
 // DropMappingKey removes a key (and its value) from a YAML mapping node in place.
 func DropMappingKey(m *yaml.Node, key string) {
 	if m == nil || m.Kind != yaml.MappingNode {
