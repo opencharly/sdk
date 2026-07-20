@@ -104,7 +104,8 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 				// (the old behavior) and continuing MASKED the failure: a
 				// --dev-local-pkg build whose makepkg failed shipped an image with
 				// NO /usr/bin/charly, only surfacing downstream as failing charly
-				// checks (the check-charly-selftest-pod defect). Hard-error here.
+				// checks (the defect that motivated the check-charly-vm toolchain
+				// localpkg deploy witness bed). Hard-error here.
 				return asUser, fmt.Errorf("candy %q: rendering localpkg install for image %q (dev=%v): %w", candyName, img.Name, g.DevLocalPkg, err)
 			}
 			b.WriteString(run)
