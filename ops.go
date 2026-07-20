@@ -68,6 +68,18 @@ const (
 	// config-WRITE (Ruling C). Distinct from the venue-lifecycle Ops: host-initiated, not a deploy.
 	OpConfigWrite = "config-write"
 
+	// OpConfigSetup / OpConfigRemove are the P13-KERNEL config-BODY selectors: the deploy:pod
+	// plugin's Invoke handles these carrying #PodConfigSetupRequest / #PodConfigRemoveRequest
+	// VERBATIM as Params — the direction-flip counterpart of OpConfigWrite (which stayed
+	// host-initiated/plugin-rendered): host_build_pod_config.go's hostBuildPodConfigSetup/
+	// hostBuildPodConfigRemove now FORWARD onward to the plugin (resolve the deploy:pod provider +
+	// InvokeWithExecutor, the SAME primitive InvokeProvider/grpcSubstrateLifecycle use) instead of
+	// running the ported BoxConfigSetupCmd/BoxConfigRemoveCmd orchestration in-core. The plugin
+	// calls back the narrow "pod-config-*" HostBuild seams (sdk/schema/seam.cue) for the
+	// genuinely host/loader/registry-coupled sub-steps.
+	OpConfigSetup  = "config-setup"
+	OpConfigRemove = "config-remove"
+
 	OpStatusCollect = "status-collect" // command:status: programmatic status collection → []spec.DeploymentStatus (distinct from lifecycle OpStatus)
 
 	// OpStatusCollectAll is the K6 whole-subsystem status FAN-OUT + deploy-cone ENRICHMENT

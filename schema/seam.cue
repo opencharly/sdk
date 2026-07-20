@@ -894,11 +894,12 @@
 #PodServiceReply: {}
 
 // #PodConfigSetupRequest carries the `charly config [setup]` command flags (the former
-// BoxConfigSetupCmd's authored fields — EVERY field except ExplicitRef, a kong:"-" internal-only
-// field bundle_from_box_cmd.go sets programmatically, never authored). Forwarded to
-// HostBuild("pod-config-setup"), which reconstructs the UNCHANGED core BoxConfigSetupCmd (kept by
-// its exact name — bundle_from_box_cmd.go and host_build_deploy_from_box.go construct it directly
-// by name too, so it cannot rename/move) and runs its Run() body VERBATIM.
+// BoxConfigSetupCmd's authored fields, PLUS explicit_ref — bundle_from_box_cmd.go's
+// programmatically-set source-less-deploy field, below). P13-KERNEL direction-flip: forwarded
+// from HostBuild("pod-config-setup") (host_build_pod_config.go's hostBuildPodConfigSetup) onward
+// to the deploy:pod plugin's sdk.OpConfigSetup — the plugin now RUNS the former runConfig
+// orchestration (candy/plugin-deploy-pod/config_setup.go), calling back the narrow
+// "pod-config-*" seams below for the host/loader/registry/credential-coupled sub-steps.
 #PodConfigSetupRequest: {
 	box?:              string @go(Box)
 	tag?:              string @go(Tag)
@@ -926,6 +927,11 @@
 	sidecar?: [...string] @go(Sidecar)
 	list_sidecars?:    bool   @go(ListSidecars)
 	no_autodetect?:    bool   @go(NoAutoDetect)
+	// explicit_ref is set programmatically (never authored) by `charly bundle from-box`'s
+	// source-less deploy path (bundle_from_box_cmd.go) — the P13-KERNEL direction-flip carries
+	// it across the wire now that the ORCHESTRATION (formerly reading the kong:"-" Go field
+	// directly) moved into the plugin.
+	explicit_ref?: string @go(ExplicitRef)
 }
 
 // #PodConfigSetupReply is the "pod-config-setup" host-builder reply — empty, mirroring
@@ -987,6 +993,238 @@
 
 // #PodConfigRemoveReply is the "pod-config-remove" host-builder reply — empty.
 #PodConfigRemoveReply: {}
+
+// P13-KERNEL step-4 direction-flip: BoxConfigSetupCmd/BoxConfigRemoveCmd's BODY (the former
+// runConfig orchestration + updateAllDeployedQuadlets + the config_secret_migration.go pair)
+// moved OUT of charly core INTO candy/plugin-deploy-pod (Ops sdk.OpConfigSetup/OpConfigRemove on
+// the deploy:pod provider's Invoke — dispatched from host_build_pod_config.go's
+// hostBuildPodConfigSetup/hostBuildPodConfigRemove, which now FORWARD onward via the SAME
+// InvokeWithExecutor primitive InvokeProvider/grpcSubstrateLifecycle already use, instead of
+// running the orchestration in-core). The plugin runs the ported logic and calls back these
+// NARROW seams for the pieces that are genuinely host/loader/registry-coupled — the ledger's
+// "FINAL/K5 IOU REGISTER" already registers the credential-store/enc.go family as
+// registry-coupled, deliberately deferred inventory (NOT re-designed this wave); these seams wrap
+// the EXISTING core functions VERBATIM, unchanged internally. BoxConfigStatusCmd/MountCmd/
+// UnmountCmd/PasswdCmd do NOT move — they are already one-line forwards to enc.go (itself
+// FINAL/K5-deferred), nothing to port.
+
+// #PodConfigEnsureImageRequest: EnsureImage + ExtractMetadata bundle (registry/podman-store
+// coupled — a plugin cannot resolve the local podman image store namespace itself).
+#PodConfigEnsureImageRequest: {
+	image_ref!:    string @go(ImageRef)
+	build_engine!: string @go(BuildEngine)
+}
+#PodConfigEnsureImageReply: {
+	meta_json!: bytes @go(MetaJSON, type=RawBody) // marshalled *spec.BoxMetadata
+}
+
+// #PodConfigResolveRefRequest: resolveDeployBoxName/resolveDeployResolvedImage/
+// resolveShellImageRef bundle — reads the per-host charly.yml overlay + local podman image
+// labels (loader + podman-store coupled).
+#PodConfigResolveRefRequest: {
+	box!:          string @go(Box)
+	instance?:     string @go(Instance)
+	tag?:          string @go(Tag)
+	explicit_ref?: string @go(ExplicitRef)
+}
+#PodConfigResolveRefReply: {
+	deploy_box_name!: string @go(DeployBoxName)
+	image_ref!:       string @go(ImageRef)
+}
+
+// #PodConfigLoadDeployRequest / Reply: deploykit.LoadDeployConfigForRead(caller) — the
+// per-host charly.yml Bundle map. Genuinely loader-coupled: deploykit.SaveBundleConfig/
+// LoadDeployConfigForRead resolve through the package-var DeployStateHost seam, which is
+// filled ONLY in the charly-core process's init() (charly/deploy_state_host.go) — an
+// out-of-process plugin calling these directly would silently no-op (the kit's
+// documented nil-safe degradation), so every load/save call site is a host seam, reusable
+// across the whole ported flow.
+#PodConfigLoadDeployRequest: {
+	caller!: string @go(Caller)
+}
+#PodConfigLoadDeployReply: {
+	config_json?: bytes @go(ConfigJSON, type=RawBody) // marshalled *deploykit.BundleConfig; absent ⇒ nil
+}
+
+// #PodConfigSaveBundleRequest / Reply: saveBundleConfigNodeForm(dc) — persists a (plugin-mutated)
+// *deploykit.BundleConfig back through the SAME loader-coupled seam.
+#PodConfigSaveBundleRequest: {
+	config_json!: bytes @go(ConfigJSON, type=RawBody)
+}
+#PodConfigSaveBundleReply: {}
+
+// #PodConfigLoadBundleReply: deploykit.LoadBundleConfig() — the whole-project Bundle map (no
+// per-deploy-key focus), used by updateAllDeployedQuadlets's cross-deploy loop.
+#PodConfigLoadBundleReply: {
+	config_json?: bytes @go(ConfigJSON, type=RawBody)
+}
+
+// #PodConfigMigrateSecretsRequest / Reply: MigratePlaintextEnvSecret(dc, meta, box, instance) —
+// the one-time plaintext-env → credential-store migration (file backup + DefaultCredentialStore
+// + saveBundleConfigNodeForm, all FINAL/K5-deferred registry-coupled inventory per the ledger).
+// config_json carries the ALREADY-LOADED dc (from #PodConfigLoadDeployRequest) so the host
+// mutates + re-saves the SAME loaded structure the plugin is mid-flow with, never a stale reload.
+#PodConfigMigrateSecretsRequest: {
+	config_json!: bytes  @go(ConfigJSON, type=RawBody)
+	meta_json!:   bytes  @go(MetaJSON, type=RawBody)
+	box!:         string @go(Box)
+	instance?:    string @go(Instance)
+}
+#PodConfigMigrateSecretsReply: {
+	config_json!: bytes @go(ConfigJSON, type=RawBody) // the (possibly) updated dc
+	migrated?:    int   @go(Migrated, type=int)
+}
+
+// #PodConfigScrubCliEnvRequest / Reply: scrubSecretCLIEnv(cliEnv, meta) — the credential-store
+// Set() pre-scrub for `-e NAME=VAL` flags declared secret_accepts/secret_requires.
+#PodConfigScrubCliEnvRequest: {
+	cli_env?:   [...string] @go(CliEnv)
+	meta_json!: bytes       @go(MetaJSON, type=RawBody)
+}
+#PodConfigScrubCliEnvReply: {
+	cleaned?:  [...string] @go(Cleaned)
+	imported?: int         @go(Imported, type=int)
+}
+
+// #PodConfigDetectDevicesRequest / Reply: DetectHostDevices()+LogDetectedDevices() —
+// registry-coupled (DetectHostDevices resolves+Invokes verb:gpu via the host provider registry,
+// which a peer plugin cannot dial without the InvokeProvider rewrite this family defers).
+#PodConfigDetectDevicesRequest: {
+	no_auto_detect?: bool @go(NoAutoDetect)
+}
+#PodConfigDetectDevicesReply: {
+	detected_json!: bytes @go(DetectedJSON, type=RawBody) // marshalled DetectedDevices (= spec.DetectedDevices)
+}
+
+// #PodConfigTunnelResolveRequest / Reply: TunnelConfigFromMetadata(meta) — resolves the tunnel
+// config (charly.yml overlay applied) from image labels.
+#PodConfigTunnelResolveRequest: {
+	meta_json!: bytes @go(MetaJSON, type=RawBody)
+}
+#PodConfigTunnelResolveReply: {
+	tunnel_json?: bytes @go(TunnelJSON, type=RawBody) // marshalled *TunnelConfig; absent ⇒ nil
+}
+
+// #PodConfigResolveSidecarsRequest / Reply: the sidecar resolve+secret-provision bundle
+// (embeddedSidecarBodies' go:embed data lives ONLY in the charly binary, not the plugin binary;
+// resolveSidecarsViaPlugin + the sidecar-secret ProvisionPodmanSecrets loop are registry/
+// credential-coupled per the same FINAL/K5 family).
+#PodConfigResolveSidecarsRequest: {
+	deploy_sidecars_json?: bytes    @go(DeploySidecarsJSON, type=RawBody) // map[string]json.RawMessage
+	project_templates_json?: bytes  @go(ProjectTemplatesJSON, type=RawBody)
+	cli_env?: [...string] @go(CliEnv)
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+	run_engine!: string @go(RunEngine)
+	auto_gen!:   bool   @go(AutoGen)
+	refresh_secret?: [...string] @go(RefreshSecret)
+}
+#PodConfigResolveSidecarsReply: {
+	persist_overrides_json?:  bytes @go(PersistOverridesJSON, type=RawBody)
+	resolved_sidecars_json?:  bytes @go(ResolvedSidecarsJSON, type=RawBody)
+	app_env?: [...string] @go(AppEnv)
+	extra_env?: [...string] @go(ExtraEnv) // fallback env from sidecar secret provisioning
+}
+
+// #PodConfigProvisionSecretsRequest / Reply: CollectSecretsFromLabels + CollectCandySecretAccepts
+// + ApplySecretRefresh + ProvisionPodmanSecrets + resolveSecretBackend bundle — the credential-
+// store/podman-secret provisioning family (FINAL/K5-deferred, wrapped verbatim).
+#PodConfigProvisionSecretsRequest: {
+	meta_json!:  bytes  @go(MetaJSON, type=RawBody)
+	box!:        string @go(Box)
+	instance?:   string @go(Instance)
+	run_engine!: string @go(RunEngine)
+	auto_gen!:   bool   @go(AutoGen)
+	refresh_secret?: [...string] @go(RefreshSecret)
+}
+#PodConfigProvisionSecretsReply: {
+	provisioned_json?:  bytes @go(ProvisionedJSON, type=RawBody) // []deploykit.ProvisionedSecret
+	fallback_env?: [...string] @go(FallbackEnv)
+	resolutions_json?:  bytes @go(ResolutionsJSON, type=RawBody) // []SecretResolution
+	is_keyring?: bool @go(IsKeyring)
+}
+
+// #PodConfigEncMountsRequest / Reply: ensureEncryptedMounts + (optional) encUnmount — the
+// gocryptfs FUSE mount lifecycle (FINAL/K5-deferred registry-coupled family per the enc.go
+// header: encExecViaPlugin + resolveEncPassphrase* route through the host provider registry +
+// DefaultCredentialStore, neither portable without the InvokeProvider rewrite this family
+// defers). This is the "ONE narrow credential seam" the standing ruling names.
+#PodConfigEncMountsRequest: {
+	box!:          string @go(Box)
+	instance?:     string @go(Instance)
+	auto_gen!:     bool   @go(AutoGen)
+	keep_mounted!: bool   @go(KeepMounted)
+}
+#PodConfigEncMountsReply: {}
+
+// #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
+// — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
+#PodConfigInjectEnvProvidesRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+	env_provides?: {[string]: string} @go(EnvProvides)
+	port_map_json?: bytes @go(PortMapJSON, type=RawBody) // marshalled map[int]int
+}
+#PodConfigInjectEnvProvidesReply: {
+	changed?: bool @go(Changed)
+}
+
+// #PodConfigInjectMCPProvidesRequest / Reply: injectMCPProvides(box,instance,mcpProvides,portMap).
+#PodConfigInjectMCPProvidesRequest: {
+	box!:               string @go(Box)
+	instance?:          string @go(Instance)
+	mcp_provides_json?: bytes  @go(MCPProvidesJSON, type=RawBody) // marshalled []spec.MCPServerYAML
+	port_map_json?:     bytes  @go(PortMapJSON, type=RawBody)
+}
+#PodConfigInjectMCPProvidesReply: {
+	changed?: bool @go(Changed)
+}
+
+// #PodConfigSaveDeployStateRequest / Reply: deploykit.SaveDeployState(box,instance,input,
+// marshalDeployNode) — the terminal per-deploy persist. input_json is the marshalled
+// deploykit.SaveDeployStateInput (a hand-written sdk/deploykit type with no CUE def — the
+// RawBody idiom, matching #PodConfigWriteRequest.pod_config_json).
+#PodConfigSaveDeployStateRequest: {
+	box!:        string @go(Box)
+	instance?:   string @go(Instance)
+	input_json!: bytes  @go(InputJSON, type=RawBody)
+}
+#PodConfigSaveDeployStateReply: {}
+
+// #PodConfigHookSecretEnvRequest / Reply: resolveHookSecretEnv(box,instance,meta) — the
+// credential-backed env the post_enable hook needs (same FINAL/K5-deferred family).
+#PodConfigHookSecretEnvRequest: {
+	box!:       string @go(Box)
+	instance?:  string @go(Instance)
+	meta_json!: bytes  @go(MetaJSON, type=RawBody)
+}
+#PodConfigHookSecretEnvReply: {
+	env?: [...string] @go(Env)
+}
+
+// #PodConfigSSHKeyRequest / Reply: resolveSSHPubKey(flag, generateDir) + containerSSHKeyDir(name)
+// bundle (the `--ssh-key generate` path is pure ed25519/golang.org/x/crypto/ssh keygen — kept as
+// a narrow host seam rather than adding a crypto dependency to the plugin for a rarely-used flag).
+#PodConfigSSHKeyRequest: {
+	flag!:           string @go(Flag)
+	container_name!: string @go(ContainerName)
+}
+#PodConfigSSHKeyReply: {
+	pubkey?: string @go(Pubkey)
+}
+
+// #PodConfigListSidecarsReply: embeddedSidecarBodies()'s go:embed template names + descriptions —
+// the `charly config --list-sidecars` introspection leaf (rare; kept as a narrow seam since the
+// embedded data lives only in the charly binary).
+#PodConfigListSidecarsReply: {
+	names?: [...string] @go(Names)
+	descriptions?: {[string]: string} @go(Descriptions)
+}
+
+// sdk.OpConfigSetup / sdk.OpConfigRemove (the two new Ops the deploy:pod plugin's Invoke
+// dispatches for the direction-flip) reuse #PodConfigSetupRequest / #PodConfigRemoveRequest
+// VERBATIM as op.Params — no new outer envelope needed; see host_build_pod_config.go for the
+// exact host→plugin forwarding.
 
 // #PodUpdateRequest carries the `charly update` command flags (the former UpdateCmd's
 // authored fields). Forwarded to HostBuild("pod-update"), which runs the existing
