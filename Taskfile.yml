@@ -65,7 +65,7 @@ tasks:
         echo "cue:gen: regenerated spec/{cue_types_gen.go,vocab_gen.go,version_gen.go}"
 
   bootstrap-cue:
-    desc: Ensure ./bin/cue is the pinned cue CLI (prefers the RDD scratch binary, else checksum-verified download)
+    desc: Ensure ./bin/cue is the pinned cue CLI (checksum-verified download)
     dir: "{{.ROOT_DIR}}"
     status:
       - test -x bin/cue && bin/cue version 2>/dev/null | grep -q '{{.CUE_VERSION}}'
@@ -73,24 +73,20 @@ tasks:
       - |
         set -euo pipefail
         mkdir -p bin
-        if [ -x /tmp/cue-rdd/cue ] && /tmp/cue-rdd/cue version 2>/dev/null | grep -q '{{.CUE_VERSION}}'; then
-          cp /tmp/cue-rdd/cue bin/cue
-        else
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64) GOARCH=amd64; SHA='{{.CUE_SHA256_amd64}}' ;;
-            *) echo "bootstrap-cue: unsupported arch $ARCH (only linux/amd64 is checksum-pinned)" >&2; exit 1 ;;
-          esac
-          TARBALL="cue_{{.CUE_VERSION}}_linux_${GOARCH}.tar.gz"
-          URL="https://github.com/cue-lang/cue/releases/download/{{.CUE_VERSION}}/${TARBALL}"
-          TMP="$(mktemp -d)"
-          trap 'rm -rf "$TMP"' EXIT
-          echo "bootstrap-cue: downloading $URL"
-          curl -fsSL -o "$TMP/$TARBALL" "$URL"
-          echo "${SHA}  $TMP/$TARBALL" | sha256sum -c - || { echo "bootstrap-cue: checksum mismatch — refusing to extract" >&2; exit 1; }
-          tar -xzf "$TMP/$TARBALL" -C "$TMP" cue
-          mv "$TMP/cue" bin/cue
-        fi
+        ARCH="$(uname -m)"
+        case "$ARCH" in
+          x86_64) GOARCH=amd64; SHA='{{.CUE_SHA256_amd64}}' ;;
+          *) echo "bootstrap-cue: unsupported arch $ARCH (only linux/amd64 is checksum-pinned)" >&2; exit 1 ;;
+        esac
+        TARBALL="cue_{{.CUE_VERSION}}_linux_${GOARCH}.tar.gz"
+        URL="https://github.com/cue-lang/cue/releases/download/{{.CUE_VERSION}}/${TARBALL}"
+        TMP="$(mktemp -d)"
+        trap 'rm -rf "$TMP"' EXIT
+        echo "bootstrap-cue: downloading $URL"
+        curl -fsSL -o "$TMP/$TARBALL" "$URL"
+        echo "${SHA}  $TMP/$TARBALL" | sha256sum -c - || { echo "bootstrap-cue: checksum mismatch — refusing to extract" >&2; exit 1; }
+        tar -xzf "$TMP/$TARBALL" -C "$TMP" cue
+        mv "$TMP/cue" bin/cue
         chmod +x bin/cue
         bin/cue version | grep -q '{{.CUE_VERSION}}' || { echo "bootstrap-cue: bin/cue is not {{.CUE_VERSION}}" >&2; exit 1; }
         echo "bootstrap-cue: bin/cue is $(bin/cue version | head -1)"
