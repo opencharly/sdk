@@ -10,6 +10,7 @@ package kit
 // logic in this file understands each Kind.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,13 +37,28 @@ type ReverseExecutor interface {
 
 // ReverseRunner executes reversal shell scripts at the requested
 // privilege level. Implemented by both the local-exec host runner and
-// the SSH-based VM runner (sshReverseRunner, bundle_add_cmd_vm.go).
+// the SSH-based VM runner (SSHReverseRunner, below).
 type ReverseRunner interface {
 	// RunSystem runs a bash script as root (wraps with sudo on host
 	// runners; uses `ssh sudo bash -s` on VM runners).
 	RunSystem(script string) error
 	// RunUser runs a bash script as the deploy user (no sudo).
 	RunUser(script string) error
+}
+
+// SSHReverseRunner adapts an *SSHExecutor to ReverseRunner (P13-KERNEL), so a
+// teardown replays recorded ReverseOps over SSH — inside a VM guest, or on a
+// `local: {host: user@machine}` remote — instead of on the operator host.
+type SSHReverseRunner struct {
+	Exec *SSHExecutor
+}
+
+func (r *SSHReverseRunner) RunSystem(script string) error {
+	return r.Exec.RunSystem(context.Background(), script, EmitOpts{})
+}
+
+func (r *SSHReverseRunner) RunUser(script string) error {
+	return r.Exec.RunUser(context.Background(), script, EmitOpts{})
 }
 
 // RunReverseOps executes ops in REVERSE order (last-installed, first-

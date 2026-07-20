@@ -47,6 +47,21 @@ func (t *TagExpr) Match(tags []string) bool {
 	return t.node.check(set)
 }
 
+// ValidateTagExpr syntax-checks an optional --tag expression (rejecting a malformed one)
+// without keeping the parsed *TagExpr — moved from charly/check_feature_run.go (CHECK-wave), a
+// pure wrapper with zero core-state coupling. It does NOT apply the parsed expression as a step
+// filter: kit.RunPlan (the walk both hostFeatureBox and hostFeatureLive drive) takes no
+// tag-filter parameter and walks every step unconditionally — a confirmed, RCA'd, non-blocking
+// gap (per-tag filtering was never wired past this parse), routed to the next check-correctness
+// thematic batch.
+func ValidateTagExpr(tag string) error {
+	if strings.TrimSpace(tag) == "" {
+		return nil
+	}
+	_, err := ParseTagExpr(tag)
+	return err
+}
+
 // ParseTagExpr compiles a tag expression. Empty / whitespace input produces a nil
 // TagExpr that matches everything. A syntax error is returned rather than silently
 // matching or silently failing.
