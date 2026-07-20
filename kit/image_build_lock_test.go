@@ -40,3 +40,30 @@ func TestImageBuildLockPath(t *testing.T) {
 		t.Fatalf("lock path must be user-cache-scoped, got %q", got)
 	}
 }
+
+// TestStoreBuildLockPath proves the store-global build lock is one stable
+// user-cache path (every whole-image-build invocation serializes through it),
+// and that it contends like any flock (a second holder sees ErrLockBusy until
+// the first releases).
+func TestStoreBuildLockPath(t *testing.T) {
+	path, err := StoreBuildLockPath()
+	if err != nil {
+		t.Fatalf("StoreBuildLockPath: %v", err)
+	}
+	if !strings.HasSuffix(path, "/charly/locks/store-build.lock") {
+		t.Fatalf("unexpected store lock path %q", path)
+	}
+	release, err := AcquireStoreBuildLock()
+	if err != nil {
+		t.Fatalf("AcquireStoreBuildLock: %v", err)
+	}
+	if _, err := AcquireFileLock(path, false); err == nil {
+		t.Fatal("second holder must see ErrLockBusy while the first holds the store lock")
+	}
+	if err := release(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if _, err := AcquireFileLock(path, false); err != nil {
+		t.Fatalf("lock must be acquirable after release: %v", err)
+	}
+}

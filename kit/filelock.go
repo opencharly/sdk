@@ -102,3 +102,34 @@ func AcquireLocalPkgBuildLock(srcDir string) (func() error, error) {
 	sum := sha256.Sum256([]byte(srcDir))
 	return AcquireFileLock(filepath.Join(dir, "localpkg-"+hex.EncodeToString(sum[:8])+".lock"), true)
 }
+
+// StoreBuildLockPath is the user-cache lock file serializing whole-image-build
+// invocations against the shared containers-storage. podman's rootless store
+// (buildah, ≥ transient_store) is NOT safe for two concurrent multi-stage
+// builds against it — observed under a two-bed concurrent roster: a buildah
+// nil-pointer panic in COPY --from=<stage>, a mid-build rootfs losing /bin/sh,
+// and "replacing mount point: file exists" on teardown (opencharly/charly#149).
+// The store is therefore treated as a single-writer resource: every whole
+// `charly box build` takes this blocking lock for its image set, while
+// DISTINCT charly processes' non-build phases (deploy/exec/check) stay
+// parallel — resource-token arbitration over the store, not a hidden retry.
+func StoreBuildLockPath() (string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("store build lock: %w", err)
+	}
+	dir := filepath.Join(cache, "charly", "locks")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("store build lock dir: %w", err)
+	}
+	return filepath.Join(dir, "store-build.lock"), nil
+}
+
+// AcquireStoreBuildLock takes the blocking store-global build lock.
+func AcquireStoreBuildLock() (func() error, error) {
+	path, err := StoreBuildLockPath()
+	if err != nil {
+		return nil, err
+	}
+	return AcquireFileLock(path, true)
+}
