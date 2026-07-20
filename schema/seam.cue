@@ -779,6 +779,11 @@
 	keep_image?:        bool @go(KeepImage)
 	keep_ledger?:       bool @go(KeepLedger)
 	remove_volumes?:    bool @go(RemoveVolumes)
+	// Add-only, NESTED dispatch (the K4-C venue-descriptor generalization): the marshalled
+	// *spec.VenueDescriptor for opts.ParentExec — nil/absent for a root-level dispatch. A
+	// hand-written sdk/spec type with no CUE def (self-referential — Parent nests), so it rides
+	// as an opaque RawBody envelope like PlansJSON/HostContextJSON.
+	parent_venue?: bytes @go(ParentVenueJSON, type=RawBody)
 }
 
 // #DeployDispatchReply is the HostBuild("deploy-dispatch") reply — empty on success (mirroring

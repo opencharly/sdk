@@ -4368,6 +4368,12 @@ type DeployDispatchRequest struct {
 	KeepLedger bool `yaml:"keep_ledger,omitempty" json:"keep_ledger,omitempty"`
 
 	RemoveVolumes bool `yaml:"remove_volumes,omitempty" json:"remove_volumes,omitempty"`
+
+	// Add-only, NESTED dispatch (the K4-C venue-descriptor generalization): the marshalled
+	// *spec.VenueDescriptor for opts.ParentExec — nil/absent for a root-level dispatch. A
+	// hand-written sdk/spec type with no CUE def (self-referential — Parent nests), so it rides
+	// as an opaque RawBody envelope like PlansJSON/HostContextJSON.
+	ParentVenueJSON RawBody `yaml:"parent_venue,omitempty" json:"parent_venue,omitempty"`
 }
 
 // #DeployDispatchReply is the HostBuild("deploy-dispatch") reply — empty on success (mirroring

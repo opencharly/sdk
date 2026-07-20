@@ -330,13 +330,34 @@ type DeployVenue struct {
 // lifecycle Invoke returns — then serves THAT over the existing ExecutorService to the deploy-walk
 // plugin. Kind "shell" → a host-local ShellExecutor (the SSH fields are ignored); Kind "ssh" → an
 // *SSHExecutor built from User/Host/Port/Args/ConnectTimeout (the guest venue). Empty → no venue.
+//
+// K4-C generalization (the venue-scoped-executor-session seam): Kind "nested" encodes a
+// *kit.NestedExecutor — a NESTED-TREE hop (a container-exec/docker-exec/ssh jump wrapping a
+// PARENT venue, itself recursively a VenueDescriptor) instead of a root venue. This is the SAME
+// decouple point generalized: a plugin driving its own deploy-tree walk cannot hold the live
+// parent DeployExecutor either, so the host encodes/decodes the WHOLE chain through this one
+// recursive envelope rather than a second wire shape. Jump carries the NestedJump the host
+// re-applies on top of the re-materialized Parent (deriveChildExecutorForPath's body, unchanged).
 type VenueDescriptor struct {
-	Kind           string   `json:"kind"` // "shell" | "ssh"
+	Kind           string   `json:"kind"` // "shell" | "ssh" | "nested"
 	User           string   `json:"user,omitempty"`
 	Host           string   `json:"host,omitempty"`
 	Port           int      `json:"port,omitempty"`
 	Args           []string `json:"args,omitempty"`
 	ConnectTimeout int      `json:"connect_timeout,omitempty"`
+
+	// Nested-hop fields ("nested" only).
+	Jump   *NestedJumpDescriptor `json:"jump,omitempty"`
+	Parent *VenueDescriptor      `json:"parent,omitempty"`
+}
+
+// NestedJumpDescriptor is the serializable form of kit.NestedJump — Kind is the jump's string
+// name ("podman-exec" | "docker-exec" | "ssh" | "virsh-console", mirroring kit.JumpKind.String()
+// minus the ":target" suffix) so the wire never depends on kit's int enum values directly.
+type NestedJumpDescriptor struct {
+	Kind      string   `json:"kind"`
+	Target    string   `json:"target"`
+	ExtraArgs []string `json:"extra_args,omitempty"`
 }
 
 // Diagnostic is one finding from a plugin kind's deep OpValidate check (F7/C8) — a message, an
