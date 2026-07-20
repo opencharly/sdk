@@ -1091,6 +1091,10 @@
 // which a peer plugin cannot dial without the InvokeProvider rewrite this family defers).
 #PodConfigDetectDevicesRequest: {
 	no_auto_detect?: bool @go(NoAutoDetect)
+	// engine, when set to "podman" alongside a GPU detection, triggers EnsureCDI() (the pod
+	// lifecycle's resolvePodRuntimeImage step) — bundled into this SAME seam call (R3) rather
+	// than a dedicated one.
+	engine?: string @go(Engine)
 }
 #PodConfigDetectDevicesReply: {
 	detected_json!: bytes @go(DetectedJSON, type=RawBody) // marshalled DetectedDevices (= spec.DetectedDevices)
@@ -1200,6 +1204,54 @@
 }
 #PodConfigHookSecretEnvReply: {
 	env?: [...string] @go(Env)
+}
+
+// #PodConfigEncEnsurePlanRequest / Reply: the pod lifecycle's resolvePodEncEnsure body VERBATIM —
+// encPlanFor + the keyring-resilient all-mounted fast path + resolveEncPassphrase, bundled into
+// ONE narrow credential seam (the standing ruling) returning the pre-built spec.EncExecInput the
+// plugin InvokeProviders verb:enc with directly (empty ⇒ no encrypted volumes configured or
+// already-mounted fast path, matching the former ensureEncryptedMounts semantics).
+#PodConfigEncEnsurePlanRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+#PodConfigEncEnsurePlanReply: {
+	enc_json?: bytes @go(EncJSON, type=RawBody)
+}
+
+// #PodConfigEncUnmountPlanRequest / Reply: the pod lifecycle's resolvePodEncUnmount body —
+// encPlanFor for the unmount leg (no passphrase needed).
+#PodConfigEncUnmountPlanRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+#PodConfigEncUnmountPlanReply: {
+	enc_json?: bytes @go(EncJSON, type=RawBody)
+}
+
+// #PodConfigContainerTunnelRequest / Reply: the pod lifecycle's resolvePodTunnel body — reads the
+// RUNNING container's baked image ref (containerImage), extracts + merges its metadata, and
+// resolves the tunnel config. Distinct from #PodConfigTunnelResolveRequest (which takes an
+// already-resolved MetaJSON) — this seam resolves the image/metadata itself from a container name.
+#PodConfigContainerTunnelRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+#PodConfigContainerTunnelReply: {
+	tunnel_json?: bytes @go(TunnelJSON, type=RawBody)
+}
+
+// #PodConfigBoxEngineRequest / Reply: ResolveBoxEngineForDeploy(box,instance,globalEngine) — reads
+// the per-host deploy config's Engine override. A thin wrapper distinct from
+// #PodConfigLoadDeployRequest since callers here want only the resolved engine string, not the
+// whole BundleConfig.
+#PodConfigBoxEngineRequest: {
+	box!:           string @go(Box)
+	instance?:      string @go(Instance)
+	global_engine!: string @go(GlobalEngine)
+}
+#PodConfigBoxEngineReply: {
+	engine!: string @go(Engine)
 }
 
 // #PodConfigSSHKeyRequest / Reply: resolveSSHPubKey(flag, generateDir) + containerSSHKeyDir(name)

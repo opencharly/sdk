@@ -4770,6 +4770,11 @@ type PodConfigScrubCliEnvReply struct {
 // which a peer plugin cannot dial without the InvokeProvider rewrite this family defers).
 type PodConfigDetectDevicesRequest struct {
 	NoAutoDetect bool `yaml:"no_auto_detect,omitempty" json:"no_auto_detect,omitempty"`
+
+	// engine, when set to "podman" alongside a GPU detection, triggers EnsureCDI() (the pod
+	// lifecycle's resolvePodRuntimeImage step) — bundled into this SAME seam call (R3) rather
+	// than a dedicated one.
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
 }
 
 type PodConfigDetectDevicesReply struct {
@@ -4921,6 +4926,63 @@ type PodConfigHookSecretEnvRequest struct {
 
 type PodConfigHookSecretEnvReply struct {
 	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// #PodConfigEncEnsurePlanRequest / Reply: the pod lifecycle's resolvePodEncEnsure body VERBATIM —
+// encPlanFor + the keyring-resilient all-mounted fast path + resolveEncPassphrase, bundled into
+// ONE narrow credential seam (the standing ruling) returning the pre-built spec.EncExecInput the
+// plugin InvokeProviders verb:enc with directly (empty ⇒ no encrypted volumes configured or
+// already-mounted fast path, matching the former ensureEncryptedMounts semantics).
+type PodConfigEncEnsurePlanRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigEncEnsurePlanReply struct {
+	EncJSON RawBody `yaml:"enc_json,omitempty" json:"enc_json,omitempty"`
+}
+
+// #PodConfigEncUnmountPlanRequest / Reply: the pod lifecycle's resolvePodEncUnmount body —
+// encPlanFor for the unmount leg (no passphrase needed).
+type PodConfigEncUnmountPlanRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigEncUnmountPlanReply struct {
+	EncJSON RawBody `yaml:"enc_json,omitempty" json:"enc_json,omitempty"`
+}
+
+// #PodConfigContainerTunnelRequest / Reply: the pod lifecycle's resolvePodTunnel body — reads the
+// RUNNING container's baked image ref (containerImage), extracts + merges its metadata, and
+// resolves the tunnel config. Distinct from #PodConfigTunnelResolveRequest (which takes an
+// already-resolved MetaJSON) — this seam resolves the image/metadata itself from a container name.
+type PodConfigContainerTunnelRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigContainerTunnelReply struct {
+	TunnelJSON RawBody `yaml:"tunnel_json,omitempty" json:"tunnel_json,omitempty"`
+}
+
+// #PodConfigBoxEngineRequest / Reply: ResolveBoxEngineForDeploy(box,instance,globalEngine) — reads
+// the per-host deploy config's Engine override. A thin wrapper distinct from
+// #PodConfigLoadDeployRequest since callers here want only the resolved engine string, not the
+// whole BundleConfig.
+type PodConfigBoxEngineRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	GlobalEngine string `yaml:"global_engine,omitempty" json:"global_engine"`
+}
+
+type PodConfigBoxEngineReply struct {
+	Engine string `yaml:"engine,omitempty" json:"engine"`
 }
 
 // #PodConfigSSHKeyRequest / Reply: resolveSSHPubKey(flag, generateDir) + containerSSHKeyDir(name)
