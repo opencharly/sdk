@@ -2084,6 +2084,14 @@ type CandyArtifact struct {
 	WaitSeconds int `yaml:"wait_second,omitempty" json:"wait_second,omitempty"`
 
 	Rewrite []CandyArtifactRewrite `yaml:"rewrite,omitempty" json:"rewrite,omitempty"`
+
+	// register: an optional NAME-BLIND post-retrieve processing hint (e.g. "kubeconfig") —
+	// what to do with the retrieved artifact beyond the generic retrieve/rewrite pipeline,
+	// dispatched by a host-side registry keyed on this word (retrieveArtifactsAndK3s /
+	// artifactRegisterHandlers). Replaces a hardcoded candy-NAME check
+	// (deployHasCandy(candyList, "k3s-server")) with a declaration the candy itself carries,
+	// so a future candy needing the same registration need not be named "k3s-server".
+	Register string `yaml:"register,omitempty" json:"register,omitempty"`
 }
 
 type CandyArtifactRewrite struct {
