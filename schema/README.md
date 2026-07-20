@@ -28,8 +28,9 @@ The task (`taskfiles/Cue.yml`):
 
 1. **Bootstraps the pinned cue CLI** into `./bin/cue` (gitignored) — `v0.16.1`,
    the SAME version as charly's embedded `cuelang.org/go` library, so the CLI that
-   runs `gengotypes` matches the library that compiles the schema. It prefers a
-   pre-fetched scratch binary, else downloads the checksum-pinned release tarball.
+   runs `gengotypes` matches the library that compiles the schema. It prefers
+   the sdk checkout's already-bootstrapped `sdk/bin/cue`, else downloads the
+   checksum-pinned release tarball.
 2. **Concatenates** `schema/*.cue` via `charly/internal/schemagen -mode=concat`
    (the SAME order as the runtime `sharedCueSchema` — one concatenation contract),
    headed `package spec` + `@go(spec)`.
