@@ -99,7 +99,8 @@
 	// (from the candy manifest external_builder:). validateCandyContents reads it to accept a
 	// candy whose only content is an external-builder selection (deploykit EmitExternalBuilderStages).
 	external_builder?: string @go(ExternalBuilder)
-	libvirt?: [...string] @go(Libvirt)
+	// (the candy-level `libvirt:` field was removed here alongside #Candy — see
+	// candy.cue's note; CollectLibvirtSnippets, its only reader, was already dead.)
 	engine?:  string @go(Engine)
 	port_relay?: [...int] @go(PortRelayPorts,type=[]int)
 	service_files?: [...string] @go(ServiceFiles)
