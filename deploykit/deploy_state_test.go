@@ -317,3 +317,42 @@ func TestRemoveByExactSource(t *testing.T) {
 		t.Error("RemoveByExactSource(missing) reported removed; want false")
 	}
 }
+
+// TestFindBundleNode covers the whole-tree name search (Cutover B unit 5, P13-KERNEL-B —
+// moved from charly/k3s_post.go's findBundleNodeByName/findBundleNodePtrByName, which had
+// no dedicated test coverage in charly; this closes that gap at the new home). A node may
+// be found at the top level, nested under Children at any depth, or nested under Members
+// at any depth; a name present nowhere in the tree returns nil.
+func TestFindBundleNode(t *testing.T) {
+	leaf := &BundleNode{Image: "leaf-image"}
+	member := &BundleNode{Image: "member-image"}
+	child := &BundleNode{
+		Image:    "child-image",
+		Children: map[string]*BundleNode{"leaf": leaf},
+	}
+	root := BundleNode{
+		Image:    "root-image",
+		Children: map[string]*BundleNode{"child": child},
+		Members:  map[string]*BundleNode{"sidecar": member},
+	}
+	bundle := map[string]BundleNode{"stack": root}
+
+	if got := FindBundleNode(bundle, "stack"); got == nil || got.Image != "root-image" {
+		t.Errorf("FindBundleNode(stack) top-level = %v; want root-image", got)
+	}
+	if got := FindBundleNode(bundle, "child"); got != child {
+		t.Errorf("FindBundleNode(child) nested-Children = %v; want %v", got, child)
+	}
+	if got := FindBundleNode(bundle, "leaf"); got != leaf {
+		t.Errorf("FindBundleNode(leaf) nested-two-deep-Children = %v; want %v", got, leaf)
+	}
+	if got := FindBundleNode(bundle, "sidecar"); got != member {
+		t.Errorf("FindBundleNode(sidecar) nested-Members = %v; want %v", got, member)
+	}
+	if got := FindBundleNode(bundle, "nonexistent"); got != nil {
+		t.Errorf("FindBundleNode(nonexistent) = %v; want nil", got)
+	}
+	if got := FindBundleNode(nil, "anything"); got != nil {
+		t.Errorf("FindBundleNode(nil bundle) = %v; want nil", got)
+	}
+}
