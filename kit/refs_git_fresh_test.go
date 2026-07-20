@@ -79,7 +79,7 @@ func TestDownloadRepoFrom_RefreshesMovedBranch(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CHARLY_REPO_CACHE", filepath.Join(root, "cache"))
 
-	git := func(dir string, args ...string) string {
+	git := func(dir string, args ...string) {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(),
@@ -88,7 +88,6 @@ func TestDownloadRepoFrom_RefreshesMovedBranch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
 		}
-		return string(out)
 	}
 
 	// Local bare remote + one commit on main.
