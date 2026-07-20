@@ -71,3 +71,24 @@ func QuadletExistsInstance(boxName, instance string) (bool, error) {
 	}
 	return true, nil
 }
+
+// PodQuadletFilename returns the quadlet filename for a pod (K4: relocated from
+// charly/quadlet_pod.go — pure string formatting, no project-loader dependency).
+func PodQuadletFilename(boxName string) string {
+	return PodName(boxName) + ".pod"
+}
+
+// PodQuadletFilenameInstance returns the quadlet filename for a pod with optional instance.
+func PodQuadletFilenameInstance(boxName, instance string) string {
+	return PodNameInstance(boxName, instance) + ".pod"
+}
+
+// SidecarQuadletFilename returns the quadlet filename for a sidecar container.
+func SidecarQuadletFilename(boxName, sidecarName string) string {
+	return SidecarContainerName(boxName, sidecarName) + ".container"
+}
+
+// SidecarQuadletFilenameInstance returns the quadlet filename for a sidecar with optional instance.
+func SidecarQuadletFilenameInstance(boxName, instance, sidecarName string) string {
+	return SidecarContainerNameInstance(boxName, instance, sidecarName) + ".container"
+}
