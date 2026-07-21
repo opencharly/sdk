@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/proclifecycle"
 	"github.com/opencharly/sdk/spec"
-	"github.com/opencharly/sdk/vmshared"
 )
 
 // Tests for the localpkg subsystem relocated from charly core (W3): ResolveLocalPkgDir,
@@ -423,7 +423,7 @@ func TestCleanupBuiltPackageFilesIsScopedAndIdempotent(t *testing.T) {
 	if err := os.WriteFile(file, []byte("fixture"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	vmshared.RegisterTempCleanup(dir)
+	proclifecycle.RegisterTempCleanup(dir)
 	if err := CleanupBuiltPackageFiles([]string{file}); err != nil {
 		t.Fatal(err)
 	}

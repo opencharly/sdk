@@ -1,4 +1,4 @@
-package vmshared
+package proclifecycle
 
 import (
 	"sync/atomic"

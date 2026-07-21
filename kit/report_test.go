@@ -41,11 +41,11 @@ func TestPlural(t *testing.T) {
 func sampleResults() []StepResult {
 	return []StepResult{
 		{Keyword: "check", Text: "the marker exists", Origin: "layer-a", StepID: "a-marker",
-			Result: CheckResult{Verb: "file", Status: StatusPass, Message: "found", Elapsed: 12 * time.Millisecond}},
+			Result: CheckResult{CheckResult: spec.CheckResult{Verb: "file", Status: StatusPass, Message: "found", Elapsed: 12 * time.Millisecond}}},
 		{Keyword: "check", Text: "the port is open", Origin: "layer-a", StepID: "a-port",
-			Result: CheckResult{Verb: "port", Status: StatusFail, Message: "connection refused", Elapsed: 5 * time.Millisecond}},
+			Result: CheckResult{CheckResult: spec.CheckResult{Verb: "port", Status: StatusFail, Message: "connection refused", Elapsed: 5 * time.Millisecond}}},
 		{Keyword: "check", Text: "the gpu is present", Origin: "layer-b", StepID: "b-gpu",
-			Result: CheckResult{Verb: "command", Status: StatusSkip, Message: "no gpu vendor", Elapsed: time.Millisecond}},
+			Result: CheckResult{CheckResult: spec.CheckResult{Verb: "command", Status: StatusSkip, Message: "no gpu vendor", Elapsed: time.Millisecond}}},
 	}
 }
 
@@ -80,7 +80,7 @@ func TestRenderStep_RetryInfo(t *testing.T) {
 	var b bytes.Buffer
 	FormatStepResultsText(&b, []StepResult{{
 		Keyword: "check", Text: "eventually up", StepID: "e1",
-		Result: CheckResult{Status: StatusPass, Attempts: 5, TotalElapsed: 12300 * time.Millisecond},
+		Result: CheckResult{CheckResult: spec.CheckResult{Status: StatusPass, Attempts: 5, TotalElapsed: 12300 * time.Millisecond}},
 	}})
 	if !strings.Contains(b.String(), "(attempts=5, elapsed=12.3s)") {
 		t.Errorf("retry info missing:\n%s", b.String())
@@ -89,7 +89,7 @@ func TestRenderStep_RetryInfo(t *testing.T) {
 	var one bytes.Buffer
 	FormatStepResultsText(&one, []StepResult{{
 		Keyword: "check", Text: "once", StepID: "o1",
-		Result: CheckResult{Status: StatusPass, Attempts: 1},
+		Result: CheckResult{CheckResult: spec.CheckResult{Status: StatusPass, Attempts: 1}},
 	}})
 	if strings.Contains(one.String(), "attempts=") {
 		t.Errorf("single-attempt step must not show retry info:\n%s", one.String())
@@ -179,7 +179,7 @@ func TestFormatStepResultsJUnit(t *testing.T) {
 // (a plugin reporting results needs to reach the Op that produced them).
 func TestStepResultCarriesOp(t *testing.T) {
 	op := &spec.Op{}
-	sr := StepResult{Result: CheckResult{Op: op, Status: StatusPass}}
+	sr := StepResult{Result: CheckResult{CheckResult: spec.CheckResult{Op: op, Status: StatusPass}}}
 	if sr.Result.Op != op {
 		t.Error("CheckResult.Op back-reference lost")
 	}

@@ -1,4 +1,18 @@
-package vmshared
+// Package proclifecycle is a stdlib-only leaf package (no deps beyond os/
+// os/signal/path/filepath/strings/sync/syscall/time) holding generic
+// host-process lifecycle plumbing: catchable-signal-triggered cleanup hooks
+// and a stale-temp-file sweep. It has ZERO business being named after VMs —
+// relocated out of sdk/vmshared (FLOOR-SLIM mechanical batch, per an
+// orchestrator ruling) once a consumer census showed it is used directly by
+// charly/main.go AND by candy/plugin-enc, candy/plugin-secrets,
+// candy/plugin-vm, candy/plugin-oci, and sdk/deploykit/localpkg.go — a
+// genuinely shared leaf, never a VM-kit or a charly-core-only dependency.
+// Mirrors the sdk/schemaconcat precedent: a stdlib-only leaf outside the
+// named mechanism kits (kit/deploykit/buildkit/loaderkit/vmshared), so
+// charly/main.go can import it directly without violating IMPORT-PURITY (a
+// leaf is not a mechanism kit), and every kit (vmshared included) may import
+// it too (kits may import leaves).
+package proclifecycle
 
 import (
 	"os"
@@ -40,8 +54,8 @@ var (
 // RegisterShutdownHook registers fn to run on a catchable shutdown signal
 // (SIGTERM/SIGINT/SIGHUP), in the signal handler, before it re-raises the
 // signal and the process exits. It is the package-boundary seam that lets
-// package main reap resources the vmshared signal handler cannot reference
-// directly — notably the connected out-of-process plugin clients
+// package main reap resources this package's signal handler cannot reference
+// directly — notably charly's connected out-of-process plugin clients
 // (providerRegistry.Close): a Ctrl-C'd / `systemctl stop`ped charly kills its
 // plugin servers instead of orphaning them (the 77h-orphan leak). Hooks run in
 // registration order; each MUST be best-effort and bounded (the handler is

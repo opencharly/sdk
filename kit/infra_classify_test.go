@@ -131,8 +131,8 @@ func TestRunWithEventually_DoesNotRetryContainerInfra(t *testing.T) {
 	calls := 0
 	got := RunWithEventually(context.Background(), &spec.Op{}, func() CheckResult {
 		calls++
-		return CheckResult{Status: StatusFail, Message: "execution error: " + ContainerInfraErrMarker +
-			` ["creating temporary passwd file" (…)]: podman exit=127`}
+		return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Message: "execution error: " + ContainerInfraErrMarker +
+			` ["creating temporary passwd file" (…)]: podman exit=127`}}
 	})
 	if calls != 1 {
 		t.Fatalf("a container-setup infra failure must NOT be retried (classify-only keeps residual infra events loud); got %d calls", calls)
