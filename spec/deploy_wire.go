@@ -498,9 +498,25 @@ type DeployReplyRecord struct {
 // tailor its emitted Containerfile fragment per distro/arch. The build-time
 // analogue of DeployVenue (deploy) / the verb check-env. Placement-agnostic: a
 // builtin reads it in-proc, an external over gRPC.
+//
+// DevLocalPkg / ImageBuildDir / ContextRelPrefix are the per-invocation build-render
+// scalars a HOST-COUPLED class:step OpEmit (candy/plugin-installstep's system-packages
+// / builder / local-pkg-install / op words) needs to render its fragment directly
+// against its OWN deploykit.Generator (built from the "resolved-project" envelope)
+// instead of round-tripping to a host-side renderer: DevLocalPkg selects the dev-bed
+// vs production localpkg install leg; ImageBuildDir/ContextRelPrefix anchor an Op
+// step's content-addressed inline-content staging (write: tasks) to the SAME
+// build-context-relative location the host would have used (the project .build root
+// for a full box build, or the pod-overlay's .build/overlay-<deployName> dir). They
+// ride the SAME single OpEmit Invoke every word already receives — no extra
+// round-trip. Zero for a PURE word's OpEmit (it never reads BuildEnv at all).
 type BuildEnv struct {
 	Distros []string `json:"distros,omitempty"`
 	Image   string   `json:"image,omitempty"`
+
+	DevLocalPkg      bool   `json:"dev_local_pkg,omitempty"`
+	ImageBuildDir    string `json:"image_build_dir,omitempty"`
+	ContextRelPrefix string `json:"context_rel_prefix,omitempty"`
 }
 
 // EmitReply is what a plugin verb/builder returns from an OpEmit Invoke at build
