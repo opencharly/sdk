@@ -453,7 +453,7 @@
 	engine_bin!:     string               @go(EngineBin)      // EngineBinary(resolved engine)
 	unmount?:        bool                 @go(Unmount)        // `charly stop --unmount` — enc FUSE teardown
 	enc?:     bytes @go(Enc, type=RawBody) // pre-built spec.EncExecInput (Method ensure@start / unmount@stop)
-	tunnel?:  #TunnelConfig @go(Tunnel,optional=nillable) // resolved tunnel config (nil ⇒ no tunnel) — TunnelStart@start / TunnelStop@stop
+	tunnel?:  #TunnelConfig @go(Tunnel,optional=nillable) // resolved tunnel config (nil ⇒ no tunnel) — driven via podTunnelOp(ctx,exec,"start",...)@start / podTunnelOp(ctx,exec,"stop",...)@stop, both verb:tunnel over InvokeProvider
 }
 
 // #PodStartOpts carries `charly start`'s direct-mode CLI extras (K4 inversion, quadlet-mode
@@ -823,16 +823,17 @@
 // #PodShellReply is the "pod-shell" host-builder reply — empty, mirroring #PodStartReply.
 #PodShellReply: {}
 
-// #PodServiceRequest carries the `charly service start/stop/status/restart` command flags (the
-// former ServiceStartCmd/ServiceStopCmd/ServiceStatusCmd/ServiceRestartCmd's authored fields,
-// unified behind ONE seam by an `operation` discriminator — all four leaves share the identical
-// resolveServiceInit + execInitCommand body, differing only in which init-management verb runs).
-// Forwarded to HostBuild("pod-service"), which runs the existing service orchestration VERBATIM.
+// #PodServiceRequest carries the FULLY plugin-resolved argv for `charly service
+// start/stop/status/restart` (Cutover B unit 2 completion): the plugin now performs
+// resolveServiceInit/validateServiceName/execInitCommand's argv-building itself (all portable —
+// spec.ResolvedInit is already an sdk alias, buildkit.RenderTemplate is sdk-portable) and sends
+// the FINAL `<engine> exec <container> <tool> <op> [svc]` argv; the host does ONLY the
+// irreducible dispatchLifecycleTarget + LifecycleTarget.Shell step (host_build_pod_lifecycle_dispatch.go's
+// hostBuildPodService), mirroring start/stop/logs/update exactly.
 #PodServiceRequest: {
-	operation!: "start" | "stop" | "status" | "restart" @go(Operation)
-	box!:       string                                  @go(Box)
-	service?:   string                                  @go(Service)
-	instance?:  string                                  @go(Instance)
+	box!:      string      @go(Box)
+	instance?: string      @go(Instance)
+	argv!:     [...string] @go(Argv)
 }
 
 // #PodServiceReply is the "pod-service" host-builder reply — empty, mirroring #PodStartReply.
@@ -1139,6 +1140,21 @@
 	input_json!: bytes  @go(InputJSON, type=RawBody)
 }
 #PodConfigSaveDeployStateReply: {}
+
+// #PodConfigCleanDeployEntryRequest / Reply: deploykit.CleanDeployEntry(box, instance,
+// marshalDeployNode) — the `charly remove` deploy-entry cleanup (Cutover B unit 2 remove-verb
+// completion). Mirrors #PodConfigSaveDeployStateRequest's shape ({box!, instance?} → {}, the host
+// owns the entire load+lock+mutate+save internally) — deliberately NOT a reuse of
+// #DeployConfigSaveRequest (the `deploy-config-save` seam), which persists an ALREADY-LOADED,
+// already-mutated whole BundleConfig with no internal load/lock/entry-removal logic (bundle
+// import/reset's use case) — a genuinely different, narrower operation CleanDeployEntry's own
+// internal file-lock + entry-removal + provides-cleanup + empty-file-delete logic cannot be
+// reduced to.
+#PodConfigCleanDeployEntryRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+#PodConfigCleanDeployEntryReply: {}
 
 // #PodConfigHookSecretEnvRequest / Reply: resolveHookSecretEnv(box,instance,meta) — the
 // credential-backed env the post_enable hook needs (same FINAL/K5-deferred family).

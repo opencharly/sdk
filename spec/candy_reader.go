@@ -79,9 +79,15 @@ type CandyReader interface {
 	MCPAccept() []EnvDependency
 
 	// W9 mass-edit interface-completeness fill: the remaining accessors the 42-file
-	// repoint needs (CollectBoxAlias/CollectBoxVolume/CollectLibvirtSnippets/ports.go/
-	// layer_capabilities.go/…) — every one of these already exists on the charly *Candy
-	// implementer (layers.go); this is a pure exposure widening, no new *Candy behavior.
+	// repoint needs (CollectBoxAlias/CollectBoxVolume/ports.go/layer_capabilities.go/…)
+	// — every one of these already exists on the charly *Candy implementer (layers.go);
+	// this is a pure exposure widening, no new *Candy behavior. (Libvirt()/HasLibvirt()
+	// were added here for this same fill, to serve charly/libvirt.go's
+	// CollectLibvirtSnippets — that caller was dead code [box-level `libvirt:` was
+	// removed in the VM hard-cutover] and was deleted, and the candy-level `libvirt:`
+	// field itself was removed from the schema in the SAME cutover [candy.cue /
+	// candymodel.cue, migrated by candy/plugin-migrate's stripCandyLibvirtField] — so
+	// these two accessors are gone too, not merely deprecated.)
 	// Consumer-set audited: HasAnyInit/HasAnyPackages/HasApk/HasService/HasTagPackages
 	// were considered and DROPPED — zero external caller outside layers.go itself (they
 	// back OTHER *Candy-internal composition, e.g. HasContent/HasInstallFiles, which
@@ -94,8 +100,6 @@ type CandyReader interface {
 	Capabilities() *CandyCapability
 	RequiresCapabilities() []string
 	Engine() string
-	Libvirt() []string
-	HasLibvirt() bool
 	EnvProvides() map[string]string
 	MCPProvide() []CandyMCPProvide
 	Secret() []CandySecret

@@ -98,9 +98,13 @@
 	extract?: [...#CandyExtract]
 	data?: [...#CandyData]
 
-	// --- security / libvirt / hooks ---
+	// --- security / hooks ---
+	// (the candy-level `libvirt:` raw-XML-snippet field was removed — zero live Go
+	// consumers, retired alongside the box-level libvirt hard-cutover; migrated
+	// away by candy/plugin-migrate's stripCandyLibvirtField. The paired `kind: vm`
+	// entity's OWN `libvirt: {...}` domain config, sdk/schema/vm.cue #Vm.libvirt,
+	// is unrelated and unaffected.)
 	security?: #Security @go(Security,optional=nillable)
-	libvirt?: [...(string & !="")]
 	hook?: #CandyHook @go(Hook,optional=nillable)
 
 	// --- env/secret/mcp dependency + provides surface ---

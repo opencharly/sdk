@@ -31,7 +31,7 @@ type CollectedSecret struct {
 	SecretName     string // original secret name from the candy manifest
 	Service        string // credential store service override
 	Key            string // credential store key override
-	RotateOnConfig bool   // bypass podmanSecretExists short-circuit (rotate every config)
+	RotateOnConfig bool   // bypass PodmanSecretExists short-circuit (rotate every config)
 }
 
 // ResolvedBindMount is a deploy-time resolved bind mount (host-path state).
