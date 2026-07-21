@@ -28,9 +28,16 @@ type RetentionRequest struct {
 // RetentionReply is the "retention" HostBuild kind reply: the removed (or would-remove, under DryRun)
 // image refs, build-candy dirs, and check-run paths, plus the effective retention counts, for the
 // plugin to present. DeepIDs/DeepBytes report the store-wide untagged-image purge (Deep): the removed
-// (or would-remove) image IDs and the sum of their reported storage Size in bytes — the "reclaimable"
-// figure `charly clean --deep --dry-run` prints. Error is a human-facing message on a non-recoverable
-// failure.
+// (or would-remove) image IDs and the sum of their reported storage Size in bytes. DeepBytes is an
+// UPPER BOUND, not a prediction of actual freed disk: each image's reported Size counts every layer
+// it references, and many of those layers are SHARED with images that remain (retained tags, or
+// other still-referenced dangling images) — RDD-verified live on a real host, where a --deep purge
+// removing 68 untagged images (3,552 → 3,484) reported ~92.6 GiB reclaimable (the naive per-image
+// Size sum) but only ~4.6 GiB of disk was actually freed (132.6 GB → 128 GB), because most layer
+// bytes stayed shared with the ~3,400 remaining (largely stale-tagged) images. `charly clean --deep
+// --dry-run` presents DeepBytes as "up to" for exactly this reason; pairing --deep with --invalidate
+// (removing stale TAGS too, so their exclusively-held layers also become unreferenced) gets closer
+// to the reported figure. Error is a human-facing message on a non-recoverable failure.
 type RetentionReply struct {
 	ImageRefs     []string `json:"image_refs,omitempty"`
 	DanglingIDs   []string `json:"dangling_ids,omitempty"`
