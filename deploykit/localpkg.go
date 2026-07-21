@@ -50,8 +50,8 @@ import (
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/sdk/proclifecycle"
 	"github.com/opencharly/sdk/spec"
-	"github.com/opencharly/sdk/vmshared"
 )
 
 // hostBuilderContext is the template context for a builder's phase.install.host cell. The
@@ -235,12 +235,12 @@ func BuildLocalPkgOnHost(ctx context.Context, lp *LocalPkgDef, srcDir string, op
 	if err != nil {
 		return nil, fmt.Errorf("localpkg build output tempdir: %w", err)
 	}
-	vmshared.RegisterTempCleanup(pkgDest)
+	proclifecycle.RegisterTempCleanup(pkgDest)
 	keepArtifacts := false
 	defer func() {
 		if !keepArtifacts {
 			_ = os.RemoveAll(pkgDest)
-			vmshared.UnregisterTempCleanup(pkgDest)
+			proclifecycle.UnregisterTempCleanup(pkgDest)
 		}
 	}()
 
@@ -276,10 +276,10 @@ func stageLocalPkgSource(srcDir string) (string, func(), error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("localpkg source tempdir: %w", err)
 	}
-	vmshared.RegisterTempCleanup(stageRoot)
+	proclifecycle.RegisterTempCleanup(stageRoot)
 	release := func() {
 		_ = os.RemoveAll(stageRoot)
-		vmshared.UnregisterTempCleanup(stageRoot)
+		proclifecycle.UnregisterTempCleanup(stageRoot)
 	}
 	stageDir := filepath.Join(stageRoot, "source")
 	if err := copyLocalPkgSource(srcDir, stageDir); err != nil {
@@ -485,7 +485,7 @@ func CleanupBuiltPackageFiles(pkgFiles []string) error {
 	for dir := range dirs {
 		info, statErr := os.Lstat(dir)
 		if errors.Is(statErr, os.ErrNotExist) {
-			vmshared.UnregisterTempCleanup(dir)
+			proclifecycle.UnregisterTempCleanup(dir)
 			continue
 		}
 		if statErr != nil {
@@ -500,7 +500,7 @@ func CleanupBuiltPackageFiles(pkgFiles []string) error {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove package artifact directory %s: %w", dir, removeErr))
 			continue
 		}
-		vmshared.UnregisterTempCleanup(dir)
+		proclifecycle.UnregisterTempCleanup(dir)
 	}
 	return cleanupErr
 }
@@ -572,12 +572,12 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, bDef *BuilderDef, bu
 	if err != nil {
 		return nil, fmt.Errorf("dependency staging mkdir: %w", err)
 	}
-	vmshared.RegisterTempCleanup(hostStage)
+	proclifecycle.RegisterTempCleanup(hostStage)
 	keepArtifacts := false
 	defer func() {
 		if !keepArtifacts {
 			_ = os.RemoveAll(hostStage)
-			vmshared.UnregisterTempCleanup(hostStage)
+			proclifecycle.UnregisterTempCleanup(hostStage)
 		}
 	}()
 
