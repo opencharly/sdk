@@ -23,9 +23,9 @@
 // migrated by the single `apply:` reshaper hook in candy/plugin-migrate. Then
 // bumped again by the candy-level `libvirt:` field removal (Cutover B unit
 // 3+4, R5 claim-keyed sweep): the field had zero live Go consumers, migrated
-// away by the `stripCandyLibvirtField` reshaper hook. PLACEHOLDER — the
-// fresh pr-validator overwrites this literal with the merge-time CalVer.
-#SchemaVersion: #CanonCalVer & "2026.201.2300" @go(-)
+// away by the `stripCandyLibvirtField` reshaper hook. Re-stamped to the
+// merge-time CalVer by the fresh pr-validator (round 2, sdk#82).
+#SchemaVersion: #CanonCalVer & "2026.202.0105" @go(-)
 
 // #SchemaFloor is the OLDEST schema version `charly migrate` can migrate FROM. At
 // the migration-baseline reset it EQUALS #SchemaVersion — the deleted 47-step chain
