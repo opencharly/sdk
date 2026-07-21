@@ -77,4 +77,13 @@ type EphemeralRuntime struct {
 	TtlDeadline     string `yaml:"ttl_deadline,omitempty" json:"ttl_deadline,omitempty"`
 	Status          string `yaml:"status,omitempty" json:"status,omitempty"`
 	InstanceName    string `yaml:"instance_name,omitempty" json:"instance_name,omitempty"`
+	// DeployAddress is the CLI-addressable deploy identity (the dotted tree path for a nested
+	// deploy, e.g. "parent.child" — `charly bundle del <DeployAddress>`), DISTINCT from the
+	// dc.Bundle MAP KEY this entry is stored under (which is a dot-SANITIZED "vm:<domain-id>"
+	// form — a literal '.' is illegal in a map key, see charly/unified.go's
+	// validateDeploymentName; FINAL/K5 unit 6a RCA #2). A nested-ephemeral-child teardown scan
+	// (candy/plugin-bundle's teardownChildrenRec) has ONLY this struct to recover the real
+	// address from — the map key it was found under cannot be reversed back to the original
+	// dotted path (VmDomainIdentity's "." -> "-" replacement is lossy).
+	DeployAddress string `yaml:"deploy_address,omitempty" json:"deploy_address,omitempty"`
 }

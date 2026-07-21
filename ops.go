@@ -100,4 +100,24 @@ const (
 	// on the config exactly when it cannot load), never a raw-byte bootstrap transform. Bootstrap
 	// plugins are COMPILED-IN (in-proc), so this hook never re-enters the validated-config load.
 	OpBootstrap = "bootstrap"
+
+	// OpEphemeralRegister / OpEphemeralTeardown are the command:bundle EPHEMERAL-LIFECYCLE
+	// selectors (FINAL/K5 unit 6a): the host Invokes these as the first action of an ephemeral
+	// deploy's Add and the last action of its Del, mirroring OpCompile's host→plugin dispatch
+	// shape (a generic action selector, never a provider word — F11).
+	OpEphemeralRegister = "ephemeral-register"
+	OpEphemeralTeardown = "ephemeral-teardown"
+
+	// EphemeralPanicMarker prefixes an error the command:bundle plugin converts from a
+	// RECOVERED PANIC inside OpEphemeralRegister/OpEphemeralTeardown (RCA #5, FINAL/K5 unit 6a —
+	// a nil-map write panic in persistEphemeralRuntime was previously UNRECOVERED and vanished
+	// silently: the deploy still reported PASS). A STRING marker (not a typed Go error) because
+	// this classification must survive the Provider.Invoke wire boundary dual-placement demands
+	// stay portable — command:bundle is compiled-in TODAY, but the SAME code must behave
+	// identically if ever served out-of-process, where only a string error crosses gRPC. The
+	// host-side caller (charly's registerEphemeralIfMarked) checks for this marker to distinguish
+	// a PANIC (a genuine bug — must FAIL the whole deploy Add, never silently continue) from an
+	// ORDINARY registration error (e.g. systemd-run missing — an expected condition that stays a
+	// soft, logged warning, unchanged).
+	EphemeralPanicMarker = "ephemeral op panic:"
 )

@@ -356,3 +356,69 @@ func TestFindBundleNode(t *testing.T) {
 		t.Errorf("FindBundleNode(nil bundle) = %v; want nil", got)
 	}
 }
+
+// TestFindVmDeployNode_AmbiguousFallbackErrors covers RCA #14 (FINAL/K5 unit
+// 6a): the step-3 fallback scan (matching by vm entity when the caller's name
+// doesn't key a top-level entry directly) must ERROR on 2+ candidates, never
+// first-win — proven live to silently return a DIFFERENT (unrelated) deploy's
+// node across separate process runs, because Go randomizes map iteration
+// order per process. Steps 1-2 (exact key match) stay unambiguous by
+// construction and must never error.
+func TestFindVmDeployNode_AmbiguousFallbackErrors(t *testing.T) {
+	deploys := map[string]BundleNode{
+		// Two independent top-level vm deploys sharing one base entity —
+		// the check-substrate / check-builder-vm shape (both real top-level
+		// vm deploys, both `from: eval-vm`).
+		"check-substrate":  {Target: "vm", From: "eval-vm", Plan: []spec.Step{{Check: "substrate step"}}},
+		"check-builder-vm": {Target: "vm", From: "eval-vm", Plan: []spec.Step{{Check: "builder step"}}},
+		"unrelated-vm":     {Target: "vm", From: "other-base"},
+		"unrelated-non-vm": {Target: "pod"},
+	}
+
+	t.Run("ambiguous fallback (2+ From matches) errors, never first-wins", func(t *testing.T) {
+		_, ok, err := FindVmDeployNode(deploys, "some-caller-name", "eval-vm")
+		if err == nil {
+			t.Fatal("FindVmDeployNode with 2 same-base candidates: err = nil, want an ambiguity error")
+		}
+		if ok {
+			t.Error("FindVmDeployNode with 2 same-base candidates: ok = true, want false alongside the error")
+		}
+	})
+
+	t.Run("unique fallback match still succeeds", func(t *testing.T) {
+		node, ok, err := FindVmDeployNode(deploys, "some-caller-name", "other-base")
+		if err != nil {
+			t.Fatalf("FindVmDeployNode with 1 candidate: unexpected error %v", err)
+		}
+		if !ok || node.From != "other-base" {
+			t.Errorf("FindVmDeployNode with 1 candidate = (%+v, %v), want the unrelated-vm entry", node, ok)
+		}
+	})
+
+	t.Run("exact key match (step 1) never triggers ambiguity even with same-base siblings present", func(t *testing.T) {
+		node, ok, err := FindVmDeployNode(deploys, "check-substrate", "eval-vm")
+		if err != nil {
+			t.Fatalf("FindVmDeployNode exact-key match: unexpected error %v", err)
+		}
+		if !ok || node.From != "eval-vm" || len(node.Plan) != 1 || node.Plan[0].Check != "substrate step" {
+			t.Errorf("FindVmDeployNode exact-key match = (%+v, %v), want check-substrate's own entry", node, ok)
+		}
+	})
+
+	t.Run("no match at all is not an error", func(t *testing.T) {
+		_, ok, err := FindVmDeployNode(deploys, "nonexistent", "nonexistent-base")
+		if err != nil {
+			t.Fatalf("FindVmDeployNode no-match: unexpected error %v", err)
+		}
+		if ok {
+			t.Error("FindVmDeployNode no-match: ok = true, want false")
+		}
+	})
+
+	t.Run("nil deploys map is not an error", func(t *testing.T) {
+		_, ok, err := FindVmDeployNode(nil, "anything", "anything")
+		if err != nil || ok {
+			t.Errorf("FindVmDeployNode(nil) = (ok=%v, err=%v), want (false, nil)", ok, err)
+		}
+	})
+}
