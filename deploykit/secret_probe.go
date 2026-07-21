@@ -15,15 +15,18 @@ import (
 )
 
 // secret_probe.go — the podman-secret + credential-key leaf helpers relocated from
-// charly/secrets.go (Cutover B unit 2). These are genuinely portable (no provider-registry or
+// charly/secrets.go (Cutover B unit 2, wired in the Cutover B-1 fix round after a
+// pr-validator FAIL caught the first pass leaving these duplicated in-file with the
+// old copies still live). These are genuinely portable (no provider-registry or
 // credential-store coupling — pure token generation, exec.Command wrappers over `podman secret`,
-// and slice/map bookkeeping), so they move here rather than staying behind a HostBuild seam. What
+// and slice/map bookkeeping), so they live here rather than behind a HostBuild seam. What
 // does NOT move (charly/secrets.go, STILL core): ProvisionPodmanSecrets/resolveSecretValue/
 // CollectCandySecretAccepts/resolveHookSecretEnv/generateAndStoreSecret — each calls
 // ResolveCredential/DefaultCredentialStore directly or transitively (the core provider registry),
 // registered FINAL/K5 inventory alongside enc.go's credential family. Those core functions now
 // call this package's leaves (deploykit.PodmanSecretExists, deploykit.PromptPassword, etc.)
-// instead of their own former in-file copies.
+// instead of their own former in-file copies — verified: zero occurrences of the old
+// unexported names remain in charly/secrets.go (R5 grep self-test).
 
 // GenerateRandomSecretToken returns `byteCount` random bytes encoded as
 // url-safe base64 (RFC 4648 §5). For byteCount=32 this produces a 44-char
