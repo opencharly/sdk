@@ -9,7 +9,6 @@ package vmshared
 
 // Re-exported functions.
 var (
-	AllDigits                = allDigits
 	BoolPtrDefaultTrue       = boolPtrDefaultTrue
 	BoolPtrToYesNo           = boolPtrToYesNo
 	BoolPtrTrue              = boolPtrTrue

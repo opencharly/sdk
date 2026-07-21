@@ -1,24 +1,20 @@
 package kit
 
-// refs_downloader.go — the swappable remote-repo FETCH BACKEND seam (P7). The host dispatches every
-// cache-miss download through a RefsDownloader; the DEFAULT (candy/plugin-refs, delegating to
-// DownloadRepo below) fetches via git, and an alternative refs plugin can serve a different backend
-// (OCI/S3-hosted candies) by registering a different RefsDownloader — the "alternative ref backends"
-// unlock. This mirrors the loader's DocParser seam (sdk/loaderkit): a typed interface a compiled-in
-// plugin implements alongside its provider, so the host calls it in-proc with no wire envelope.
-//
-// Only the DOWNLOAD is pluggable; the host keeps the fetch ORCHESTRATION (local-override resolution,
-// cache-hit short-circuit, and the post-fetch schema auto-migration), because those compose core-only
-// concerns (the command:migrate invoke, the superproject-identity override) — the boundary is the
-// backend that turns a (repoPath, version) into a populated local cache tree.
-type RefsDownloader interface {
-	// Download fetches repoPath@version into the local repo cache and returns the cache path.
-	// Called only on a cache MISS (the host checks IsRepoCached first).
-	Download(repoPath, version string) (string, error)
-}
+import "github.com/opencharly/sdk/spec"
+
+// refs_downloader.go — the swappable remote-repo FETCH BACKEND seam (P7). The interface itself
+// relocated to sdk/spec (FLOOR-SLIM axis-A mechanical batch, alongside DocParser/ProjectWalker/
+// CandyScanner) so charly core's plugin_inproc.go can type-assert against it without importing
+// kit; aliased here so every existing kit.RefsDownloader reference (candy/plugin-refs,
+// charly/refs_threaded.go) keeps compiling unchanged. Only the DOWNLOAD is pluggable; the host
+// keeps the fetch ORCHESTRATION (local-override resolution, cache-hit short-circuit, and the
+// post-fetch schema auto-migration) — the boundary is the backend that turns a (repoPath, version)
+// into a populated local cache tree.
+type RefsDownloader = spec.RefsDownloader
 
 // DefaultDownloader is the built-in git fetch backend — it delegates to DownloadRepo (git clone into
-// the cache). The host uses it until a refs plugin registers a different RefsDownloader.
+// the cache). The host uses it until a refs plugin registers a different RefsDownloader. Stays in
+// kit (real git-clone I/O, not a pure seam contract).
 type DefaultDownloader struct{}
 
 // Download implements RefsDownloader via the git DownloadRepo primitive.
