@@ -75,7 +75,7 @@ func ResolveBox(cfg *spec.Config, name string, calverTag string, dir string, opt
 	}
 
 	resolved := &ResolvedBox{
-		Name: name,
+		Name:    name,
 		Version: img.Version,
 		// boxes author no status; the effective rung (worst-of-candy-chain) is computed at
 		// generate time for the ai.opencharly.status label. resolveStatus("") always returned

@@ -20,8 +20,12 @@ func TestRunWithEventually_RetriesKilledProbe(t *testing.T) {
 	killed := func() CheckResult {
 		return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Message: "probe failed: process " + SignalKillErrMarker + " (signal: killed)"}}
 	}
-	pass := func() CheckResult { return CheckResult{CheckResult: spec.CheckResult{Status: StatusPass, Message: "ok"}} }
-	ranAndFailed := func() CheckResult { return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Message: "exists=false, want true"}} }
+	pass := func() CheckResult {
+		return CheckResult{CheckResult: spec.CheckResult{Status: StatusPass, Message: "ok"}}
+	}
+	ranAndFailed := func() CheckResult {
+		return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Message: "exists=false, want true"}}
+	}
 
 	t.Run("killed-then-pass retries and passes", func(t *testing.T) {
 		calls := 0
