@@ -1,8 +1,6 @@
 package kit
 
 import (
-	"time"
-
 	"github.com/opencharly/sdk/spec"
 )
 
@@ -16,28 +14,33 @@ import (
 // (retry loop): Attempts=1 + TotalElapsed==Elapsed for a check that ran exactly once.
 // Reporters surface these when Attempts>1 so slow startup paths are visible ("PASS in 5
 // attempts over 12.3s").
+//
+// FLOOR-SLIM Unit 4 — the wire-envelope split: every field above is now spec.CheckResult
+// (CUE-sourced, sdk/schema/checkresult.cue), EMBEDDED here. The ONE exception is
+// DeadlineExceeded (below) — the spike-proven (P12) exception the wire mandate's own
+// documented exception path authorizes: `json:"-"` (keep-in-Go, drop-from-wire) has no
+// gengotypes construct. charly core's registry-coupled floor files (provider.go,
+// provider_verb.go, verb_builtins.go, unified_targets.go, provider_checkenv.go) reference
+// spec.CheckResult DIRECTLY (they never touch DeadlineExceeded) — zero new sdk/kit import.
+// Field-promotion means every existing `.Status`/`.Op`/`.Verb`/`.Message`/`.Elapsed`/
+// `.Attempts`/`.TotalElapsed`/`.CapturedValue` selector expression compiles UNCHANGED; only a
+// composite LITERAL naming one of those fields must nest it under the embedded field name
+// (`CheckResult{CheckResult: spec.CheckResult{Status: ...}, ...}`) — Go does not promote
+// embedded-struct field names into a literal key position.
+//
+// The wire keys are deliberately snake_case now (op/verb/status/message/elapsed/…), a
+// documented breaking change to `--format json`/TAP output — see sdk/schema/checkresult.cue
+// and CHANGELOG for the old→new key mapping.
 type CheckResult struct {
-	Op           *spec.Op
-	Verb         string
-	Status       Status
-	Message      string
-	Elapsed      time.Duration
-	Attempts     int           `json:"attempts,omitempty"`
-	TotalElapsed time.Duration `json:"total_elapsed,omitempty"`
+	spec.CheckResult
 
 	// DeadlineExceeded marks a result whose probe was killed by hitting its OWN
 	// per-attempt deadline (probeNeverHang), NOT an external infra interruption. The
 	// group-kill in runCaptureCmd surfaces the deadline SIGKILL as a signal-kill, so
 	// without this flag the killed-probe retry (probeWasKilled) would futilely re-run a
 	// probe that will only re-hang and re-hit the same deadline. An authoritative
-	// "too slow" failure — never retried.
+	// "too slow" failure — never retried. NEVER crosses the wire (see above).
 	DeadlineExceeded bool `json:"-"`
-
-	// CapturedValue is the value stashed under `capture:` for consumption by downstream
-	// steps in the same plan run. Empty when Capture was unset or the check did not pass
-	// (captures are recorded only on final PASS — failing `eventually:` attempts don't
-	// pollute).
-	CapturedValue string `json:"captured_value,omitempty"`
 }
 
 // StepResult is one plan step's outcome — the step's identity (keyword/text/origin/id) plus

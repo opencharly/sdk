@@ -838,7 +838,7 @@ type LifecyclePrepareInput struct {
 	Entity         string         `json:"entity"`                // the kind:vm ENTITY = disk/spec source (node.From-resolved)
 	VM             *ResolvedVm    `json:"vm,omitempty"`          // the resolved vm value envelope (uf.VM[entity] via the plugin)
 	SSHUser        string         `json:"ssh_user"`              // resolveVmSshUser(spec)
-	SSHPort        int            `json:"ssh_port"`              // resolveVmSshPort(spec, domainIdentity) — per-deploy auto-alloc + persisted-port idempotency
+	SSHPort        int            `json:"ssh_port"`              // deploykit.ResolveVmSshPort(spec, domainIdentity) — per-deploy auto-alloc + persisted-port idempotency
 	Alias          string         `json:"alias"`                 // VmSshAlias(domainIdentity) = charly-<deploy>
 	SSHKeyPath     string         `json:"ssh_key_path"`          // <stateDir>/id_ed25519
 	KnownHostsPath string         `json:"known_hosts_path"`      // <stateDir>/known_hosts
