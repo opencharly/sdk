@@ -239,7 +239,17 @@ func composeUsers(spec *VmSpec, ci *VmCloudInit, rt CloudInitRuntimeParams) []an
 //  3. Source-kind fallback ("root" for bootc, "arch" for cloud_image —
 //     the latter works for Arch cloud images out of the box; for
 //     other distros users MUST set base_user or ssh.user explicitly)
+//
+// RCA #13 (FINAL/K5 unit 6a): a check command must never SIGSEGV on any
+// input — nil spec (an unresolved vm entity, e.g. an upstream entity-
+// resolution bug) now returns "" instead of dereferencing spec.SSH. Exported
+// via the ResolveCloudInitSSHUser var-alias (exports.go) consumed by three
+// charly call sites (bundle_add_cmd.go, check_cmd.go, vm_lifecycle_preresolve.go)
+// — one guard covers all three (R3).
 func resolveCloudInitSSHUser(spec *VmSpec) string {
+	if spec == nil {
+		return ""
+	}
 	if spec.SSH != nil && spec.SSH.User != "" {
 		return spec.SSH.User
 	}

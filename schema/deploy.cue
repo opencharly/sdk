@@ -217,7 +217,7 @@
 // record — which makes gengotypes degrade the whole def to `map[string]any`.
 // The hand Go field is a CONCRETE *VmDeployState struct (with its own nested
 // state sub-types), so @go(-) suppresses the lossy map type and the faithful
-// VmDeployState is hand-written in spec/union_types.go (the field references it
+// VmDeployState is hand-written in spec/hand_state_types.go (the field references it
 // via @go(VmState,type=*VmDeployState)). Runtime ingress validation still uses
 // this open #VmDeployState — @go(-) only affects the generated Go type.
 #VmDeployState: {
@@ -234,6 +234,30 @@
 	// allocation is reused across the vm-create → deploy-add sequence — the
 	// sibling of ssh_port. Validation-only (the Go type is hand-mirrored, @go(-)).
 	port_forwards?: {[string]: int}
+	// ephemeral persists the FINAL/K5 unit 6a cross-substrate ephemeral-instance lifecycle
+	// state (candy/plugin-bundle/ephemeral.go's RegisterEphemeralLifecycle /
+	// persistEphemeralRuntime) — machine-written, so EVERY field is optional to tolerate
+	// legacy/partial entries (an ephemeral registered before a field existed, or interrupted
+	// mid-write never has a required-field gap to violate). Mirrors spec.EphemeralRuntime
+	// (sdk/spec/hand_state_types.go) field-for-field. Validation-only (the Go type is
+	// hand-mirrored, @go(-), matching #VmDeployState's own @go(-) at the top level).
+	ephemeral?: {
+		id?:               string
+		parent_vm?:        string
+		parent_snapshot?:  string
+		parent_ephemeral?: string
+		child_refcount?:   int
+		timer_unit?:       string
+		ttl_deadline?:     string
+		status?:           string
+		instance_name?:    string
+		// deploy_address is the CLI-addressable deploy identity (the dotted tree path for a
+		// nested deploy — `charly bundle del <deploy_address>`), DISTINCT from the dc.Bundle
+		// map key this entry is stored under (a dot-sanitized "vm:<domain-id>" form — see
+		// charly/unified.go's validateDeploymentName + sdk/vmshared.VmDomainIdentity). RCA #2,
+		// FINAL/K5 unit 6a.
+		deploy_address?: string
+	}
 	...
 } @go(-)
 

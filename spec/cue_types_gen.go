@@ -3840,6 +3840,118 @@ type DeployConfigSaveRequest struct {
 type DeployConfigSaveReply struct {
 }
 
+// #AndroidEntityResolution is the kind="android" payload carried OPAQUELY inside
+// #DeployEntityResolveReply.entity (unit 6a): the resolved kind:android #ResolvedAndroid spec
+// (ResolvedAndroid itself is pre-existing hand-written sdk/spec wire debt, substrate_template_wire.go
+// — not converted by this seam) PLUS the google-play credentials, resolved host-side (the
+// credential STORE touch — DefaultCredentialStore — is core-only; the plugin never calls it
+// directly, matching every other cutover's InvokeProvider-adjacent credential deferral). Its own
+// shape IS CUE-sourced (not hand-written) even though the spec field it carries opaquely is not.
+type AndroidEntityResolution struct {
+	SpecJSON RawBody `yaml:"spec,omitempty" json:"spec,omitempty"`
+
+	GoogleEmail string `yaml:"google_email,omitempty" json:"google_email,omitempty"`
+
+	GoogleToken string `yaml:"google_token,omitempty" json:"google_token,omitempty"`
+}
+
+// #EphemeralRegisterRequest/#EphemeralRegisterReply — the host→command:bundle OpEphemeralRegister
+// leg (FINAL/K5 unit 6a): ephemeral_lifecycle.go's cross-substrate ephemeral-instance registration
+// (systemd TTL transient timer + parent-detection + charly.yml persistence) moved to
+// candy/plugin-bundle, the substrate-neutral deploy-lifecycle owner (vm/pod/k8s all register
+// through it via deploy_add_shared.go's registerEphemeralIfMarked, which STAYS host-side —
+// candidate-floor sibling of bundle_add_cmd.go — and Invokes this as the FIRST action of every
+// Add). Registration failure is best-effort (logged plugin-side, never fatal to the deploy) —
+// the reply is empty; the host discards the returned handle (the prior in-core contract already
+// did, registerEphemeralIfMarked only checked the error).
+type EphemeralRegisterRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node"`
+}
+
+type EphemeralRegisterReply struct {
+}
+
+// #DeployEntityResolveRequest/#DeployEntityResolveReply — the F6-family GENERIC host-side
+// entity-lookup seam (unit 6a, extended for unit 6b's k3s_post/vm_backend_lifecycle consumers): a
+// substrate PRERESOLVE body (k8s/vm/android, F6) OR a peer consumer resolving a cross-reference
+// (k3s_post's deployVMForwards, vm_backend_lifecycle's vmConfiguredBackend) needs a
+// LoadUnified-coupled lookup a plugin cannot do itself — EITHER (a) its own deploy-tree node by
+// name (the Update-path re-resolve every preresolver does when node==nil, OR a bundle-key
+// cross-reference's From-field hop — today: resolveTreeRoot) or (b) a referenced kind:<word>
+// entity (k8s/android/vm) by name, returned as the WHOLE RESOLVED envelope so a caller just reads
+// its fields (Backend, Network.PortForwards, …) without tracing the resolver's own portability
+// (today: findK8sSpec / findAndroidSpec / a direct uf.VM[name] lookup + resolveVmViaPlugin). ONE
+// discriminated request replaces five per-purpose kinds: `kind` is DATA the host body dispatches
+// on internally (clause-D) — never a compiled-in per-KIND HostBuild registration, so a new
+// consumer needs no new wire shape, only a new `case` in the host handler (or reuse of an
+// existing one — "bundle" and "deploy" share ONE case, both a deploy-tree node lookup by name).
+// `entity` carries the kind-specific result OPAQUELY (ResolvedK8s/ResolvedAndroid/the vm entity
+// are still hand-written sdk/spec wire types with no CUE def today — substrate_template_wire.go /
+// vm_wire.go, pre-existing SDD debt this seam does not attempt to convert) — the caller already
+// knows which kind it asked for and decodes accordingly, mirroring the DeployCompileReply /
+// DeployConfigSaveRequest RawBody idiom used throughout this file for the same reason.
+type DeployEntityResolveRequest struct {
+	Kind string `yaml:"kind,omitempty" json:"kind"`
+
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+}
+
+type DeployEntityResolveReply struct {
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	EntityJSON RawBody `yaml:"entity,omitempty" json:"entity,omitempty"`
+}
+
+// #EphemeralTeardownRequest/#EphemeralTeardownReply — the host→command:bundle
+// OpEphemeralTeardown leg: TeardownEphemeralLifecycle's LAST-action-of-Del counterpart
+// (recursive nested-child teardown, TTL timer cancel, snapshot/parent refcount decrement,
+// charly.yml cleanup), called from every substrate's post-teardown hook (today:
+// vm_lifecycle_preresolve.go's vmLifecyclePostTeardown).
+type EphemeralTeardownRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node"`
+}
+
+type EphemeralTeardownReply struct {
+}
+
+// #K8sGenerateKustomizeRequest/#K8sGenerateKustomizeReply — the "k8s-generate-kustomize"
+// HostBuild seam (FINAL/K5 unit 6a): the deploy:k8s preresolve body (now plugin-side,
+// candy/plugin-kube/preresolve.go) resolves the cluster template (via
+// "deploy-entity-resolve", kind="k8s") + the image ref + capabilities itself (all
+// sdk-portable — kit.ResolveLocalImageRef / deploykit.ExtractMetadata, no LoadUnified
+// needed), then calls back HERE for the ONE genuinely core-only step:
+// charly/k8s_generate.go's GenerateK8sKustomize (Invokes the compiled-in verb:k8sgen
+// generator + the M16 egress gate + the disk I/O — all core-only glue, unchanged,
+// STAYS in charly/ since `charly bundle from-box --target k8s`
+// (k8s_deploy_from_box.go) is its OTHER, non-moving caller). Cluster/Capabilities ride
+// opaque (the established RawBody idiom this file uses throughout for hand-written
+// sdk/deploykit types with no CUE def — e.g. #PodConfigHookSecretEnvRequest.MetaJSON).
+type K8sGenerateKustomizeRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node"`
+
+	CapsJSON RawBody `yaml:"caps,omitempty" json:"caps"`
+
+	ClusterJSON RawBody `yaml:"cluster,omitempty" json:"cluster"`
+
+	OutputDir string `yaml:"output_dir,omitempty" json:"output_dir,omitempty"`
+}
+
+type K8sGenerateKustomizeReply struct {
+	OverlayPath string `yaml:"overlay_path,omitempty" json:"overlay_path"`
+
+	TreeRoot string `yaml:"tree_root,omitempty" json:"tree_root"`
+}
+
 // #PodConfigWriteRequest carries the POD config-WRITE (P11). Under Ruling C the config-WRITE
 // (the quadlet/.pod/sidecar/tunnel file generation) moved to the deploy:pod plugin, while the
 // RESOLVE + host side-effects (secret provisioning, saveDeployState, enc-mount, data-seed,
