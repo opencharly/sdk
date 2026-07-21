@@ -2436,6 +2436,71 @@ type CheckResult struct {
 	CapturedValue string `yaml:"captured_value,omitempty" json:"captured_value,omitempty"`
 }
 
+// #RetentionRequest is the "retention" HostBuild kind request: the plugin asks the
+// host to run the shared prune engine host-side (the engine needs the core image
+// inventory + label parsing that stays in core). dir is the project directory
+// (os.Getwd() in the plugin) — always present, never empty. keep=0 means "use the
+// resolved defaults"; invalidate (non-empty) runs ONLY the targeted image-tag
+// invalidation. deep runs the store-wide untagged/dangling-image purge category
+// (`charly clean --deep`) — unlike images (which only ever touches charly-labeled
+// tags/dangling ids), deep removes EVERY untagged image in local storage, including
+// unlabeled multi-stage build intermediates images can never see.
+type RetentionRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+
+	Images bool `yaml:"images,omitempty" json:"images,omitempty"`
+
+	Check bool `yaml:"check,omitempty" json:"check,omitempty"`
+
+	Deep bool `yaml:"deep,omitempty" json:"deep,omitempty"`
+
+	Keep int `yaml:"keep,omitempty" json:"keep,omitempty"`
+
+	Invalidate string `yaml:"invalidate,omitempty" json:"invalidate,omitempty"`
+}
+
+// #RetentionReply is the "retention" HostBuild kind reply: the removed (or
+// would-remove, under dry_run) image refs, build-candy dirs, and check-run paths,
+// plus the effective retention counts, for the plugin to present.
+//
+// deep_ids/deep_bytes report the store-wide untagged-image purge (deep): the removed
+// (or would-remove) image IDs and the sum of their reported storage Size in bytes.
+// deep_bytes is an UPPER BOUND, not a prediction of actual freed disk: each image's
+// reported Size counts every layer it references, and many of those layers are
+// SHARED with images that remain (retained tags, or other still-referenced dangling
+// images) — RDD-verified live on a real host, where a --deep purge removing 68
+// untagged images (3,552 -> 3,484) reported ~92.6 GiB via this sum but only ~4.6 GiB
+// of disk was actually freed (132.6 GB -> 128 GB), because most layer bytes stayed
+// shared with the ~3,400 remaining (largely stale-tagged) images. `charly clean
+// --deep --dry-run` presents deep_bytes as "up to" for exactly this reason; pairing
+// --deep with --invalidate (removing stale TAGS too, so their exclusively-held
+// layers also become unreferenced) gets closer to the reported figure.
+//
+// error is a human-facing message on a non-recoverable failure.
+type RetentionReply struct {
+	ImageRefs []string `yaml:"image_refs,omitempty" json:"image_refs,omitempty"`
+
+	DanglingIDs []string `yaml:"dangling_ids,omitempty" json:"dangling_ids,omitempty"`
+
+	StagingDirs []string `yaml:"staging_dirs,omitempty" json:"staging_dirs,omitempty"`
+
+	BuildDirs []string `yaml:"build_dirs,omitempty" json:"build_dirs,omitempty"`
+
+	CheckPaths []string `yaml:"check_paths,omitempty" json:"check_paths,omitempty"`
+
+	DeepIDs []string `yaml:"deep_ids,omitempty" json:"deep_ids,omitempty"`
+
+	DeepBytes int64 `yaml:"deep_bytes,omitempty" json:"deep_bytes,omitempty"`
+
+	KeepImages int `yaml:"keep_images,omitempty" json:"keep_images,omitempty"`
+
+	KeepCheckRuns int `yaml:"keep_check_runs,omitempty" json:"keep_check_runs,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
 // CLI reflection is a wire contract between command plugins, the Charly host,
 // and MCP. It is CUE-owned like every other authored or transported shape.
 type CLIArg struct {
