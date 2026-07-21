@@ -59,6 +59,22 @@ func (s Scope) String() string {
 	return "unknown"
 }
 
+// ScopeFromName parses a StepContract's authored scope NAME (the Describe-carried
+// "user"/"user-profile" string; anything else, including empty, defaults to
+// ScopeSystem) into a Scope. Relocated from sdk/deploykit/plan.go (FLOOR-SLIM
+// axis-A mechanical batch) — its sole caller, charly/plugin_provider_common.go,
+// needed nothing else from deploykit and now imports spec only.
+func ScopeFromName(name string) Scope {
+	switch name {
+	case "user":
+		return ScopeUser
+	case "user-profile":
+		return ScopeUserProfile
+	default:
+		return ScopeSystem
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ReverseOp — what the ledger records to un-do a step at teardown time.
 // ---------------------------------------------------------------------------

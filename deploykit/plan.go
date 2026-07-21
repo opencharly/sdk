@@ -10,16 +10,9 @@ import (
 // HomeToken is the deferred-home placeholder resolved by ResolveHome at emit time.
 const HomeToken = "{{.Home}}"
 
-func ScopeFromName(name string) Scope {
-	switch name {
-	case "user":
-		return ScopeUser
-	case "user-profile":
-		return ScopeUserProfile
-	default:
-		return ScopeSystem
-	}
-}
+// ScopeFromName moved to sdk/spec (FLOOR-SLIM axis-A mechanical batch) — its
+// sole caller (charly/plugin_provider_common.go) needed nothing else from
+// deploykit. Use spec.ScopeFromName.
 
 // WireView projects the rich in-core spec.InstallPlan onto the JSON-roundtrippable
 // spec.InstallPlanView the host marshals into an external deploy/step provider's
