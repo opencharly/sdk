@@ -41,14 +41,19 @@ type StepGrader interface {
 // provider registry. The core impl resolves the op's verb word and runs it (in-proc
 // CheckVerbProvider fast path or out-of-process Invoke envelope), threading the live host
 // CheckContext it owns; the walk never sees a provider type or the registry.
+// VerbResolver's methods return spec.CheckResult (not the richer kit.CheckResult) — FLOOR-SLIM
+// Unit 4: the host-side implementer (charly's hostVerbResolver) dispatches through the
+// core-only provider registry down to package-main's own CheckVerbProvider family, which never
+// sets DeadlineExceeded (an engine-internal retry signal kit's OWN dispatch loop, below, stamps
+// AFTER the verb call returns) — so the interface boundary needs only the wire-portable base.
 type VerbResolver interface {
 	// RunVerb resolves op's verb word and runs it, returning (result, true). (_, false)
 	// means no such verb is registered — the walk reports the op as an unknown-verb skip.
-	RunVerb(ctx context.Context, op *spec.Op) (CheckResult, bool)
+	RunVerb(ctx context.Context, op *spec.Op) (spec.CheckResult, bool)
 	// RunProvisionAct runs a do:act state-provision verb's act (create/configure) and
 	// returns (result, true). (_, false) means the verb has no act path — the walk falls
 	// through to the assert dispatch (the handler IS the act for action verbs).
-	RunProvisionAct(ctx context.Context, op *spec.Op, verb string) (CheckResult, bool)
+	RunProvisionAct(ctx context.Context, op *spec.Op, verb string) (spec.CheckResult, bool)
 }
 
 // PlanContext is the host-driver surface the plan walk consumes. The core *Runner implements
@@ -119,7 +124,7 @@ type flatStep struct {
 func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 	start := time.Now()
 	kind, err := c.Kind()
-	result := CheckResult{Op: c, Verb: kind}
+	result := CheckResult{CheckResult: spec.CheckResult{Op: c, Verb: kind}}
 	settle := func() CheckResult {
 		result.Elapsed = time.Since(start)
 		result.Attempts = 1
@@ -195,11 +200,11 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 		// through to the assert dispatch below (the handler IS the act).
 		if pc.EffectiveDo(&expanded) == spec.DoAct {
 			if act, ok := pc.Verbs().RunProvisionAct(ctx, &expanded, kind); ok {
-				return act
+				return CheckResult{CheckResult: act}
 			}
 		}
 		if vr, ok := pc.Verbs().RunVerb(ctx, &expanded); ok {
-			dr = vr
+			dr.CheckResult = vr
 		} else {
 			dr.Status = StatusSkip
 			dr.Message = fmt.Sprintf("unknown verb %q", kind)
@@ -276,13 +281,13 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 
 	// include: steps were spliced at collect time — a residual one is a no-op.
 	if step.IsInclude() {
-		sr.Result = CheckResult{Status: StatusSkip, Message: "include expanded at collect time"}
+		sr.Result = CheckResult{CheckResult: spec.CheckResult{Status: StatusSkip, Message: "include expanded at collect time"}}
 		return sr
 	}
 
 	// VerifyOnly: skip mutating steps (run:/agent-run:).
 	if pc.VerifyOnly() && step.Mutates() {
-		sr.Result = CheckResult{Status: StatusSkip, Message: "skipped — verify-only mode (mutating step)"}
+		sr.Result = CheckResult{CheckResult: spec.CheckResult{Status: StatusSkip, Message: "skipped — verify-only mode (mutating step)"}}
 		return sr
 	}
 
@@ -290,7 +295,7 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 	// (Mutates but not an agent step). The install ran at image-build; re-executing it against
 	// a built/deployed target is redundant and fails for build-context steps.
 	if pc.SkipDeterministicRun() && step.Mutates() && !step.IsAgent() {
-		sr.Result = CheckResult{Status: StatusSkip, Message: "skipped — run: install-timeline step (feature-run verifies, does not re-install)"}
+		sr.Result = CheckResult{CheckResult: spec.CheckResult{Status: StatusSkip, Message: "skipped — run: install-timeline step (feature-run verifies, does not re-install)"}}
 		return sr
 	}
 
@@ -311,7 +316,7 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 			status = StatusFail
 			msg = "agent step (no grader bound) — strict mode"
 		}
-		sr.Result = CheckResult{Status: status, Message: msg, Verb: "agent"}
+		sr.Result = CheckResult{CheckResult: spec.CheckResult{Status: status, Message: msg, Verb: "agent"}}
 		return sr
 	}
 

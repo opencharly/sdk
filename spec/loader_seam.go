@@ -99,6 +99,20 @@ type CandyScanner interface {
 	ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseManifest func(path string) (*Candy, error)) (map[string]ScannedCandy, error)
 }
 
+// RefsDownloader is the swappable remote-repo FETCH BACKEND seam (P7): the host dispatches every
+// cache-miss download through a RefsDownloader; the DEFAULT (candy/plugin-refs, delegating to
+// kit.DownloadRepo) fetches via git, and an alternative refs plugin can serve a different backend
+// (OCI/S3-hosted candies) by registering a different RefsDownloader. Mirrors DocParser/ProjectWalker/
+// CandyScanner above: a typed interface a compiled-in plugin implements alongside its provider, so
+// the host calls it in-proc with no wire envelope. Relocated from sdk/kit (FLOOR-SLIM axis-A
+// mechanical batch) — the interface contract itself is kind-blind and registry-decoupled; the
+// concrete git-fetch implementation (kit.DefaultDownloader, wrapping kit.DownloadRepo) stays in kit.
+type RefsDownloader interface {
+	// Download fetches repoPath@version into the local repo cache and returns the cache path.
+	// Called only on a cache MISS (the host checks IsRepoCached first).
+	Download(repoPath, version string) (string, error)
+}
+
 // CandyRefs carries the RICH require:/candy:/bake_plugin: refs (CandyRefEntry, with a mutable
 // .Resolved) a freshly scanned candy declares.
 //

@@ -317,3 +317,108 @@ func TestRemoveByExactSource(t *testing.T) {
 		t.Error("RemoveByExactSource(missing) reported removed; want false")
 	}
 }
+
+// TestFindBundleNode covers the whole-tree name search (Cutover B unit 5, P13-KERNEL-B —
+// moved from charly/k3s_post.go's findBundleNodeByName/findBundleNodePtrByName, which had
+// no dedicated test coverage in charly; this closes that gap at the new home). A node may
+// be found at the top level, nested under Children at any depth, or nested under Members
+// at any depth; a name present nowhere in the tree returns nil.
+func TestFindBundleNode(t *testing.T) {
+	leaf := &BundleNode{Image: "leaf-image"}
+	member := &BundleNode{Image: "member-image"}
+	child := &BundleNode{
+		Image:    "child-image",
+		Children: map[string]*BundleNode{"leaf": leaf},
+	}
+	root := BundleNode{
+		Image:    "root-image",
+		Children: map[string]*BundleNode{"child": child},
+		Members:  map[string]*BundleNode{"sidecar": member},
+	}
+	bundle := map[string]BundleNode{"stack": root}
+
+	if got := FindBundleNode(bundle, "stack"); got == nil || got.Image != "root-image" {
+		t.Errorf("FindBundleNode(stack) top-level = %v; want root-image", got)
+	}
+	if got := FindBundleNode(bundle, "child"); got != child {
+		t.Errorf("FindBundleNode(child) nested-Children = %v; want %v", got, child)
+	}
+	if got := FindBundleNode(bundle, "leaf"); got != leaf {
+		t.Errorf("FindBundleNode(leaf) nested-two-deep-Children = %v; want %v", got, leaf)
+	}
+	if got := FindBundleNode(bundle, "sidecar"); got != member {
+		t.Errorf("FindBundleNode(sidecar) nested-Members = %v; want %v", got, member)
+	}
+	if got := FindBundleNode(bundle, "nonexistent"); got != nil {
+		t.Errorf("FindBundleNode(nonexistent) = %v; want nil", got)
+	}
+	if got := FindBundleNode(nil, "anything"); got != nil {
+		t.Errorf("FindBundleNode(nil bundle) = %v; want nil", got)
+	}
+}
+
+// TestFindVmDeployNode_AmbiguousFallbackErrors covers RCA #14 (FINAL/K5 unit
+// 6a): the step-3 fallback scan (matching by vm entity when the caller's name
+// doesn't key a top-level entry directly) must ERROR on 2+ candidates, never
+// first-win — proven live to silently return a DIFFERENT (unrelated) deploy's
+// node across separate process runs, because Go randomizes map iteration
+// order per process. Steps 1-2 (exact key match) stay unambiguous by
+// construction and must never error.
+func TestFindVmDeployNode_AmbiguousFallbackErrors(t *testing.T) {
+	deploys := map[string]BundleNode{
+		// Two independent top-level vm deploys sharing one base entity —
+		// the check-substrate / check-builder-vm shape (both real top-level
+		// vm deploys, both `from: eval-vm`).
+		"check-substrate":  {Target: "vm", From: "eval-vm", Plan: []spec.Step{{Check: "substrate step"}}},
+		"check-builder-vm": {Target: "vm", From: "eval-vm", Plan: []spec.Step{{Check: "builder step"}}},
+		"unrelated-vm":     {Target: "vm", From: "other-base"},
+		"unrelated-non-vm": {Target: "pod"},
+	}
+
+	t.Run("ambiguous fallback (2+ From matches) errors, never first-wins", func(t *testing.T) {
+		_, ok, err := FindVmDeployNode(deploys, "some-caller-name", "eval-vm")
+		if err == nil {
+			t.Fatal("FindVmDeployNode with 2 same-base candidates: err = nil, want an ambiguity error")
+		}
+		if ok {
+			t.Error("FindVmDeployNode with 2 same-base candidates: ok = true, want false alongside the error")
+		}
+	})
+
+	t.Run("unique fallback match still succeeds", func(t *testing.T) {
+		node, ok, err := FindVmDeployNode(deploys, "some-caller-name", "other-base")
+		if err != nil {
+			t.Fatalf("FindVmDeployNode with 1 candidate: unexpected error %v", err)
+		}
+		if !ok || node.From != "other-base" {
+			t.Errorf("FindVmDeployNode with 1 candidate = (%+v, %v), want the unrelated-vm entry", node, ok)
+		}
+	})
+
+	t.Run("exact key match (step 1) never triggers ambiguity even with same-base siblings present", func(t *testing.T) {
+		node, ok, err := FindVmDeployNode(deploys, "check-substrate", "eval-vm")
+		if err != nil {
+			t.Fatalf("FindVmDeployNode exact-key match: unexpected error %v", err)
+		}
+		if !ok || node.From != "eval-vm" || len(node.Plan) != 1 || node.Plan[0].Check != "substrate step" {
+			t.Errorf("FindVmDeployNode exact-key match = (%+v, %v), want check-substrate's own entry", node, ok)
+		}
+	})
+
+	t.Run("no match at all is not an error", func(t *testing.T) {
+		_, ok, err := FindVmDeployNode(deploys, "nonexistent", "nonexistent-base")
+		if err != nil {
+			t.Fatalf("FindVmDeployNode no-match: unexpected error %v", err)
+		}
+		if ok {
+			t.Error("FindVmDeployNode no-match: ok = true, want false")
+		}
+	})
+
+	t.Run("nil deploys map is not an error", func(t *testing.T) {
+		_, ok, err := FindVmDeployNode(nil, "anything", "anything")
+		if err != nil || ok {
+			t.Errorf("FindVmDeployNode(nil) = (ok=%v, err=%v), want (false, nil)", ok, err)
+		}
+	})
+}

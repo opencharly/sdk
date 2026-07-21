@@ -2,6 +2,10 @@
 
 package spec
 
+import (
+	"time"
+)
+
 // #Op is the unified operation vocabulary (Go: charly/checkspec.go Op) AFTER
 // the parse-time desugar: the builtin install verbs + the genuinely SHARED step
 // modifiers + the internal plugin/plugin_input pair every plugin-verb sugar key
@@ -1910,8 +1914,8 @@ type CandyModel struct {
 	// candy whose only content is an external-builder selection (deploykit EmitExternalBuilderStages).
 	ExternalBuilder string `yaml:"external_builder,omitempty" json:"external_builder,omitempty"`
 
-	Libvirt []string `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
-
+	// (the candy-level `libvirt:` field was removed here alongside #Candy — see
+	// candy.cue's note; CollectLibvirtSnippets, its only reader, was already dead.)
 	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
 
 	PortRelayPorts []int `yaml:"port_relay,omitempty" json:"port_relay,omitempty"`
@@ -2084,6 +2088,14 @@ type CandyArtifact struct {
 	WaitSeconds int `yaml:"wait_second,omitempty" json:"wait_second,omitempty"`
 
 	Rewrite []CandyArtifactRewrite `yaml:"rewrite,omitempty" json:"rewrite,omitempty"`
+
+	// register: an optional NAME-BLIND post-retrieve processing hint (e.g. "kubeconfig") —
+	// what to do with the retrieved artifact beyond the generic retrieve/rewrite pipeline,
+	// dispatched by a host-side registry keyed on this word (retrieveArtifactsAndK3s /
+	// artifactRegisterHandlers). Replaces a hardcoded candy-NAME check
+	// (deployHasCandy(candyList, "k3s-server")) with a declaration the candy itself carries,
+	// so a future candy needing the same registration need not be named "k3s-server".
+	Register string `yaml:"register,omitempty" json:"register,omitempty"`
 }
 
 type CandyArtifactRewrite struct {
@@ -2285,10 +2297,13 @@ type Candy struct {
 
 	Data []CandyData `yaml:"data,omitempty" json:"data,omitempty"`
 
-	// --- security / libvirt / hooks ---
+	// --- security / hooks ---
+	// (the candy-level `libvirt:` raw-XML-snippet field was removed — zero live Go
+	// consumers, retired alongside the box-level libvirt hard-cutover; migrated
+	// away by candy/plugin-migrate's stripCandyLibvirtField. The paired `kind: vm`
+	// entity's OWN `libvirt: {...}` domain config, sdk/schema/vm.cue #Vm.libvirt,
+	// is unrelated and unaffected.)
 	Security *Security `yaml:"security,omitempty" json:"security,omitempty"`
-
-	Libvirt []string `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
 
 	Hook *CandyHook `yaml:"hook,omitempty" json:"hook,omitempty"`
 
@@ -2367,6 +2382,58 @@ type CandyRoute struct {
 	Host string `yaml:"host,omitempty" json:"host"`
 
 	Port int `yaml:"port,omitempty" json:"port"`
+}
+
+// CUE schema for the check-engine's per-step VERDICT envelope (FLOOR-SLIM Unit 4). NOT an
+// authoring kind (never in #Node/#Op) — a pure generated wire/render struct, single-sourced
+// here so `task cue:gen` produces the Go struct charly core's registry-coupled floor files
+// (provider.go/provider_verb.go/verb_builtins.go/unified_targets.go/provider_checkenv.go)
+// reference directly (spec.CheckResult), with zero new sdk/kit import.
+//
+// #CheckResult covers every field EXCEPT the engine-internal `DeadlineExceeded` retry
+// signal — the ONE spike-proven exception (P12, cited at sdk/kit/checkrun_seam.go and
+// sdk/schema/seam.cue): `DeadlineExceeded bool json:"-"` has no gengotypes construct (a
+// field that exists in memory but is excluded from marshaling). sdk/kit.CheckResult embeds
+// this generated type and adds ONLY that one hand-written field back.
+//
+// FLOOR-SLIM deliberately renames the wire keys to snake_case (Op→op, Verb→verb,
+// Status→status, Message→message, Elapsed→elapsed) — the former hand-written type carried
+// NO json tag on these fields, so encoding/json defaulted to the bare, inconsistent
+// PascalCase Go field name. This is a documented, deliberate breaking wire-format fix for
+// `--format json`/TAP consumers of `charly check box/live/run`, not an accident: it brings
+// CheckResult in line with every other CUE-sourced wire type's snake_case convention. Every
+// field that ALWAYS serialized before (op/verb/status/message/elapsed) stays REQUIRED (`!`)
+// here so gengotypes omits `omitempty` — an omitempty regression would silently drop
+// zero-valued fields from output, a SEPARATE wire change the rename must not introduce.
+// Every field that already carried `,omitempty` (attempts/total_elapsed/captured_value)
+// stays optional (`?`).
+//
+// Status is carried as a plain int (@go(Status,type=Status) — Status is the check-engine's
+// pass/fail/skip enum, HAND-WRITTEN in spec/status_result.go: gengotypes has no construct
+// for an iota-based enum + String() method, so CUE owns the wire VALUE SET (an int) and Go
+// owns the formatting behavior (String()), mirroring the #SubstrateKind split (status.cue) —
+// there the enum is string-backed and suppressed via @go(-); here it is int-backed and
+// referenced directly since there is no separate disjunction def to suppress.
+//
+// Elapsed / TotalElapsed carry a nanosecond count wire-typed as time.Duration
+// (@go(Elapsed,type=time.Duration)) — the RDD spike (T-P12, cited in /charly-internals:go)
+// proved a custom-scalar @go(,type=…) override generates faithfully.
+type CheckResult struct {
+	Op *Op `yaml:"op,omitempty" json:"op"`
+
+	Verb string `yaml:"verb,omitempty" json:"verb"`
+
+	Status Status `yaml:"status,omitempty" json:"status"`
+
+	Message string `yaml:"message,omitempty" json:"message"`
+
+	Elapsed time.Duration `yaml:"elapsed,omitempty" json:"elapsed"`
+
+	Attempts int `yaml:"attempts,omitempty" json:"attempts,omitempty"`
+
+	TotalElapsed time.Duration `yaml:"total_elapsed,omitempty" json:"total_elapsed,omitempty"`
+
+	CapturedValue string `yaml:"captured_value,omitempty" json:"captured_value,omitempty"`
 }
 
 // CLI reflection is a wire contract between command plugins, the Charly host,
@@ -3624,6 +3691,12 @@ type DeployNodeDispatchRequest struct {
 
 	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
 
+	// node_only mirrors `charly bundle add --node-only`: threaded onto the resolved
+	// *externalDeployTarget so its Add skips the substrate's PostApply (e.g. a vm's nested
+	// target:pod children) — the walk itself already dispatches only this ONE node either way,
+	// this flag additionally suppresses the SUBSTRATE's own post-apply fan-out.
+	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
+
 	Format string `yaml:"format,omitempty" json:"format,omitempty"`
 
 	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
@@ -3802,34 +3875,137 @@ type DeployFromBoxRequest struct {
 type DeployFromBoxReply struct {
 }
 
-// #DeployConfigRequest carries a `charly bundle` CONFIG-MANAGEMENT subcommand
-// (show/export/import/reset/status) — the per-host deploy-overlay read/write ops
-// that consult LoadUnified (a core Mechanism the plugin cannot import). Op selects
-// the subcommand; the remaining fields carry that subcommand's authored inputs. The
-// plugin forwards these to HostBuild("deploy-config"); the host runs the existing
-// handler VERBATIM, printing to the shared stdio. (`path` is NOT here — it resolves
-// via kit.DefaultDeployConfigPath entirely plugin-side, no seam.)
-type DeployConfigRequest struct {
-	Op string `yaml:"op,omitempty" json:"op"`
-
-	Box string `yaml:"box,omitempty" json:"box,omitempty"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	Boxes []string `yaml:"boxes,omitempty" json:"boxes,omitempty"`
-
-	Output string `yaml:"output,omitempty" json:"output,omitempty"`
-
-	All bool `yaml:"all,omitempty" json:"all,omitempty"`
-
-	Files []string `yaml:"files,omitempty" json:"files,omitempty"`
-
-	Replace bool `yaml:"replace,omitempty" json:"replace,omitempty"`
+// #DeployConfigSaveRequest is the K4-C narrow seam for saveBundleConfigNodeForm — the
+// `charly bundle import`/`reset` deploy-state WRITE step. command:bundle's show/export/status
+// leaves moved to the plugin outright (deploykit.LoadBundleConfig/ExportAllBox/ParseDeployKey
+// etc. are already sdk-portable, and export's project-load touch reuses the existing
+// HostBuild("resolved-project") seam) — only the SAVE step still needs a seam: its per-entry
+// marshal callback (marshalBundleNode, deploy_nodeform.go) resugars each plan step's internal
+// plugin/plugin_input pair back to the authored `<word>: <input>` sugar via the host-owned
+// pluginPrimaries registry (populated at compiled-in plugin init() + the byte-gated external
+// prescan) — a live, in-process registry a separate-module plugin cannot reach directly.
+// Config carries the marshalled deploykit.BundleConfig as an opaque RawBody envelope (a
+// hand-written sdk/deploykit type with no CUE def, matching the DeployCompileRequest
+// HostContextJSON idiom).
+type DeployConfigSaveRequest struct {
+	ConfigJSON RawBody `yaml:"config,omitempty" json:"config"`
 }
 
-// #DeployConfigReply is the "deploy-config" host-builder reply — empty (the handler
-// prints its output to the shared stdio, errors via the return).
-type DeployConfigReply struct {
+// #DeployConfigSaveReply is the "deploy-config-save" host-builder reply — empty (failure
+// surfaces via the RPC error itself).
+type DeployConfigSaveReply struct {
+}
+
+// #AndroidEntityResolution is the kind="android" payload carried OPAQUELY inside
+// #DeployEntityResolveReply.entity (unit 6a): the resolved kind:android #ResolvedAndroid spec
+// (ResolvedAndroid itself is pre-existing hand-written sdk/spec wire debt, substrate_template_wire.go
+// — not converted by this seam) PLUS the google-play credentials, resolved host-side (the
+// credential STORE touch — DefaultCredentialStore — is core-only; the plugin never calls it
+// directly, matching every other cutover's InvokeProvider-adjacent credential deferral). Its own
+// shape IS CUE-sourced (not hand-written) even though the spec field it carries opaquely is not.
+type AndroidEntityResolution struct {
+	SpecJSON RawBody `yaml:"spec,omitempty" json:"spec,omitempty"`
+
+	GoogleEmail string `yaml:"google_email,omitempty" json:"google_email,omitempty"`
+
+	GoogleToken string `yaml:"google_token,omitempty" json:"google_token,omitempty"`
+}
+
+// #EphemeralRegisterRequest/#EphemeralRegisterReply — the host→command:bundle OpEphemeralRegister
+// leg (FINAL/K5 unit 6a): ephemeral_lifecycle.go's cross-substrate ephemeral-instance registration
+// (systemd TTL transient timer + parent-detection + charly.yml persistence) moved to
+// candy/plugin-bundle, the substrate-neutral deploy-lifecycle owner (vm/pod/k8s all register
+// through it via deploy_add_shared.go's registerEphemeralIfMarked, which STAYS host-side —
+// candidate-floor sibling of bundle_add_cmd.go — and Invokes this as the FIRST action of every
+// Add). Registration failure is best-effort (logged plugin-side, never fatal to the deploy) —
+// the reply is empty; the host discards the returned handle (the prior in-core contract already
+// did, registerEphemeralIfMarked only checked the error).
+type EphemeralRegisterRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node"`
+}
+
+type EphemeralRegisterReply struct {
+}
+
+// #DeployEntityResolveRequest/#DeployEntityResolveReply — the F6-family GENERIC host-side
+// entity-lookup seam (unit 6a, extended for unit 6b's k3s_post/vm_backend_lifecycle consumers): a
+// substrate PRERESOLVE body (k8s/vm/android, F6) OR a peer consumer resolving a cross-reference
+// (k3s_post's deployVMForwards, vm_backend_lifecycle's vmConfiguredBackend) needs a
+// LoadUnified-coupled lookup a plugin cannot do itself — EITHER (a) its own deploy-tree node by
+// name (the Update-path re-resolve every preresolver does when node==nil, OR a bundle-key
+// cross-reference's From-field hop — today: resolveTreeRoot) or (b) a referenced kind:<word>
+// entity (k8s/android/vm) by name, returned as the WHOLE RESOLVED envelope so a caller just reads
+// its fields (Backend, Network.PortForwards, …) without tracing the resolver's own portability
+// (today: findK8sSpec / findAndroidSpec / a direct uf.VM[name] lookup + resolveVmViaPlugin). ONE
+// discriminated request replaces five per-purpose kinds: `kind` is DATA the host body dispatches
+// on internally (clause-D) — never a compiled-in per-KIND HostBuild registration, so a new
+// consumer needs no new wire shape, only a new `case` in the host handler (or reuse of an
+// existing one — "bundle" and "deploy" share ONE case, both a deploy-tree node lookup by name).
+// `entity` carries the kind-specific result OPAQUELY (ResolvedK8s/ResolvedAndroid/the vm entity
+// are still hand-written sdk/spec wire types with no CUE def today — substrate_template_wire.go /
+// vm_wire.go, pre-existing SDD debt this seam does not attempt to convert) — the caller already
+// knows which kind it asked for and decodes accordingly, mirroring the DeployCompileReply /
+// DeployConfigSaveRequest RawBody idiom used throughout this file for the same reason.
+type DeployEntityResolveRequest struct {
+	Kind string `yaml:"kind,omitempty" json:"kind"`
+
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+}
+
+type DeployEntityResolveReply struct {
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	EntityJSON RawBody `yaml:"entity,omitempty" json:"entity,omitempty"`
+}
+
+// #EphemeralTeardownRequest/#EphemeralTeardownReply — the host→command:bundle
+// OpEphemeralTeardown leg: TeardownEphemeralLifecycle's LAST-action-of-Del counterpart
+// (recursive nested-child teardown, TTL timer cancel, snapshot/parent refcount decrement,
+// charly.yml cleanup), called from every substrate's post-teardown hook (today:
+// vm_lifecycle_preresolve.go's vmLifecyclePostTeardown).
+type EphemeralTeardownRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node"`
+}
+
+type EphemeralTeardownReply struct {
+}
+
+// #K8sGenerateKustomizeRequest/#K8sGenerateKustomizeReply — the "k8s-generate-kustomize"
+// HostBuild seam (FINAL/K5 unit 6a): the deploy:k8s preresolve body (now plugin-side,
+// candy/plugin-kube/preresolve.go) resolves the cluster template (via
+// "deploy-entity-resolve", kind="k8s") + the image ref + capabilities itself (all
+// sdk-portable — kit.ResolveLocalImageRef / deploykit.ExtractMetadata, no LoadUnified
+// needed), then calls back HERE for the ONE genuinely core-only step:
+// charly/k8s_generate.go's GenerateK8sKustomize (Invokes the compiled-in verb:k8sgen
+// generator + the M16 egress gate + the disk I/O — all core-only glue, unchanged,
+// STAYS in charly/ since `charly bundle from-box --target k8s`
+// (k8s_deploy_from_box.go) is its OTHER, non-moving caller). Cluster/Capabilities ride
+// opaque (the established RawBody idiom this file uses throughout for hand-written
+// sdk/deploykit types with no CUE def — e.g. #PodConfigHookSecretEnvRequest.MetaJSON).
+type K8sGenerateKustomizeRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node"`
+
+	CapsJSON RawBody `yaml:"caps,omitempty" json:"caps"`
+
+	ClusterJSON RawBody `yaml:"cluster,omitempty" json:"cluster"`
+
+	OutputDir string `yaml:"output_dir,omitempty" json:"output_dir,omitempty"`
+}
+
+type K8sGenerateKustomizeReply struct {
+	OverlayPath string `yaml:"overlay_path,omitempty" json:"overlay_path"`
+
+	TreeRoot string `yaml:"tree_root,omitempty" json:"tree_root"`
 }
 
 // #PodConfigWriteRequest carries the POD config-WRITE (P11). Under Ruling C the config-WRITE
@@ -4077,11 +4253,17 @@ type PodLogsOpts struct {
 //
 // The REPLY is NOT a CUE wire type: it is kit.CheckRunReply (sdk/kit/checkrun_seam.go),
 // which carries []kit.StepResult verbatim so the plugin reuses the kit formatters
-// (FormatStepResults*) with byte-parity across every --format (json marshals the full
-// StepResult incl. *spec.Op). A live `cue exp gengotypes` spike proved kit.CheckResult
-// is genuinely inexpressible in CUE — its engine-internal `DeadlineExceeded bool
-// json:"-"` field has no gengotypes construct — so the reply rides with the engine's
-// hand-written result model in kit (the wire-mandate's spike-proven exception path).
+// (FormatStepResults*) with byte-parity across every --format. A live `cue exp
+// gengotypes` spike (P12) proved kit.CheckResult AS A WHOLE is genuinely inexpressible in
+// CUE — its engine-internal `DeadlineExceeded bool json:"-"` field has no gengotypes
+// construct — but confirmed the REST of the type (Op/Verb/Status/Message/Elapsed/
+// Attempts/TotalElapsed/CapturedValue) generates faithfully. FLOOR-SLIM Unit 4 acted on
+// that finding: #CheckResult (checkresult.cue) is the CUE-sourced base (→ spec.CheckResult),
+// and kit.CheckResult is now `struct { spec.CheckResult; DeadlineExceeded bool
+// json:"-" }` — an EMBEDDING wrapper, not a hand-duplicated type. So StepResult's JSON
+// output still rides kit's Go marshal (embedding flattens transparently), but the
+// exception the wire mandate's spike-proven path authorizes is now narrowed to EXACTLY
+// the one field that forced it, not the whole type.
 //
 // P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan the
 // host walks via RunCheckLive (NOT the OCI-baked plan the "live" mode extracts). Its per-step
@@ -4427,19 +4609,19 @@ type PodShellRequest struct {
 type PodShellReply struct {
 }
 
-// #PodServiceRequest carries the `charly service start/stop/status/restart` command flags (the
-// former ServiceStartCmd/ServiceStopCmd/ServiceStatusCmd/ServiceRestartCmd's authored fields,
-// unified behind ONE seam by an `operation` discriminator — all four leaves share the identical
-// resolveServiceInit + execInitCommand body, differing only in which init-management verb runs).
-// Forwarded to HostBuild("pod-service"), which runs the existing service orchestration VERBATIM.
+// #PodServiceRequest carries the FULLY plugin-resolved argv for `charly service
+// start/stop/status/restart` (Cutover B unit 2 completion): the plugin now performs
+// resolveServiceInit/validateServiceName/execInitCommand's argv-building itself (all portable —
+// spec.ResolvedInit is already an sdk alias, buildkit.RenderTemplate is sdk-portable) and sends
+// the FINAL `<engine> exec <container> <tool> <op> [svc]` argv; the host does ONLY the
+// irreducible dispatchLifecycleTarget + LifecycleTarget.Shell step (host_build_pod_lifecycle_dispatch.go's
+// hostBuildPodService), mirroring start/stop/logs/update exactly.
 type PodServiceRequest struct {
-	Operation string `yaml:"operation,omitempty" json:"operation"`
-
 	Box string `yaml:"box,omitempty" json:"box"`
 
-	Service string `yaml:"service,omitempty" json:"service,omitempty"`
-
 	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Argv []string `yaml:"argv,omitempty" json:"argv"`
 }
 
 // #PodServiceReply is the "pod-service" host-builder reply — empty, mirroring #PodStartReply.
@@ -4447,11 +4629,12 @@ type PodServiceReply struct {
 }
 
 // #PodConfigSetupRequest carries the `charly config [setup]` command flags (the former
-// BoxConfigSetupCmd's authored fields — EVERY field except ExplicitRef, a kong:"-" internal-only
-// field bundle_from_box_cmd.go sets programmatically, never authored). Forwarded to
-// HostBuild("pod-config-setup"), which reconstructs the UNCHANGED core BoxConfigSetupCmd (kept by
-// its exact name — bundle_from_box_cmd.go and host_build_deploy_from_box.go construct it directly
-// by name too, so it cannot rename/move) and runs its Run() body VERBATIM.
+// BoxConfigSetupCmd's authored fields, PLUS explicit_ref — bundle_from_box_cmd.go's
+// programmatically-set source-less-deploy field, below). P13-KERNEL direction-flip: forwarded
+// from HostBuild("pod-config-setup") (host_build_pod_config.go's hostBuildPodConfigSetup) onward
+// to the deploy:pod plugin's sdk.OpConfigSetup — the plugin now RUNS the former runConfig
+// orchestration (candy/plugin-deploy-pod/config_setup.go), calling back the narrow
+// "pod-config-*" seams below for the host/loader/registry/credential-coupled sub-steps.
 type PodConfigSetupRequest struct {
 	Box string `yaml:"box,omitempty" json:"box,omitempty"`
 
@@ -4504,6 +4687,12 @@ type PodConfigSetupRequest struct {
 	ListSidecars bool `yaml:"list_sidecars,omitempty" json:"list_sidecars,omitempty"`
 
 	NoAutoDetect bool `yaml:"no_autodetect,omitempty" json:"no_autodetect,omitempty"`
+
+	// explicit_ref is set programmatically (never authored) by `charly bundle from-box`'s
+	// source-less deploy path (bundle_from_box_cmd.go) — the P13-KERNEL direction-flip carries
+	// it across the wire now that the ORCHESTRATION (formerly reading the kong:"-" Go field
+	// directly) moved into the plugin.
+	ExplicitRef string `yaml:"explicit_ref,omitempty" json:"explicit_ref,omitempty"`
 }
 
 // #PodConfigSetupReply is the "pod-config-setup" host-builder reply — empty, mirroring
@@ -4577,6 +4766,362 @@ type PodConfigRemoveRequest struct {
 
 // #PodConfigRemoveReply is the "pod-config-remove" host-builder reply — empty.
 type PodConfigRemoveReply struct {
+}
+
+// #PodConfigEnsureImageRequest: EnsureImage + ExtractMetadata bundle (registry/podman-store
+// coupled — a plugin cannot resolve the local podman image store namespace itself).
+type PodConfigEnsureImageRequest struct {
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
+
+	BuildEngine string `yaml:"build_engine,omitempty" json:"build_engine"`
+}
+
+type PodConfigEnsureImageReply struct {
+	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
+}
+
+// #PodConfigResolveRefRequest: resolveDeployBoxName/resolveDeployResolvedImage/
+// resolveShellImageRef bundle — reads the per-host charly.yml overlay + local podman image
+// labels (loader + podman-store coupled).
+type PodConfigResolveRefRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	ExplicitRef string `yaml:"explicit_ref,omitempty" json:"explicit_ref,omitempty"`
+}
+
+type PodConfigResolveRefReply struct {
+	DeployBoxName string `yaml:"deploy_box_name,omitempty" json:"deploy_box_name"`
+
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
+}
+
+// #PodConfigLoadDeployRequest / Reply: deploykit.LoadDeployConfigForRead(caller) — the
+// per-host charly.yml Bundle map. Genuinely loader-coupled: deploykit.SaveBundleConfig/
+// LoadDeployConfigForRead resolve through the package-var DeployStateHost seam, which is
+// filled ONLY in the charly-core process's init() (charly/deploy_state_host.go) — an
+// out-of-process plugin calling these directly would silently no-op (the kit's
+// documented nil-safe degradation), so every load/save call site is a host seam, reusable
+// across the whole ported flow.
+type PodConfigLoadDeployRequest struct {
+	Caller string `yaml:"caller,omitempty" json:"caller"`
+}
+
+type PodConfigLoadDeployReply struct {
+	ConfigJSON RawBody `yaml:"config_json,omitempty" json:"config_json,omitempty"`
+}
+
+// #PodConfigSaveBundleRequest / Reply: saveBundleConfigNodeForm(dc) — persists a (plugin-mutated)
+// *deploykit.BundleConfig back through the SAME loader-coupled seam.
+type PodConfigSaveBundleRequest struct {
+	ConfigJSON RawBody `yaml:"config_json,omitempty" json:"config_json"`
+}
+
+type PodConfigSaveBundleReply struct {
+}
+
+// #PodConfigLoadBundleReply: deploykit.LoadBundleConfig() — the whole-project Bundle map (no
+// per-deploy-key focus), used by updateAllDeployedQuadlets's cross-deploy loop.
+type PodConfigLoadBundleReply struct {
+	ConfigJSON RawBody `yaml:"config_json,omitempty" json:"config_json,omitempty"`
+}
+
+// #PodConfigMigrateSecretsRequest / Reply: MigratePlaintextEnvSecret(dc, meta, box, instance) —
+// the one-time plaintext-env → credential-store migration (file backup + DefaultCredentialStore
+// + saveBundleConfigNodeForm, all FINAL/K5-deferred registry-coupled inventory per the ledger).
+// config_json carries the ALREADY-LOADED dc (from #PodConfigLoadDeployRequest) so the host
+// mutates + re-saves the SAME loaded structure the plugin is mid-flow with, never a stale reload.
+type PodConfigMigrateSecretsRequest struct {
+	ConfigJSON RawBody `yaml:"config_json,omitempty" json:"config_json"`
+
+	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
+
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigMigrateSecretsReply struct {
+	ConfigJSON RawBody `yaml:"config_json,omitempty" json:"config_json"`
+
+	Migrated int `yaml:"migrated,omitempty" json:"migrated,omitempty"`
+}
+
+// #PodConfigScrubCliEnvRequest / Reply: scrubSecretCLIEnv(cliEnv, meta) — the credential-store
+// Set() pre-scrub for `-e NAME=VAL` flags declared secret_accepts/secret_requires.
+type PodConfigScrubCliEnvRequest struct {
+	CliEnv []string `yaml:"cli_env,omitempty" json:"cli_env,omitempty"`
+
+	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
+}
+
+type PodConfigScrubCliEnvReply struct {
+	Cleaned []string `yaml:"cleaned,omitempty" json:"cleaned,omitempty"`
+
+	Imported int `yaml:"imported,omitempty" json:"imported,omitempty"`
+}
+
+// #PodConfigDetectDevicesRequest / Reply: DetectHostDevices()+LogDetectedDevices() —
+// registry-coupled (DetectHostDevices resolves+Invokes verb:gpu via the host provider registry,
+// which a peer plugin cannot dial without the InvokeProvider rewrite this family defers).
+type PodConfigDetectDevicesRequest struct {
+	NoAutoDetect bool `yaml:"no_auto_detect,omitempty" json:"no_auto_detect,omitempty"`
+
+	// engine, when set to "podman" alongside a GPU detection, triggers EnsureCDI() (the pod
+	// lifecycle's resolvePodRuntimeImage step) — bundled into this SAME seam call (R3) rather
+	// than a dedicated one.
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+}
+
+type PodConfigDetectDevicesReply struct {
+	DetectedJSON RawBody `yaml:"detected_json,omitempty" json:"detected_json"`
+}
+
+// #PodConfigTunnelResolveRequest / Reply: TunnelConfigFromMetadata(meta) — resolves the tunnel
+// config (charly.yml overlay applied) from image labels.
+type PodConfigTunnelResolveRequest struct {
+	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
+}
+
+type PodConfigTunnelResolveReply struct {
+	TunnelJSON RawBody `yaml:"tunnel_json,omitempty" json:"tunnel_json,omitempty"`
+}
+
+// #PodConfigResolveSidecarsRequest / Reply: the sidecar resolve+secret-provision bundle
+// (embeddedSidecarBodies' go:embed data lives ONLY in the charly binary, not the plugin binary;
+// resolveSidecarsViaPlugin + the sidecar-secret ProvisionPodmanSecrets loop are registry/
+// credential-coupled per the same FINAL/K5 family).
+type PodConfigResolveSidecarsRequest struct {
+	DeploySidecarsJSON RawBody `yaml:"deploy_sidecars_json,omitempty" json:"deploy_sidecars_json,omitempty"`
+
+	ProjectTemplatesJSON RawBody `yaml:"project_templates_json,omitempty" json:"project_templates_json,omitempty"`
+
+	CliEnv []string `yaml:"cli_env,omitempty" json:"cli_env,omitempty"`
+
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine"`
+
+	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
+
+	RefreshSecret []string `yaml:"refresh_secret,omitempty" json:"refresh_secret,omitempty"`
+}
+
+type PodConfigResolveSidecarsReply struct {
+	PersistOverridesJSON RawBody `yaml:"persist_overrides_json,omitempty" json:"persist_overrides_json,omitempty"`
+
+	ResolvedSidecarsJSON RawBody `yaml:"resolved_sidecars_json,omitempty" json:"resolved_sidecars_json,omitempty"`
+
+	AppEnv []string `yaml:"app_env,omitempty" json:"app_env,omitempty"`
+
+	ExtraEnv []string `yaml:"extra_env,omitempty" json:"extra_env,omitempty"`
+}
+
+// #PodConfigProvisionSecretsRequest / Reply: CollectSecretsFromLabels + CollectCandySecretAccepts
+// + ApplySecretRefresh + ProvisionPodmanSecrets + resolveSecretBackend bundle — the credential-
+// store/podman-secret provisioning family (FINAL/K5-deferred, wrapped verbatim).
+type PodConfigProvisionSecretsRequest struct {
+	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
+
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine"`
+
+	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
+
+	RefreshSecret []string `yaml:"refresh_secret,omitempty" json:"refresh_secret,omitempty"`
+}
+
+type PodConfigProvisionSecretsReply struct {
+	ProvisionedJSON RawBody `yaml:"provisioned_json,omitempty" json:"provisioned_json,omitempty"`
+
+	FallbackEnv []string `yaml:"fallback_env,omitempty" json:"fallback_env,omitempty"`
+
+	ResolutionsJSON RawBody `yaml:"resolutions_json,omitempty" json:"resolutions_json,omitempty"`
+
+	IsKeyring bool `yaml:"is_keyring,omitempty" json:"is_keyring,omitempty"`
+}
+
+// #PodConfigEncMountsRequest / Reply: ensureEncryptedMounts + (optional) encUnmount — the
+// gocryptfs FUSE mount lifecycle (FINAL/K5-deferred registry-coupled family per the enc.go
+// header: encExecViaPlugin + resolveEncPassphrase* route through the host provider registry +
+// DefaultCredentialStore, neither portable without the InvokeProvider rewrite this family
+// defers). This is the "ONE narrow credential seam" the standing ruling names.
+type PodConfigEncMountsRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
+
+	KeepMounted bool `yaml:"keep_mounted,omitempty" json:"keep_mounted"`
+}
+
+type PodConfigEncMountsReply struct {
+}
+
+// #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
+// — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
+type PodConfigInjectEnvProvidesRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	EnvProvides map[string]string `yaml:"env_provides,omitempty" json:"env_provides,omitempty"`
+
+	PortMapJSON RawBody `yaml:"port_map_json,omitempty" json:"port_map_json,omitempty"`
+}
+
+type PodConfigInjectEnvProvidesReply struct {
+	Changed bool `yaml:"changed,omitempty" json:"changed,omitempty"`
+}
+
+// #PodConfigInjectMCPProvidesRequest / Reply: injectMCPProvides(box,instance,mcpProvides,portMap).
+type PodConfigInjectMCPProvidesRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	MCPProvidesJSON RawBody `yaml:"mcp_provides_json,omitempty" json:"mcp_provides_json,omitempty"`
+
+	PortMapJSON RawBody `yaml:"port_map_json,omitempty" json:"port_map_json,omitempty"`
+}
+
+type PodConfigInjectMCPProvidesReply struct {
+	Changed bool `yaml:"changed,omitempty" json:"changed,omitempty"`
+}
+
+// #PodConfigSaveDeployStateRequest / Reply: deploykit.SaveDeployState(box,instance,input,
+// marshalDeployNode) — the terminal per-deploy persist. input_json is the marshalled
+// deploykit.SaveDeployStateInput (a hand-written sdk/deploykit type with no CUE def — the
+// RawBody idiom, matching #PodConfigWriteRequest.pod_config_json).
+type PodConfigSaveDeployStateRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	InputJSON RawBody `yaml:"input_json,omitempty" json:"input_json"`
+}
+
+type PodConfigSaveDeployStateReply struct {
+}
+
+// #PodConfigCleanDeployEntryRequest / Reply: deploykit.CleanDeployEntry(box, instance,
+// marshalDeployNode) — the `charly remove` deploy-entry cleanup (Cutover B unit 2 remove-verb
+// completion). Mirrors #PodConfigSaveDeployStateRequest's shape ({box!, instance?} → {}, the host
+// owns the entire load+lock+mutate+save internally) — deliberately NOT a reuse of
+// #DeployConfigSaveRequest (the `deploy-config-save` seam), which persists an ALREADY-LOADED,
+// already-mutated whole BundleConfig with no internal load/lock/entry-removal logic (bundle
+// import/reset's use case) — a genuinely different, narrower operation CleanDeployEntry's own
+// internal file-lock + entry-removal + provides-cleanup + empty-file-delete logic cannot be
+// reduced to.
+type PodConfigCleanDeployEntryRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigCleanDeployEntryReply struct {
+}
+
+// #PodConfigHookSecretEnvRequest / Reply: resolveHookSecretEnv(box,instance,meta) — the
+// credential-backed env the post_enable hook needs (same FINAL/K5-deferred family).
+type PodConfigHookSecretEnvRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
+}
+
+type PodConfigHookSecretEnvReply struct {
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// #PodConfigEncEnsurePlanRequest / Reply: the pod lifecycle's resolvePodEncEnsure body VERBATIM —
+// encPlanFor + the keyring-resilient all-mounted fast path + resolveEncPassphrase, bundled into
+// ONE narrow credential seam (the standing ruling) returning the pre-built spec.EncExecInput the
+// plugin InvokeProviders verb:enc with directly (empty ⇒ no encrypted volumes configured or
+// already-mounted fast path, matching the former ensureEncryptedMounts semantics).
+type PodConfigEncEnsurePlanRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigEncEnsurePlanReply struct {
+	EncJSON RawBody `yaml:"enc_json,omitempty" json:"enc_json,omitempty"`
+}
+
+// #PodConfigEncUnmountPlanRequest / Reply: the pod lifecycle's resolvePodEncUnmount body —
+// encPlanFor for the unmount leg (no passphrase needed).
+type PodConfigEncUnmountPlanRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigEncUnmountPlanReply struct {
+	EncJSON RawBody `yaml:"enc_json,omitempty" json:"enc_json,omitempty"`
+}
+
+// #PodConfigContainerTunnelRequest / Reply: the pod lifecycle's resolvePodTunnel body — reads the
+// RUNNING container's baked image ref (containerImage), extracts + merges its metadata, and
+// resolves the tunnel config. Distinct from #PodConfigTunnelResolveRequest (which takes an
+// already-resolved MetaJSON) — this seam resolves the image/metadata itself from a container name.
+type PodConfigContainerTunnelRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+type PodConfigContainerTunnelReply struct {
+	TunnelJSON RawBody `yaml:"tunnel_json,omitempty" json:"tunnel_json,omitempty"`
+}
+
+// #PodConfigBoxEngineRequest / Reply: ResolveBoxEngineForDeploy(box,instance,globalEngine) — reads
+// the per-host deploy config's Engine override. A thin wrapper distinct from
+// #PodConfigLoadDeployRequest since callers here want only the resolved engine string, not the
+// whole BundleConfig.
+type PodConfigBoxEngineRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	GlobalEngine string `yaml:"global_engine,omitempty" json:"global_engine"`
+}
+
+type PodConfigBoxEngineReply struct {
+	Engine string `yaml:"engine,omitempty" json:"engine"`
+}
+
+// #PodConfigSSHKeyRequest / Reply: resolveSSHPubKey(flag, generateDir) + containerSSHKeyDir(name)
+// bundle (the `--ssh-key generate` path is pure ed25519/golang.org/x/crypto/ssh keygen — kept as
+// a narrow host seam rather than adding a crypto dependency to the plugin for a rarely-used flag).
+type PodConfigSSHKeyRequest struct {
+	Flag string `yaml:"flag,omitempty" json:"flag"`
+
+	ContainerName string `yaml:"container_name,omitempty" json:"container_name"`
+}
+
+type PodConfigSSHKeyReply struct {
+	Pubkey string `yaml:"pubkey,omitempty" json:"pubkey,omitempty"`
+}
+
+// #PodConfigListSidecarsReply: embeddedSidecarBodies()'s go:embed template names + descriptions —
+// the `charly config --list-sidecars` introspection leaf (rare; kept as a narrow seam since the
+// embedded data lives only in the charly binary).
+type PodConfigListSidecarsReply struct {
+	Names []string `yaml:"names,omitempty" json:"names,omitempty"`
+
+	Descriptions map[string]string `yaml:"descriptions,omitempty" json:"descriptions,omitempty"`
 }
 
 // #PodUpdateRequest carries the `charly update` command flags (the former UpdateCmd's
@@ -5554,3 +6099,106 @@ type LibvirtListenOne struct {
 
 // PCI source address component: 0x-hex OR bare decimal (hexUintPtr accepts both).
 type LibvirtPCIHex string
+
+// #VmSnapshotCreateOpts parameterizes the creation of a snapshot — the host-resolved payload for
+// the snapshot-internal "create"/"create-external" ops.
+type VmSnapshotCreateOpts struct {
+	VmName string `yaml:"vm_name,omitempty" json:"vm_name"`
+
+	SnapName string `yaml:"snap_name,omitempty" json:"snap_name"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Quiesce bool `yaml:"quiesce,omitempty" json:"quiesce,omitempty"`
+
+	LibvirtBackend string `yaml:"libvirt_backend,omitempty" json:"libvirt_backend,omitempty"`
+}
+
+// #VmSnapshotEntry is one snapshot record (mirrors sdk/vmshared's SnapshotEntry, the on-disk
+// registry shape) — carried on delete/revert/promote ops so the plugin's go-libvirt call has the
+// full record without re-reading the host-side registry itself.
+type VmSnapshotEntry struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode"`
+
+	LibvirtName string `yaml:"libvirt_name,omitempty" json:"libvirt_name,omitempty"`
+
+	DiskPath string `yaml:"disk_path,omitempty" json:"disk_path,omitempty"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Created string `yaml:"created,omitempty" json:"created,omitempty"`
+
+	Parent string `yaml:"parent,omitempty" json:"parent,omitempty"`
+
+	Refcount int `yaml:"refcount,omitempty" json:"refcount"`
+
+	Quiesced bool `yaml:"quiesced,omitempty" json:"quiesced,omitempty"`
+}
+
+// #VmSnapInternalReq is the snapshot-internal op payload (create/delete/revert/promote/
+// create-external/delete-external/revert-external), threaded via #VmPluginEnv.snap.
+type VmSnapInternalReq struct {
+	SnapOp string `yaml:"snap_op,omitempty" json:"snap_op"`
+
+	VmName string `yaml:"vm_name,omitempty" json:"vm_name"`
+
+	Opts *VmSnapshotCreateOpts `yaml:"opts,omitempty" json:"opts,omitempty"`
+
+	Entry *VmSnapshotEntry `yaml:"entry,omitempty" json:"entry,omitempty"`
+
+	OutPath string `yaml:"out_path,omitempty" json:"out_path,omitempty"`
+}
+
+// #VmPluginEnv is the host→plugin env for an internal VM-resolution RPC (domain-state/
+// list-domains/resolve-spice/resolve-vnc/qemu-shutdown/snapshot-internal). Matches the SUBSET of
+// candy/plugin-vm's own (richer) internal vmEnv decode struct that charly-core's dispatch
+// actually sends — plugin-vm's vmEnv carries an ADDITIONAL `create` field (the `charly vm create`
+// CLI's own in-process construction, never sent by charly-core), which stays a plugin-local
+// concern outside this shared def (containing *VmSpec/VmRuntimeParams, neither CUE-sourced yet).
+type VmPluginEnv struct {
+	VmOp string `yaml:"vm_op,omitempty" json:"vm_op"`
+
+	VmName string `yaml:"vm_name,omitempty" json:"vm_name,omitempty"`
+
+	URI string `yaml:"uri,omitempty" json:"uri,omitempty"`
+
+	Force bool `yaml:"force,omitempty" json:"force,omitempty"`
+
+	DeleteDisk bool `yaml:"delete_disk,omitempty" json:"delete_disk,omitempty"`
+
+	Snap *VmSnapInternalReq `yaml:"snap,omitempty" json:"snap,omitempty"`
+
+	StateDir string `yaml:"state_dir,omitempty" json:"state_dir,omitempty"`
+}
+
+// #VmDisplayEndpoint describes how to reach one graphics channel (SPICE or VNC) of a running VM.
+// Shared by candy/plugin-vm's own DisplayEndpoint (a running-VM's resolved endpoint, kind="spice"|
+// "vnc") and charly-core's decode of the resolve-spice/resolve-vnc RPC reply — ONE shape, R3.
+type VmDisplayEndpoint struct {
+	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
+
+	IsSocket bool `yaml:"is_socket,omitempty" json:"is_socket,omitempty"`
+
+	SocketPath string `yaml:"socket_path,omitempty" json:"socket_path,omitempty"`
+
+	Host string `yaml:"host,omitempty" json:"host,omitempty"`
+
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+
+	TunnelNeeded bool `yaml:"tunnel_needed,omitempty" json:"tunnel_needed,omitempty"`
+}
+
+// #VmResolveResult decodes a resolve-spice/resolve-vnc reply.
+type VmResolveResult struct {
+	Endpoint VmDisplayEndpoint `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+
+	TunnelTarget string `yaml:"tunnel_target,omitempty" json:"tunnel_target,omitempty"`
+}

@@ -88,11 +88,11 @@ func RunWithEventually(ctx context.Context, check *spec.Op, handler func() Check
 
 	deadlineD, err := time.ParseDuration(check.Eventually)
 	if err != nil {
-		r := CheckResult{
+		r := CheckResult{CheckResult: spec.CheckResult{
 			Op:      check,
 			Status:  StatusFail,
 			Message: fmt.Sprintf("invalid eventually duration %q: %v", check.Eventually, err),
-		}
+		}}
 		r.Attempts = 0
 		return r
 	}
@@ -101,11 +101,11 @@ func RunWithEventually(ctx context.Context, check *spec.Op, handler func() Check
 		if d, perr := time.ParseDuration(check.RetryInterval); perr == nil {
 			interval = d
 		} else {
-			r := CheckResult{
+			r := CheckResult{CheckResult: spec.CheckResult{
 				Op:      check,
 				Status:  StatusFail,
 				Message: fmt.Sprintf("invalid retry_interval %q: %v", check.RetryInterval, perr),
-			}
+			}}
 			return r
 		}
 	}

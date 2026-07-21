@@ -67,6 +67,17 @@ type HostContext struct {
 	// when no pre-pass ran (a direct BuildDeployPlan caller / test) or no externalized
 	// builder is triggered → the affected builder gets base-only context, no teardown.
 	BuilderContext map[string]BuilderPreresolved
+
+	// ActiveInitName/ActiveInit carry the MachineVenue's preresolved active init system —
+	// populated ONCE per whole-deploy compile by the deploy-compile seam's by-name,
+	// existence-checked lookup (bundle_compile_seam.go's preresolveActiveInitInto), alongside
+	// the BuilderContext pre-pass. compileServiceSteps reads these instead of re-deriving the
+	// active init per-candy or guessing via a container-oriented auto-detect heuristic (which
+	// cannot disambiguate a machine venue's init from a plain custom-exec service entry — proven
+	// live 2026-07-20). Nil/empty for a direct BuildDeployPlan caller / test that compiles
+	// outside the seam; compileServiceSteps falls back to its own lazy per-call lookup then.
+	ActiveInitName string
+	ActiveInit     *spec.ResolvedInit
 }
 
 // BuildDeployPlan compiles one Candy into an InstallPlan.

@@ -18,10 +18,14 @@ func TestRunWithEventually_RetriesKilledProbe(t *testing.T) {
 	defer func() { killedProbeRetryInterval = orig }()
 
 	killed := func() CheckResult {
-		return CheckResult{Status: StatusFail, Message: "probe failed: process " + SignalKillErrMarker + " (signal: killed)"}
+		return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Message: "probe failed: process " + SignalKillErrMarker + " (signal: killed)"}}
 	}
-	pass := func() CheckResult { return CheckResult{Status: StatusPass, Message: "ok"} }
-	ranAndFailed := func() CheckResult { return CheckResult{Status: StatusFail, Message: "exists=false, want true"} }
+	pass := func() CheckResult {
+		return CheckResult{CheckResult: spec.CheckResult{Status: StatusPass, Message: "ok"}}
+	}
+	ranAndFailed := func() CheckResult {
+		return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Message: "exists=false, want true"}}
+	}
 
 	t.Run("killed-then-pass retries and passes", func(t *testing.T) {
 		calls := 0
@@ -59,7 +63,7 @@ func TestRunWithEventually_RetriesKilledProbe(t *testing.T) {
 			calls++
 			// The group-kill in runCaptureCmd surfaces a per-attempt-deadline SIGKILL as a
 			// signal-kill, but DeadlineExceeded marks it as the probe's OWN deadline.
-			return CheckResult{Status: StatusFail, Message: "probe " + SignalKillErrMarker + " (signal: killed)", DeadlineExceeded: true}
+			return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Message: "probe " + SignalKillErrMarker + " (signal: killed)"}, DeadlineExceeded: true}
 		}
 		got := runWithEventuallyNoSleep(t, h)
 		if got.Status != StatusFail {

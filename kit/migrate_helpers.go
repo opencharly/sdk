@@ -55,10 +55,11 @@ func FirstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// ScalarNode builds a string scalar YAML node.
-func ScalarNode(v string) *yaml.Node {
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v}
-}
+// ScalarNode builds a string scalar YAML node. Relocated to sdk/spec (FLOOR-SLIM
+// axis-A mechanical batch, zero logic change) so charly core can call it without
+// importing kit; aliased here so every existing kit.ScalarNode call site
+// (candy/plugin-migrate + others) keeps compiling unchanged.
+var ScalarNode = spec.ScalarNode
 
 // FindMappingValue returns the value node for key in a YAML mapping node, or nil.
 // (Like MapValue, but requires the key node to be a scalar — the form the
@@ -194,17 +195,9 @@ func IsGitSubmoduleDir(p, root string) bool {
 
 // NOTE: EnvdDir lives in kit (profile.go) — core aliases that copy (kit_aliases.go).
 
-// MappingRoot unwraps a YAML document node to its top-level mapping node (or nil). Shared by
-// charly core (via the mappingRoot alias) and the out-of-module candy/plugin-migrate engine (R3).
-func MappingRoot(n *yaml.Node) *yaml.Node {
-	if n == nil {
-		return nil
-	}
-	if n.Kind == yaml.DocumentNode && len(n.Content) > 0 {
-		n = n.Content[0]
-	}
-	if n.Kind != yaml.MappingNode {
-		return nil
-	}
-	return n
-}
+// MappingRoot unwraps a YAML document node to its top-level mapping node (or nil).
+// Relocated to sdk/spec (FLOOR-SLIM axis-A mechanical batch, zero logic change);
+// aliased here so every existing kit.MappingRoot call site (charly core's former
+// mappingRoot alias + the out-of-module candy/plugin-migrate engine) keeps
+// compiling unchanged (R3).
+var MappingRoot = spec.MappingRoot

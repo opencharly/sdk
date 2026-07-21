@@ -10,18 +10,18 @@ import (
 
 // fakeVerbResolver returns a canned result for every verb, recording the last op it saw.
 type fakeVerbResolver struct {
-	result   CheckResult
+	result   spec.CheckResult
 	known    bool
 	actKnown bool
 	lastVerb string
 }
 
-func (f *fakeVerbResolver) RunVerb(_ context.Context, op *spec.Op) (CheckResult, bool) {
+func (f *fakeVerbResolver) RunVerb(_ context.Context, op *spec.Op) (spec.CheckResult, bool) {
 	f.lastVerb, _ = op.Kind()
 	return f.result, f.known
 }
-func (f *fakeVerbResolver) RunProvisionAct(_ context.Context, _ *spec.Op, verb string) (CheckResult, bool) {
-	return CheckResult{Status: StatusPass, Message: "acted " + verb}, f.actKnown
+func (f *fakeVerbResolver) RunProvisionAct(_ context.Context, _ *spec.Op, verb string) (spec.CheckResult, bool) {
+	return spec.CheckResult{Status: StatusPass, Message: "acted " + verb}, f.actKnown
 }
 
 // fakePlanContext is a minimal PlanContext for exercising the walk without a host Runner.
@@ -87,7 +87,7 @@ func TestRunOne_UnknownVerbSkips(t *testing.T) {
 }
 
 func TestRunOne_DispatchPass(t *testing.T) {
-	vr := &fakeVerbResolver{result: CheckResult{Status: StatusPass, Message: "ok"}, known: true}
+	vr := &fakeVerbResolver{result: spec.CheckResult{Status: StatusPass, Message: "ok"}, known: true}
 	pc := &fakePlanContext{env: map[string]string{}, verbs: vr}
 	r := RunOne(context.Background(), pc, pluginOp())
 	if r.Status != StatusPass {
@@ -102,7 +102,7 @@ func TestRunOne_DispatchPass(t *testing.T) {
 }
 
 func TestRunOne_ActDispatch(t *testing.T) {
-	vr := &fakeVerbResolver{actKnown: true, known: true, result: CheckResult{Status: StatusPass}}
+	vr := &fakeVerbResolver{actKnown: true, known: true, result: spec.CheckResult{Status: StatusPass}}
 	pc := &fakePlanContext{env: map[string]string{}, do: spec.DoAct, verbs: vr}
 	r := RunOne(context.Background(), pc, pluginOp())
 	if r.Status != StatusPass || r.Message != "acted plugin" {
@@ -115,11 +115,11 @@ type stubGrader struct{ got GraderRequest }
 
 func (g *stubGrader) Grade(_ context.Context, req GraderRequest) CheckResult {
 	g.got = req
-	return CheckResult{Status: StatusPass, Message: "graded"}
+	return CheckResult{CheckResult: spec.CheckResult{Status: StatusPass, Message: "graded"}}
 }
 
 func TestRunPlan_VerifyOnlySkipsMutating(t *testing.T) {
-	vr := &fakeVerbResolver{known: true, result: CheckResult{Status: StatusPass}}
+	vr := &fakeVerbResolver{known: true, result: spec.CheckResult{Status: StatusPass}}
 	pc := &fakePlanContext{env: map[string]string{}, verifyOnly: true, verbs: vr}
 	set := &LabelDescriptionSet{Candy: []LabeledDescription{{
 		Origin: "candy:x",

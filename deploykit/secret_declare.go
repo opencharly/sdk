@@ -8,6 +8,13 @@ package deploykit
 // DefaultCredentialStore() (a provider-registry-coupled host singleton) and
 // saveBundleConfigNodeForm (loader-seam-coupled) — inseparable from
 // charly-core today, pending the config_image.go OpConfig seam.
+//
+// InjectSecretsIntoPlans (P13-KERNEL fold-in) is relocated from
+// charly/layer_secrets.go — the ONE genuinely pure function in that file (the
+// rest — ensureCandySecret/ResolveCandySecret/ResolveSecretForCandy/
+// CandyForPlan — route through DefaultCredentialStore/ResolveCredential
+// (provider-registry-coupled) and ScanAllCandyWithConfig (loader-coupled), so
+// they stay charly-core, registered FINAL/K5 credential-family inventory).
 
 import (
 	"strings"
@@ -66,4 +73,34 @@ func SecretKeyForDep(dep spec.EnvDependency) (service, key string) {
 		}
 	}
 	return "charly/secret", dep.Name
+}
+
+// InjectSecretsIntoPlans merges the resolved secret env map into every
+// OpStep's task.Env across the supplied plans. Existing task.Env keys
+// are preserved (candy-declared env takes precedence over a credential-
+// store collision — a deliberate choice so an author can explicitly pin
+// a value they control). Called from the deploy-add path after
+// ResolveCandySecret and before target.Emit so the heredoc renderer
+// sees the values as regular env exports.
+func InjectSecretsIntoPlans(plans []*InstallPlan, env map[string]string) {
+	if len(env) == 0 {
+		return
+	}
+	for _, p := range plans {
+		for _, step := range p.Steps {
+			ts, ok := step.(*OpStep)
+			if !ok || ts.Op == nil {
+				continue
+			}
+			if ts.Op.Env == nil {
+				ts.Op.Env = map[string]string{}
+			}
+			for k, v := range env {
+				if _, alreadySet := ts.Op.Env[k]; alreadySet {
+					continue
+				}
+				ts.Op.Env[k] = v
+			}
+		}
+	}
 }

@@ -1,8 +1,11 @@
 // CUE schema for the RESOLVED tunnel WIRE type — the host-side carrier
-// spec.TunnelConfig / spec.TunnelPort that charly's tunnel_plugin.go marshals
-// over the verb:tunnel {method,config} Invoke envelope to candy/plugin-tunnel,
-// and that the pod quadlet emitter (sdk/deploykit) consumes to render the
-// tailscale serve/funnel + cloudflare companion-unit directives.
+// spec.TunnelConfig / spec.TunnelPort that the pod-lifecycle plugins (candy/plugin-deploy-pod's
+// podTunnelOp for start/stop, candy/plugin-pod's podTunnelStop for remove) marshal directly over
+// the verb:tunnel {method,config} Invoke envelope to candy/plugin-tunnel via InvokeProvider — the
+// former core dispatch adapter is DELETED (Cutover B unit 2: every
+// tunnel EXECUTION leg is plugin-driven now, none dispatched from core) — and that the pod quadlet
+// emitter (sdk/deploykit) consumes to render the tailscale serve/funnel + cloudflare
+// companion-unit directives.
 //
 // SINGLE-SOURCED here per the SDD wire-type mandate: `task cue:gen` produces the
 // Go structs (spec.TunnelConfig / spec.TunnelPort); the former HAND-WRITTEN

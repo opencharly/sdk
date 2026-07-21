@@ -3,21 +3,26 @@ package kit
 import "github.com/opencharly/sdk/spec"
 
 // checkrun_seam.go — the REPLY half of the "check-run" host↔plugin seam (P12). The
-// REQUEST (spec.CheckRunRequest) is a CUE-sourced wire type; the reply is HAND-WRITTEN here
-// with the check engine's result model, a wire-mandate exception the mandate's LEGAL path
-// authorizes: a live `cue exp gengotypes` spike (throwaway #CheckResult/#StepResult defs, P12)
-// PROVED CUE cannot faithfully express kit.CheckResult. The spike confirmed gengotypes CAN
-// express the rest (the *spec.Op reference, time.Duration via @go override, the untagged
-// PascalCase-no-omitempty Op/Verb/Status/Message/Elapsed via required fields) — but the
-// engine-internal `DeadlineExceeded bool json:"-"` field has NO gengotypes equivalent
-// (gengotypes emits `json:"deadline_exceeded,omitempty"`, never json:"-"). So an alias
-// kit.CheckResult = spec.CheckResult would either LEAK the deadline-retry signal onto the wire
-// (byte-compat break) or DROP the field the engine sets/reads in-memory (engine break). The
-// reply therefore carries []StepResult VERBATIM — which also lets the plugin reuse the kit
-// formatters (FormatStepResults*) with byte-parity across every --format and adds ZERO drift (a
-// spec projection would duplicate the result model). command:check (candy/plugin-check) forwards
-// a run to HostBuild("check-run"); the host builds the venue + runs the Runner and returns this
-// reply, which the plugin formats + tallies into an exit code.
+// REQUEST (spec.CheckRunRequest) is a CUE-sourced wire type. The reply is HAND-WRITTEN here
+// (CheckRunReply/StepPass) — a wire-mandate exception the mandate's LEGAL path authorizes:
+// a live `cue exp gengotypes` spike (throwaway #CheckResult/#StepResult defs, P12) PROVED CUE
+// cannot faithfully express kit.CheckResult AS A WHOLE, because its engine-internal
+// `DeadlineExceeded bool json:"-"` field has NO gengotypes equivalent (gengotypes emits
+// `json:"deadline_exceeded,omitempty"`, never json:"-"). The spike ALSO confirmed gengotypes
+// CAN express the REST faithfully (the *spec.Op reference, time.Duration via @go override, the
+// required-field-no-omitempty Op/Verb/Status/Message/Elapsed) — FLOOR-SLIM Unit 4 acted on that
+// half of the finding: #CheckResult (sdk/schema/checkresult.cue) is now the CUE-sourced base
+// (→ spec.CheckResult, generated), and kit.CheckResult (checkresult.go) is `struct {
+// spec.CheckResult; DeadlineExceeded bool json:"-" }` — an EMBEDDING wrapper that keeps
+// DeadlineExceeded engine-internal-only without re-litigating the P12 spike's actual finding.
+// This file's OWN CheckRunReply/StepPass stay hand-written (they are a different exception:
+// StepPass's Stdout/Stderr/ExitCode is a verbatim guest-passthrough shape with no CUE need, and
+// CheckRunReply composes []StepResult, which now flattens the embedded spec.CheckResult
+// transparently on marshal — byte-identical output, R3, no duplicate result model). The reply
+// carries []StepResult VERBATIM so the plugin reuses the kit formatters (FormatStepResults*)
+// with byte-parity across every --format. command:check (candy/plugin-check) forwards a run to
+// HostBuild("check-run"); the host builds the venue + runs the Runner and returns this reply,
+// which the plugin formats + tallies into an exit code.
 
 // CheckRunReply is the host-resolved result of a check-run. Steps is the per-step verdict
 // list the plugin formats (FormatStepResults*) and tallies into an exit code. Image is the
