@@ -47,6 +47,7 @@ type LocalImageInfo struct {
 	ID     string            // image ID (sha256:...) — used by `charly clean` to skip in-use images
 	Names  []string          // Full refs: ["ghcr.io/opencharly/jupyter:latest", ...]
 	Labels map[string]string // OCI labels from the image config
+	Size   int64             // reported storage size in bytes (podman's "Size" field; 0 if absent/unparsed)
 }
 
 // ListLocalImages returns all images in the engine's local storage.
@@ -139,6 +140,11 @@ func ParseLocalImagesJSON(out []byte) ([]LocalImageInfo, error) {
 					}
 				}
 			}
+		}
+		// Size (bytes) is identical across rows for one id; podman JSON-decodes it as a
+		// float64 (json.Unmarshal's numeric default into map[string]any). Absent/unparsed → 0.
+		if sz, ok := raw["Size"].(float64); ok {
+			info.Size = int64(sz)
 		}
 	}
 	result := make([]LocalImageInfo, 0, len(order))

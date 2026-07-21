@@ -265,10 +265,10 @@ func downloadResumable(u, dst string) error {
 	total := offset + resp.ContentLength
 	fmt.Fprintf(os.Stderr, "Fetching %s", u)
 	if total > 0 {
-		fmt.Fprintf(os.Stderr, " (%s)", humanBytes(total))
+		fmt.Fprintf(os.Stderr, " (%s)", HumanBytes(total))
 	}
 	if offset > 0 {
-		fmt.Fprintf(os.Stderr, " resuming at %s", humanBytes(offset))
+		fmt.Fprintf(os.Stderr, " resuming at %s", HumanBytes(offset))
 	}
 	fmt.Fprintln(os.Stderr)
 
@@ -300,8 +300,8 @@ func fileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// humanBytes renders a byte count as a compact human-readable string.
-func humanBytes(n int64) string {
+// HumanBytes renders a byte count as a compact human-readable string.
+func HumanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {
 		return fmt.Sprintf("%d B", n)
