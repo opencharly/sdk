@@ -202,6 +202,10 @@ func TestResolveCloudInitSSHUser(t *testing.T) {
 		{"base_user adopt", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "ubuntu"}}, "ubuntu"},
 		{"bootc fallback root", &VmSpec{Source: VmSource{Kind: "bootc"}}, "root"},
 		{"cloud_image no base → empty", &VmSpec{Source: VmSource{Kind: "cloud_image"}}, ""},
+		// RCA #13 (FINAL/K5 unit 6a): a check command must never SIGSEGV on any
+		// input — an unresolved vm entity (e.g. an upstream entity-resolution bug)
+		// must return "", not dereference spec.SSH.
+		{"nil spec → empty, no panic", nil, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

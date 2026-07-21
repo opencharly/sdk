@@ -289,24 +289,50 @@ func ParseDeployKey(key string) (boxName, instance string) {
 // Keying by the deploy NAME first is load-bearing: a bed whose key differs
 // from its vm entity (e.g. check-k3s-vm -> vm: k3s-vm) is found by its key,
 // not mis-resolved via the vm entity name.
-func FindVmDeployNode(deploys map[string]BundleNode, name, vmName string) (BundleNode, bool) {
+//
+// RCA #14 (FINAL/K5 unit 6a): the step-3 fallback scan has no uniqueness
+// guarantee — with N top-level vm deploys sharing one base template/entity
+// (a common shape: several disposable eval beds all `from: eval-vm`), a
+// first-wins match is genuinely AMBIGUOUS and, because Go randomizes map
+// iteration order per process, can silently return a DIFFERENT (unrelated)
+// deploy's node on different runs of the identical lookup — proven live:
+// `check-substrate` and `check-builder-vm` (both real top-level vm deploys,
+// so their own descendants' hoisted plan steps land on THEIR OWN Plan) vs
+// `check-group-vm`/`check-structkind-vm` (both promoted from a peer Member,
+// so their Plan was already relocated onto their FORMER parent's root before
+// promotion, leaving it empty) all shared `from: eval-vm` — a caller
+// resolving an unrelated vm entity could nondeterministically inherit
+// check-substrate's own hoisted plan steps, and their embedded venue then
+// points at check-substrate's own domain. err is non-nil ONLY when the
+// step-3 fallback scan finds 2+ candidates — steps 1-2 are exact-key matches
+// and never ambiguous.
+func FindVmDeployNode(deploys map[string]BundleNode, name, vmName string) (BundleNode, bool, error) {
 	if deploys == nil {
-		return BundleNode{}, false
+		return BundleNode{}, false, nil
 	}
 	if name != "" {
 		if e, ok := deploys[name]; ok && (e.Target == "vm" || e.From != "") {
-			return e, true
+			return e, true, nil
 		}
 		if e, ok := deploys["vm:"+name]; ok {
-			return e, true
+			return e, true, nil
 		}
 	}
-	for _, e := range deploys {
+	var match BundleNode
+	var matchKey string
+	found := false
+	for k, e := range deploys {
 		if e.Target == "vm" && e.From != "" && (e.From == vmName || e.From == name) {
-			return e, true
+			if found {
+				return BundleNode{}, false, fmt.Errorf("ambiguous vm deploy lookup for %q (vm %q): both %q and %q declare from %q — the caller must resolve the exact deploy node instead of scanning by entity", name, vmName, matchKey, k, e.From)
+			}
+			match, matchKey, found = e, k, true
 		}
 	}
-	return BundleNode{}, false
+	if found {
+		return match, true, nil
+	}
+	return BundleNode{}, false, nil
 }
 
 // FindBundleNode locates a deploy node by key across the WHOLE tree — every
