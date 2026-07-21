@@ -54,7 +54,7 @@ type AgentGrader struct {
 // Grade builds the grader prompt, runs the AI once, and parses its verdict.
 func (g *AgentGrader) Grade(ctx context.Context, req GraderRequest) CheckResult {
 	if g == nil || g.Agent == nil {
-		return CheckResult{Status: StatusFail, Verb: "agent", Message: "agent grader misconfigured (no ai)"}
+		return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Verb: "agent", Message: "agent grader misconfigured (no ai)"}}
 	}
 	prompt := buildGraderPrompt(req, g.Target, g.Instance)
 
@@ -77,28 +77,28 @@ func (g *AgentGrader) Grade(ctx context.Context, req GraderRequest) CheckResult 
 		if s := strings.TrimSpace(stderr); s != "" {
 			msg += " — " + lastLines(s, 2)
 		}
-		return CheckResult{Status: StatusFail, Verb: "agent", Message: msg, Elapsed: elapsed}
+		return CheckResult{CheckResult: spec.CheckResult{Status: StatusFail, Verb: "agent", Message: msg, Elapsed: elapsed}}
 	}
 
 	pass, evidence, ok := parseVerdict(stdout)
 	if !ok {
-		return CheckResult{
+		return CheckResult{CheckResult: spec.CheckResult{
 			Status:  StatusFail,
 			Verb:    "agent",
 			Message: "agent grader returned no parseable verdict: " + lastLines(stdout, 2),
 			Elapsed: elapsed,
-		}
+		}}
 	}
 	status := StatusFail
 	if pass {
 		status = StatusPass
 	}
-	return CheckResult{
+	return CheckResult{CheckResult: spec.CheckResult{
 		Status:  status,
 		Verb:    "agent",
 		Message: "agent: " + evidence,
 		Elapsed: elapsed,
-	}
+	}}
 }
 
 // buildGraderPrompt renders the instruction handed to the grading agent.

@@ -154,28 +154,21 @@ type HTTPResponse struct {
 }
 
 // Status is a check verdict. It is the ONE pass/fail/skip enum for the check engine and
-// every plugin candy — charly's CheckStatus is a type alias of it.
-type Status int
+// every plugin candy — charly's CheckStatus is a type alias of it. FLOOR-SLIM Unit 4: Status
+// itself (+ the iota consts + the String() method) moved to spec.Status
+// (sdk/spec/status_result.go) as part of the CheckResult wire-envelope split — gengotypes has
+// no construct for an iota enum + Stringer, so CUE owns the wire VALUE SET (a plain int) and
+// Go owns the formatting behavior there. Kept as a type ALIAS here (not a repointed reference)
+// so kit.Result + every out-of-process plugin candy's kit.Pass/Fail/Skip/StatusPass call sites
+// compile UNCHANGED — this is a public SDK surface with ~15 external consumers, out of scope
+// for an internal core-floor refactor.
+type Status = spec.Status
 
 const (
-	StatusPass Status = iota
-	StatusFail
-	StatusSkip
+	StatusPass = spec.StatusPass
+	StatusFail = spec.StatusFail
+	StatusSkip = spec.StatusSkip
 )
-
-// String renders the lowercase verdict word. Reporters uppercase it for display
-// (strings.ToUpper → "PASS"/"FAIL"/"SKIP").
-func (s Status) String() string {
-	switch s {
-	case StatusPass:
-		return "pass"
-	case StatusFail:
-		return "fail"
-	case StatusSkip:
-		return "skip"
-	}
-	return "unknown"
-}
 
 // Result is a host-coupled verb's verdict. charly converts it to its internal
 // CheckResult (stamping the Op/Verb/timing) at the dispatch boundary.
