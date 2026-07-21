@@ -4253,11 +4253,17 @@ type PodLogsOpts struct {
 //
 // The REPLY is NOT a CUE wire type: it is kit.CheckRunReply (sdk/kit/checkrun_seam.go),
 // which carries []kit.StepResult verbatim so the plugin reuses the kit formatters
-// (FormatStepResults*) with byte-parity across every --format (json marshals the full
-// StepResult incl. *spec.Op). A live `cue exp gengotypes` spike proved kit.CheckResult
-// is genuinely inexpressible in CUE — its engine-internal `DeadlineExceeded bool
-// json:"-"` field has no gengotypes construct — so the reply rides with the engine's
-// hand-written result model in kit (the wire-mandate's spike-proven exception path).
+// (FormatStepResults*) with byte-parity across every --format. A live `cue exp
+// gengotypes` spike (P12) proved kit.CheckResult AS A WHOLE is genuinely inexpressible in
+// CUE — its engine-internal `DeadlineExceeded bool json:"-"` field has no gengotypes
+// construct — but confirmed the REST of the type (Op/Verb/Status/Message/Elapsed/
+// Attempts/TotalElapsed/CapturedValue) generates faithfully. FLOOR-SLIM Unit 4 acted on
+// that finding: #CheckResult (checkresult.cue) is the CUE-sourced base (→ spec.CheckResult),
+// and kit.CheckResult is now `struct { spec.CheckResult; DeadlineExceeded bool
+// json:"-" }` — an EMBEDDING wrapper, not a hand-duplicated type. So StepResult's JSON
+// output still rides kit's Go marshal (embedding flattens transparently), but the
+// exception the wire mandate's spike-proven path authorizes is now narrowed to EXACTLY
+// the one field that forced it, not the whole type.
 //
 // P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan the
 // host walks via RunCheckLive (NOT the OCI-baked plan the "live" mode extracts). Its per-step
