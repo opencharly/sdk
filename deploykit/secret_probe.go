@@ -20,13 +20,16 @@ import (
 // old copies still live). These are genuinely portable (no provider-registry or
 // credential-store coupling — pure token generation, exec.Command wrappers over `podman secret`,
 // and slice/map bookkeeping), so they live here rather than behind a HostBuild seam. What
-// does NOT move (charly/secrets.go, STILL core): ProvisionPodmanSecrets/resolveSecretValue/
+// does NOT move (charly/secrets.go, STILL core): ProvisionPodmanSecrets/
 // CollectCandySecretAccepts/resolveHookSecretEnv/generateAndStoreSecret — each calls
 // ResolveCredential/DefaultCredentialStore directly or transitively (the core provider registry),
 // registered FINAL/K5 inventory alongside enc.go's credential family. Those core functions now
 // call this package's leaves (deploykit.PodmanSecretExists, deploykit.PromptPassword, etc.)
 // instead of their own former in-file copies — verified: zero occurrences of the old
-// unexported names remain in charly/secrets.go (R5 grep self-test).
+// unexported names remain in charly/secrets.go (R5 grep self-test). (charly/secrets.go's
+// resolveSecretValue thin wrapper around ResolveSecretValue below was itself deleted as
+// dead code in the dead-code-radical-removal batch — zero real callers; every remaining
+// caller of ResolveSecretValue in charly core already calls it directly.)
 
 // GenerateRandomSecretToken returns `byteCount` random bytes encoded as
 // url-safe base64 (RFC 4648 §5). For byteCount=32 this produces a 44-char

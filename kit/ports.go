@@ -288,8 +288,6 @@ func ApplyPortOverrides(ports []string, overrides []string) ([]string, error) {
 	return result, nil
 }
 
-// SavePortOverride writes port overrides to charly.yml for persistence.
-
 // ContainerPortsFromMappings extracts the container-side port number from
 // each mapping. "auto" sentinels are skipped (they have no container port
 // to extract — they ARE the request to allocate one). Unparseable entries
