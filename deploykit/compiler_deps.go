@@ -21,7 +21,13 @@ var (
 type ShellSpec = vmshared.ShellSpec
 
 // BuilderPreresolved is one candy×builder's pre-resolved payload. The Candy-coupled
-// functions that BUILD it stay in charly; the compiler only reads it.
+// functions that BUILD it (FLOOR-SLIM-proper Unit-8: candy/plugin-bundle's own
+// preresolveBuilderContexts, over exec.InvokeProvider — the CONNECT step alone stays
+// charly-core, which owns loadProjectPlugins/ScanAllCandyWithConfigOpts) build it; the
+// compiler only reads it. The externalized-builder WORD SET itself needs no new sharing
+// mechanism — it already rides the wire as spec.ResolvedProject.ExternalizedBuilders (the
+// resolved-project envelope every "resolved-project" HostBuild caller, incl.
+// candy/plugin-bundle's compile.go, already re-hydrates).
 type BuilderPreresolved struct {
 	Context map[string]any
 	Reverse []ReverseOp
