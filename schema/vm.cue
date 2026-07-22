@@ -66,6 +66,15 @@
 		checksum?:    #VmChecksum
 		cache?:       string
 		base_user?:   string
+		// distro is OPTIONAL — most cloud_image sources rely on base_user alone
+		// (vmshared.effectiveDistro infers "arch" from base_user=="arch" when
+		// unset). Author it explicitly to opt a pacman-family image (arch/
+		// cachyos/manjaro/endeavouros) into the idempotent `pacman -S --needed`
+		// package-delivery path deterministically, or for a non-Arch image
+		// composePackages/composeRunCmd need to pick the right package name
+		// (openssh-server on debian/ubuntu) / sshd unit name (ssh on debian/
+		// ubuntu) instead of falling through to the Arch/Fedora default.
+		distro?:      string
 		box?:         _|_
 		transport?:   _|_
 		rootfs?:      _|_

@@ -4998,11 +4998,16 @@ type PodConfigInjectMCPProvidesReply struct {
 	Changed bool `yaml:"changed,omitempty" json:"changed,omitempty"`
 }
 
-// #PodConfigSaveDeployStateRequest / Reply: deploykit.SaveDeployState(box,instance,input,
+// #DeployConfigSaveStateRequest / Reply: deploykit.SaveDeployState(box,instance,input,
 // marshalDeployNode) — the terminal per-deploy persist. input_json is the marshalled
 // deploykit.SaveDeployStateInput (a hand-written sdk/deploykit type with no CUE def — the
-// RawBody idiom, matching #PodConfigWriteRequest.pod_config_json).
-type PodConfigSaveDeployStateRequest struct {
+// RawBody idiom, matching #PodConfigWriteRequest.pod_config_json). Renamed substrate-neutral
+// (S3b, Q2): the seam started pod-only (candy/plugin-deploy-pod's config_setup.go/resolve.go)
+// but candy/plugin-bundle's generic Add/Update apply body (deploy_target.go's
+// persistDeployState) is now a THIRD caller across every substrate (pod/vm/local/k8s/android),
+// so the "pod-config-*" family naming no longer fit — the underlying "deploy-config-save-state"
+// host-builder kind renamed to match (was "pod-config-save-deploy-state").
+type DeployConfigSaveStateRequest struct {
 	Box string `yaml:"box,omitempty" json:"box"`
 
 	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
@@ -5010,12 +5015,12 @@ type PodConfigSaveDeployStateRequest struct {
 	InputJSON RawBody `yaml:"input_json,omitempty" json:"input_json"`
 }
 
-type PodConfigSaveDeployStateReply struct {
+type DeployConfigSaveStateReply struct {
 }
 
 // #PodConfigCleanDeployEntryRequest / Reply: deploykit.CleanDeployEntry(box, instance,
 // marshalDeployNode) — the `charly remove` deploy-entry cleanup (Cutover B unit 2 remove-verb
-// completion). Mirrors #PodConfigSaveDeployStateRequest's shape ({box!, instance?} → {}, the host
+// completion). Mirrors #DeployConfigSaveStateRequest's shape ({box!, instance?} → {}, the host
 // owns the entire load+lock+mutate+save internally) — deliberately NOT a reuse of
 // #DeployConfigSaveRequest (the `deploy-config-save` seam), which persists an ALREADY-LOADED,
 // already-mutated whole BundleConfig with no internal load/lock/entry-removal logic (bundle
@@ -5147,6 +5152,165 @@ type PodUpdateRequest struct {
 
 // #PodUpdateReply is the "pod-update" host-builder reply — empty, mirroring #PodStartReply.
 type PodUpdateReply struct {
+}
+
+// #DeployTargetStatus (S3b, Unit-6 design) mirrors the former charly-core StatusInfo — a
+// deployment's live runtime state, now CUE-sourced because it crosses the plugin boundary once
+// externalDeployTarget/grpcSubstrateLifecycle move to candy/plugin-bundle.
+type DeployTargetStatus struct {
+	State string `yaml:"state,omitempty" json:"state,omitempty"`
+
+	Healthy bool `yaml:"healthy,omitempty" json:"healthy,omitempty"`
+
+	Details map[string]string `yaml:"details,omitempty" json:"details,omitempty"`
+}
+
+// #DeployTargetDelOpts mirrors the former charly-core DelOpts (`charly bundle del`) PLUS the
+// three teardown gates externalDeployTarget used to receive as externally-set STRUCT FIELDS
+// (KeepRepoChanges/KeepServices/KeepImage, set via a type-assertion in
+// host_build_deploy_node_del_dispatch.go before calling .Del()) — folded into DelOpts proper
+// (S3b) since the moved target is now constructed fresh per call from data alone, with no
+// settable-after-construction fields to type-assert onto.
+type DeployTargetDelOpts struct {
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	KeepLedger bool `yaml:"keep_ledger,omitempty" json:"keep_ledger,omitempty"`
+
+	RemoveVolumes bool `yaml:"remove_volumes,omitempty" json:"remove_volumes,omitempty"`
+
+	KeepRepoChanges bool `yaml:"keep_repo_changes,omitempty" json:"keep_repo_changes,omitempty"`
+
+	KeepServices bool `yaml:"keep_services,omitempty" json:"keep_services,omitempty"`
+
+	KeepImage bool `yaml:"keep_image,omitempty" json:"keep_image,omitempty"`
+}
+
+// #DeployTargetTestOpts mirrors the former charly-core TestOpts (`charly check live`).
+type DeployTargetTestOpts struct {
+	OnlyIDs []string `yaml:"only_ids,omitempty" json:"only_ids,omitempty"`
+
+	FormatJSON bool `yaml:"format_json,omitempty" json:"format_json,omitempty"`
+
+	StopOnFail bool `yaml:"stop_on_fail,omitempty" json:"stop_on_fail,omitempty"`
+}
+
+// #DeployTargetLogsOpts mirrors the former charly-core LogsOpts (`charly logs`).
+type DeployTargetLogsOpts struct {
+	Follow bool `yaml:"follow,omitempty" json:"follow,omitempty"`
+
+	Tail int64 `yaml:"tail,omitempty" json:"tail,omitempty"`
+
+	Sidecar string `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
+}
+
+// #DeployTargetRebuildOpts mirrors the former charly-core RebuildOpts (`charly update` rebuild path).
+type DeployTargetRebuildOpts struct {
+	RebuildImage bool `yaml:"rebuild_image,omitempty" json:"rebuild_image,omitempty"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+}
+
+// #DeployTargetDispatchRequest (S3b) is the ONE generic host→command:bundle envelope every
+// UnifiedDeployTarget/LifecycleTarget method dispatches through, discriminated by `op` (the
+// project rulebook's "generic over ad-hoc" — one wire shape, not eleven). Core's thin
+// ResolveTarget proxy (unified_targets.go) constructs this per call from data alone — it never
+// holds a *grpcProvider or any core-private registry object, so the type is free to live
+// entirely on the wire. `word` is the resolved deploy-substrate provider word (e.g. "pod"/"vm"/
+// "local"/"k8s"/"android") the plugin dispatches the ACTUAL substrate leg to, via its own
+// sdk.Executor.InvokeProvider — core never talks to the substrate provider directly once this
+// lands. `has_lifecycle` is the ONE piece of substrate metadata core must resolve itself (the
+// registered-provider's own `lifecycle` flag lives on the core-private *grpcProvider) — it gates
+// whether Start/Stop/Status/Logs/Shell/Attach/Rebuild are even valid for this substrate
+// (mirroring the former ErrNotSupportedOnExternal branches) AND whether the Q1 arbiter bracket
+// applies to Start/Stop (arbiterBracketedStart/Stop's hasPlan, a DIFFERENT, narrower boolean the
+// core proxy computes itself — see arbiter_bracket.go). `node` is the dispatch-merged BundleNode
+// (nil for a ref-based deploy with no charly.yml entry). `plans_json` carries []InstallPlanView
+// for Add/Update. `opts_json` carries the op-specific opts struct as an opaque envelope (the
+// zero-value-safe pattern every #Pod*Opts request already uses) — kept opaque rather than one
+// field per opts type so a NEW deploy verb never needs a NEW CUE field, only a new decode
+// branch plugin-side.
+type DeployTargetDispatchRequest struct {
+	Op string `yaml:"op,omitempty" json:"op"`
+
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Word string `yaml:"word,omitempty" json:"word"`
+
+	HasLifecycle bool `yaml:"has_lifecycle,omitempty" json:"has_lifecycle,omitempty"`
+
+	HasPreresolve bool `yaml:"has_preresolve,omitempty" json:"has_preresolve,omitempty"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
+
+	// ledger_root OPTIONALLY overrides the ledger root directory (kit.LedgerPaths.Root) — the
+	// pre-S3b externalDeployTarget carried a settable `paths *kit.LedgerPaths` field a TEST could
+	// redirect to a temp dir instead of the operator's real ~/.config/opencharly/installed/; this
+	// is the wire-safe equivalent (a bare root string, the plugin derives Deploys/Candies/LockFile
+	// from it exactly like kit.DefaultLedgerPaths does). Empty (the default) — kit.DefaultLedgerPaths().
+	LedgerRoot string `yaml:"ledger_root,omitempty" json:"ledger_root,omitempty"`
+
+	PlansJSON RawBody `yaml:"plans_json,omitempty" json:"plans_json,omitempty"`
+
+	OptsJSON RawBody `yaml:"opts_json,omitempty" json:"opts_json,omitempty"`
+
+	ChecksJSON RawBody `yaml:"checks_json,omitempty" json:"checks_json,omitempty"`
+
+	Cmd []string `yaml:"cmd,omitempty" json:"cmd,omitempty"`
+
+	TTY bool `yaml:"tty,omitempty" json:"tty,omitempty"`
+
+	// venue_json is the ALREADY-MATERIALIZED spec.VenueDescriptor for this deploy, when core
+	// already has one from a prior dispatch in the SAME target's lifetime (Update/Del/Start/Stop/
+	// Status/Logs/Shell/Attach/Rebuild, after "add"'s PrepareVenue already ran once) — the plugin
+	// re-materializes it via kit.VenueFromDescriptor instead of re-running PrepareVenue. Absent on
+	// "add" itself (PrepareVenue runs fresh, plugin-side).
+	VenueJSON RawBody `yaml:"venue_json,omitempty" json:"venue_json,omitempty"`
+
+	// distro_cfg_json is the marshalled *buildkit.DistroConfig ("add"/"update" only) — recordDeploy's
+	// FillReverseUninstallCmds needs it to render an aur-builder ReverseOpPackageRemove's
+	// UninstallCmd host-side-equivalent, now plugin-side since buildkit.DistroConfig is a plain sdk
+	// type with no core-only coupling (unlike the core-only buildEngineContext wrapper it used to
+	// travel inside).
+	DistroCfgJSON RawBody `yaml:"distro_cfg_json,omitempty" json:"distro_cfg_json,omitempty"`
+
+	// host_env_json is the marshalled spec.HostEnv (CharlyBin/Home/Version) — the R10 bed-found
+	// fifth bug in this cluster's move: every lifecycle Op the deleted substrate_lifecycle_grpc.go
+	// sent used its OWN hostEnvJSON() helper, computed HOST-side (os.Executable() resolves to the
+	// charly binary only when called IN CORE — a plugin's os.Executable() resolves to the PLUGIN
+	// binary, wrong for an out-of-process placement even though today's compiled-in placement
+	// happened not to crash on it, since a bare `spec.HostEnv{}` zero-value was marshalled instead
+	// of ever actually calling it, plugin-side, in the S3b port). Core (unified_targets.go's
+	// dispatch, the ONLY place that reliably knows its OWN binary regardless of the substrate's or
+	// command:bundle's own placement) now computes it ONCE per dispatch call and threads it here;
+	// candy/plugin-bundle forwards it verbatim to every lifecycle Op instead of computing its own.
+	HostEnvJSON RawBody `yaml:"host_env_json,omitempty" json:"host_env_json,omitempty"`
+}
+
+// #DeployTargetDispatchReply carries whatever the dispatched op produces — Status for "status",
+// Output/ExitCode for "shell"/"attach" (the F12 non-zero-exit propagation via
+// *sdk.ExitCodeError), Venue for "add"/"update" (the spec.VenueDescriptor PrepareVenue produced or
+// re-confirmed, threaded back to core so a substrate WITH a lifecycle hook — pod's overlay
+// container, vm's guest — hands core the SAME live executor for --verify and every subsequent
+// dispatch on this target, mirroring the pre-S3b `t.exec = exec` reassignment inside apply()),
+// nothing for the rest (success is "no error").
+type DeployTargetDispatchReply struct {
+	Status DeployTargetStatus `yaml:"status,omitempty" json:"status,omitempty"`
+
+	Output string `yaml:"output,omitempty" json:"output,omitempty"`
+
+	ExitCode int64 `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
+
+	VenueJSON RawBody `yaml:"venue_json,omitempty" json:"venue_json,omitempty"`
+
+	ArtifactKey string `yaml:"artifact_key,omitempty" json:"artifact_key,omitempty"`
 }
 
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->

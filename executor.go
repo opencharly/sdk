@@ -274,15 +274,23 @@ type InvokeProviderOpts struct {
 	// Invoke with no deploy-context broker) but still wants the target Invoked WITH a live venue.
 	// Nil (the default) — no descriptor; the caller's own executor, if any, is forwarded unchanged.
 	VenueDescriptor *spec.VenueDescriptor
+
+	// ExtraRef optionally supplies a canonical candy ref (S3b — the Pass-2 lazy-connect gap) for
+	// the host's S2 lazy-connect fallback: connectPluginByWordRef(class, word, ExtraRef). Empty
+	// (the default) only ever reaches Pass-1 (the calling project's own candy closure) — a target
+	// declared nowhere in that closure but resolvable via an explicit @github canonical ref (the
+	// same Pass-2 fetch the credential/vm/kube host adapters already use) needs this set.
+	ExtraRef string
 }
 
 // InvokeProvider asks the host to invoke ANOTHER provider (class, word, op) on this plugin's behalf
 // (F10 plugin↔plugin) — the host resolves it in the registry (lazily connecting it from the
 // project's candy closure on a miss, S2) and Invokes it, returning the raw result JSON. params/env
-// are the op's plugin_input / env (nil for none). opts carries the optional S1 venue descriptor;
-// the zero value InvokeProviderOpts{} reproduces the pre-S1 behavior exactly.
+// are the op's plugin_input / env (nil for none). opts carries the optional S1 venue descriptor +
+// the optional S3b canonical-ref fallback; the zero value InvokeProviderOpts{} reproduces the
+// pre-S1 behavior exactly.
 func (e *Executor) InvokeProvider(ctx context.Context, class, word, op string, params, env []byte, opts InvokeProviderOpts) ([]byte, error) {
-	req := &pb.InvokeProviderRequest{Class: class, Reserved: word, Op: op, ParamsJson: params, EnvJson: env}
+	req := &pb.InvokeProviderRequest{Class: class, Reserved: word, Op: op, ParamsJson: params, EnvJson: env, ExtraRef: opts.ExtraRef}
 	if opts.VenueDescriptor != nil {
 		vdj, err := json.Marshal(opts.VenueDescriptor)
 		if err != nil {

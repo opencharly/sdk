@@ -42,8 +42,39 @@ type CloudInitRuntimeParams struct {
 // Defaults applied automatically (D15):
 //  1. VmSSH.User added to users: with sudo + ssh_authorized_keys
 //     (if the key-injection channel is enabled AND SSHPublicKey != "")
-//  2. Minimum packages: {openssh, curl, tar} unioned with user's Packages
-//  3. Minimum runcmd: {systemctl enable --now sshd} prepended
+//  2. Minimum packages: {openssh, curl, tar} unioned with user's Packages —
+//     delivered via the `packages:` cloud-config key on every distro EXCEPT
+//     pacman-family (arch/cachyos/manjaro/endeavouros), where it is instead
+//     PREPENDED to runcmd as `pacman -S --needed --noconfirm <union>` and the
+//     `packages:` key is omitted entirely (R10 bed finding: cloud-init's own
+//     package-install module invokes `pacman -S` without `--needed`, so on an
+//     image that already ships the minimum set — e.g. every Arch cloud image —
+//     it unconditionally REINSTALLS them; reinstalling openssh re-triggers its
+//     post-install host-key-regen hook while the base image's own
+//     socket-activated sshd is already listening, racing a live key-file
+//     rewrite against new connections — the observed "reset during
+//     kex_exchange_identification, guest otherwise idle" signature. apt/dnf
+//     installs are naturally no-op-idempotent when the package is already
+//     present, so only the pacman-family path needs this rewrite; every other
+//     distro's render is BYTE-IDENTICAL to before this fix). Source.Distro is
+//     an OPTIONAL yaml field — a cloud_image source (e.g. eval-vm) commonly
+//     omits it, relying on base_user alone (a second live-bed finding: the
+//     first cut of this fix silently never fired for exactly that reason).
+//     effectiveDistro fills the ONE narrow gap this codebase already
+//     documents as supported-by-convention (resolveCloudInitSSHUser's own
+//     "arch" cloud_image fallback, below): empty Distro + kind=="cloud_image"
+//     + base_user=="arch" infers "arch". This is STRICTLY NARROWER than (and
+//     makes explicit) the pre-existing accidental behavior — composePackages'
+//     distro switch already defaulted an empty/unrecognized distro to the
+//     Arch/Fedora-shaped {openssh, sshd} output, so no caller this inference
+//     newly matches was ever getting anything else. Any other empty-distro
+//     image (base_user != "arch") stays on the safe, unchanged non-pacman
+//     path — an unknown image never gets a pacman command. The proper
+//     long-term fix is schema-level (distro required, or defaulted at
+//     entity-resolve time, for every cloud_image source) — tracked separately,
+//     not attempted here.
+//  3. Minimum runcmd: {systemctl enable --now sshd} prepended (after the
+//     pacman install command on pacman-family distros, per #2)
 //  4. charly_install: NOT a cloud-init concern — the vm deploy's PrepareVenue delivers charly
 //     post-boot (auto/scp stage it; skip verifies). No charly download runcmd.
 //  5. VmCloudInit.Extra: raw cloud-config YAML appended as a second
@@ -112,8 +143,10 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 
 	userMap["users"] = composeUsers(spec, ci, rt)
 
-	packages := composePackages(ci.Package, spec.Source.Distro)
-	if len(packages) > 0 {
+	distro := effectiveDistro(spec)
+	packages := composePackages(ci.Package, distro)
+	pacmanFamily := formatForDistroID(distro) == "pac"
+	if len(packages) > 0 && !pacmanFamily {
 		userMap["packages"] = packages
 	}
 
@@ -122,6 +155,10 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 	}
 
 	runcmd := composeRunCmd(spec, ci)
+	if pacmanFamily && len(packages) > 0 {
+		pacmanCmd := "pacman -S --needed --noconfirm " + strings.Join(packages, " ")
+		runcmd = append([]any{pacmanCmd}, runcmd...)
+	}
 	if len(runcmd) > 0 {
 		userMap["runcmd"] = runcmd
 	}
@@ -286,6 +323,33 @@ func applySSHDefaults(entry map[string]any, rt CloudInitRuntimeParams) {
 		existing, _ := entry["ssh_authorized_keys"].([]string)
 		entry["ssh_authorized_keys"] = append(existing, rt.SSHPublicKey)
 	}
+}
+
+// effectiveDistro resolves spec.Source.Distro, inferring "arch" for the ONE
+// case this codebase already documents as supported-by-convention
+// (resolveCloudInitSSHUser's own comment: "arch" for cloud_image works out
+// of the box) but that the CUE schema leaves Distro optional for: a
+// cloud_image source with no explicit `distro:` and `base_user: arch` (e.g.
+// a plain Arch Linux cloud image entity — see the D15 doc comment above for
+// why this matters to the pacman-family package-delivery branch). Strictly
+// narrower than the pre-existing accidental behavior: composePackages'
+// distro switch already defaulted an empty/unrecognized distro to the
+// Arch/Fedora {openssh, sshd} shape, so this inference can never change what
+// a caller already effectively got — it only makes the SAME assumption
+// explicit enough for formatForDistroID to positively match "pac". Any
+// other empty-distro image (a different or absent base_user) returns "" and
+// stays on the safe, unchanged non-pacman path.
+func effectiveDistro(spec *VmSpec) string {
+	if spec == nil {
+		return ""
+	}
+	if spec.Source.Distro != "" {
+		return spec.Source.Distro
+	}
+	if spec.Source.Kind == "cloud_image" && spec.Source.BaseUser == "arch" {
+		return "arch"
+	}
+	return ""
 }
 
 // composePackages unions charly's minimum SSH+curl+tar package set with

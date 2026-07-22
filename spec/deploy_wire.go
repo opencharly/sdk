@@ -832,6 +832,29 @@ type LifecycleOpts struct {
 	BuilderImageOverride string `json:"builder_image_override,omitempty"`
 }
 
+// LifecycleOptsFromEmit projects an EmitOpts onto its wire-safe LifecycleOpts subset — the ONE
+// shared conversion the deploy-dispatch envelope (S3b, #DeployTargetDispatchRequest.opts_json)
+// uses on BOTH sides: charly core (unified_targets.go's Add/Update) builds this BEFORE
+// marshaling into OptsJSON — never marshal a raw EmitOpts directly, its live ParentExec/
+// ParentNode fields cannot cross the []byte wire (see LifecycleOpts' own doc comment; a raw
+// EmitOpts marshal is exactly the bug an R10 bed caught: `json: cannot unmarshal object into Go
+// struct field EmitOpts.ParentExec of type spec.DeployExecutor` the moment a nested-child
+// deploy's composed NestedExecutor made ParentExec non-nil) — and candy/plugin-bundle decodes
+// OptsJSON directly into a LifecycleOpts, so no plugin-side conversion is needed at all.
+func LifecycleOptsFromEmit(o EmitOpts) LifecycleOpts {
+	return LifecycleOpts{
+		DryRun:               o.DryRun,
+		AllowRepoChanges:     o.AllowRepoChanges,
+		AllowRootTasks:       o.AllowRootTasks,
+		WithServices:         o.WithServices,
+		AssumeYes:            o.AssumeYes,
+		Verify:               o.Verify,
+		Pull:                 o.Pull,
+		SkipIncompatible:     o.SkipIncompatible,
+		BuilderImageOverride: o.BuilderImageOverride,
+	}
+}
+
 // HostEnv is the generic host identity a lifecycle plugin (running ON the host) needs but cannot
 // derive: the host charly binary path (os.Args[0] of the CHARLY process — NOT the plugin's own
 // binary) and the host home. Rides op.Env for every lifecycle Op so the plugin's cli legs run
