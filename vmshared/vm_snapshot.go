@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -493,30 +492,6 @@ func LookupSnapshot(vmName, snapName string) (*SnapshotEntry, error) {
 	return entry, nil
 }
 
-// MirrorSnapshotsToDeployState copies the registry into a slice of
-// VmSnapshotState records suitable for embedding in charly.yml's
-// vm_state. Sorted by name for stable diffs.
-func MirrorSnapshotsToDeployState(vmName string) ([]VmSnapshotState, error) {
-	entries, err := ListSnapshots(vmName)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]VmSnapshotState, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, VmSnapshotState{
-			Name:        e.Name,
-			Mode:        e.Mode,
-			LibvirtName: e.LibvirtName,
-			DiskPath:    e.DiskPath,
-			Description: e.Description,
-			Created:     e.Created,
-			Parent:      e.Parent,
-			Refcount:    e.Refcount,
-		})
-	}
-	return out, nil
-}
-
 // implicitParent returns the most-recently-created snapshot name in the
 // registry, or empty if there are none. Used for implicit chain
 // tracking at create-time (V1 doesn't honor explicit From: yet).
@@ -551,23 +526,4 @@ func writeSnapshotMeta(vmName, snapName string, entry *SnapshotEntry) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
-}
-
-// SnapshotsRefcountSummary returns "<n> active references" or empty
-// when zero — for human-readable status output.
-func SnapshotsRefcountSummary(vmName string) string {
-	entries, err := ListSnapshots(vmName)
-	if err != nil {
-		return ""
-	}
-	var refs []string
-	for _, e := range entries {
-		if e.Refcount > 0 {
-			refs = append(refs, fmt.Sprintf("%s=%d", e.Name, e.Refcount))
-		}
-	}
-	if len(refs) == 0 {
-		return ""
-	}
-	return strings.Join(refs, ", ")
 }

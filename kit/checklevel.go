@@ -33,9 +33,6 @@ var checkLevelRank = map[string]int{
 	CheckLevelAgent:   3,
 }
 
-// CheckLevels lists the canonical rungs in ladder order (for error messages).
-var CheckLevels = []string{CheckLevelNone, CheckLevelBuild, CheckLevelNoAgent, CheckLevelAgent}
-
 // ResolveCheckLevel normalizes an authored check_level to a canonical rung, applying the
 // default for the empty value. An unknown value is returned verbatim so the validator flags
 // it — never silently defaulted.

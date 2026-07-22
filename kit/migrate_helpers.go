@@ -45,16 +45,6 @@ func SortStrings(s []string) {
 	}
 }
 
-// FirstNonEmpty returns the first non-empty string in vals, or "".
-func FirstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // ScalarNode builds a string scalar YAML node. Relocated to sdk/spec (FLOOR-SLIM
 // axis-A mechanical batch, zero logic change) so charly core can call it without
 // importing kit; aliased here so every existing kit.ScalarNode call site

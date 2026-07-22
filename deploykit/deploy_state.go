@@ -381,21 +381,6 @@ func findBundleNodePtr(m map[string]*BundleNode, name string) *BundleNode {
 	return nil
 }
 
-// DropMappingKey removes a key (and its value) from a YAML mapping node in place.
-func DropMappingKey(m *yaml.Node, key string) {
-	if m == nil || m.Kind != yaml.MappingNode {
-		return
-	}
-	kept := make([]*yaml.Node, 0, len(m.Content))
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			continue
-		}
-		kept = append(kept, m.Content[i], m.Content[i+1])
-	}
-	m.Content = kept
-}
-
 // MergeBundleNode applies non-zero fields from `src` onto `dst` and
 // returns the merged copy. Walks every yaml-tagged field via reflect; the
 // yaml `-` tag (derived/runtime-only fields) is skipped. Same precedence
