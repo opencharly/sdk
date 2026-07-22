@@ -4,17 +4,20 @@ package spec
 // (package main) and the COMPILED-IN candy/plugin-preempt (cutover C9).
 //
 // These types live in package spec — the ONE importable home — because BOTH the
-// host (the in-core PROXY + the 7 arbiter host-seams over the reverse channel,
-// preempt.go) AND the plugin (candy/plugin-preempt's verb:arbiter provider, via the
-// replace → ../../charly module edge) construct and exchange them across the
-// verb:arbiter Invoke boundary AND the ExecutorService.HostArbiter reverse channel.
+// host (the in-core PROXY + the 2 remaining K1-blocked arbiter host-seams over the
+// reverse channel, preempt.go/arbiter_host.go) AND the plugin (candy/plugin-preempt's
+// verb:arbiter provider, via the replace → ../../charly module edge) construct and
+// exchange them across the verb:arbiter Invoke boundary AND the ExecutorService.
+// HostArbiter reverse channel.
 //
 // The arbiter LOGIC (AcquireExclusive/AcquireShared/ReleaseClaimant/stopHolders/
 // restoreHolders/reconcileStranded/the lease ledger/poison/mode-math) lives in the
-// plugin and operates on these spec types; the arbiter's host DEPENDENCIES (config
-// read, VM/pod lifecycle, the GPU driver flip, readiness) stay host-side and are
-// reached mid-logic via the HostArbiter reverse channel. There is NO duplicate type
-// for any of these concepts (R3).
+// plugin and operates on these spec types; ONLY the project-config-coupled
+// dependencies (LoadUnified-backed gather/resources) stay host-side, reached
+// mid-logic via the HostArbiter reverse channel — the VM/pod lifecycle + GPU driver
+// flip (FLOOR-SLIM-proper Unit-8) now dispatch directly from the plugin via
+// sdk.Executor.InvokeProvider, never a host callback. There is NO duplicate type for
+// any of these concepts (R3).
 
 // --- canonical preemption policy values (shared: the host Gather projection
 // produces Restore, the plugin's releaseLeaseEffects reads it) ------------------
@@ -78,32 +81,20 @@ type PreemptLedger struct {
 
 // --- HostArbiter reverse-channel seams (host serves, plugin calls mid-logic) ---
 //
-// One action-multiplexed RPC (ExecutorService.HostArbiter) carries all seams, the
-// SAME pattern as the C11 GpuProbeInput action multiplex. The plugin sends an
-// ArbiterHost* request tagged by ArbiterAction*; the host runs the seam's CURRENT
-// default implementation (gatherPreemptibleHolders/gatherResources/holderRunning/
-// holderStop+waitStopped/holderStart/gpuSwitchModeTolerant/ensureCDIRoot/gpuCDIHolders) and
-// replies. The stop seam FOLDS the wait-until-stopped (it keeps the host-side
-// readiness StopGate + pollUntil, so no readiness machinery moves into the plugin).
+// One action-multiplexed RPC (ExecutorService.HostArbiter) carries the 2 seams that remain
+// genuinely K1-blocked (project-config coupled via LoadUnified). FLOOR-SLIM-proper Unit-8 moved
+// the other 6 (running/stop[+wait]/start/switchMode/ensureCDI/gpuCDI) directly into
+// candy/plugin-preempt (holder_dispatch.go) — they were reached over this seam only because
+// their ORIGINAL implementation used charly-core-private mechanisms, not because the work
+// itself needed a live LoadUnified project; the plugin now dispatches the VM/GPU legs itself
+// via the class-agnostic sdk.Executor.InvokeProvider. The plugin sends an ArbiterHost* request
+// tagged by ArbiterAction*; the host runs the seam's CURRENT default implementation
+// (gatherPreemptibleHolders/gatherResources) and replies.
 
 const (
-	ArbiterSeamGather    = "gather"     // -> ArbiterGatherReply (preemptible holders, projected)
-	ArbiterSeamResources = "resources"  // -> ArbiterResourcesReply (gpu-backed tokens -> vendor)
-	ArbiterSeamRunning   = "running"    // ArbiterHolderReq -> ArbiterBoolReply
-	ArbiterSeamStop      = "stop"       // ArbiterHolderReq -> ArbiterErrReply (stop + wait-until-stopped)
-	ArbiterSeamStart     = "start"      // ArbiterHolderReq -> ArbiterErrReply
-	ArbiterSeamSwitch    = "switchMode" // ArbiterSwitchReq -> ArbiterErrReply (routes to plugin-gpu)
-	ArbiterSeamEnsureCDI = "ensureCDI"  // (no payload) -> (no reply)
-	ArbiterSeamGpuCDI    = "gpuCDI"     // (no payload) -> ArbiterGpuCDIReply (running charly GPU-CDI pods)
+	ArbiterSeamGather    = "gather"    // -> ArbiterGatherReply (preemptible holders, projected)
+	ArbiterSeamResources = "resources" // -> ArbiterResourcesReply (gpu-backed tokens -> vendor)
 )
-
-// ArbiterGpuCDIReply lists every RUNNING charly pod container that holds the nvidia GPU as a CDI
-// device. The arbiter reclaims the ones NOT covered by an active lease (leaked/kept eval beds whose
-// transient owner-PID-tied lease died with the check-runner process) before a nvidia->vfio flip, so
-// a stray container's open GPU handle can never wedge `modprobe -r nvidia`.
-type ArbiterGpuCDIReply struct {
-	Holders []HolderAddr `json:"holders"`
-}
 
 // ArbiterGatherReply is the host's projection of every RUNNING-or-not preemptible
 // holder the arbiter may stop: PreemptionHolds() + holderAddrFor() +
@@ -126,36 +117,6 @@ type HolderDescriptor struct {
 // (no device to flip; applyMode skips it, firstPoisonedToken ignores it).
 type ArbiterResourcesReply struct {
 	Gpu map[string]string `json:"gpu"`
-}
-
-// ArbiterHolderReq addresses one deployment for the running/stop/start seams.
-type ArbiterHolderReq struct {
-	Addr HolderAddr `json:"addr"`
-}
-
-// ArbiterSwitchReq flips a GPU-backed token's whole IOMMU group to a driver mode.
-type ArbiterSwitchReq struct {
-	Vendor string `json:"vendor"`
-	Mode   string `json:"mode"`
-}
-
-// ArbiterBoolReply is the running-seam reply.
-type ArbiterBoolReply struct {
-	Bool bool `json:"bool"`
-}
-
-// ArbiterErrReply carries a seam's operation error ("" = success) — the
-// reverse-channel convention (the RPC itself succeeds; the op error rides here).
-type ArbiterErrReply struct {
-	Error string `json:"error,omitempty"`
-}
-
-// ArbiterSwitchReply is the switchMode-seam reply: the op error plus whether the flip
-// WEDGED the device_lock (the sentinel can't cross the process boundary, so the bool
-// carries it — the plugin's applyMode poisons the resource on Wedged).
-type ArbiterSwitchReply struct {
-	Error  string `json:"error,omitempty"`
-	Wedged bool   `json:"wedged,omitempty"`
 }
 
 // --- verb:arbiter Invoke actions (the in-core PROXY -> the plugin) -------------
