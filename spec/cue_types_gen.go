@@ -5083,6 +5083,33 @@ type DeployConfigSaveStateRequest struct {
 type DeployConfigSaveStateReply struct {
 }
 
+// #ArbiterBracketAcquireRequest / Reply — the K4-exit HostBuild seam for the acquire half of the
+// Q1 resource-arbiter bracket (FLOOR-SLIM-proper Unit-8; the former core-resident
+// charly/arbiter_bracket.go's arbiterBracketedStart, deleted — command:bundle's
+// handleLifecycleSimple now calls this seam itself around its own Start dispatch, instead of core
+// bracketing the dispatch call inline). `name` is the claimant identity; `node` carries the claim
+// fields (requires_exclusive:/requires_shared:) acquireResourceForClaimant reads. The actual
+// os.Setenv(CHARLY_PREEMPT_LEASE) STILL runs host-side (preserving the nested-`charly`-subprocess
+// env-inheritance skip) — only OWNERSHIP of WHEN to call it moves plugin-side.
+type ArbiterBracketAcquireRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Node Deploy `yaml:"node,omitempty" json:"node"`
+}
+
+type ArbiterBracketAcquireReply struct {
+}
+
+// #ArbiterBracketReleaseRequest / Reply — the release half (arbiterBracketedStart's
+// release-on-failure leg + arbiterBracketedStop's unconditional release-after-stop leg, both now
+// reached from command:bundle's handleLifecycleSimple via this ONE seam).
+type ArbiterBracketReleaseRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+}
+
+type ArbiterBracketReleaseReply struct {
+}
+
 // #PodConfigCleanDeployEntryRequest / Reply: deploykit.CleanDeployEntry(box, instance,
 // marshalDeployNode) — the `charly remove` deploy-entry cleanup (Cutover B unit 2 remove-verb
 // completion). Mirrors #DeployConfigSaveStateRequest's shape ({box!, instance?} → {}, the host
@@ -5291,9 +5318,15 @@ type DeployTargetRebuildOpts struct {
 // registered-provider's own `lifecycle` flag lives on the core-private *grpcProvider) — it gates
 // whether Start/Stop/Status/Logs/Shell/Attach/Rebuild are even valid for this substrate
 // (mirroring the former ErrNotSupportedOnExternal branches) AND whether the Q1 arbiter bracket
-// applies to Start/Stop (arbiterBracketedStart/Stop's hasPlan, a DIFFERENT, narrower boolean the
-// core proxy computes itself — see arbiter_bracket.go). `node` is the dispatch-merged BundleNode
-// (nil for a ref-based deploy with no charly.yml entry). `plans_json` carries []InstallPlanView
+// applies to Start/Stop — `has_plan` is that DIFFERENT, narrower boolean (K4-exit, FLOOR-SLIM-
+// proper Unit-8): core still computes it (lifecycleStartPlanHooks[word]/lifecycleStopPlanHooks[word]
+// presence, pod_lifecycle_dispatch.go, unmoved) and now THREADS it on the wire instead of bracketing
+// the dispatch call itself — command:bundle's handleLifecycleSimple owns the bracket call, via the
+// arbiter-bracket-acquire/-release HostBuild seams below (the same os.Setenv/os.Getenv
+// nested-subprocess-inheritance property the former arbiter_bracket.go preserved, now reached
+// plugin-side). `node` is the dispatch-merged BundleNode
+// (nil for a ref-based deploy with no charly.yml entry) — required when has_plan is true (the claim
+// fields live on it). `plans_json` carries []InstallPlanView
 // for Add/Update. `opts_json` carries the op-specific opts struct as an opaque envelope (the
 // zero-value-safe pattern every #Pod*Opts request already uses) — kept opaque rather than one
 // field per opts type so a NEW deploy verb never needs a NEW CUE field, only a new decode
@@ -5308,6 +5341,8 @@ type DeployTargetDispatchRequest struct {
 	HasLifecycle bool `yaml:"has_lifecycle,omitempty" json:"has_lifecycle,omitempty"`
 
 	HasPreresolve bool `yaml:"has_preresolve,omitempty" json:"has_preresolve,omitempty"`
+
+	HasPlan bool `yaml:"has_plan,omitempty" json:"has_plan,omitempty"`
 
 	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
 
