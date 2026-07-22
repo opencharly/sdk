@@ -887,12 +887,29 @@ func (x *ChannelFrame) GetReplayFrom() uint64 {
 // InvokeProviderRequest mirrors InvokeRequest minus the broker id (the host already holds the
 // reverse context): dispatch op `op` on provider (class, reserved) with params/env (F10).
 type InvokeProviderRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Class         string                 `protobuf:"bytes,1,opt,name=class,proto3" json:"class,omitempty"`
-	Reserved      string                 `protobuf:"bytes,2,opt,name=reserved,proto3" json:"reserved,omitempty"`
-	Op            string                 `protobuf:"bytes,3,opt,name=op,proto3" json:"op,omitempty"`
-	ParamsJson    []byte                 `protobuf:"bytes,4,opt,name=params_json,json=paramsJson,proto3" json:"params_json,omitempty"`
-	EnvJson       []byte                 `protobuf:"bytes,5,opt,name=env_json,json=envJson,proto3" json:"env_json,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Class      string                 `protobuf:"bytes,1,opt,name=class,proto3" json:"class,omitempty"`
+	Reserved   string                 `protobuf:"bytes,2,opt,name=reserved,proto3" json:"reserved,omitempty"`
+	Op         string                 `protobuf:"bytes,3,opt,name=op,proto3" json:"op,omitempty"`
+	ParamsJson []byte                 `protobuf:"bytes,4,opt,name=params_json,json=paramsJson,proto3" json:"params_json,omitempty"`
+	EnvJson    []byte                 `protobuf:"bytes,5,opt,name=env_json,json=envJson,proto3" json:"env_json,omitempty"`
+	// OPTIONAL marshalled spec.VenueDescriptor (S1 — the venue-scoped-executor-session
+	// seam). The calling plugin supplies its OWN self-described venue (shell or ssh) when
+	// it wants the target provider Invoked WITH a live executor but holds no enclosing
+	// executor of its own to forward (e.g. a verb/kind Invoke with no deploy-context
+	// broker). On presence, the host re-materializes a FRESH DeployExecutor from the
+	// descriptor (venueFromDescriptor) and threads THAT onto the nested InvokeWithExecutor
+	// call instead of the caller's own executor. Empty/absent — byte-identical prior
+	// behavior (the caller's own executor, if any, is forwarded as before).
+	VenueDescriptorJson []byte `protobuf:"bytes,6,opt,name=venue_descriptor_json,json=venueDescriptorJson,proto3" json:"venue_descriptor_json,omitempty"`
+	// OPTIONAL canonical candy ref (S3b — the Pass-2 lazy-connect gap). The host's
+	// InvokeProvider handler falls back to connectPluginByWordRef(class, word, extraRef)
+	// on a registry miss (S2); passing "" only ever reaches Pass-1 (the calling project's
+	// own candy closure) — a target declared nowhere in that closure but resolvable via an
+	// explicit @github canonical ref (the same Pass-2 fetch the credential/vm/kube host
+	// adapters already use) needs this field set. Empty/absent — byte-identical S2
+	// behavior (Pass-1 only).
+	ExtraRef      string `protobuf:"bytes,7,opt,name=extra_ref,json=extraRef,proto3" json:"extra_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -960,6 +977,20 @@ func (x *InvokeProviderRequest) GetEnvJson() []byte {
 		return x.EnvJson
 	}
 	return nil
+}
+
+func (x *InvokeProviderRequest) GetVenueDescriptorJson() []byte {
+	if x != nil {
+		return x.VenueDescriptorJson
+	}
+	return nil
+}
+
+func (x *InvokeProviderRequest) GetExtraRef() string {
+	if x != nil {
+		return x.ExtraRef
+	}
+	return ""
 }
 
 // HostBuildRequest names a registered host-builder `kind` (e.g. "plugin-binary", and — added by
@@ -2509,14 +2540,16 @@ const file_plugin_proto_rawDesc = "" +
 	"\vtarget_json\x18\x0f \x01(\fR\n" +
 	"targetJson\x12\x1f\n" +
 	"\vreplay_from\x18\x10 \x01(\x04R\n" +
-	"replayFrom\"\x95\x01\n" +
+	"replayFrom\"\xe6\x01\n" +
 	"\x15InvokeProviderRequest\x12\x14\n" +
 	"\x05class\x18\x01 \x01(\tR\x05class\x12\x1a\n" +
 	"\breserved\x18\x02 \x01(\tR\breserved\x12\x0e\n" +
 	"\x02op\x18\x03 \x01(\tR\x02op\x12\x1f\n" +
 	"\vparams_json\x18\x04 \x01(\fR\n" +
 	"paramsJson\x12\x19\n" +
-	"\benv_json\x18\x05 \x01(\fR\aenvJson\"C\n" +
+	"\benv_json\x18\x05 \x01(\fR\aenvJson\x122\n" +
+	"\x15venue_descriptor_json\x18\x06 \x01(\fR\x13venueDescriptorJson\x12\x1b\n" +
+	"\textra_ref\x18\a \x01(\tR\bextraRef\"C\n" +
 	"\x10HostBuildRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1b\n" +
 	"\tspec_json\x18\x02 \x01(\fR\bspecJson\"G\n" +

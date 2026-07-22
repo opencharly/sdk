@@ -108,6 +108,18 @@ const (
 	OpEphemeralRegister = "ephemeral-register"
 	OpEphemeralTeardown = "ephemeral-teardown"
 
+	// OpDeployDispatch is the command:bundle S3b selector: the ONE generic host→plugin envelope
+	// every UnifiedDeployTarget/LifecycleTarget method (Add/Update/Del/Test/Start/Stop/Status/
+	// Logs/Shell/Attach/Rebuild) dispatches through, discriminated by
+	// spec.DeployTargetDispatchRequest.Op — a generic action selector (never a provider word,
+	// F11), mirroring OpCompile's shape but carrying ELEVEN former methods through ONE wire pair
+	// instead of eleven (R3 — the project rulebook's "generic over ad-hoc"). Core's thin
+	// ResolveTarget proxy (charly/unified_targets.go) Invokes this; candy/plugin-bundle's handler
+	// switches on Op and reaches the ACTUAL deploy-substrate provider (pod/vm/local/k8s/android)
+	// via its OWN sdk.Executor.InvokeProvider (S1) — core never talks to the substrate directly
+	// once this lands.
+	OpDeployDispatch = "deploy-dispatch"
+
 	// EphemeralPanicMarker prefixes an error the command:bundle plugin converts from a
 	// RECOVERED PANIC inside OpEphemeralRegister/OpEphemeralTeardown (RCA #5, FINAL/K5 unit 6a —
 	// a nil-map write panic in persistEphemeralRuntime was previously UNRECOVERED and vanished

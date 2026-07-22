@@ -164,8 +164,10 @@ func reversePackageRemove(op ReverseOp, re ReverseExecutor) error {
 // The renderUninstall seam maps (format, packages) → the format's uninstall
 // command, or "" when the format has no uninstall template. It keeps this
 // function free of the buildkit DistroConfig/RenderTemplate dependency (which
-// would cycle kit→buildkit→kit once reverse_ops lives in kit) — the charly
-// caller (deploy_target_external.go) closes over DistroCfg + RenderTemplate.
+// would cycle kit→buildkit→kit once reverse_ops lives in kit) — the caller
+// (candy/plugin-bundle/deploy_target.go, S3b — was charly core's
+// deploy_target_external.go before the deploy-dispatch cluster moved) closes
+// over DistroCfg + RenderTemplate.
 func FillReverseUninstallCmds(ops []ReverseOp, renderUninstall func(format string, packages []string) string) {
 	if renderUninstall == nil {
 		return

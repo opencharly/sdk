@@ -439,6 +439,35 @@ protocol: {
 					"type":   "bytes"
 					"number": 5
 				},
+				{
+					"name":   "venue_descriptor_json"
+					"type":   "bytes"
+					"number": 6
+					"doc":    """
+						OPTIONAL marshalled spec.VenueDescriptor (S1 — the venue-scoped-executor-session
+						seam). The calling plugin supplies its OWN self-described venue (shell or ssh) when
+						it wants the target provider Invoked WITH a live executor but holds no enclosing
+						executor of its own to forward (e.g. a verb/kind Invoke with no deploy-context
+						broker). On presence, the host re-materializes a FRESH DeployExecutor from the
+						descriptor (venueFromDescriptor) and threads THAT onto the nested InvokeWithExecutor
+						call instead of the caller's own executor. Empty/absent — byte-identical prior
+						behavior (the caller's own executor, if any, is forwarded as before).
+						"""
+				},
+				{
+					"name":   "extra_ref"
+					"type":   "string"
+					"number": 7
+					"doc":    """
+						OPTIONAL canonical candy ref (S3b — the Pass-2 lazy-connect gap). The host's
+						InvokeProvider handler falls back to connectPluginByWordRef(class, word, extraRef)
+						on a registry miss (S2); passing "" only ever reaches Pass-1 (the calling project's
+						own candy closure) — a target declared nowhere in that closure but resolvable via an
+						explicit @github canonical ref (the same Pass-2 fetch the credential/vm/kube host
+						adapters already use) needs this field set. Empty/absent — byte-identical S2
+						behavior (Pass-1 only).
+						"""
+				},
 			]
 		},
 		{
