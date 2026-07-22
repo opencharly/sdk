@@ -1,7 +1,7 @@
 // CUE schema for the VM-CLIENT wire family (Cutover B unit 2, R-E4) — the host↔plugin-vm
 // internal-op RPC types charly-core's thin dispatch wrapper (invokeVmPluginEnv,
 // charly/vm_plugin_client.go) sends to candy/plugin-vm's verb:libvirt provider for
-// domain-state/list-domains/resolve-spice/resolve-vnc/qemu-shutdown/snapshot-internal ops (NOT
+// domain-state/list-domains/resolve-spice/resolve-vnc/snapshot-internal ops (NOT
 // authored config — never in #Node/#Op). These were HAND-WRITTEN Go structs in charly-core (an
 // SDD violation — wire types are CUE-sourced without exception) mirrored by an independent
 // hand-written twin in candy/plugin-vm (vm_target.go's DisplayEndpoint decoded the identical
@@ -47,11 +47,15 @@
 }
 
 // #VmPluginEnv is the host→plugin env for an internal VM-resolution RPC (domain-state/
-// list-domains/resolve-spice/resolve-vnc/qemu-shutdown/snapshot-internal). Matches the SUBSET of
+// list-domains/resolve-spice/resolve-vnc/snapshot-internal). Matches the SUBSET of
 // candy/plugin-vm's own (richer) internal vmEnv decode struct that charly-core's dispatch
 // actually sends — plugin-vm's vmEnv carries an ADDITIONAL `create` field (the `charly vm create`
 // CLI's own in-process construction, never sent by charly-core), which stays a plugin-local
 // concern outside this shared def (containing *VmSpec/VmRuntimeParams, neither CUE-sourced yet).
+// (A former `state_dir` field served ONLY the "qemu-shutdown" op, whose sole sender —
+// charly/vm_qemu_client.go — was deleted in FLOOR-SLIM-proper Unit-8B alongside the arbiter's
+// direct-QEMU stop path; the field was removed in the same cutover, confirmed zero remaining
+// setters via `git grep 'VmPluginEnv{'` across charly/candy/sdk.)
 #VmPluginEnv: {
 	vm_op!:       string             @go(VmOp)
 	vm_name?:     string             @go(VmName)
@@ -59,7 +63,6 @@
 	force?:       bool               @go(Force)
 	delete_disk?: bool               @go(DeleteDisk)
 	snap?:        #VmSnapInternalReq @go(Snap,optional=nillable)
-	state_dir?:   string             @go(StateDir)
 }
 
 // #VmDisplayEndpoint describes how to reach one graphics channel (SPICE or VNC) of a running VM.
