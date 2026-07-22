@@ -390,11 +390,11 @@
 
 // #AndroidEntityResolution is the kind="android" payload carried OPAQUELY inside
 // #DeployEntityResolveReply.entity (unit 6a): the resolved kind:android #ResolvedAndroid spec
-// (ResolvedAndroid itself is pre-existing hand-written sdk/spec wire debt, substrate_template_wire.go
-// — not converted by this seam) PLUS the google-play credentials, resolved host-side (the
-// credential STORE touch — DefaultCredentialStore — is core-only; the plugin never calls it
-// directly, matching every other cutover's InvokeProvider-adjacent credential deferral). Its own
-// shape IS CUE-sourced (not hand-written) even though the spec field it carries opaquely is not.
+// (CUE-sourced at schema/substrate_template.cue, SDD conversion — carried OPAQUELY here anyway,
+// see the #DeployEntityResolveRequest doc below for why) PLUS the google-play credentials,
+// resolved host-side (the credential STORE touch — DefaultCredentialStore — is core-only; the
+// plugin never calls it directly, matching every other cutover's InvokeProvider-adjacent
+// credential deferral).
 #AndroidEntityResolution: {
 	spec?:         bytes  @go(SpecJSON, type=RawBody)
 	google_email?: string @go(GoogleEmail)
@@ -430,11 +430,12 @@
 // on internally (clause-D) — never a compiled-in per-KIND HostBuild registration, so a new
 // consumer needs no new wire shape, only a new `case` in the host handler (or reuse of an
 // existing one — "bundle" and "deploy" share ONE case, both a deploy-tree node lookup by name).
-// `entity` carries the kind-specific result OPAQUELY (ResolvedK8s/ResolvedAndroid/the vm entity
-// are still hand-written sdk/spec wire types with no CUE def today — substrate_template_wire.go /
-// vm_wire.go, pre-existing SDD debt this seam does not attempt to convert) — the caller already
-// knows which kind it asked for and decodes accordingly, mirroring the DeployCompileReply /
-// DeployConfigSaveRequest RawBody idiom used throughout this file for the same reason.
+// `entity` carries the kind-specific result OPAQUELY — ResolvedK8s/ResolvedAndroid/the vm entity
+// (ResolvedVm) are ALL CUE-sourced (schema/substrate_template.cue, schema/vm.cue; SDD conversion),
+// but this seam still carries them as opaque bytes rather than a typed field, because `kind` is
+// DATA the host dispatches on internally (clause-D) and the caller already knows which kind it
+// asked for and decodes accordingly — mirroring the DeployCompileReply / DeployConfigSaveRequest
+// RawBody idiom used throughout this file for the same reason.
 #DeployEntityResolveRequest: {
 	kind!: string @go(Kind) // "" | "deploy" | "bundle" for a deploy-tree node lookup (node.From carries a cross-ref hop); "k8s"|"android"|"vm" for a kind:<word> entity lookup (the WHOLE resolved envelope)
 	name!: string @go(Name)
@@ -1416,8 +1417,8 @@
 }
 
 // (Removed, R10 bed-found bug fix, S3b): a prior discriminated Update-opts shape retired in
-// favor of Update's OptsJSON marshaling the SAME #LifecycleOpts (hand-written,
-// sdk/spec/deploy_wire.go) that Add's does — mirroring the pre-move Update path exactly, which
+// favor of Update's OptsJSON marshaling the SAME #LifecycleOpts (CUE-sourced,
+// schema/seam.cue) that Add's does — mirroring the pre-move Update path exactly, which
 // built a plain deploykit.EmitOpts from the retired shape's fields and passed it into the SAME
 // shared apply() body Add used, rather than a separate wire shape. RebuildImage is NEVER read by
 // the apply body (it belongs to Rebuild's own #DeployTargetRebuildOpts) — the divergence the
