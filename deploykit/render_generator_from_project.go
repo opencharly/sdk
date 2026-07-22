@@ -83,7 +83,7 @@ func (c renderSeamCaller) invoke(class, word, op string, params, out any) error 
 	if err != nil {
 		return fmt.Errorf("invoke %s:%s %s: marshal params: %w", class, word, op, err)
 	}
-	resJSON, err := c.ex.InvokeProvider(c.ctx, class, word, op, pj, nil)
+	resJSON, err := c.ex.InvokeProvider(c.ctx, class, word, op, pj, nil, sdk.InvokeProviderOpts{})
 	if err != nil {
 		return fmt.Errorf("invoke %s:%s %s: %w", class, word, op, err)
 	}
@@ -125,7 +125,7 @@ func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolv
 	if err != nil {
 		return reply, fmt.Errorf("marshal builder resolve input: %w", err)
 	}
-	resJSON, ierr := c.ex.InvokeProvider(c.ctx, "builder", word, sdk.OpResolve, params, env)
+	resJSON, ierr := c.ex.InvokeProvider(c.ctx, "builder", word, sdk.OpResolve, params, env, sdk.InvokeProviderOpts{})
 	if ierr != nil {
 		return reply, ierr
 	}

@@ -265,7 +265,9 @@ func parseUserData(t *testing.T, userData string) map[string]any {
 }
 
 func TestRenderCloudInit_EnvelopeAndMeta(t *testing.T) {
-	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "arch", BaseUser: "arch"}}
+	// fedora: NON-pacman (rpm), so this exercises the unchanged packages:-key path —
+	// see TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded for the arch/pacman shape.
+	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "fedora", BaseUser: "fedora"}}
 	rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid-123", Hostname: "testvm"}
 	userData, metaData, _, err := RenderCloudInit(spec, rt)
 	if err != nil {
@@ -297,6 +299,107 @@ func TestRenderCloudInit_EnvelopeAndMeta(t *testing.T) {
 	}
 }
 
+// --- R10 bed finding: pacman-family package delivery moves to an idempotent
+// runcmd, every other distro's render is untouched. ---
+//
+// Root cause (check-sidecar-pod-ephvm wedge, S3b): cloud-init's own Arch
+// package-install module invokes `pacman -S` WITHOUT `--needed`, so on an
+// image that already ships the D15 minimum set (every Arch cloud image does),
+// it unconditionally reinstalls them — reinstalling openssh re-triggers its
+// post-install host-key-regen hook while the base image's own
+// socket-activated sshd is already listening, racing new connections against
+// a live key-file rewrite (observed: TCP accepts, resets during
+// kex_exchange_identification, guest otherwise idle — a live console capture
+// of the wedge is in scratchpad/s3b-vm-wedge-evidence/). apt/dnf installs are
+// naturally no-op-idempotent when the package is already present, so only
+// pacman-family distros need the rewrite.
+
+func TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded(t *testing.T) {
+	for _, distro := range []string{"arch", "cachyos", "manjaro", "endeavouros"} {
+		t.Run(distro, func(t *testing.T) {
+			spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: distro, BaseUser: "arch"}}
+			ci := &VmCloudInit{Package: []string{"htop"}, RunCmd: []string{"echo user-cmd"}}
+			spec.CloudInit = ci
+			rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid", Hostname: "testvm"}
+			userData, _, _, err := RenderCloudInit(spec, rt)
+			if err != nil {
+				t.Fatalf("RenderCloudInit: %v", err)
+			}
+			um := parseUserData(t, userData)
+
+			if _, has := um["packages"]; has {
+				t.Errorf("pacman-family render must OMIT the packages: key entirely, got %v", um["packages"])
+			}
+			rc, _ := um["runcmd"].([]any)
+			if len(rc) != 3 {
+				t.Fatalf("runcmd = %v, want 3 entries [pacman, sshd-enable, user-cmd]", rc)
+			}
+			wantPacman := "pacman -S --needed --noconfirm openssh curl tar htop"
+			if rc[0] != wantPacman {
+				t.Errorf("runcmd[0] = %q, want %q (must be FIRST — before sshd is ever enabled)", rc[0], wantPacman)
+			}
+			if rc[1] != "systemctl enable --now sshd" {
+				t.Errorf("runcmd[1] = %q, want the sshd-enable command", rc[1])
+			}
+			if rc[2] != "echo user-cmd" {
+				t.Errorf("runcmd[2] = %q, want the user's own runcmd entry, order preserved", rc[2])
+			}
+		})
+	}
+}
+
+// TestRenderCloudInit_NonPacman_ByteIdenticalToPreFix locks the EXACT rendered
+// user-data for every non-pacman distro — this is the containment proof: the
+// pacman-family branch must be provably unreachable for rpm/deb, so these
+// distros need no new runtime (bed) proof, only this pure-function golden.
+func TestRenderCloudInit_NonPacman_ByteIdenticalToPreFix(t *testing.T) {
+	cases := []struct {
+		distro       string
+		wantSSHPkg   string
+		wantSSHdUnit string
+	}{
+		{"fedora", "openssh", "sshd"},
+		{"debian", "openssh-server", "ssh"},
+		{"ubuntu", "openssh-server", "ssh"},
+	}
+	for _, c := range cases {
+		t.Run(c.distro, func(t *testing.T) {
+			spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: c.distro, BaseUser: "op"}}
+			ci := &VmCloudInit{Package: []string{"htop"}, RunCmd: []string{"echo user-cmd"}}
+			spec.CloudInit = ci
+			rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid", Hostname: "testvm"}
+			userData, _, _, err := RenderCloudInit(spec, rt)
+			if err != nil {
+				t.Fatalf("RenderCloudInit: %v", err)
+			}
+			um := parseUserData(t, userData)
+
+			// packages: key present with the EXACT pre-fix union — never folded into runcmd.
+			pkgs, _ := um["packages"].([]any)
+			wantPkgs := []any{c.wantSSHPkg, "curl", "tar", "htop"}
+			if len(pkgs) != len(wantPkgs) {
+				t.Fatalf("packages = %v, want %v", pkgs, wantPkgs)
+			}
+			for i := range wantPkgs {
+				if pkgs[i] != wantPkgs[i] {
+					t.Errorf("packages[%d] = %v, want %v", i, pkgs[i], wantPkgs[i])
+				}
+			}
+			// runcmd: EXACTLY {sshd-enable, user-cmd} — no pacman line ever prepended.
+			rc, _ := um["runcmd"].([]any)
+			wantRC := []any{"systemctl enable --now " + c.wantSSHdUnit, "echo user-cmd"}
+			if len(rc) != len(wantRC) {
+				t.Fatalf("runcmd = %v, want %v", rc, wantRC)
+			}
+			for i := range wantRC {
+				if rc[i] != wantRC[i] {
+					t.Errorf("runcmd[%d] = %v, want %v", i, rc[i], wantRC[i])
+				}
+			}
+		})
+	}
+}
+
 func TestRenderCloudInit_ExtraSecondDocument(t *testing.T) {
 	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "arch"}}
 	ci := &VmCloudInit{Extra: "#cloud-config\nfinal_message: done\n"}
@@ -315,5 +418,102 @@ func TestRenderCloudInit_ExtraSecondDocument(t *testing.T) {
 	}
 	if !strings.Contains(userData, "final_message: done") {
 		t.Errorf("Extra body missing:\n%s", userData)
+	}
+}
+
+// --- effectiveDistro inference (second R10 bed finding, same wedge): the
+// first cut of the pacman-family fix silently never fired for eval-vm,
+// because its charly.yml source: block declares no distro: field —
+// Source.Distro was simply "". These lock the inference's three edges. ---
+
+func TestRenderCloudInit_InferredArch_RunsPacmanNeeded(t *testing.T) {
+	// No explicit distro: — exactly eval-vm's real charly.yml shape
+	// (kind: cloud_image, base_user: arch, no distro:).
+	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "arch"}}
+	ci := &VmCloudInit{Package: []string{"htop"}, RunCmd: []string{"echo user-cmd"}}
+	spec.CloudInit = ci
+	rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid", Hostname: "testvm"}
+	userData, _, _, err := RenderCloudInit(spec, rt)
+	if err != nil {
+		t.Fatalf("RenderCloudInit: %v", err)
+	}
+	um := parseUserData(t, userData)
+
+	if _, has := um["packages"]; has {
+		t.Errorf("inferred-arch render must OMIT the packages: key, got %v", um["packages"])
+	}
+	rc, _ := um["runcmd"].([]any)
+	wantPacman := "pacman -S --needed --noconfirm openssh curl tar htop"
+	if len(rc) != 3 || rc[0] != wantPacman {
+		t.Fatalf("runcmd = %v, want [%q, sshd-enable, echo user-cmd] (empty distro + base_user=arch must infer pacman-family)", rc, wantPacman)
+	}
+}
+
+func TestRenderCloudInit_EmptyDistroNonArchBaseUser_StaysNonPacman(t *testing.T) {
+	// The safe side of the inference: an unrecognized image (no distro:, and
+	// base_user isn't "arch") must NEVER get a pacman command — falls through
+	// to the untouched, pre-fix packages:-key path exactly as before.
+	cases := []string{"", "ubuntu", "someotheruser"}
+	for _, baseUser := range cases {
+		t.Run("base_user="+baseUser, func(t *testing.T) {
+			spec := &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: baseUser}}
+			ci := &VmCloudInit{Package: []string{"htop"}, RunCmd: []string{"echo user-cmd"}}
+			spec.CloudInit = ci
+			rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid", Hostname: "testvm"}
+			userData, _, _, err := RenderCloudInit(spec, rt)
+			if err != nil {
+				t.Fatalf("RenderCloudInit: %v", err)
+			}
+			um := parseUserData(t, userData)
+
+			pkgs, _ := um["packages"].([]any)
+			wantPkgs := []any{"openssh", "curl", "tar", "htop"}
+			if len(pkgs) != len(wantPkgs) {
+				t.Fatalf("packages = %v, want %v (must stay on the packages:-key path — no pacman command for an unrecognized image)", pkgs, wantPkgs)
+			}
+			rc, _ := um["runcmd"].([]any)
+			wantRC := []any{"systemctl enable --now sshd", "echo user-cmd"}
+			if len(rc) != len(wantRC) || rc[0] != wantRC[0] {
+				t.Errorf("runcmd = %v, want %v (no pacman line ever prepended)", rc, wantRC)
+			}
+		})
+	}
+}
+
+func TestRenderCloudInit_ExplicitNonPacmanDistro_UnaffectedByInference(t *testing.T) {
+	// An EXPLICIT non-pacman distro must never be overridden by the base_user
+	// inference, even in the contrived case base_user happens to be "arch".
+	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "fedora", BaseUser: "arch"}}
+	rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid"}
+	userData, _, _, err := RenderCloudInit(spec, rt)
+	if err != nil {
+		t.Fatalf("RenderCloudInit: %v", err)
+	}
+	um := parseUserData(t, userData)
+	pkgs, _ := um["packages"].([]any)
+	if len(pkgs) == 0 || pkgs[0] != "openssh" {
+		t.Errorf("explicit distro=fedora must keep the packages: key (openssh first), got %v", um["packages"])
+	}
+}
+
+func TestEffectiveDistro(t *testing.T) {
+	cases := []struct {
+		name string
+		spec *VmSpec
+		want string
+	}{
+		{"nil spec", nil, ""},
+		{"explicit wins", &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "debian", BaseUser: "arch"}}, "debian"},
+		{"inferred from cloud_image+arch base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "arch"}}, "arch"},
+		{"no inference for non-cloud_image kind", &VmSpec{Source: VmSource{Kind: "bootc", BaseUser: "arch"}}, ""},
+		{"no inference for non-arch base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "ubuntu"}}, ""},
+		{"no inference with no base_user", &VmSpec{Source: VmSource{Kind: "cloud_image"}}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := effectiveDistro(c.spec); got != c.want {
+				t.Errorf("effectiveDistro = %q, want %q", got, c.want)
+			}
+		})
 	}
 }

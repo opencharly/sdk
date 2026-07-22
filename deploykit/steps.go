@@ -824,7 +824,8 @@ func (s *RebootStep) Reverse() []ReverseOp { return nil }
 //     ledger (record-and-replay — only recorded ops are reversed at `charly bundle del`).
 //     This is the deploy-context counterpart of the build-context OpEmit leg (tasks.go
 //     emitPluginFragment), reusing the SAME spec.DeployReply / ReverseOp wire as the
-//     external deploy TARGET (deploy_target_external.go) — R3.
+//     external deploy TARGET (candy/plugin-bundle/deploy_target.go, S3b — was charly
+//     core's deploy_target_external.go before the deploy-dispatch cluster moved) — R3.
 //   - EmitOCI (a BUILD venue — the pod-overlay Containerfile): Invoke(OpEmit) via the
 //     SHARED emitPluginFragment, splicing the plugin's Containerfile FRAGMENT verbatim
 //     — it cannot deploy-execute at build (no live venue). Identical behaviour to the
