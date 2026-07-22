@@ -1393,17 +1393,17 @@
 	stop_on_fail?: bool        @go(StopOnFail)
 }
 
-// #DeployTargetUpdateOpts is RETIRED (R10 bed-found bug fix, S3b): Update's OptsJSON now
-// marshals the SAME #LifecycleOpts (hand-written, sdk/spec/deploy_wire.go) that Add's does —
-// mirroring the pre-move externalDeployTarget.Update exactly, which built a plain
-// deploykit.EmitOpts from UpdateOpts' fields and passed it into the SAME shared apply() body
-// Add used, rather than a separate wire shape. RebuildImage is NEVER read by the apply body (it
-// belongs to Rebuild's own #DeployTargetRebuildOpts) — the divergence this type introduced
-// silently dropped it before it could ever matter, but the REAL bug it masked was
-// handleDeployApply decoding a wire-incompatible raw EmitOpts (carrying the live
-// ParentExec/ParentNode interface fields) for the Add path, which crashed the moment a
-// nested-child deploy (ParentExec non-nil) tried to Add — proven on the check-sidecar-pod R10
-// bed.
+// (Removed, R10 bed-found bug fix, S3b): a prior discriminated Update-opts shape retired in
+// favor of Update's OptsJSON marshaling the SAME #LifecycleOpts (hand-written,
+// sdk/spec/deploy_wire.go) that Add's does — mirroring the pre-move Update path exactly, which
+// built a plain deploykit.EmitOpts from the retired shape's fields and passed it into the SAME
+// shared apply() body Add used, rather than a separate wire shape. RebuildImage is NEVER read by
+// the apply body (it belongs to Rebuild's own #DeployTargetRebuildOpts) — the divergence the
+// retired shape introduced silently dropped it before it could ever matter, but the REAL bug it
+// masked was the Add path decoding a wire-incompatible raw EmitOpts (carrying the live
+// ParentExec/ParentNode interface fields), which crashed the moment a nested-child deploy
+// (ParentExec non-nil) tried to Add — proven on the check-sidecar-pod R10 bed. Full narrative:
+// this repo's CHANGELOG/2026.203.0212.md.
 
 // #DeployTargetLogsOpts mirrors the former charly-core LogsOpts (`charly logs`).
 #DeployTargetLogsOpts: {
