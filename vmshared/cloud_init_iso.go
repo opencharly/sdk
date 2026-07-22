@@ -132,12 +132,3 @@ func resolveISOBuilder() isoBuilder {
 	return isoBuilder{}
 }
 
-// ISOBuilderAvailable reports whether any supported ISO builder is on
-// PATH. Used by `charly doctor` to list missing VM dependencies.
-func ISOBuilderAvailable() (name string, ok bool) {
-	b := resolveISOBuilder()
-	if b.Bin == "" {
-		return "", false
-	}
-	return filepath.Base(b.Bin), true
-}

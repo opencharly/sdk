@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -196,31 +195,6 @@ func IsDeviceElement(snippet string) bool {
 		}
 		if se, ok := tok.(xml.StartElement); ok {
 			return libvirtDeviceElements[se.Name.Local]
-		}
-	}
-}
-
-// ValidateLibvirtSnippet checks that a string is valid XML with at least one element.
-func ValidateLibvirtSnippet(snippet string) error {
-	snippet = strings.TrimSpace(snippet)
-	if snippet == "" {
-		return fmt.Errorf("empty snippet")
-	}
-	decoder := xml.NewDecoder(strings.NewReader(snippet))
-	foundElement := false
-	for {
-		tok, err := decoder.Token()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if !foundElement {
-					return fmt.Errorf("snippet must contain an XML element")
-				}
-				return nil
-			}
-			return fmt.Errorf("invalid XML: %w", err)
-		}
-		if _, ok := tok.(xml.StartElement); ok {
-			foundElement = true
 		}
 	}
 }

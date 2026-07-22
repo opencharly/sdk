@@ -256,19 +256,6 @@ func PackageNames(items []PackageItem) []string {
 	return out
 }
 
-// PackageItemsFromStrings constructs a PackageItem slice from bare names.
-// Used by the migrator when collapsing legacy format sections that only
-// carried `packages: [name1, name2]`.
-func PackageItemsFromStrings(names []string) []PackageItem {
-	out := make([]PackageItem, 0, len(names))
-	for _, n := range names {
-		if n != "" {
-			out = append(out, PackageItem{Name: n})
-		}
-	}
-	return out
-}
-
 // ---------------------------------------------------------------------------
 // VmSource / VmSSH — #VmSource / #VmSSH. VmSource is the flat
 // discriminated-union source; VmSSH references the generated VmKeyInjection.
