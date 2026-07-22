@@ -159,11 +159,43 @@ func TestComposeRunCmd(t *testing.T) {
 		t.Run(c.distro, func(t *testing.T) {
 			spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: c.distro}}
 			got := composeRunCmd(spec, &VmCloudInit{RunCmd: []string{"echo hi"}})
-			want0 := "systemctl enable --now " + c.wantUnit
-			if len(got) != 2 || got[0] != want0 || got[1] != "echo hi" {
-				t.Errorf("composeRunCmd(%q) = %v, want [%q, echo hi]", c.distro, got, want0)
+			// D18 (bed-robustness batch item 3): the sshd hardening drop-in write+validate is
+			// now step 0, "systemctl unmask ssh.socket || true" is step 1 (the matching unmask
+			// for composeBootCmd's mask), the enable step moved to index 2, and the user's own
+			// runcmd entries still land last, unchanged relative order.
+			wantEnable := "systemctl enable --now " + c.wantUnit
+			if len(got) != 4 {
+				t.Fatalf("composeRunCmd(%q) = %v, want 4 entries", c.distro, got)
+			}
+			if got[0] != sshHardeningDropInCmd {
+				t.Errorf("composeRunCmd(%q)[0] = %v, want the sshd hardening drop-in command", c.distro, got[0])
+			}
+			if got[1] != "systemctl unmask ssh.socket || true" {
+				t.Errorf("composeRunCmd(%q)[1] = %v, want the ssh.socket unmask", c.distro, got[1])
+			}
+			if got[2] != wantEnable {
+				t.Errorf("composeRunCmd(%q)[2] = %v, want %q", c.distro, got[2], wantEnable)
+			}
+			if got[3] != "echo hi" {
+				t.Errorf("composeRunCmd(%q)[3] = %v, want the user's own runcmd entry", c.distro, got[3])
 			}
 		})
+	}
+}
+
+// TestComposeBootCmd_MasksSshSocket is the regression test for the D18 mask half of the fix: the
+// mask must be the FIRST bootcmd entry (bootcmd runs earliest, before write_files/packages/
+// runcmd), and the user's own bootcmd entries must still be preserved after it.
+func TestComposeBootCmd_MasksSshSocket(t *testing.T) {
+	got := composeBootCmd(&VmCloudInit{BootCmd: []string{"echo early"}})
+	if len(got) != 2 {
+		t.Fatalf("composeBootCmd() = %v, want 2 entries", got)
+	}
+	if got[0] != "systemctl mask ssh.socket || true" {
+		t.Errorf("composeBootCmd()[0] = %v, want the ssh.socket mask", got[0])
+	}
+	if got[1] != "echo early" {
+		t.Errorf("composeBootCmd()[1] = %v, want the user's own bootcmd entry", got[1])
 	}
 }
 
@@ -254,8 +286,14 @@ func TestRenderCloudInit_EnvelopeAndMeta(t *testing.T) {
 		t.Errorf("user-data packages = %v, want openssh first", um["packages"])
 	}
 	rc, _ := um["runcmd"].([]any)
-	if len(rc) == 0 || rc[0] != "systemctl enable --now sshd" {
-		t.Errorf("user-data runcmd[0] = %v", um["runcmd"])
+	// D18 (bed-robustness batch item 3): "systemctl enable --now sshd" is no longer runcmd[0] —
+	// the sshd hardening drop-in write+validate and the ssh.socket unmask now precede it.
+	if len(rc) < 3 || rc[2] != "systemctl enable --now sshd" {
+		t.Errorf("user-data runcmd = %v, want index 2 to be the sshd enable step", um["runcmd"])
+	}
+	bc, _ := um["bootcmd"].([]any)
+	if len(bc) == 0 || bc[0] != "systemctl mask ssh.socket || true" {
+		t.Errorf("user-data bootcmd = %v, want the ssh.socket mask first", um["bootcmd"])
 	}
 }
 
