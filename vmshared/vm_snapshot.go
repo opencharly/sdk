@@ -85,11 +85,11 @@ type SnapshotEntry struct {
 // snapshotsDir returns the absolute path to the snapshots/ directory
 // for a given VM. Creates intermediate directories on demand.
 func snapshotsDir(vmName string) (string, error) {
-	home, err := os.UserHomeDir()
+	base, err := VmStateRoot()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".local", "share", "charly", "vm", "charly-"+vmName, "snapshots")
+	dir := filepath.Join(base, "charly-"+vmName, "snapshots")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating snapshots dir %s: %w", dir, err)
 	}
@@ -119,15 +119,15 @@ func vmDiskPath(vmName string) (string, error) {
 		return candidate, nil
 	}
 	// Fall back to the VM state dir (some adoption flows symlink here).
-	home, err := os.UserHomeDir()
+	base, err := VmStateRoot()
 	if err != nil {
 		return "", err
 	}
-	candidate = filepath.Join(home, ".local", "share", "charly", "vm", "charly-"+vmName, "disk.qcow2")
+	candidate = filepath.Join(base, "charly-"+vmName, "disk.qcow2")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate, nil
 	}
-	return "", fmt.Errorf("vm %q: cannot locate primary disk (looked in %s/disk.qcow2 and ~/.local/share/charly/vm/charly-%s/disk.qcow2)", vmName, VmDiskDir(vmName), vmName)
+	return "", fmt.Errorf("vm %q: cannot locate primary disk (looked in %s/disk.qcow2 and %s/charly-%s/disk.qcow2)", vmName, VmDiskDir(vmName), base, vmName)
 }
 
 // registryPath returns the registry.json path for a VM.
