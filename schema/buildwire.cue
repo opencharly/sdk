@@ -1,0 +1,177 @@
+// buildwire.cue — the out-of-proc BUILD-TIME wire (SDD conversion of the
+// former deploy_wire.go's build-time section, per the standing operator
+// directive: a hand-written wire struct not yet CUE-sourced is
+// conversion-in-progress, never a sanctioned exception). What a plugin
+// verb/builder/build-drive exchanges with the host across the go-plugin
+// boundary on an OpEmit / OpResolve / OpBuild / OpCollectContext / OpReverse
+// Invoke at IMAGE BUILD time. Plain structs — gengotypes generates them
+// faithfully, no disjunction needed.
+
+// #BuildEnv is the build-context descriptor the host puts in op.Env for an
+// OpEmit Invoke at image-generation time: the image's distro tags + name, so
+// a plugin can tailor its emitted Containerfile fragment per distro/arch.
+#BuildEnv: {
+	distros?: [...string] @go(Distros)
+	image?: string @go(Image)
+
+	dev_local_pkg?:      bool   @go(DevLocalPkg)
+	image_build_dir?:    string @go(ImageBuildDir)
+	context_rel_prefix?: string @go(ContextRelPrefix)
+}
+
+// #EmitReply is what a plugin verb/builder returns from an OpEmit Invoke at
+// build time: a verbatim Containerfile FRAGMENT the generator splices into
+// the emitted Containerfile.
+#EmitReply: {
+	fragment!: string @go(Fragment)
+}
+
+// #StepEmitRequest is the F-STEP-EMIT HostBuild envelope for a HOST-COUPLED
+// external step kind's build-context fragment.
+#StepEmitRequest: {
+	word!: string @go(Word)
+	payload?: bytes @go(Payload,type=RawBody)
+	distros?: [...string] @go(Distros)
+}
+
+// #BuilderResolveReply is what a builder plugin returns from an OpResolve
+// Invoke at image-generation time — the build-time BUILDER leg.
+#BuilderResolveReply: {
+	stage?:           string   @go(Stage)
+	copy_artifacts?: [...string] @go(CopyArtifacts)
+	copy_binary?:     string   @go(CopyBinary)
+	inline_fragment?: string   @go(InlineFragment)
+}
+
+// #BuilderResolveInput is the OpResolve params: the RENDER CONTEXT the host
+// computes and hands a builder plugin so it can render its build-time
+// multi-stage self-contained.
+#BuilderResolveInput: {
+	candy!: string @go(Candy)
+	builder?:     string @go(Builder)
+	builder_ref?: string @go(BuilderRef)
+	stage_name?:  string @go(StageName)
+	layer_stage?: string @go(LayerStage)
+	copy_src?:    string @go(CopySrc)
+	uid?:         int    @go(UID,type=int)
+	gid?:         int    @go(GID,type=int)
+	home?:        string @go(Home)
+	user?:        string @go(User)
+	manifest?:    string @go(Manifest)
+	has_lock_file?: bool   @go(HasLockFile)
+	install_cmd?:   string @go(InstallCmd)
+	manylinux_fix?: string @go(ManylinuxFix)
+	has_build_script?: bool   @go(HasBuildScript)
+	build_script?:     string @go(BuildScript)
+	packages?: [...string] @go(Packages)
+	options?: [...string] @go(Options)
+	cache_mounts_owned?: string @go(CacheMountsOwned)
+	cache_mounts_auto?:  string @go(CacheMountsAuto)
+	inline?:             bool   @go(Inline)
+}
+
+// #BuildRequest is the CLI→DRIVE envelope: what `charly box build` /
+// `charly box generate` marshal into the compiled-in candy/plugin-build's
+// Invoke (op.Params).
+#BuildRequest: {
+	boxes?: [...string] @go(Boxes) // positional box selection ("" → all enabled)
+	tag?:              string @go(Tag)             // --tag override (empty → CalVer)
+	dir?:              string @go(Dir)              // project dir the host reconstructs config from
+	include_disabled?: bool   @go(IncludeDisabled)  // --include-disabled
+	dev_local_pkg?:    bool   @go(DevLocalPkg)      // --dev-local-pkg (localpkg from local source; build only)
+	push?:             bool   @go(Push)             // --push (build only)
+	platform?:         string @go(Platform)         // --platform (build only)
+	cache?:            string @go(Cache)            // --cache mode (build only)
+	no_cache?:         bool   @go(NoCache)           // --no-cache (build only)
+	jobs?:             int    @go(Jobs,type=int)        // --jobs outer concurrency (build only)
+	podman_jobs?:      int    @go(PodmanJobs,type=int)  // --podman-jobs inner concurrency (build only)
+}
+
+// #BuildReply is what a build:box / build:generate plugin echoes back from
+// its HostBuild call.
+#BuildReply: {
+	written?: [...string] @go(Written)
+	error?:   string @go(Error)
+}
+
+// #OverlayBuildRequest is the BUILD-ENGINE DISPATCH envelope for the
+// pod-overlay build — the F10 "overlay" host-builder.
+#OverlayBuildRequest: {
+	dir?:                string @go(Dir)                // project dir (build-context root) the host reconstructs config from
+	deploy_name?:        string @go(DeployName)          // the raw deploy name (dotted for a nested pod; flattened engine-side)
+	image?:              string @go(Image)               // the base box the overlay inherits FROM (node.Image; "" → DeployName)
+	version?:            string @go(Version)             // the base image CalVer pin (node.Version; "" → newest-local)
+	dry_run?:            bool   @go(DryRun)
+	assume_yes?:         bool   @go(AssumeYes)
+	allow_repo_changes?: bool   @go(AllowRepoChanges)
+	allow_root_tasks?:   bool   @go(AllowRootTasks)
+	with_services?:      bool   @go(WithServices)
+}
+
+// #OverlayBuildReply is what the "overlay" host-builder returns.
+#OverlayBuildReply: {
+	overlay_ref?: string @go(OverlayRef)
+	base_image?:  string @go(BaseImage)
+	deploy_name?: string @go(DeployName)
+	error?:       string @go(Error)
+
+	// resolved_project is the overlay-scoped resolved-project envelope the
+	// candy constructs a deploykit.Generator from. Nil when there is no
+	// add_candy overlay to synthesize (the tag-only path).
+	resolved_project?: #ResolvedProject @go(ResolvedProject,optional=nillable)
+
+	// plans is the deployment's compiled InstallPlans serialized as
+	// InstallPlanViews. Empty for the no-overlay path.
+	plans?: [...#InstallPlanView] @go(Plans)
+
+	// base_user is the base image's runtime USER — the candy emits the
+	// post-overlay `USER <base>` restore directive.
+	base_user?: string @go(BaseUser)
+
+	// base_security is the base image's baked LabelSecurity.
+	base_security?: #Security @go(BaseSecurity,optional=nillable)
+
+	// base_registry is the base image's ai.opencharly.registry OCI label.
+	base_registry?: string @go(BaseRegistry)
+
+	// calver is the host's current CalVer.
+	calver?: string @go(CalVer)
+
+	// overlay_candy_security carries each overlay candy's own `security:`
+	// block.
+	overlay_candy_security?: {[string]: #Security} @go(OverlayCandySecurity,type=map[string]*Security)
+
+	// parent_volumes carries the PARENT deploy node's bind-mount volumes for a
+	// NESTED pod-in-pod overlay build.
+	parent_volumes?: [...#DeployVolume] @go(ParentVolumes)
+}
+
+// #BuilderCollectInput is the OpCollectContext params: the host-supplied
+// candy descriptor an external builder plugin reads to produce its per-candy
+// stage context.
+#BuilderCollectInput: {
+	candy!:   string @go(Candy)
+	builder!: string @go(Builder)
+	home?:    string @go(Home)
+	packages?: [...string] @go(Packages) // the builder's detect-config section packages (aur)
+	replaces?: [...string] @go(Replaces) // aur `replaces:` — repo packages removed before pacman -U
+}
+
+// #BuilderCollectReply is the OpCollectContext reply: the builder-specific
+// stage-context keys the host merges onto the base context.
+#BuilderCollectReply: {
+	context?: {...} @go(Context,type=map[string]any)
+}
+
+// #BuilderReverseInput is the OpReverse params: the candy + its resolved
+// stage-context keys.
+#BuilderReverseInput: {
+	candy!:   string @go(Candy)
+	builder!: string @go(Builder)
+	context?: {...} @go(Context,type=map[string]any)
+}
+
+// #BuilderReverseReply is the OpReverse reply: the builder's teardown ops.
+#BuilderReverseReply: {
+	reverse_ops?: [...#ReverseOp] @go(ReverseOps)
+}

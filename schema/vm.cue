@@ -681,3 +681,30 @@
 	processor?: [...{[string]: string}]
 	oem_strings?: [...string] @go(OEMStrings)
 }
+
+// --- resolve-to-envelope wire type (Cutover L; SDD conversion, per the
+// standing operator directive: a hand-written wire struct not yet CUE-sourced
+// is conversion-in-progress, never a sanctioned exception). ResolvedVm mirrors
+// #Vm's fields — written out explicitly rather than embedding #Vm, since the
+// resolved envelope carries PLAIN post-default scalars, not #Vm's own
+// enum/default machinery (firmware/backend/autostart are plain string/bool
+// here, never the `*"bios"|...` disjunction). candy/plugin-substrate resolves
+// an authored `vm:` template into this envelope; the kernel's vm build/deploy
+// consumers read it without importing the concrete spec.Vm.
+#ResolvedVm: {
+	source!:    #VmSource @go(Source,type=VmSource)
+	disk_size?: string @go(DiskSize)
+	ram?:       string
+	cpu?:       int  @go(Cpus,type=int)
+	machine?:   string
+	firmware!:  string
+	backend!:   string
+	autostart!: bool
+	network?:    #VmNetwork     @go(Network,optional=nillable)
+	ssh?:        #VmSSH         @go(SSH,type=*VmSSH)
+	cloud_init?: #VmCloudInit   @go(CloudInit,optional=nillable)
+	libvirt?:    #LibvirtDomain @go(Libvirt,type=*LibvirtDomain)
+	plan?: [...#Step]
+	snapshot?: [...#VmSnapshot] @go(Snapshots)
+	raw?: bytes @go(Raw,type=RawBody)
+}

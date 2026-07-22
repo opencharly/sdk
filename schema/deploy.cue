@@ -316,6 +316,260 @@
 		stop?:    "shutdown"
 		restore?: "always" | "on-success"
 }) @go(-) // gengotypes: hand PreemptibleConfig
+
+// ---------------------------------------------------------------------------
+// Deploy IR wire (SDD conversion of the former deploy_wire.go, per the
+// standing operator directive: a hand-written wire struct not yet CUE-sourced
+// is conversion-in-progress, never a sanctioned exception). Shared between
+// charly's core (package main) and the plugin SDK / out-of-tree plugins across
+// the go-plugin process boundary on an OpExecute Invoke. Scope (an int enum +
+// String() method) and ReverseOpKind (a string enum) are NAMED Go TYPES with
+// behavior gengotypes cannot generate — they stay hand-written in
+// spec/deploy_consts.go (mirrors the #CheckResult status.cue Status split);
+// the CUE fields referencing them (`scope`/`target_scope`/`kind` below) are
+// plain int/string, typed via @go(Name,type=Scope) / @go(Name,type=ReverseOpKind).
+// Plain structs otherwise — gengotypes generates them faithfully, no
+// disjunction needed.
+
+// #ReverseOp is a single teardown action. Serialized into the ledger so
+// uninstall can reverse a deploy without re-reading the candy manifest.
+#ReverseOp: {
+	kind!:  string @go(Kind,type=ReverseOpKind)
+	format?: string @go(Format) // package format for package-remove (rpm/deb/pac)
+	targets?: [...string] @go(Targets) // package names, file paths, env names, …
+	scope?: int    @go(Scope,type=Scope) // system vs user for disambiguation
+	extra?: {[string]: string} @go(Extra) // op-specific details (e.g. unit name, layer name, plugin-script body)
+	// uninstall_cmd is the rendered host-venue package-removal command for a
+	// ReverseOpPackageRemove op, filled at record time from the format's
+	// uninstall_template by fillReverseUninstallCmds.
+	uninstall_cmd?: string @go(UninstallCmd)
+}
+
+// #InstallPlanView is the JSON-roundtrippable wire VIEW of an InstallPlan.
+#InstallPlanView: {
+	deploy_id?:        string @go(DeployID)
+	box?:              string @go(Box)
+	version?:          string @go(Version)
+	distro?:           string @go(Distro)
+	candy?:            string @go(Candy)
+	candies_included?: [...string] @go(CandiesIncluded)
+	add_candies?: [...string] @go(AddCandies)
+	builder_image?: string @go(BuilderImage)
+	meta?: {[string]: string} @go(Meta)
+	// steps is the serializable per-step IR — the ordered InstallStep sequence
+	// the in-core InstallPlan carries, projected onto the wire union below.
+	steps?: [...#InstallStepView] @go(Steps)
+}
+
+// #CacheMountView is the wire mirror of package main's CacheMountSpec.
+#CacheMountView: {
+	dst?:     string @go(Dst)
+	sharing?: string @go(Sharing)
+}
+
+// #ArtifactView is the wire mirror of package main's ArtifactRef.
+#ArtifactView: {
+	container_path?: string @go(ContainerPath)
+	host_path?:      string @go(HostPath)
+	chown?:          bool   @go(Chown)
+}
+
+// #InstallStepView is the JSON-roundtrippable wire form of ONE InstallStep — a
+// SUPERSET struct: each kind populates the subset of fields it carries, all
+// optional so the wire stays compact.
+#InstallStepView: {
+	kind!: string @go(Kind) // the StepKind discriminator ("File","ShellHook","Op",…)
+
+	// Derived ADVISORY fields (Scope()/Venue()/RequiresGate() results).
+	scope?: int    @go(Scope,type=Scope)
+	venue?: int    @go(Venue,type=int)
+	gate?:  string @go(Gate)
+
+	// payload is the OPAQUE per-kind input for an EXTERNAL (plugin-contributed)
+	// step kind.
+	payload?: bytes @go(Payload,type=RawBody)
+
+	// reverse_ops is the step's host-computed teardown ops.
+	reverse_ops?: [...#ReverseOp] @go(ReverseOps)
+
+	// Shared identity / provenance.
+	candy_name?: string @go(CandyName) // every kind
+	candy_dir?:  string @go(CandyDir)  // Builder / Op / ApkInstall / LocalPkgInstall
+
+	// SystemPackagesStep + RepoChangeStep + LocalPkgInstallStep.
+	format?: string @go(Format)
+	// SystemPackagesStep + BuilderStep three-phase tag (int Phase: prepare/install/cleanup).
+	phase?: int @go(Phase,type=int)
+
+	// SystemPackagesStep.
+	packages?: [...string] @go(Packages)
+	repos?: [...{...}] @go(Repos) // each = a RepoSpec.Raw map
+	options?: [...string] @go(Options)
+	copr?: [...string] @go(Copr)
+	modules?: [...string] @go(Modules)
+	exclude?: [...string] @go(Exclude)
+	keys?: [...string] @go(Keys)
+	cache_mount?: [...#CacheMountView] @go(CacheMount)
+	raw_install_context?: {...} @go(RawInstallContext,type=map[string]any)
+
+	// BuilderStep.
+	builder?:       string         @go(Builder)
+	builder_image?: string         @go(BuilderImage)
+	artifacts?: [...#ArtifactView] @go(Artifacts)
+	raw_stage_context?: {...} @go(RawStageContext,type=map[string]any)
+	builder_def?: #Builder @go(BuilderDef,type=*BuilderDef)
+	// local_pkg is shared by BuilderStep (aur) + LocalPkgInstallStep.
+	local_pkg?: #LocalPkg @go(LocalPkg,optional=nillable)
+
+	// OpStep + ExternalPluginStep (Op + the shared user/ctx/distro fields).
+	op?:            #Op    @go(Op,type=*Op)
+	ctx_path?:      string @go(CtxPath)
+	resolved_user?: string @go(ResolvedUser)
+	to?:            string @go(To)
+	candy_vars?: {[string]: string} @go(CandyVars)
+	distros?: [...string] @go(Distros)
+
+	// FileStep.
+	source?: string @go(Source)
+	dest?:   string @go(Dest)
+	mode?:   int    @go(Mode,type=uint32) // os.FileMode underlying value
+	owner?:  string @go(Owner)
+
+	// ServicePackagedStep + ServiceCustomStep.
+	unit?:           string @go(Unit)           // packaged unit name
+	name?:           string @go(Name)           // custom service name
+	target_scope?:   int    @go(TargetScope,type=Scope) // both
+	enable?:         bool   @go(Enable)          // both
+	overrides_text?: string @go(OverridesText)   // packaged drop-in
+	overrides_path?: string @go(OverridesPath)   // packaged drop-in
+	prior_enabled?:  bool   @go(PriorEnabled)    // packaged
+	unit_text?:      string @go(UnitText)        // custom unit body
+	unit_path?:      string @go(UnitPath)        // custom unit path
+
+	// ShellHookStep.
+	env_vars?: {[string]: string} @go(EnvVars)
+	path_add?: [...string] @go(PathAdd)
+	env_file?: string @go(EnvFile)
+
+	// ShellSnippetStep.
+	origin?: string @go(Origin)
+	shell?:  string @go(Shell)
+	snippet?: string @go(Snippet)
+	path_append?: [...string] @go(PathAppend)
+	destination?: string @go(Destination)
+	marker?:      string @go(Marker)
+	use_dropin?:  bool   @go(UseDropin)
+	priority?:    int    @go(Priority,type=int)
+
+	// RepoChangeStep.
+	file?:     string @go(File)
+	content?:  string @go(Content)
+	checksum?: string @go(Checksum)
+
+	// ApkInstallStep.
+	apk_packages?: [...#CandyApk] @go(ApkPackages,type=[]ApkPackageSpec)
+
+	// LocalPkgInstallStep.
+	pkgbuild_ref?: string @go(PkgbuildRef)
+	project_dir?:  string @go(ProjectDir)
+}
+
+// #DeployVenue is the venue descriptor the host puts in op.Env for an external
+// deploy Invoke: the deploy's name plus the merged deploy-node env (KEY=VALUE
+// lines flattened to a map).
+#DeployVenue: {
+	deploy_name!: string @go(DeployName)
+	env?: {[string]: string} @go(Env)
+	substrate?: bytes @go(Substrate,type=RawBody)
+}
+
+// #VenueDescriptor is the SELF-CONTAINED, serializable description of a
+// deploy venue's executor that a substrate LIFECYCLE plugin's
+// OpPrepareVenue / OpTeardownExecutor returns (F6).
+#VenueDescriptor: {
+	kind!: string @go(Kind) // "shell" | "ssh"
+	user?: string @go(User)
+	host?: string @go(Host)
+	port?: int    @go(Port,type=int)
+	args?: [...string] @go(Args)
+	connect_timeout?: int @go(ConnectTimeout,type=int)
+}
+
+// #Diagnostic is one finding from a plugin kind's deep OpValidate check (F7/C8).
+#Diagnostic: {
+	severity?: string @go(Severity) // "error" | "warning" (empty → error)
+	message!:  string @go(Message)
+	path?:     string @go(Path)
+}
+
+// #Diagnostics is the OpValidate reply. HasErrors() is a pure Go METHOD — CUE
+// cannot express it — and stays hand-written in spec/deploy_methods.go.
+#Diagnostics: {
+	items?: [...#Diagnostic] @go(Items)
+}
+
+// #StructuralKindLoadEnv is the OpLoad invocation context (op.Env) the host
+// threads to a STRUCTURAL class:kind plugin (F5 authored-member input-threading).
+#StructuralKindLoadEnv: {
+	members?: {[string]: #Deploy} @go(Members,type=map[string]*Deploy)
+	// standalone is the host-pre-decoded CANONICAL node channel (candy/plugin-substrate,
+	// candy/plugin-candy).
+	standalone?: #StandaloneLoad @go(Standalone,optional=nillable)
+}
+
+// #StandaloneLoad carries a structural kind's host-pre-decoded canonical node.
+// Exactly one of Deploy / Template / Box / Candy is set, matching Shape.
+#StandaloneLoad: {
+	shape!: string @go(Shape) // "deploy" | "template" | "candy-image" | "candy-layer"
+	deploy?:   #Deploy @go(Deploy,optional=nillable)   // Shape=="deploy": the full pre-decoded BundleNode
+	template?: bytes   @go(Template,type=RawBody)      // Shape=="template": the pre-decoded typed template value's JSON
+	box?:      #Box    @go(Box,optional=nillable)      // Shape=="candy-image": the pre-decoded IMAGE (spec.Box)
+	candy?:    #Candy  @go(Candy,optional=nillable)    // Shape=="candy-layer": the pre-decoded LAYER (spec.Candy)
+}
+
+// #AndroidDeployVenue is the preresolved deploy:android substrate payload the
+// host's android deploy preresolver produces (in DeployVenue.Substrate) and
+// the candy/plugin-adb deploy:android provider decodes.
+#AndroidDeployVenue: {
+	adb_addr!: string @go(AdbAddr)
+	engine?:    string @go(Engine)
+	container?: string @go(Container)
+	serial?:    string @go(Serial)
+	google_email?: string @go(GoogleEmail)
+	google_token?: string @go(GoogleToken)
+	installs?: [...#CandyApk] @go(Installs,type=[]ApkPackageSpec)
+	// boot_timeout / install_deadline / install_interval are the readiness +
+	// install-retry windows the host ships (no magic numbers in the plugin).
+	boot_timeout?:     string @go(BootTimeout)
+	install_deadline?: string @go(InstallDeadline)
+	install_interval?: string @go(InstallInterval)
+}
+
+// #K8sDeployVenue is the preresolved deploy:k8s substrate payload the host's
+// k8s deploy preresolver produces in DeployVenue.Substrate and the
+// candy/plugin-kube deploy:k8s provider decodes.
+#K8sDeployVenue: {
+	overlay_path!: string @go(OverlayPath) // <root>/overlays/<inst> — the `kubectl apply -k` argument
+	tree_root?:    string @go(TreeRoot)    // <root> = .opencharly/k8s/<name> — removed at teardown
+	kube_context?: string @go(KubeContext) // kind:k8s template's kubeconfig_context → `kubectl --context` (empty → current-context)
+	deploy_name?:  string @go(DeployName)  // for plugin-side log messages
+}
+
+// #DeployReply is the structured result an external deploy provider returns
+// from an OpExecute Invoke: the teardown ops the host records into the
+// ledger, plus a provenance record.
+#DeployReply: {
+	reverse_ops?: [...#ReverseOp] @go(ReverseOps)
+	record!: #DeployReplyRecord @go(Record)
+}
+
+// #DeployReplyRecord names the ledger CandyRecord the host writes for an
+// external deploy: the logical candy whose ReverseOps drive teardown, plus
+// its version.
+#DeployReplyRecord: {
+	candy!:   string @go(Candy)
+	version?: string @go(Version)
+}
 #Iterate: {
 	agent?: [...(string & !="")]
 	sandbox!:           string & !=""

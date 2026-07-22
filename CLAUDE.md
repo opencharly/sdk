@@ -15,8 +15,9 @@ concatenation (`schemaconcat/`), and the shared VM types (`vmshared/`).
   shapes, placement, and this SDK's exported surface.
 - `/charly-internals:go` — the schema→spec generation recipe (`task cue:gen`),
   the CUE single-source rules, and the drift gates.
-- `/charly-internals:install-plan` — the deploy wire types in
-  `spec/deploy_wire.go` consumed over the reverse channel.
+- `/charly-internals:install-plan` — the deploy wire types (CUE-sourced at
+  `schema/deploy.cue` / `schema/buildwire.cue` / `schema/seam.cue`, generated
+  into `spec/cue_types_gen.go`) consumed over the reverse channel.
 
 **Authoritative rules live in the superproject's root `CLAUDE.md`.** R0–R10,
 hard cutover, AI attribution, and the git workflow are defined there; this file

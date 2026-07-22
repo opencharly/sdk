@@ -60,3 +60,10 @@ type (
 	InstallOptsConfig = InstallOpts
 	SecurityConfig    = Security
 )
+
+// --- wire sub-types renamed to dodge the schemagen kindValueDefs collision
+// (a top-level `#<X>Value` CUE def auto-registers as a kind-value gate; see
+// schema/init.cue's #EnvKV doc comment for the RDD-caught mechanism) ---
+type (
+	KeyValue = EnvKV
+)

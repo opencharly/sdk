@@ -1534,3 +1534,88 @@
 	venue_json?:  bytes              @go(VenueJSON, type=RawBody)
 	artifact_key?: string            @go(ArtifactKey)
 }
+
+// ---------------------------------------------------------------------------
+// Substrate LIFECYCLE wire (M4; SDD conversion of the former deploy_wire.go's
+// lifecycle section, per the standing operator directive: a hand-written wire
+// struct not yet CUE-sourced is conversion-in-progress, never a sanctioned
+// exception) — the host↔plugin envelope for the pod/vm deploy lifecycle Ops.
+// All ride Provider.Invoke params/env/reply JSON. Plain structs — gengotypes
+// generates them faithfully, no disjunction needed.
+
+// #LifecycleOpts is the serializable subset of the host's EmitOpts shipped in
+// a lifecycle Op's params. The two LIVE EmitOpts fields (ParentExec,
+// ParentNode) cannot cross the []byte wire — they re-attach host-side via the
+// reverse channel's live host-build inputs, never serialized.
+// LifecycleOptsFromEmit (spec/deploy_methods.go) is the ONE hand-written
+// converter — a pure function, not a type, so it stays hand-written.
+#LifecycleOpts: {
+	dry_run?:                bool   @go(DryRun)
+	allow_repo_changes?:     bool   @go(AllowRepoChanges)
+	allow_root_tasks?:       bool   @go(AllowRootTasks)
+	with_services?:          bool   @go(WithServices)
+	assume_yes?:             bool   @go(AssumeYes)
+	verify?:                 bool   @go(Verify)
+	pull?:                   bool   @go(Pull)
+	skip_incompatible?:      bool   @go(SkipIncompatible)
+	builder_image_override?: string @go(BuilderImageOverride)
+}
+
+// #HostEnv is the generic host identity a lifecycle plugin (running ON the
+// host) needs but cannot derive: the host charly binary path and the host
+// home.
+#HostEnv: {
+	charly_bin?: string @go(CharlyBin)
+	home?:       string @go(Home)
+	// version is the host charly's CalVer (CharlyVersion()) — the
+	// delivery-decision authority for EnsureCharlyInGuest.
+	version?: string @go(Version)
+}
+
+// #LifecyclePrepareInput is the host-resolved DATA a vm substrate's
+// OpPrepareVenue needs but cannot derive itself.
+#LifecyclePrepareInput: {
+	entity!: string @go(Entity) // the kind:vm ENTITY = disk/spec source (node.From-resolved)
+	vm?:     #ResolvedVm @go(VM,optional=nillable) // the resolved vm value envelope (uf.VM[entity] via the plugin)
+	ssh_user!:        string @go(SSHUser)        // resolveVmSshUser(spec)
+	ssh_port!:        int    @go(SSHPort,type=int) // deploykit.ResolveVmSshPort(spec, domainIdentity) — per-deploy auto-alloc + persisted-port idempotency
+	alias!:           string @go(Alias)          // VmSshAlias(domainIdentity) = charly-<deploy>
+	ssh_key_path!:    string @go(SSHKeyPath)     // <stateDir>/id_ed25519
+	known_hosts_path!: string @go(KnownHostsPath) // <stateDir>/known_hosts
+	state_dir!:       string @go(StateDir)       // ~/.local/share/charly/vm/charly-<domainIdentity>
+	prior_state?: #VmDeployState @go(PriorState,type=*VmDeployState) // the persisted VmDeployState (nil on first apply)
+}
+
+// #PrepareVenueReply is the OpPrepareVenue reply. Venue is re-materialized
+// host-side into a live DeployExecutor (the live executor never crosses the
+// wire); State is an opaque deploy-entry patch the host persists; Notes are
+// human-facing lines the host prints.
+#PrepareVenueReply: {
+	venue!: #VenueDescriptor @go(Venue)
+	state?: bytes @go(State,type=RawBody)
+	notes?: [...string] @go(Notes)
+}
+
+// #PostTeardownReply is the OpPostTeardown reply: the host removes each named
+// charly.yml deploy-entry key AFTER the plugin's teardown.
+#PostTeardownReply: {
+	remove_entries?: [...string] @go(RemoveEntries)
+}
+
+// #CliRequest is the "cli" host-builder envelope (M4): a lifecycle plugin
+// asks the HOST to run a `charly <argv>` subcommand.
+#CliRequest: {
+	argv!: [...string] @go(Argv)
+	capture?:     bool @go(Capture)
+	combined?:    bool @go(Combined)
+	best_effort?: bool @go(BestEffort)
+}
+
+// #CliReply is the "cli" host-builder reply: captured stdout (Capture=true),
+// the exit code, and an error string on a non-zero exit that was not
+// BestEffort-swallowed.
+#CliReply: {
+	stdout?:    string @go(Stdout)
+	exit_code?: int    @go(ExitCode,type=int)
+	error?:     string @go(Error)
+}
