@@ -331,18 +331,27 @@ func TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded(t *testing.T) {
 				t.Errorf("pacman-family render must OMIT the packages: key entirely, got %v", um["packages"])
 			}
 			rc, _ := um["runcmd"].([]any)
-			if len(rc) != 3 {
-				t.Fatalf("runcmd = %v, want 3 entries [pacman, sshd-enable, user-cmd]", rc)
+			// D18 (bed-robustness batch item 3): the sshd hardening drop-in write+validate and the
+			// ssh.socket unmask now sit BETWEEN the pacman install and the sshd-enable step —
+			// [pacman, hardening-dropin, unmask, sshd-enable, user-cmd].
+			if len(rc) != 5 {
+				t.Fatalf("runcmd = %v, want 5 entries [pacman, hardening-dropin, unmask, sshd-enable, user-cmd]", rc)
 			}
 			wantPacman := "pacman -S --needed --noconfirm openssh curl tar htop"
 			if rc[0] != wantPacman {
 				t.Errorf("runcmd[0] = %q, want %q (must be FIRST — before sshd is ever enabled)", rc[0], wantPacman)
 			}
-			if rc[1] != "systemctl enable --now sshd" {
-				t.Errorf("runcmd[1] = %q, want the sshd-enable command", rc[1])
+			if rc[1] != sshHardeningDropInCmd {
+				t.Errorf("runcmd[1] = %v, want the sshd hardening drop-in command", rc[1])
 			}
-			if rc[2] != "echo user-cmd" {
-				t.Errorf("runcmd[2] = %q, want the user's own runcmd entry, order preserved", rc[2])
+			if rc[2] != "systemctl unmask ssh.socket || true" {
+				t.Errorf("runcmd[2] = %q, want the ssh.socket unmask", rc[2])
+			}
+			if rc[3] != "systemctl enable --now sshd" {
+				t.Errorf("runcmd[3] = %q, want the sshd-enable command", rc[3])
+			}
+			if rc[4] != "echo user-cmd" {
+				t.Errorf("runcmd[4] = %q, want the user's own runcmd entry, order preserved", rc[4])
 			}
 		})
 	}
@@ -385,9 +394,14 @@ func TestRenderCloudInit_NonPacman_ByteIdenticalToPreFix(t *testing.T) {
 					t.Errorf("packages[%d] = %v, want %v", i, pkgs[i], wantPkgs[i])
 				}
 			}
-			// runcmd: EXACTLY {sshd-enable, user-cmd} — no pacman line ever prepended.
+			// runcmd: {hardening-dropin, unmask, sshd-enable, user-cmd} — no pacman line ever
+			// prepended. D18 (bed-robustness batch item 3) inserted the first two steps ahead of
+			// the sshd-enable this test used to assert was runcmd[0] — the test name predates
+			// that fix and is no longer literally "byte-identical to pre-fix" for THIS reason
+			// (the pacman-vs-non-pacman CONTAINMENT the name documents still holds: no pacman
+			// line here, only the new hardening steps every distro now gets equally).
 			rc, _ := um["runcmd"].([]any)
-			wantRC := []any{"systemctl enable --now " + c.wantSSHdUnit, "echo user-cmd"}
+			wantRC := []any{sshHardeningDropInCmd, "systemctl unmask ssh.socket || true", "systemctl enable --now " + c.wantSSHdUnit, "echo user-cmd"}
 			if len(rc) != len(wantRC) {
 				t.Fatalf("runcmd = %v, want %v", rc, wantRC)
 			}
@@ -444,8 +458,8 @@ func TestRenderCloudInit_InferredArch_RunsPacmanNeeded(t *testing.T) {
 	}
 	rc, _ := um["runcmd"].([]any)
 	wantPacman := "pacman -S --needed --noconfirm openssh curl tar htop"
-	if len(rc) != 3 || rc[0] != wantPacman {
-		t.Fatalf("runcmd = %v, want [%q, sshd-enable, echo user-cmd] (empty distro + base_user=arch must infer pacman-family)", rc, wantPacman)
+	if len(rc) != 5 || rc[0] != wantPacman {
+		t.Fatalf("runcmd = %v, want [%q, hardening-dropin, unmask, sshd-enable, echo user-cmd] (empty distro + base_user=arch must infer pacman-family)", rc, wantPacman)
 	}
 }
 
@@ -472,7 +486,7 @@ func TestRenderCloudInit_EmptyDistroNonArchBaseUser_StaysNonPacman(t *testing.T)
 				t.Fatalf("packages = %v, want %v (must stay on the packages:-key path — no pacman command for an unrecognized image)", pkgs, wantPkgs)
 			}
 			rc, _ := um["runcmd"].([]any)
-			wantRC := []any{"systemctl enable --now sshd", "echo user-cmd"}
+			wantRC := []any{sshHardeningDropInCmd, "systemctl unmask ssh.socket || true", "systemctl enable --now sshd", "echo user-cmd"}
 			if len(rc) != len(wantRC) || rc[0] != wantRC[0] {
 				t.Errorf("runcmd = %v, want %v (no pacman line ever prepended)", rc, wantRC)
 			}
