@@ -8,7 +8,7 @@
 // that fails to resolve becomes a diagnostic, not a fatal abort — validate MUST run on broken
 // projects), so ONE round-trip gives the plugin both the partial envelope and the host diagnostics.
 // Package-less; concatenated into the spec compilation unit. #Diagnostics is the shared wire type
-// (deploy_wire.go), referenced by @go so the reply carries it without redefining it.
+// (deploy.cue), referenced by @go so the reply carries it without redefining it.
 
 // #ValidateProjectRequest — which project dir to validate (empty = the host's cwd) + whether to
 // include enabled:false boxes. Mirrors #ResolvedProjectRequest (the sibling resolved-project seam).

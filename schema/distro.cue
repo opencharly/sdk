@@ -98,3 +98,41 @@
 	max_parallel_downloads?: int & >=1 @go(MaxParallelDownloads)
 	fastestmirror?:          bool
 }
+
+// --- resolve-to-envelope wire type (Cutover M, the long pole; SDD conversion,
+// per the standing operator directive: a hand-written wire struct not yet
+// CUE-sourced is conversion-in-progress, never a sanctioned exception).
+// candy/plugin-distro resolves an authored `distro:` build-vocabulary entity
+// into a ResolvedDistro the kernel's build engine consumes without importing
+// the concrete spec.Distro. Written out explicitly (not embedding #Distro) so
+// every field's required/optional state is independently auditable against
+// the former hand type. The host keeps RenderTemplate + the cache-mount vocab
+// (per the plan); the plugin owns the distro KNOWLEDGE (schema/typed
+// shape/validation). PrimaryFormat()/LocalPkgFormat() are pure Go METHODS —
+// CUE cannot express them — and stay hand-written in spec/distro_methods.go
+// (mirrors Op.Kind() in spec/charly_methods.go: a method, not a type).
+#ResolvedDistro: {
+	inherits?:         string @go(Inherits)
+	inherit_packages?: bool   @go(InheritPackages)
+	version?:          string @go(Version)
+	bootstrap?:        #Bootstrap @go(Bootstrap)
+	workaround?: [...string] @go(Workarounds)
+	format?: {[string]: #Format} @go(Format,type=map[string]*Format)
+	base_user?:        #BaseUser        @go(BaseUser,optional=nillable)
+	pacstrap?:         #Pacstrap        @go(Pacstrap,optional=nillable)
+	debootstrap?:      #Debootstrap     @go(Debootstrap,optional=nillable)
+	alpine_bootstrap?: #AlpineBootstrap @go(AlpineBootstrap,optional=nillable)
+	bootloader?:       #Bootloader      @go(Bootloader,optional=nillable)
+	dnf?:              #Dnf             @go(Dnf,optional=nillable)
+	raw?: bytes @go(Raw,type=RawBody)
+}
+
+// #DistroResolveInput carries one opaque distro body to project.
+#DistroResolveInput: {
+	distro!: bytes @go(Distro,type=RawBody)
+}
+
+// #DistroResolveReply wraps the resolved distro.
+#DistroResolveReply: {
+	resolved?: #ResolvedDistro @go(Resolved,optional=nillable)
+}

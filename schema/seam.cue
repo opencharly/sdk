@@ -390,11 +390,11 @@
 
 // #AndroidEntityResolution is the kind="android" payload carried OPAQUELY inside
 // #DeployEntityResolveReply.entity (unit 6a): the resolved kind:android #ResolvedAndroid spec
-// (ResolvedAndroid itself is pre-existing hand-written sdk/spec wire debt, substrate_template_wire.go
-// — not converted by this seam) PLUS the google-play credentials, resolved host-side (the
-// credential STORE touch — DefaultCredentialStore — is core-only; the plugin never calls it
-// directly, matching every other cutover's InvokeProvider-adjacent credential deferral). Its own
-// shape IS CUE-sourced (not hand-written) even though the spec field it carries opaquely is not.
+// (CUE-sourced at schema/substrate_template.cue, SDD conversion — carried OPAQUELY here anyway,
+// see the #DeployEntityResolveRequest doc below for why) PLUS the google-play credentials,
+// resolved host-side (the credential STORE touch — DefaultCredentialStore — is core-only; the
+// plugin never calls it directly, matching every other cutover's InvokeProvider-adjacent
+// credential deferral).
 #AndroidEntityResolution: {
 	spec?:         bytes  @go(SpecJSON, type=RawBody)
 	google_email?: string @go(GoogleEmail)
@@ -430,11 +430,12 @@
 // on internally (clause-D) — never a compiled-in per-KIND HostBuild registration, so a new
 // consumer needs no new wire shape, only a new `case` in the host handler (or reuse of an
 // existing one — "bundle" and "deploy" share ONE case, both a deploy-tree node lookup by name).
-// `entity` carries the kind-specific result OPAQUELY (ResolvedK8s/ResolvedAndroid/the vm entity
-// are still hand-written sdk/spec wire types with no CUE def today — substrate_template_wire.go /
-// vm_wire.go, pre-existing SDD debt this seam does not attempt to convert) — the caller already
-// knows which kind it asked for and decodes accordingly, mirroring the DeployCompileReply /
-// DeployConfigSaveRequest RawBody idiom used throughout this file for the same reason.
+// `entity` carries the kind-specific result OPAQUELY — ResolvedK8s/ResolvedAndroid/the vm entity
+// (ResolvedVm) are ALL CUE-sourced (schema/substrate_template.cue, schema/vm.cue; SDD conversion),
+// but this seam still carries them as opaque bytes rather than a typed field, because `kind` is
+// DATA the host dispatches on internally (clause-D) and the caller already knows which kind it
+// asked for and decodes accordingly — mirroring the DeployCompileReply / DeployConfigSaveRequest
+// RawBody idiom used throughout this file for the same reason.
 #DeployEntityResolveRequest: {
 	kind!: string @go(Kind) // "" | "deploy" | "bundle" for a deploy-tree node lookup (node.From carries a cross-ref hop); "k8s"|"android"|"vm" for a kind:<word> entity lookup (the WHOLE resolved envelope)
 	name!: string @go(Name)
@@ -1416,8 +1417,8 @@
 }
 
 // (Removed, R10 bed-found bug fix, S3b): a prior discriminated Update-opts shape retired in
-// favor of Update's OptsJSON marshaling the SAME #LifecycleOpts (hand-written,
-// sdk/spec/deploy_wire.go) that Add's does — mirroring the pre-move Update path exactly, which
+// favor of Update's OptsJSON marshaling the SAME #LifecycleOpts (CUE-sourced,
+// schema/seam.cue) that Add's does — mirroring the pre-move Update path exactly, which
 // built a plain deploykit.EmitOpts from the retired shape's fields and passed it into the SAME
 // shared apply() body Add used, rather than a separate wire shape. RebuildImage is NEVER read by
 // the apply body (it belongs to Rebuild's own #DeployTargetRebuildOpts) — the divergence the
@@ -1533,4 +1534,89 @@
 	exit_code?:   int                @go(ExitCode)
 	venue_json?:  bytes              @go(VenueJSON, type=RawBody)
 	artifact_key?: string            @go(ArtifactKey)
+}
+
+// ---------------------------------------------------------------------------
+// Substrate LIFECYCLE wire (M4; SDD conversion of the former deploy_wire.go's
+// lifecycle section, per the standing operator directive: a hand-written wire
+// struct not yet CUE-sourced is conversion-in-progress, never a sanctioned
+// exception) — the host↔plugin envelope for the pod/vm deploy lifecycle Ops.
+// All ride Provider.Invoke params/env/reply JSON. Plain structs — gengotypes
+// generates them faithfully, no disjunction needed.
+
+// #LifecycleOpts is the serializable subset of the host's EmitOpts shipped in
+// a lifecycle Op's params. The two LIVE EmitOpts fields (ParentExec,
+// ParentNode) cannot cross the []byte wire — they re-attach host-side via the
+// reverse channel's live host-build inputs, never serialized.
+// LifecycleOptsFromEmit (spec/deploy_methods.go) is the ONE hand-written
+// converter — a pure function, not a type, so it stays hand-written.
+#LifecycleOpts: {
+	dry_run?:                bool   @go(DryRun)
+	allow_repo_changes?:     bool   @go(AllowRepoChanges)
+	allow_root_tasks?:       bool   @go(AllowRootTasks)
+	with_services?:          bool   @go(WithServices)
+	assume_yes?:             bool   @go(AssumeYes)
+	verify?:                 bool   @go(Verify)
+	pull?:                   bool   @go(Pull)
+	skip_incompatible?:      bool   @go(SkipIncompatible)
+	builder_image_override?: string @go(BuilderImageOverride)
+}
+
+// #HostEnv is the generic host identity a lifecycle plugin (running ON the
+// host) needs but cannot derive: the host charly binary path and the host
+// home.
+#HostEnv: {
+	charly_bin?: string @go(CharlyBin)
+	home?:       string @go(Home)
+	// version is the host charly's CalVer (CharlyVersion()) — the
+	// delivery-decision authority for EnsureCharlyInGuest.
+	version?: string @go(Version)
+}
+
+// #LifecyclePrepareInput is the host-resolved DATA a vm substrate's
+// OpPrepareVenue needs but cannot derive itself.
+#LifecyclePrepareInput: {
+	entity!: string @go(Entity) // the kind:vm ENTITY = disk/spec source (node.From-resolved)
+	vm?:     #ResolvedVm @go(VM,optional=nillable) // the resolved vm value envelope (uf.VM[entity] via the plugin)
+	ssh_user!:        string @go(SSHUser)        // resolveVmSshUser(spec)
+	ssh_port!:        int    @go(SSHPort,type=int) // deploykit.ResolveVmSshPort(spec, domainIdentity) — per-deploy auto-alloc + persisted-port idempotency
+	alias!:           string @go(Alias)          // VmSshAlias(domainIdentity) = charly-<deploy>
+	ssh_key_path!:    string @go(SSHKeyPath)     // <stateDir>/id_ed25519
+	known_hosts_path!: string @go(KnownHostsPath) // <stateDir>/known_hosts
+	state_dir!:       string @go(StateDir)       // ~/.local/share/charly/vm/charly-<domainIdentity>
+	prior_state?: #VmDeployState @go(PriorState,type=*VmDeployState) // the persisted VmDeployState (nil on first apply)
+}
+
+// #PrepareVenueReply is the OpPrepareVenue reply. Venue is re-materialized
+// host-side into a live DeployExecutor (the live executor never crosses the
+// wire); State is an opaque deploy-entry patch the host persists; Notes are
+// human-facing lines the host prints.
+#PrepareVenueReply: {
+	venue!: #VenueDescriptor @go(Venue)
+	state?: bytes @go(State,type=RawBody)
+	notes?: [...string] @go(Notes)
+}
+
+// #PostTeardownReply is the OpPostTeardown reply: the host removes each named
+// charly.yml deploy-entry key AFTER the plugin's teardown.
+#PostTeardownReply: {
+	remove_entries?: [...string] @go(RemoveEntries)
+}
+
+// #CliRequest is the "cli" host-builder envelope (M4): a lifecycle plugin
+// asks the HOST to run a `charly <argv>` subcommand.
+#CliRequest: {
+	argv!: [...string] @go(Argv)
+	capture?:     bool @go(Capture)
+	combined?:    bool @go(Combined)
+	best_effort?: bool @go(BestEffort)
+}
+
+// #CliReply is the "cli" host-builder reply: captured stdout (Capture=true),
+// the exit code, and an error string on a non-zero exit that was not
+// BestEffort-swallowed.
+#CliReply: {
+	stdout?:    string @go(Stdout)
+	exit_code?: int    @go(ExitCode,type=int)
+	error?:     string @go(Error)
 }

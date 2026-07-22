@@ -326,6 +326,50 @@ type CredentialMount struct {
 	Optional bool `yaml:"optional,omitempty" json:"optional,omitempty"`
 }
 
+// #AgentResolveInput is candy/plugin-agent's OpResolve input: the opaque agent
+// bodies (the name-keyed AI-CLI catalog) + the selected agent name ("" picks
+// the sole entry, or errors when several are configured).
+type AgentResolveInput struct {
+	Agents map[string]RawBody `yaml:"agents,omitempty" json:"agents,omitempty"`
+
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+}
+
+// #AgentResolveReply is the OpResolve reply: the resolved exec spec + the
+// chosen agent's catalog name.
+type AgentResolveReply struct {
+	Spec *AgentExecSpec `yaml:"spec,omitempty" json:"spec,omitempty"`
+
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+}
+
+// #AgentExecSpec is a fully-resolved long-running-CLI invocation descriptor —
+// the resolve-to-envelope form of an agent, with Go-level defaults applied by
+// the plugin (Timeout, PromptVia). Kind-agnostic: it describes HOW to launch a
+// CLI, capture its version, and poll it in a plateau-bounded loop — not
+// "agent-kind" knowledge.
+type AgentExecSpec struct {
+	Command []string `yaml:"command,omitempty" json:"command,omitempty"`
+
+	PromptVia string `yaml:"prompt_via,omitempty" json:"prompt_via,omitempty"`
+
+	VersionCommand []string `yaml:"version_command,omitempty" json:"version_command,omitempty"`
+
+	Timeout Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+
+	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
+
+	WorkingDir string `yaml:"working_dir,omitempty" json:"working_dir,omitempty"`
+
+	Credential []CredentialMount `yaml:"credential,omitempty" json:"credential,omitempty"`
+
+	ProgressCheckInterval Duration `yaml:"progress_check_interval,omitempty" json:"progress_check_interval,omitempty"`
+
+	ProgressNoImprovementTimeout Duration `yaml:"progress_no_improvement_timeout,omitempty" json:"progress_no_improvement_timeout,omitempty"`
+
+	OutputFormat string `yaml:"output_format,omitempty" json:"output_format,omitempty"`
+}
+
 type UUIDv7 string
 
 type TargetHop struct {
@@ -2308,6 +2352,466 @@ type RenderSeamReply struct {
 	Error string `yaml:"error,omitempty" json:"error,omitempty"`
 }
 
+// #BuildEnv is the build-context descriptor the host puts in op.Env for an
+// OpEmit Invoke at image-generation time: the image's distro tags + name, so
+// a plugin can tailor its emitted Containerfile fragment per distro/arch.
+type BuildEnv struct {
+	Distros []string `yaml:"distros,omitempty" json:"distros,omitempty"`
+
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+
+	DevLocalPkg bool `yaml:"dev_local_pkg,omitempty" json:"dev_local_pkg,omitempty"`
+
+	ImageBuildDir string `yaml:"image_build_dir,omitempty" json:"image_build_dir,omitempty"`
+
+	ContextRelPrefix string `yaml:"context_rel_prefix,omitempty" json:"context_rel_prefix,omitempty"`
+}
+
+// #EmitReply is what a plugin verb/builder returns from an OpEmit Invoke at
+// build time: a verbatim Containerfile FRAGMENT the generator splices into
+// the emitted Containerfile.
+type EmitReply struct {
+	Fragment string `yaml:"fragment,omitempty" json:"fragment"`
+}
+
+// #StepEmitRequest is the F-STEP-EMIT HostBuild envelope for a HOST-COUPLED
+// external step kind's build-context fragment.
+type StepEmitRequest struct {
+	Word string `yaml:"word,omitempty" json:"word"`
+
+	Payload RawBody `yaml:"payload,omitempty" json:"payload,omitempty"`
+
+	Distros []string `yaml:"distros,omitempty" json:"distros,omitempty"`
+}
+
+// #BuilderResolveReply is what a builder plugin returns from an OpResolve
+// Invoke at image-generation time — the build-time BUILDER leg.
+type BuilderResolveReply struct {
+	Stage string `yaml:"stage,omitempty" json:"stage,omitempty"`
+
+	CopyArtifacts []string `yaml:"copy_artifacts,omitempty" json:"copy_artifacts,omitempty"`
+
+	CopyBinary string `yaml:"copy_binary,omitempty" json:"copy_binary,omitempty"`
+
+	InlineFragment string `yaml:"inline_fragment,omitempty" json:"inline_fragment,omitempty"`
+}
+
+// #BuilderResolveInput is the OpResolve params: the RENDER CONTEXT the host
+// computes and hands a builder plugin so it can render its build-time
+// multi-stage self-contained.
+type BuilderResolveInput struct {
+	Candy string `yaml:"candy,omitempty" json:"candy"`
+
+	Builder string `yaml:"builder,omitempty" json:"builder,omitempty"`
+
+	BuilderRef string `yaml:"builder_ref,omitempty" json:"builder_ref,omitempty"`
+
+	StageName string `yaml:"stage_name,omitempty" json:"stage_name,omitempty"`
+
+	LayerStage string `yaml:"layer_stage,omitempty" json:"layer_stage,omitempty"`
+
+	CopySrc string `yaml:"copy_src,omitempty" json:"copy_src,omitempty"`
+
+	UID int `yaml:"uid,omitempty" json:"uid,omitempty"`
+
+	GID int `yaml:"gid,omitempty" json:"gid,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	Manifest string `yaml:"manifest,omitempty" json:"manifest,omitempty"`
+
+	HasLockFile bool `yaml:"has_lock_file,omitempty" json:"has_lock_file,omitempty"`
+
+	InstallCmd string `yaml:"install_cmd,omitempty" json:"install_cmd,omitempty"`
+
+	ManylinuxFix string `yaml:"manylinux_fix,omitempty" json:"manylinux_fix,omitempty"`
+
+	HasBuildScript bool `yaml:"has_build_script,omitempty" json:"has_build_script,omitempty"`
+
+	BuildScript string `yaml:"build_script,omitempty" json:"build_script,omitempty"`
+
+	Packages []string `yaml:"packages,omitempty" json:"packages,omitempty"`
+
+	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
+
+	CacheMountsOwned string `yaml:"cache_mounts_owned,omitempty" json:"cache_mounts_owned,omitempty"`
+
+	CacheMountsAuto string `yaml:"cache_mounts_auto,omitempty" json:"cache_mounts_auto,omitempty"`
+
+	Inline bool `yaml:"inline,omitempty" json:"inline,omitempty"`
+}
+
+// #BuildRequest is the CLI→DRIVE envelope: what `charly box build` /
+// `charly box generate` marshal into the compiled-in candy/plugin-build's
+// Invoke (op.Params).
+type BuildRequest struct {
+	Boxes []string `yaml:"boxes,omitempty" json:"boxes,omitempty"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	IncludeDisabled bool `yaml:"include_disabled,omitempty" json:"include_disabled,omitempty"`
+
+	DevLocalPkg bool `yaml:"dev_local_pkg,omitempty" json:"dev_local_pkg,omitempty"`
+
+	Push bool `yaml:"push,omitempty" json:"push,omitempty"`
+
+	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"`
+
+	Cache string `yaml:"cache,omitempty" json:"cache,omitempty"`
+
+	NoCache bool `yaml:"no_cache,omitempty" json:"no_cache,omitempty"`
+
+	Jobs int `yaml:"jobs,omitempty" json:"jobs,omitempty"`
+
+	PodmanJobs int `yaml:"podman_jobs,omitempty" json:"podman_jobs,omitempty"`
+}
+
+// #BuildReply is what a build:box / build:generate plugin echoes back from
+// its HostBuild call.
+type BuildReply struct {
+	Written []string `yaml:"written,omitempty" json:"written,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// #OverlayBuildRequest is the BUILD-ENGINE DISPATCH envelope for the
+// pod-overlay build — the F10 "overlay" host-builder.
+type OverlayBuildRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	DeployName string `yaml:"deploy_name,omitempty" json:"deploy_name,omitempty"`
+
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	AllowRepoChanges bool `yaml:"allow_repo_changes,omitempty" json:"allow_repo_changes,omitempty"`
+
+	AllowRootTasks bool `yaml:"allow_root_tasks,omitempty" json:"allow_root_tasks,omitempty"`
+
+	WithServices bool `yaml:"with_services,omitempty" json:"with_services,omitempty"`
+}
+
+// #OverlayBuildReply is what the "overlay" host-builder returns.
+type OverlayBuildReply struct {
+	OverlayRef string `yaml:"overlay_ref,omitempty" json:"overlay_ref,omitempty"`
+
+	BaseImage string `yaml:"base_image,omitempty" json:"base_image,omitempty"`
+
+	DeployName string `yaml:"deploy_name,omitempty" json:"deploy_name,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+
+	// resolved_project is the overlay-scoped resolved-project envelope the
+	// candy constructs a deploykit.Generator from. Nil when there is no
+	// add_candy overlay to synthesize (the tag-only path).
+	ResolvedProject *ResolvedProject `yaml:"resolved_project,omitempty" json:"resolved_project,omitempty"`
+
+	// plans is the deployment's compiled InstallPlans serialized as
+	// InstallPlanViews. Empty for the no-overlay path.
+	Plans []InstallPlanView `yaml:"plans,omitempty" json:"plans,omitempty"`
+
+	// base_user is the base image's runtime USER — the candy emits the
+	// post-overlay `USER <base>` restore directive.
+	BaseUser string `yaml:"base_user,omitempty" json:"base_user,omitempty"`
+
+	// base_security is the base image's baked LabelSecurity.
+	BaseSecurity *Security `yaml:"base_security,omitempty" json:"base_security,omitempty"`
+
+	// base_registry is the base image's ai.opencharly.registry OCI label.
+	BaseRegistry string `yaml:"base_registry,omitempty" json:"base_registry,omitempty"`
+
+	// calver is the host's current CalVer.
+	CalVer string `yaml:"calver,omitempty" json:"calver,omitempty"`
+
+	// overlay_candy_security carries each overlay candy's own `security:`
+	// block.
+	OverlayCandySecurity map[string]*Security `yaml:"overlay_candy_security,omitempty" json:"overlay_candy_security,omitempty"`
+
+	// parent_volumes carries the PARENT deploy node's bind-mount volumes for a
+	// NESTED pod-in-pod overlay build.
+	ParentVolumes []DeployVolume `yaml:"parent_volumes,omitempty" json:"parent_volumes,omitempty"`
+}
+
+// #InstallPlanView is the JSON-roundtrippable wire VIEW of an InstallPlan.
+type InstallPlanView struct {
+	DeployID string `yaml:"deploy_id,omitempty" json:"deploy_id,omitempty"`
+
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Distro string `yaml:"distro,omitempty" json:"distro,omitempty"`
+
+	Candy string `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	CandiesIncluded []string `yaml:"candies_included,omitempty" json:"candies_included,omitempty"`
+
+	AddCandies []string `yaml:"add_candies,omitempty" json:"add_candies,omitempty"`
+
+	BuilderImage string `yaml:"builder_image,omitempty" json:"builder_image,omitempty"`
+
+	Meta map[string]string `yaml:"meta,omitempty" json:"meta,omitempty"`
+
+	// steps is the serializable per-step IR — the ordered InstallStep sequence
+	// the in-core InstallPlan carries, projected onto the wire union below.
+	Steps []InstallStepView `yaml:"steps,omitempty" json:"steps,omitempty"`
+}
+
+// #InstallStepView is the JSON-roundtrippable wire form of ONE InstallStep — a
+// SUPERSET struct: each kind populates the subset of fields it carries, all
+// optional so the wire stays compact.
+type InstallStepView struct {
+	Kind string `yaml:"kind,omitempty" json:"kind"`
+
+	// Derived ADVISORY fields (Scope()/Venue()/RequiresGate() results).
+	Scope Scope `yaml:"scope,omitempty" json:"scope,omitempty"`
+
+	Venue int `yaml:"venue,omitempty" json:"venue,omitempty"`
+
+	Gate string `yaml:"gate,omitempty" json:"gate,omitempty"`
+
+	// payload is the OPAQUE per-kind input for an EXTERNAL (plugin-contributed)
+	// step kind.
+	Payload RawBody `yaml:"payload,omitempty" json:"payload,omitempty"`
+
+	// reverse_ops is the step's host-computed teardown ops.
+	ReverseOps []ReverseOp `yaml:"reverse_ops,omitempty" json:"reverse_ops,omitempty"`
+
+	// Shared identity / provenance.
+	CandyName string `yaml:"candy_name,omitempty" json:"candy_name,omitempty"`
+
+	CandyDir string `yaml:"candy_dir,omitempty" json:"candy_dir,omitempty"`
+
+	// SystemPackagesStep + RepoChangeStep + LocalPkgInstallStep.
+	Format string `yaml:"format,omitempty" json:"format,omitempty"`
+
+	// SystemPackagesStep + BuilderStep three-phase tag (int Phase: prepare/install/cleanup).
+	Phase int `yaml:"phase,omitempty" json:"phase,omitempty"`
+
+	// SystemPackagesStep.
+	Packages []string `yaml:"packages,omitempty" json:"packages,omitempty"`
+
+	Repos []map[string]any/* CUE top */ `yaml:"repos,omitempty" json:"repos,omitempty"`
+
+	Options []string `yaml:"options,omitempty" json:"options,omitempty"`
+
+	Copr []string `yaml:"copr,omitempty" json:"copr,omitempty"`
+
+	Modules []string `yaml:"modules,omitempty" json:"modules,omitempty"`
+
+	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+
+	Keys []string `yaml:"keys,omitempty" json:"keys,omitempty"`
+
+	CacheMount []CacheMountView `yaml:"cache_mount,omitempty" json:"cache_mount,omitempty"`
+
+	RawInstallContext map[string]any `yaml:"raw_install_context,omitempty" json:"raw_install_context,omitempty"`
+
+	// BuilderStep.
+	Builder string `yaml:"builder,omitempty" json:"builder,omitempty"`
+
+	BuilderImage string `yaml:"builder_image,omitempty" json:"builder_image,omitempty"`
+
+	Artifacts []ArtifactView `yaml:"artifacts,omitempty" json:"artifacts,omitempty"`
+
+	RawStageContext map[string]any `yaml:"raw_stage_context,omitempty" json:"raw_stage_context,omitempty"`
+
+	BuilderDef *BuilderDef `yaml:"builder_def,omitempty" json:"builder_def,omitempty"`
+
+	// local_pkg is shared by BuilderStep (aur) + LocalPkgInstallStep.
+	LocalPkg *LocalPkg `yaml:"local_pkg,omitempty" json:"local_pkg,omitempty"`
+
+	// OpStep + ExternalPluginStep (Op + the shared user/ctx/distro fields).
+	Op *Op `yaml:"op,omitempty" json:"op,omitempty"`
+
+	CtxPath string `yaml:"ctx_path,omitempty" json:"ctx_path,omitempty"`
+
+	ResolvedUser string `yaml:"resolved_user,omitempty" json:"resolved_user,omitempty"`
+
+	To string `yaml:"to,omitempty" json:"to,omitempty"`
+
+	CandyVars map[string]string `yaml:"candy_vars,omitempty" json:"candy_vars,omitempty"`
+
+	Distros []string `yaml:"distros,omitempty" json:"distros,omitempty"`
+
+	// FileStep.
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+
+	Dest string `yaml:"dest,omitempty" json:"dest,omitempty"`
+
+	Mode uint32 `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	Owner string `yaml:"owner,omitempty" json:"owner,omitempty"`
+
+	// ServicePackagedStep + ServiceCustomStep.
+	Unit string `yaml:"unit,omitempty" json:"unit,omitempty"`
+
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	TargetScope Scope `yaml:"target_scope,omitempty" json:"target_scope,omitempty"`
+
+	Enable bool `yaml:"enable,omitempty" json:"enable,omitempty"`
+
+	OverridesText string `yaml:"overrides_text,omitempty" json:"overrides_text,omitempty"`
+
+	OverridesPath string `yaml:"overrides_path,omitempty" json:"overrides_path,omitempty"`
+
+	PriorEnabled bool `yaml:"prior_enabled,omitempty" json:"prior_enabled,omitempty"`
+
+	UnitText string `yaml:"unit_text,omitempty" json:"unit_text,omitempty"`
+
+	UnitPath string `yaml:"unit_path,omitempty" json:"unit_path,omitempty"`
+
+	// ShellHookStep.
+	EnvVars map[string]string `yaml:"env_vars,omitempty" json:"env_vars,omitempty"`
+
+	PathAdd []string `yaml:"path_add,omitempty" json:"path_add,omitempty"`
+
+	EnvFile string `yaml:"env_file,omitempty" json:"env_file,omitempty"`
+
+	// ShellSnippetStep.
+	Origin string `yaml:"origin,omitempty" json:"origin,omitempty"`
+
+	Shell string `yaml:"shell,omitempty" json:"shell,omitempty"`
+
+	Snippet string `yaml:"snippet,omitempty" json:"snippet,omitempty"`
+
+	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
+
+	Destination string `yaml:"destination,omitempty" json:"destination,omitempty"`
+
+	Marker string `yaml:"marker,omitempty" json:"marker,omitempty"`
+
+	UseDropin bool `yaml:"use_dropin,omitempty" json:"use_dropin,omitempty"`
+
+	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
+
+	// RepoChangeStep.
+	File string `yaml:"file,omitempty" json:"file,omitempty"`
+
+	Content string `yaml:"content,omitempty" json:"content,omitempty"`
+
+	Checksum string `yaml:"checksum,omitempty" json:"checksum,omitempty"`
+
+	// ApkInstallStep.
+	ApkPackages []ApkPackageSpec `yaml:"apk_packages,omitempty" json:"apk_packages,omitempty"`
+
+	// LocalPkgInstallStep.
+	PkgbuildRef string `yaml:"pkgbuild_ref,omitempty" json:"pkgbuild_ref,omitempty"`
+
+	ProjectDir string `yaml:"project_dir,omitempty" json:"project_dir,omitempty"`
+}
+
+// #ReverseOp is a single teardown action. Serialized into the ledger so
+// uninstall can reverse a deploy without re-reading the candy manifest.
+type ReverseOp struct {
+	Kind ReverseOpKind `yaml:"kind,omitempty" json:"kind"`
+
+	Format string `yaml:"format,omitempty" json:"format,omitempty"`
+
+	Targets []string `yaml:"targets,omitempty" json:"targets,omitempty"`
+
+	Scope Scope `yaml:"scope,omitempty" json:"scope,omitempty"`
+
+	Extra map[string]string `yaml:"extra,omitempty" json:"extra,omitempty"`
+
+	// uninstall_cmd is the rendered host-venue package-removal command for a
+	// ReverseOpPackageRemove op, filled at record time from the format's
+	// uninstall_template by fillReverseUninstallCmds.
+	UninstallCmd string `yaml:"uninstall_cmd,omitempty" json:"uninstall_cmd,omitempty"`
+}
+
+// #CacheMountView is the wire mirror of package main's CacheMountSpec.
+type CacheMountView struct {
+	Dst string `yaml:"dst,omitempty" json:"dst,omitempty"`
+
+	Sharing string `yaml:"sharing,omitempty" json:"sharing,omitempty"`
+}
+
+// #ArtifactView is the wire mirror of package main's ArtifactRef.
+type ArtifactView struct {
+	ContainerPath string `yaml:"container_path,omitempty" json:"container_path,omitempty"`
+
+	HostPath string `yaml:"host_path,omitempty" json:"host_path,omitempty"`
+
+	Chown bool `yaml:"chown,omitempty" json:"chown,omitempty"`
+}
+
+type LocalPkg struct {
+	PkgGlob string `yaml:"pkg_glob,omitempty" json:"pkg_glob"`
+
+	SourceSentinel string `yaml:"source_sentinel,omitempty" json:"source_sentinel"`
+
+	BuildTemplate string `yaml:"build_template,omitempty" json:"build_template"`
+
+	InstallTemplate string `yaml:"install_template,omitempty" json:"install_template"`
+
+	Probe string `yaml:"probe,omitempty" json:"probe"`
+
+	DepBuilder string `yaml:"dep_builder,omitempty" json:"dep_builder,omitempty"`
+
+	DownloadTemplate string `yaml:"download_template,omitempty" json:"download_template,omitempty"`
+}
+
+type DeployVolume struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
+
+	Host string `yaml:"host,omitempty" json:"host,omitempty"`
+
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+
+	DataSeeded bool `yaml:"data_seeded,omitempty" json:"data_seeded,omitempty"`
+
+	DataSource string `yaml:"data_source,omitempty" json:"data_source,omitempty"`
+}
+
+// #BuilderCollectInput is the OpCollectContext params: the host-supplied
+// candy descriptor an external builder plugin reads to produce its per-candy
+// stage context.
+type BuilderCollectInput struct {
+	Candy string `yaml:"candy,omitempty" json:"candy"`
+
+	Builder string `yaml:"builder,omitempty" json:"builder"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+
+	Packages []string `yaml:"packages,omitempty" json:"packages,omitempty"`
+
+	Replaces []string `yaml:"replaces,omitempty" json:"replaces,omitempty"`
+}
+
+// #BuilderCollectReply is the OpCollectContext reply: the builder-specific
+// stage-context keys the host merges onto the base context.
+type BuilderCollectReply struct {
+	Context map[string]any `yaml:"context,omitempty" json:"context,omitempty"`
+}
+
+// #BuilderReverseInput is the OpReverse params: the candy + its resolved
+// stage-context keys.
+type BuilderReverseInput struct {
+	Candy string `yaml:"candy,omitempty" json:"candy"`
+
+	Builder string `yaml:"builder,omitempty" json:"builder"`
+
+	Context map[string]any `yaml:"context,omitempty" json:"context,omitempty"`
+}
+
+// #BuilderReverseReply is the OpReverse reply: the builder's teardown ops.
+type BuilderReverseReply struct {
+	ReverseOps []ReverseOp `yaml:"reverse_ops,omitempty" json:"reverse_ops,omitempty"`
+}
+
 type Candy struct {
 	// --- identity (required: ADE mandates version+name+description+plan) ---
 	Version CalVer `yaml:"version,omitempty" json:"version"`
@@ -2910,20 +3414,6 @@ type DeploySecret struct {
 	Source string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
-type DeployVolume struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Type string `yaml:"type,omitempty" json:"type,omitempty"`
-
-	Host string `yaml:"host,omitempty" json:"host,omitempty"`
-
-	Path string `yaml:"path,omitempty" json:"path,omitempty"`
-
-	DataSeeded bool `yaml:"data_seeded,omitempty" json:"data_seeded,omitempty"`
-
-	DataSource string `yaml:"data_source,omitempty" json:"data_source,omitempty"`
-}
-
 type Iterate struct {
 	Agent []string `yaml:"agent,omitempty" json:"agent,omitempty"`
 
@@ -3039,6 +3529,131 @@ type DeployProbes struct {
 // the alias removes that divergent parallel spec and lets gengotypes emit a real
 // Check struct instead of an empty `struct{}`.
 type Check Deploy
+
+// #DeployVenue is the venue descriptor the host puts in op.Env for an external
+// deploy Invoke: the deploy's name plus the merged deploy-node env (KEY=VALUE
+// lines flattened to a map).
+type DeployVenue struct {
+	DeployName string `yaml:"deploy_name,omitempty" json:"deploy_name"`
+
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Substrate RawBody `yaml:"substrate,omitempty" json:"substrate,omitempty"`
+}
+
+// #VenueDescriptor is the SELF-CONTAINED, serializable description of a
+// deploy venue's executor that a substrate LIFECYCLE plugin's
+// OpPrepareVenue / OpTeardownExecutor returns (F6).
+type VenueDescriptor struct {
+	Kind string `yaml:"kind,omitempty" json:"kind"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	Host string `yaml:"host,omitempty" json:"host,omitempty"`
+
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+
+	Args []string `yaml:"args,omitempty" json:"args,omitempty"`
+
+	ConnectTimeout int `yaml:"connect_timeout,omitempty" json:"connect_timeout,omitempty"`
+}
+
+// #Diagnostic is one finding from a plugin kind's deep OpValidate check (F7/C8).
+type Diagnostic struct {
+	Severity string `yaml:"severity,omitempty" json:"severity,omitempty"`
+
+	Message string `yaml:"message,omitempty" json:"message"`
+
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+}
+
+// #Diagnostics is the OpValidate reply. HasErrors() is a pure Go METHOD — CUE
+// cannot express it — and stays hand-written in spec/deploy_methods.go.
+type Diagnostics struct {
+	Items []Diagnostic `yaml:"items,omitempty" json:"items,omitempty"`
+}
+
+// #StructuralKindLoadEnv is the OpLoad invocation context (op.Env) the host
+// threads to a STRUCTURAL class:kind plugin (F5 authored-member input-threading).
+type StructuralKindLoadEnv struct {
+	Members map[string]*Deploy `yaml:"members,omitempty" json:"members,omitempty"`
+
+	// standalone is the host-pre-decoded CANONICAL node channel (candy/plugin-substrate,
+	// candy/plugin-candy).
+	Standalone *StandaloneLoad `yaml:"standalone,omitempty" json:"standalone,omitempty"`
+}
+
+// #StandaloneLoad carries a structural kind's host-pre-decoded canonical node.
+// Exactly one of Deploy / Template / Box / Candy is set, matching Shape.
+type StandaloneLoad struct {
+	Shape string `yaml:"shape,omitempty" json:"shape"`
+
+	Deploy *Deploy `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+
+	Template RawBody `yaml:"template,omitempty" json:"template,omitempty"`
+
+	Box *Box `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Candy *Candy `yaml:"candy,omitempty" json:"candy,omitempty"`
+}
+
+// #AndroidDeployVenue is the preresolved deploy:android substrate payload the
+// host's android deploy preresolver produces (in DeployVenue.Substrate) and
+// the candy/plugin-adb deploy:android provider decodes.
+type AndroidDeployVenue struct {
+	AdbAddr string `yaml:"adb_addr,omitempty" json:"adb_addr"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	Container string `yaml:"container,omitempty" json:"container,omitempty"`
+
+	Serial string `yaml:"serial,omitempty" json:"serial,omitempty"`
+
+	GoogleEmail string `yaml:"google_email,omitempty" json:"google_email,omitempty"`
+
+	GoogleToken string `yaml:"google_token,omitempty" json:"google_token,omitempty"`
+
+	Installs []ApkPackageSpec `yaml:"installs,omitempty" json:"installs,omitempty"`
+
+	// boot_timeout / install_deadline / install_interval are the readiness +
+	// install-retry windows the host ships (no magic numbers in the plugin).
+	BootTimeout string `yaml:"boot_timeout,omitempty" json:"boot_timeout,omitempty"`
+
+	InstallDeadline string `yaml:"install_deadline,omitempty" json:"install_deadline,omitempty"`
+
+	InstallInterval string `yaml:"install_interval,omitempty" json:"install_interval,omitempty"`
+}
+
+// #K8sDeployVenue is the preresolved deploy:k8s substrate payload the host's
+// k8s deploy preresolver produces in DeployVenue.Substrate and the
+// candy/plugin-kube deploy:k8s provider decodes.
+type K8sDeployVenue struct {
+	OverlayPath string `yaml:"overlay_path,omitempty" json:"overlay_path"`
+
+	TreeRoot string `yaml:"tree_root,omitempty" json:"tree_root,omitempty"`
+
+	KubeContext string `yaml:"kube_context,omitempty" json:"kube_context,omitempty"`
+
+	DeployName string `yaml:"deploy_name,omitempty" json:"deploy_name,omitempty"`
+}
+
+// #DeployReply is the structured result an external deploy provider returns
+// from an OpExecute Invoke: the teardown ops the host records into the
+// ledger, plus a provenance record.
+type DeployReply struct {
+	ReverseOps []ReverseOp `yaml:"reverse_ops,omitempty" json:"reverse_ops,omitempty"`
+
+	Record DeployReplyRecord `yaml:"record,omitempty" json:"record"`
+}
+
+// #DeployReplyRecord names the ledger CandyRecord the host writes for an
+// external deploy: the logical candy whose ReverseOps drive teardown, plus
+// its version.
+type DeployReplyRecord struct {
+	Candy string `yaml:"candy,omitempty" json:"candy"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+}
 
 type Distro struct {
 	Inherits string `yaml:"inherits,omitempty" json:"inherits,omitempty"`
@@ -3174,20 +3789,342 @@ type FormatRule struct {
 	Rule string `yaml:"rule,omitempty" json:"rule"`
 }
 
-type LocalPkg struct {
-	PkgGlob string `yaml:"pkg_glob,omitempty" json:"pkg_glob"`
+// --- resolve-to-envelope wire type (Cutover M, the long pole; SDD conversion,
+// per the standing operator directive: a hand-written wire struct not yet
+// CUE-sourced is conversion-in-progress, never a sanctioned exception).
+// candy/plugin-distro resolves an authored `distro:` build-vocabulary entity
+// into a ResolvedDistro the kernel's build engine consumes without importing
+// the concrete spec.Distro. Written out explicitly (not embedding #Distro) so
+// every field's required/optional state is independently auditable against
+// the former hand type. The host keeps RenderTemplate + the cache-mount vocab
+// (per the plan); the plugin owns the distro KNOWLEDGE (schema/typed
+// shape/validation). PrimaryFormat()/LocalPkgFormat() are pure Go METHODS —
+// CUE cannot express them — and stay hand-written in spec/distro_methods.go
+// (mirrors Op.Kind() in spec/charly_methods.go: a method, not a type).
+type ResolvedDistro struct {
+	Inherits string `yaml:"inherits,omitempty" json:"inherits,omitempty"`
 
-	SourceSentinel string `yaml:"source_sentinel,omitempty" json:"source_sentinel"`
+	InheritPackages bool `yaml:"inherit_packages,omitempty" json:"inherit_packages,omitempty"`
 
-	BuildTemplate string `yaml:"build_template,omitempty" json:"build_template"`
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 
-	InstallTemplate string `yaml:"install_template,omitempty" json:"install_template"`
+	Bootstrap Bootstrap `yaml:"bootstrap,omitempty" json:"bootstrap,omitempty"`
 
-	Probe string `yaml:"probe,omitempty" json:"probe"`
+	Workarounds []string `yaml:"workaround,omitempty" json:"workaround,omitempty"`
 
-	DepBuilder string `yaml:"dep_builder,omitempty" json:"dep_builder,omitempty"`
+	Format map[string]*Format `yaml:"format,omitempty" json:"format,omitempty"`
 
-	DownloadTemplate string `yaml:"download_template,omitempty" json:"download_template,omitempty"`
+	BaseUser *BaseUser `yaml:"base_user,omitempty" json:"base_user,omitempty"`
+
+	Pacstrap *Pacstrap `yaml:"pacstrap,omitempty" json:"pacstrap,omitempty"`
+
+	Debootstrap *Debootstrap `yaml:"debootstrap,omitempty" json:"debootstrap,omitempty"`
+
+	AlpineBootstrap *AlpineBootstrap `yaml:"alpine_bootstrap,omitempty" json:"alpine_bootstrap,omitempty"`
+
+	Bootloader *Bootloader `yaml:"bootloader,omitempty" json:"bootloader,omitempty"`
+
+	Dnf *Dnf `yaml:"dnf,omitempty" json:"dnf,omitempty"`
+
+	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #DistroResolveInput carries one opaque distro body to project.
+type DistroResolveInput struct {
+	Distro RawBody `yaml:"distro,omitempty" json:"distro"`
+}
+
+// #DistroResolveReply wraps the resolved distro.
+type DistroResolveReply struct {
+	Resolved *ResolvedDistro `yaml:"resolved,omitempty" json:"resolved,omitempty"`
+}
+
+// #CredentialHealth is the credential-store health snapshot. Rendered into the
+// doctor "secret storage" checks by the plugin.
+type CredentialHealth struct {
+	BackendName string `yaml:"backend_name,omitempty" json:"backend_name"`
+
+	ConfiguredBackend string `yaml:"configured_backend,omitempty" json:"configured_backend"`
+
+	KeyringAvailable bool `yaml:"keyring_available,omitempty" json:"keyring_available"`
+
+	KeyringLocked bool `yaml:"keyring_locked,omitempty" json:"keyring_locked"`
+
+	PlaintextCount int `yaml:"plaintext_count,omitempty" json:"plaintext_count"`
+
+	NoSession bool `yaml:"no_session,omitempty" json:"no_session"`
+
+	CollErr string `yaml:"coll_err,omitempty" json:"coll_err,omitempty"`
+
+	HealthyColls []string `yaml:"healthy_colls,omitempty" json:"healthy_colls,omitempty"`
+
+	BrokenColls []string `yaml:"broken_colls,omitempty" json:"broken_colls,omitempty"`
+
+	IndexTotal int `yaml:"index_total,omitempty" json:"index_total"`
+
+	IndexMissing []string `yaml:"index_missing,omitempty" json:"index_missing,omitempty"`
+}
+
+// #HostProbeDevice is one host device-pattern probe result (the doctor
+// "devices" section).
+type HostProbeDevice struct {
+	Pattern string `yaml:"pattern,omitempty" json:"pattern"`
+
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	Present bool `yaml:"present,omitempty" json:"present"`
+
+	Description string `yaml:"description,omitempty" json:"description"`
+}
+
+// #HostProbeDistro is the host distro identity + package manager (drives
+// install-hint rendering).
+type HostProbeDistro struct {
+	ID string `yaml:"id,omitempty" json:"id"`
+
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Manager string `yaml:"manager,omitempty" json:"manager"`
+}
+
+// #HostProbeRequest is the "hostprobe" HostBuild kind request. Engine hints
+// which container engine's GPU run-flags to compute (empty → the host
+// resolves it).
+type HostProbeRequest struct {
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+}
+
+// #HostProbeReply is the "hostprobe" HostBuild kind reply — RAW host facts the
+// plugin renders into the report. All fields are best-effort (a probe failure
+// leaves its field zero/empty, mirroring the shims).
+//
+// group_accessible is RESHAPED from the former hand type's `map[int]bool` to a
+// string-keyed map: `cue exp gengotypes` has no int-keyed-map construct (an
+// int-keyed CUE map degrades to an empty struct — the documented CAN/CANNOT
+// exception). encoding/json ALREADY converts a Go `map[int]bool`'s keys to
+// their decimal string form on the wire (Go's own int->string key rule for
+// map marshaling), so `map[string]bool` with the SAME decimal-string keys is
+// BYTE-IDENTICAL JSON — a pure representation fix, zero wire-format change.
+// The two Go call sites that constructed/read the int-keyed map
+// (charly/host_build_hostprobe.go, candy/plugin-doctor/command.go) are updated
+// in lockstep to key by strconv.Itoa(iommuGroup).
+type HostProbeReply struct {
+	GPU bool `yaml:"gpu,omitempty" json:"gpu"`
+
+	AMDGPU bool `yaml:"amd_gpu,omitempty" json:"amd_gpu"`
+
+	AMDGFXVersion string `yaml:"amd_gfx_version,omitempty" json:"amd_gfx_version,omitempty"`
+
+	GPUFlags []string `yaml:"gpu_flags,omitempty" json:"gpu_flags,omitempty"`
+
+	Vfio *VFIOReport `yaml:"vfio,omitempty" json:"vfio,omitempty"`
+
+	MemlockSoft uint64 `yaml:"memlock_soft,omitempty" json:"memlock_soft"`
+
+	MemlockHard uint64 `yaml:"memlock_hard,omitempty" json:"memlock_hard"`
+
+	VfioPciAvailable bool `yaml:"vfio_pci_available,omitempty" json:"vfio_pci_available"`
+
+	GroupAccessible map[string]bool `yaml:"group_accessible,omitempty" json:"group_accessible,omitempty"`
+
+	Devices []HostProbeDevice `yaml:"devices,omitempty" json:"devices,omitempty"`
+
+	Distro HostProbeDistro `yaml:"distro,omitempty" json:"distro"`
+
+	InstallHints map[string]map[string]string `yaml:"install_hints,omitempty" json:"install_hints,omitempty"`
+
+	DistroFamilyMap map[string]string `yaml:"distro_family_map,omitempty" json:"distro_family_map,omitempty"`
+
+	ConfigPath string `yaml:"config_path,omitempty" json:"config_path,omitempty"`
+
+	Credential *CredentialHealth `yaml:"credential,omitempty" json:"credential,omitempty"`
+
+	CredentialErr string `yaml:"credential_err,omitempty" json:"credential_err,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// #VFIOReport summarizes host readiness for VFIO GPU passthrough.
+type VFIOReport struct {
+	IOMMUEnabled bool `yaml:"iommu_enabled,omitempty" json:"iommu_enabled"`
+
+	IOMMUKind string `yaml:"iommu_kind,omitempty" json:"iommu_kind"`
+
+	GPUs []VFIOGpu `yaml:"gpus,omitempty" json:"gpus"`
+}
+
+// #VFIOGpu is a display-class device plus every other function sharing its
+// IOMMU group. Passthrough must move the whole group together, so the
+// renderer emits one <hostdev> per GroupMember.
+//
+// FLATTENED (never a Go anonymous-embedded field — CUE unification has no
+// concept of Go embedding; it always structurally merges fields into one flat
+// struct). The former hand type embedded VFIOPCIDevice anonymously; Go's
+// encoding/json ALREADY promotes an anonymous embedded struct's fields to the
+// parent JSON object on the wire (Go's own embedding-promotion rule), so this
+// flattened shape is BYTE-IDENTICAL JSON to the former embedded type — the
+// only consumer-visible change is Go SOURCE: a composite literal naming the
+// embedded field (`VFIOGpu{VFIOPCIDevice: d}`) must spread d's fields instead
+// (`VFIOGpu{Addr: d.Addr, ...}`). Fixed at every call site in the same
+// cutover (candy/plugin-gpu, charly test fixtures).
+type VFIOGpu struct {
+	Addr string `yaml:"addr,omitempty" json:"addr"`
+
+	GroupMembers []VFIOPCIDevice `yaml:"group_members,omitempty" json:"group_members"`
+
+	VendorID string `yaml:"vendor_id,omitempty" json:"vendor_id"`
+
+	DeviceID string `yaml:"device_id,omitempty" json:"device_id"`
+
+	Class string `yaml:"class,omitempty" json:"class"`
+
+	ClassLabel string `yaml:"class_label,omitempty" json:"class_label"`
+
+	Driver string `yaml:"driver,omitempty" json:"driver"`
+
+	IOMMUGroup int `yaml:"iommu_group,omitempty" json:"iommu_group"`
+}
+
+// #VFIOPCIDevice is a single PCI function discovered under sysfs.
+type VFIOPCIDevice struct {
+	Addr string `yaml:"addr,omitempty" json:"addr"`
+
+	VendorID string `yaml:"vendor_id,omitempty" json:"vendor_id"`
+
+	DeviceID string `yaml:"device_id,omitempty" json:"device_id"`
+
+	Class string `yaml:"class,omitempty" json:"class"`
+
+	ClassLabel string `yaml:"class_label,omitempty" json:"class_label"`
+
+	Driver string `yaml:"driver,omitempty" json:"driver"`
+
+	IOMMUGroup int `yaml:"iommu_group,omitempty" json:"iommu_group"`
+}
+
+// #EncVolumePlan is one encrypted volume, fully resolved HOST-SIDE: its charly
+// name (for messages), the on-disk cipher/plain dirs, the systemd scope-unit
+// name, and the host-probed initialized/mounted state. The plugin acts on
+// these flags — it never re-derives a charly path convention nor re-probes
+// state.
+type EncVolumePlan struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	CipherDir string `yaml:"cipher_dir,omitempty" json:"cipher_dir"`
+
+	PlainDir string `yaml:"plain_dir,omitempty" json:"plain_dir"`
+
+	ScopeUnit string `yaml:"scope_unit,omitempty" json:"scope_unit"`
+
+	Initialized bool `yaml:"initialized,omitempty" json:"initialized"`
+
+	Mounted bool `yaml:"mounted,omitempty" json:"mounted"`
+}
+
+// #EncExecInput is the self-contained gocryptfs-execution request the host
+// ships to plugin-enc over OpExecute. ImageID is the systemd-ask-password /
+// extpass id ("charly-<box>"); BoxName is the bare box name for remediation
+// messages; Passphrase drives mount/ensure (gocryptfs init/mount via
+// GOCRYPTFS_PASSWORD); OldPass/NewPass drive passwd. Volumes carries the
+// host-resolved per-volume plan.
+type EncExecInput struct {
+	Method string `yaml:"method,omitempty" json:"method"`
+
+	ImageID string `yaml:"image_id,omitempty" json:"image_id"`
+
+	BoxName string `yaml:"box_name,omitempty" json:"box_name"`
+
+	Passphrase string `yaml:"passphrase,omitempty" json:"passphrase,omitempty"`
+
+	OldPass string `yaml:"old_pass,omitempty" json:"old_pass,omitempty"`
+
+	NewPass string `yaml:"new_pass,omitempty" json:"new_pass,omitempty"`
+
+	Volumes []EncVolumePlan `yaml:"volumes,omitempty" json:"volumes"`
+}
+
+// #EncExecReply is the execution verdict: Error == "" means success. The host
+// shim turns a non-empty Error into a Go error.
+type EncExecReply struct {
+	Error string `yaml:"error,omitempty" json:"error"`
+}
+
+// #FeatureRequest is the "feature" HostBuild kind request. Filter (empty | a
+// kind "candy"/"box" | an entity id "candy:redis") narrows the enumeration.
+type FeatureRequest struct {
+	Filter string `yaml:"filter,omitempty" json:"filter,omitempty"`
+}
+
+// #FeatureEntity is one enumerated kind: entity + its RAW plan data (Step is
+// already a plain CUE-sourced wire type, so no separate flattened form is
+// needed on the wire). An entity with neither a description nor a plan is
+// still listed (as "(no description)") but the plugin skips
+// summarizing/validating it, matching the former engine.
+type FeatureEntity struct {
+	Kind string `yaml:"kind,omitempty" json:"kind"`
+
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+}
+
+// #FeatureReply is the "feature" HostBuild kind reply — the enumerated entities
+// the plugin transforms (summary/steps/validation) and formats into the
+// list/pending/validate output. Error is a human-facing message on a load
+// failure.
+type FeatureReply struct {
+	Entities []FeatureEntity `yaml:"entities,omitempty" json:"entities,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// #DetectedDevices holds the results of host device auto-detection.
+type DetectedDevices struct {
+	GPU bool `yaml:"gpu,omitempty" json:"gpu"`
+
+	AMDGPU bool `yaml:"amd_gpu,omitempty" json:"amd_gpu"`
+
+	AMDGFXVersion string `yaml:"amd_gfx_version,omitempty" json:"amd_gfx_version"`
+
+	RenderNode string `yaml:"render_node,omitempty" json:"render_node"`
+
+	Devices []string `yaml:"devices,omitempty" json:"devices"`
+}
+
+// #GpuProbeInput is the action-multiplexed input the host ships to verb:gpu
+// over OpRun. Action selects the host probe; the three data tables are
+// threaded in from charly's embedded charly.yml (they stay in core for
+// `charly doctor`, R3).
+type GpuProbeInput struct {
+	Action string `yaml:"action,omitempty" json:"action"`
+
+	Group int `yaml:"group,omitempty" json:"group,omitempty"`
+
+	DevicePatterns []string `yaml:"device_patterns,omitempty" json:"device_patterns,omitempty"`
+
+	GpuVendors map[string]string `yaml:"gpu_vendors,omitempty" json:"gpu_vendors,omitempty"`
+
+	PCIClassLabels map[string]string `yaml:"pci_class_labels,omitempty" json:"pci_class_labels,omitempty"`
+}
+
+// #GpuProbeReply is the action-multiplexed reply from verb:gpu. Each action
+// populates only the field(s) it produces.
+type GpuProbeReply struct {
+	// "bool" is quoted (a bare `bool` field name collides with the CUE builtin
+	// type keyword — the arbiter.cue #ArbiterInvokeReply precedent).
+	Bool bool `yaml:"bool,omitempty" json:"bool,omitempty"`
+
+	Str string `yaml:"str,omitempty" json:"str,omitempty"`
+
+	Vfio *VFIOReport `yaml:"vfio,omitempty" json:"vfio,omitempty"`
+
+	HostDevices *DetectedDevices `yaml:"host_devices,omitempty" json:"host_devices,omitempty"`
+
+	MemlockSoft uint64 `yaml:"memlock_soft,omitempty" json:"memlock_soft,omitempty"`
+
+	MemlockHard uint64 `yaml:"memlock_hard,omitempty" json:"memlock_hard,omitempty"`
 }
 
 type Init struct {
@@ -3243,6 +4180,186 @@ type InitServiceSchema struct {
 	DropinPathTemplate string `yaml:"dropin_path_template,omitempty" json:"dropin_path_template,omitempty"`
 
 	SupportsPackaged bool `yaml:"supports_packaged,omitempty" json:"supports_packaged,omitempty"`
+}
+
+// #EnvKV is a deterministic env-var ordering helper (template iteration order).
+// Named #EnvKV, NOT #KeyValue — the schemagen vocab generator auto-registers
+// EVERY top-level `#<X>Value` def as a fake kind-value gate (kindValueDefs,
+// `^#?([A-Za-z0-9]+)Value$`), so `#KeyValue` would spuriously register a "key"
+// kind (RDD-caught live: it appeared in the generated KindValueDefs map). The
+// charly-name alias `KeyValue = EnvKV` (spec/charly_names.go) preserves the
+// exported Go type name every real consumer (deploykit.MapToKeyValueSlice,
+// deploykit.SortedEnvList, charly/service_render.go) already uses.
+type EnvKV struct {
+	Key string `yaml:"key,omitempty" json:"key"`
+
+	Value string `yaml:"value,omitempty" json:"value"`
+}
+
+// #ServiceRenderContext is the data an init system's service_template renders
+// against — everything the renderer needs, nothing else reachable. The host
+// computes it per service and hands it to candy/plugin-init's OpResolve.
+type ServiceRenderContext struct {
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	Candy string `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	Exec string `yaml:"exec,omitempty" json:"exec,omitempty"`
+
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	EnvList []EnvKV `yaml:"env_list,omitempty" json:"env_list,omitempty"`
+
+	Restart string `yaml:"restart,omitempty" json:"restart,omitempty"`
+
+	WorkingDirectory string `yaml:"working_directory,omitempty" json:"working_directory,omitempty"`
+
+	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	After []string `yaml:"after,omitempty" json:"after,omitempty"`
+
+	Before []string `yaml:"before,omitempty" json:"before,omitempty"`
+
+	WantedBy []string `yaml:"wanted_by,omitempty" json:"wanted_by,omitempty"`
+
+	Stdout string `yaml:"stdout,omitempty" json:"stdout,omitempty"`
+
+	StopTimeout string `yaml:"stop_timeout,omitempty" json:"stop_timeout,omitempty"`
+
+	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+
+	PackagedUnit string `yaml:"packaged_unit,omitempty" json:"packaged_unit,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+
+	SystemUnitDir string `yaml:"system_unit_dir,omitempty" json:"system_unit_dir,omitempty"`
+
+	UserUnitDir string `yaml:"user_unit_dir,omitempty" json:"user_unit_dir,omitempty"`
+
+	FragmentDir string `yaml:"fragment_dir,omitempty" json:"fragment_dir,omitempty"`
+
+	// Lifecycle directives (supervisord + systemd).
+	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
+
+	Events string `yaml:"events,omitempty" json:"events,omitempty"`
+
+	AutoStart *bool `yaml:"auto_start,omitempty" json:"auto_start,omitempty"`
+
+	StartRetries int `yaml:"start_retries,omitempty" json:"start_retries,omitempty"`
+
+	StartSecs int `yaml:"start_secs,omitempty" json:"start_secs,omitempty"`
+
+	StopSignal string `yaml:"stop_signal,omitempty" json:"stop_signal,omitempty"`
+
+	ExitCodes string `yaml:"exit_codes,omitempty" json:"exit_codes,omitempty"`
+
+	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
+
+	// render_dropin is the host-precomputed drop-in decision (the entry
+	// carries Overrides). PackagedUnit != "" selects the packaged branch. The
+	// host derives both from the ServiceEntry so the plugin renders from the
+	// ctx alone.
+	RenderDropin bool `yaml:"render_dropin,omitempty" json:"render_dropin,omitempty"`
+}
+
+// #RenderedService is the renderer output: the unit text, where it lands, and
+// any drop-in for packaged-unit reuse.
+type RenderedService struct {
+	UnitText string `yaml:"unit_text,omitempty" json:"unit_text,omitempty"`
+
+	UnitPath string `yaml:"unit_path,omitempty" json:"unit_path,omitempty"`
+
+	DropinText string `yaml:"dropin_text,omitempty" json:"dropin_text,omitempty"`
+
+	DropinPath string `yaml:"dropin_path,omitempty" json:"dropin_path,omitempty"`
+}
+
+// #ServiceRenderInput is candy/plugin-init's OpResolve input for the
+// service-render leg: the OPAQUE init body (the chosen init system's config) +
+// the host-built render context (all entry-derived fields, home-expanded,
+// with the packaged/drop-in branch decisions precomputed). The plugin renders
+// from the ctx alone.
+type ServiceRenderInput struct {
+	Init RawBody `yaml:"init,omitempty" json:"init"`
+
+	Ctx ServiceRenderContext `yaml:"ctx,omitempty" json:"ctx"`
+}
+
+// #ServiceRenderReply wraps the rendered service.
+type ServiceRenderReply struct {
+	Rendered *RenderedService `yaml:"rendered,omitempty" json:"rendered,omitempty"`
+}
+
+// #ResolvedInit is the resolve-to-envelope form of an init system the kernel
+// consumes for stage/assembly emission, capability labels, and the
+// entrypoint contract (legs 2–4 of the init de-type). It carries the init
+// system's build + runtime VALUES + templates the host reads generically —
+// the kernel never imports the concrete spec.Init. Raw is the opaque init
+// body threaded to the plugin's service-render leg (leg 1).
+// candy/plugin-init produces it from spec.Init.
+type ResolvedInit struct {
+	CandyFields []string `yaml:"candy_field,omitempty" json:"candy_field,omitempty"`
+
+	CandyFiles []string `yaml:"candy_file,omitempty" json:"candy_file,omitempty"`
+
+	DependsCandy string `yaml:"depends_candy,omitempty" json:"depends_candy,omitempty"`
+
+	RequiresCapability []string `yaml:"requires_capability,omitempty" json:"requires_capability,omitempty"`
+
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+
+	HeaderFile string `yaml:"header_file,omitempty" json:"header_file,omitempty"`
+
+	FragmentDir string `yaml:"fragment_dir,omitempty" json:"fragment_dir,omitempty"`
+
+	RelayTemplate string `yaml:"relay_template,omitempty" json:"relay_template,omitempty"`
+
+	StageName string `yaml:"stage_name,omitempty" json:"stage_name,omitempty"`
+
+	StageHeaderCopy string `yaml:"stage_header_copy,omitempty" json:"stage_header_copy,omitempty"`
+
+	StageFragmentCopy string `yaml:"stage_fragment_copy,omitempty" json:"stage_fragment_copy,omitempty"`
+
+	AssemblyTemplate string `yaml:"assembly_template,omitempty" json:"assembly_template,omitempty"`
+
+	SystemEnableTemplate string `yaml:"system_enable_template,omitempty" json:"system_enable_template,omitempty"`
+
+	PostAssemblyTemplate string `yaml:"post_assembly_template,omitempty" json:"post_assembly_template,omitempty"`
+
+	Entrypoint []string `yaml:"entrypoint,omitempty" json:"entrypoint,omitempty"`
+
+	FallbackEntrypoint []string `yaml:"fallback_entrypoint,omitempty" json:"fallback_entrypoint,omitempty"`
+
+	ManagementTool string `yaml:"management_tool,omitempty" json:"management_tool,omitempty"`
+
+	ManagementCommands map[string]string `yaml:"management_command,omitempty" json:"management_command,omitempty"`
+
+	LabelKey string `yaml:"label_key,omitempty" json:"label_key,omitempty"`
+
+	ServiceSchema *InitServiceSchema `yaml:"service_schema,omitempty" json:"service_schema,omitempty"`
+
+	// Raw is the opaque init body — threaded to the service-render leg (leg 1).
+	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #InitResolveInput is candy/plugin-init's OpResolve config-leg input: the
+// opaque init body to resolve into a ResolvedInit.
+type InitResolveInput struct {
+	Init RawBody `yaml:"init,omitempty" json:"init"`
+}
+
+// #InitResolveReply wraps the resolved init.
+type InitResolveReply struct {
+	Resolved *ResolvedInit `yaml:"resolved,omitempty" json:"resolved,omitempty"`
+}
+
+// #InitResolveRequest is the discriminated OpResolve input for
+// candy/plugin-init: exactly one of Render (leg 1 — render one service unit)
+// or Config (legs 2–4 — the resolved init envelope) is set.
+type InitResolveRequest struct {
+	Render *ServiceRenderInput `yaml:"render,omitempty" json:"render,omitempty"`
+
+	Config *InitResolveInput `yaml:"config,omitempty" json:"config,omitempty"`
 }
 
 type K8s struct {
@@ -3364,6 +4481,61 @@ type K8sResourceDefaults struct {
 	Labels map[string]string `yaml:"labels,omitempty" json:"labels,omitempty"`
 
 	Annotations map[string]string `yaml:"annotations,omitempty" json:"annotations,omitempty"`
+}
+
+// #K8sGenInput is the pure-generation input the host ships to plugin-k8sgen
+// over OpEmit. Deploy is the deployment node (the former BundleNode =
+// spec.Deploy); Cluster is the kind:k8s cluster template (the former K8sSpec =
+// spec.K8s); Ports / UID / GID are lifted from the image's OCI-label
+// Capabilities host-side so the plugin needs no access to the package-main
+// BoxMetadata type.
+type K8sGenInput struct {
+	DeploymentName string `yaml:"deployment_name,omitempty" json:"deployment_name"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance"`
+
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
+
+	Deploy Deploy `yaml:"deploy,omitempty" json:"deploy"`
+
+	// cluster is the decoded kind:k8s cluster template. After the k8s
+	// substrate-value de-type (Cutover K) the KERNEL no longer sets it — it
+	// ships the opaque body in ClusterRaw and the plugin decodes ClusterRaw
+	// into Cluster before generating, so the kernel never types spec.K8s.
+	Cluster K8s `yaml:"cluster,omitempty" json:"cluster,omitempty"`
+
+	ClusterRaw RawBody `yaml:"cluster_raw,omitempty" json:"cluster_raw,omitempty"`
+
+	Ports []string `yaml:"ports,omitempty" json:"ports"`
+
+	UID int `yaml:"uid,omitempty" json:"uid"`
+
+	GID int `yaml:"gid,omitempty" json:"gid"`
+
+	OutputDir string `yaml:"output_dir,omitempty" json:"output_dir"`
+}
+
+// #K8sGenFile is one generated manifest the plugin returns: its RELATIVE path
+// (under OutputDir/DeploymentName, e.g. "base/deployment.yaml"), the manifest
+// as JSON (the host unmarshals it back to a value, egress-validates, and
+// writes it as YAML), and the egress kind that gates it ("k8s_object" or
+// "kustomization").
+type K8sGenFile struct {
+	RelPath string `yaml:"rel_path,omitempty" json:"rel_path"`
+
+	Doc RawBody `yaml:"doc,omitempty" json:"doc"`
+
+	EgressKind string `yaml:"egress_kind,omitempty" json:"egress_kind"`
+}
+
+// #K8sGenReply is the pure-generation output: the RELATIVE overlay path the
+// host joins onto OutputDir/DeploymentName to form the `kubectl apply -k`
+// argument, and the collected manifest files (base resources + base/overlay
+// kustomizations).
+type K8sGenReply struct {
+	OverlayRelPath string `yaml:"overlay_rel_path,omitempty" json:"overlay_rel_path"`
+
+	Files []K8sGenFile `yaml:"files,omitempty" json:"files"`
 }
 
 // #LoadedDoc — one parsed document of a namespace's flattened file tree (root file OR a flat
@@ -3604,6 +4776,22 @@ type Resource struct {
 // "10DE"/"0X10de"/"0x10de" — a strict regex would reject Go-valid input).
 type GpuSelector struct {
 	Vendor string `yaml:"vendor,omitempty" json:"vendor"`
+}
+
+type ResolvedGpuSelector struct {
+	Vendor string `yaml:"vendor,omitempty" json:"vendor,omitempty"`
+}
+
+type ResolvedResource struct {
+	Gpu *ResolvedGpuSelector `yaml:"gpu,omitempty" json:"gpu,omitempty"`
+}
+
+type ResourceResolveInput struct {
+	Resource RawBody `yaml:"resource,omitempty" json:"resource"`
+}
+
+type ResourceResolveReply struct {
+	Resolved *ResolvedResource `yaml:"resolved,omitempty" json:"resolved,omitempty"`
 }
 
 // #ConfigResolveRequest asks the host to resolve the project config for one
@@ -4080,11 +5268,11 @@ type DeployConfigSaveReply struct {
 
 // #AndroidEntityResolution is the kind="android" payload carried OPAQUELY inside
 // #DeployEntityResolveReply.entity (unit 6a): the resolved kind:android #ResolvedAndroid spec
-// (ResolvedAndroid itself is pre-existing hand-written sdk/spec wire debt, substrate_template_wire.go
-// — not converted by this seam) PLUS the google-play credentials, resolved host-side (the
-// credential STORE touch — DefaultCredentialStore — is core-only; the plugin never calls it
-// directly, matching every other cutover's InvokeProvider-adjacent credential deferral). Its own
-// shape IS CUE-sourced (not hand-written) even though the spec field it carries opaquely is not.
+// (CUE-sourced at schema/substrate_template.cue, SDD conversion — carried OPAQUELY here anyway,
+// see the #DeployEntityResolveRequest doc below for why) PLUS the google-play credentials,
+// resolved host-side (the credential STORE touch — DefaultCredentialStore — is core-only; the
+// plugin never calls it directly, matching every other cutover's InvokeProvider-adjacent
+// credential deferral).
 type AndroidEntityResolution struct {
 	SpecJSON RawBody `yaml:"spec,omitempty" json:"spec,omitempty"`
 
@@ -4125,11 +5313,12 @@ type EphemeralRegisterReply struct {
 // on internally (clause-D) — never a compiled-in per-KIND HostBuild registration, so a new
 // consumer needs no new wire shape, only a new `case` in the host handler (or reuse of an
 // existing one — "bundle" and "deploy" share ONE case, both a deploy-tree node lookup by name).
-// `entity` carries the kind-specific result OPAQUELY (ResolvedK8s/ResolvedAndroid/the vm entity
-// are still hand-written sdk/spec wire types with no CUE def today — substrate_template_wire.go /
-// vm_wire.go, pre-existing SDD debt this seam does not attempt to convert) — the caller already
-// knows which kind it asked for and decodes accordingly, mirroring the DeployCompileReply /
-// DeployConfigSaveRequest RawBody idiom used throughout this file for the same reason.
+// `entity` carries the kind-specific result OPAQUELY — ResolvedK8s/ResolvedAndroid/the vm entity
+// (ResolvedVm) are ALL CUE-sourced (schema/substrate_template.cue, schema/vm.cue; SDD conversion),
+// but this seam still carries them as opaque bytes rather than a typed field, because `kind` is
+// DATA the host dispatches on internally (clause-D) and the caller already knows which kind it
+// asked for and decodes accordingly — mirroring the DeployCompileReply / DeployConfigSaveRequest
+// RawBody idiom used throughout this file for the same reason.
 type DeployEntityResolveRequest struct {
 	Kind string `yaml:"kind,omitempty" json:"kind"`
 
@@ -5538,6 +6727,356 @@ type DeployTargetDispatchReply struct {
 	ArtifactKey string `yaml:"artifact_key,omitempty" json:"artifact_key,omitempty"`
 }
 
+// #LifecycleOpts is the serializable subset of the host's EmitOpts shipped in
+// a lifecycle Op's params. The two LIVE EmitOpts fields (ParentExec,
+// ParentNode) cannot cross the []byte wire — they re-attach host-side via the
+// reverse channel's live host-build inputs, never serialized.
+// LifecycleOptsFromEmit (spec/deploy_methods.go) is the ONE hand-written
+// converter — a pure function, not a type, so it stays hand-written.
+type LifecycleOpts struct {
+	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
+
+	AllowRepoChanges bool `yaml:"allow_repo_changes,omitempty" json:"allow_repo_changes,omitempty"`
+
+	AllowRootTasks bool `yaml:"allow_root_tasks,omitempty" json:"allow_root_tasks,omitempty"`
+
+	WithServices bool `yaml:"with_services,omitempty" json:"with_services,omitempty"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	Verify bool `yaml:"verify,omitempty" json:"verify,omitempty"`
+
+	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
+
+	SkipIncompatible bool `yaml:"skip_incompatible,omitempty" json:"skip_incompatible,omitempty"`
+
+	BuilderImageOverride string `yaml:"builder_image_override,omitempty" json:"builder_image_override,omitempty"`
+}
+
+// #HostEnv is the generic host identity a lifecycle plugin (running ON the
+// host) needs but cannot derive: the host charly binary path and the host
+// home.
+type HostEnv struct {
+	CharlyBin string `yaml:"charly_bin,omitempty" json:"charly_bin,omitempty"`
+
+	Home string `yaml:"home,omitempty" json:"home,omitempty"`
+
+	// version is the host charly's CalVer (CharlyVersion()) — the
+	// delivery-decision authority for EnsureCharlyInGuest.
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+}
+
+// #LifecyclePrepareInput is the host-resolved DATA a vm substrate's
+// OpPrepareVenue needs but cannot derive itself.
+type LifecyclePrepareInput struct {
+	Entity string `yaml:"entity,omitempty" json:"entity"`
+
+	VM *ResolvedVm `yaml:"vm,omitempty" json:"vm,omitempty"`
+
+	SSHUser string `yaml:"ssh_user,omitempty" json:"ssh_user"`
+
+	SSHPort int `yaml:"ssh_port,omitempty" json:"ssh_port"`
+
+	Alias string `yaml:"alias,omitempty" json:"alias"`
+
+	SSHKeyPath string `yaml:"ssh_key_path,omitempty" json:"ssh_key_path"`
+
+	KnownHostsPath string `yaml:"known_hosts_path,omitempty" json:"known_hosts_path"`
+
+	StateDir string `yaml:"state_dir,omitempty" json:"state_dir"`
+
+	PriorState *VmDeployState `yaml:"prior_state,omitempty" json:"prior_state,omitempty"`
+}
+
+// --- resolve-to-envelope wire type (Cutover L; SDD conversion, per the
+// standing operator directive: a hand-written wire struct not yet CUE-sourced
+// is conversion-in-progress, never a sanctioned exception). ResolvedVm mirrors
+// #Vm's fields — written out explicitly rather than embedding #Vm, since the
+// resolved envelope carries PLAIN post-default scalars, not #Vm's own
+// enum/default machinery (firmware/backend/autostart are plain string/bool
+// here, never the `*"bios"|...` disjunction). candy/plugin-substrate resolves
+// an authored `vm:` template into this envelope; the kernel's vm build/deploy
+// consumers read it without importing the concrete spec.Vm.
+type ResolvedVm struct {
+	Source VmSource `yaml:"source,omitempty" json:"source"`
+
+	DiskSize string `yaml:"disk_size,omitempty" json:"disk_size,omitempty"`
+
+	Ram string `yaml:"ram,omitempty" json:"ram,omitempty"`
+
+	Cpus int `yaml:"cpu,omitempty" json:"cpu,omitempty"`
+
+	Machine string `yaml:"machine,omitempty" json:"machine,omitempty"`
+
+	Firmware string `yaml:"firmware,omitempty" json:"firmware"`
+
+	Backend string `yaml:"backend,omitempty" json:"backend"`
+
+	Autostart bool `yaml:"autostart,omitempty" json:"autostart"`
+
+	Network *VmNetwork `yaml:"network,omitempty" json:"network,omitempty"`
+
+	SSH *VmSSH `yaml:"ssh,omitempty" json:"ssh,omitempty"`
+
+	CloudInit *VmCloudInit `yaml:"cloud_init,omitempty" json:"cloud_init,omitempty"`
+
+	Libvirt *LibvirtDomain `yaml:"libvirt,omitempty" json:"libvirt,omitempty"`
+
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	Snapshots []VmSnapshot `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
+
+	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+type VmNetwork struct {
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode"`
+
+	Bridge string `yaml:"bridge,omitempty" json:"bridge,omitempty"`
+
+	MAC string `yaml:"mac,omitempty" json:"mac,omitempty"`
+
+	// Each entry is "<host>:<guest>". The host side may be a fixed port OR the
+	// literal `auto` sentinel (matching the pod `port: [auto]` word) — `auto`
+	// auto-allocates a free host port at vm-create (persisted in vm_state,
+	// reused across the create→deploy-add sequence), the sibling of ssh.port_auto.
+	PortForwards []string `yaml:"port_forwards,omitempty" json:"port_forwards,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// cloud_init: VmCloudInit. CLOSED. Genuine passthroughs:
+// extra (raw cloud-config string) and network.ethernets (network-config v2,
+// map[string]map[string]any → {[string]: {[string]: _}}).
+// ---------------------------------------------------------------------------
+type VmCloudInit struct {
+	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
+
+	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
+
+	Locale string `yaml:"locale,omitempty" json:"locale,omitempty"`
+
+	Users []VmCloudInitUser `yaml:"users,omitempty" json:"users,omitempty"`
+
+	Package []string `yaml:"package,omitempty" json:"package,omitempty"`
+
+	RunCmd []string `yaml:"runcmd,omitempty" json:"runcmd,omitempty"`
+
+	BootCmd []string `yaml:"bootcmd,omitempty" json:"bootcmd,omitempty"`
+
+	WriteFiles []VmCloudInitFile `yaml:"write_files,omitempty" json:"write_files,omitempty"`
+
+	Network *VmCloudInitNetwork `yaml:"network,omitempty" json:"network,omitempty"`
+
+	Mirrors *VmCloudInitMirrors `yaml:"mirrors,omitempty" json:"mirrors,omitempty"`
+
+	CharlyInstall *VmCharlyInstall `yaml:"charly_install,omitempty" json:"charly_install,omitempty"`
+
+	Extra string `yaml:"extra,omitempty" json:"extra,omitempty"`
+}
+
+type VmCloudInitUser struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Sudo bool `yaml:"sudo,omitempty" json:"sudo,omitempty"`
+
+	Groups []string `yaml:"groups,omitempty" json:"groups,omitempty"`
+
+	Shell string `yaml:"shell,omitempty" json:"shell,omitempty"`
+
+	LockPasswd *bool `yaml:"lock_passwd,omitempty" json:"lock_passwd,omitempty"`
+}
+
+type VmCloudInitFile struct {
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	Content string `yaml:"content,omitempty" json:"content,omitempty"`
+
+	Owner string `yaml:"owner,omitempty" json:"owner,omitempty"`
+
+	Perms string `yaml:"perms,omitempty" json:"perms,omitempty"`
+
+	Encoding string `yaml:"encoding,omitempty" json:"encoding,omitempty"`
+}
+
+type VmCloudInitNetwork struct {
+	Version int `yaml:"version,omitempty" json:"version,omitempty"`
+
+	// network-config v2 map[string]map[string]any — typed-open passthrough.
+	Ethernets map[string]map[string]any/* CUE top */ `yaml:"ethernets,omitempty" json:"ethernets,omitempty"`
+}
+
+type VmCloudInitMirrors struct {
+	APT []string `yaml:"apt,omitempty" json:"apt,omitempty"`
+
+	DNF []string `yaml:"dnf,omitempty" json:"dnf,omitempty"`
+
+	Pacman []string `yaml:"pacman,omitempty" json:"pacman,omitempty"`
+}
+
+type VmCharlyInstall struct {
+	// VmCharlyInstall has ONLY `strategy` (the vm-spec skill's url/checksum are
+	// STALE — the Go struct dropped them). auto: scp host binary post-boot;
+	// scp: explicit form; skip: user-managed.
+	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+}
+
+type VmSnapshot struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	Quiesce bool `yaml:"quiesce,omitempty" json:"quiesce,omitempty"`
+
+	From string `yaml:"from,omitempty" json:"from,omitempty"`
+}
+
+// #PrepareVenueReply is the OpPrepareVenue reply. Venue is re-materialized
+// host-side into a live DeployExecutor (the live executor never crosses the
+// wire); State is an opaque deploy-entry patch the host persists; Notes are
+// human-facing lines the host prints.
+type PrepareVenueReply struct {
+	Venue VenueDescriptor `yaml:"venue,omitempty" json:"venue"`
+
+	State RawBody `yaml:"state,omitempty" json:"state,omitempty"`
+
+	Notes []string `yaml:"notes,omitempty" json:"notes,omitempty"`
+}
+
+// #PostTeardownReply is the OpPostTeardown reply: the host removes each named
+// charly.yml deploy-entry key AFTER the plugin's teardown.
+type PostTeardownReply struct {
+	RemoveEntries []string `yaml:"remove_entries,omitempty" json:"remove_entries,omitempty"`
+}
+
+// #CliRequest is the "cli" host-builder envelope (M4): a lifecycle plugin
+// asks the HOST to run a `charly <argv>` subcommand.
+type CliRequest struct {
+	Argv []string `yaml:"argv,omitempty" json:"argv"`
+
+	Capture bool `yaml:"capture,omitempty" json:"capture,omitempty"`
+
+	Combined bool `yaml:"combined,omitempty" json:"combined,omitempty"`
+
+	BestEffort bool `yaml:"best_effort,omitempty" json:"best_effort,omitempty"`
+}
+
+// #CliReply is the "cli" host-builder reply: captured stdout (Capture=true),
+// the exit code, and an error string on a non-zero exit that was not
+// BestEffort-swallowed.
+type CliReply struct {
+	Stdout string `yaml:"stdout,omitempty" json:"stdout,omitempty"`
+
+	ExitCode int `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// #SettingsRequest is the "settings" HostBuild kind request: one config-subsystem
+// op. Op ∈ {get, set, list, reset, path}. Key/Value carry the op's arguments
+// (get/reset: Key; set: Key+Value; list/path: neither; reset with empty Key
+// resets all).
+type SettingsRequest struct {
+	Op string `yaml:"op,omitempty" json:"op"`
+
+	Key string `yaml:"key,omitempty" json:"key,omitempty"`
+
+	Value string `yaml:"value,omitempty" json:"value,omitempty"`
+}
+
+// #SettingsEntry is one resolved config key (the `charly settings list` row).
+type SettingsEntry struct {
+	Key string `yaml:"key,omitempty" json:"key"`
+
+	Value string `yaml:"value,omitempty" json:"value"`
+
+	Source string `yaml:"source,omitempty" json:"source"`
+}
+
+// #SettingsReply is the "settings" HostBuild kind reply: Value for get/path,
+// Entries for list; set/reset return neither. Error is a human-facing message on
+// failure (e.g. an unknown config key).
+type SettingsReply struct {
+	Value string `yaml:"value,omitempty" json:"value,omitempty"`
+
+	Entries []SettingsEntry `yaml:"entries,omitempty" json:"entries,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// #SidecarResolveInput is the input to candy/plugin-sidecar's OpResolve leg
+// (the host-side sidecar de-type): the three sidecar-def layers to merge
+// (embedded template base, project-root templates, per-deploy overrides —
+// each a name→Sidecar map the host keeps OPAQUE) plus the CLI -e flags to
+// route and the box/instance for name scoping.
+type SidecarResolveInput struct {
+	EmbeddedTemplates map[string]RawBody `yaml:"embedded_templates,omitempty" json:"embedded_templates,omitempty"`
+
+	ProjectTemplates map[string]RawBody `yaml:"project_templates,omitempty" json:"project_templates,omitempty"`
+
+	DeployOverrides map[string]RawBody `yaml:"deploy_overrides,omitempty" json:"deploy_overrides,omitempty"`
+
+	CliEnv []string `yaml:"cli_env,omitempty" json:"cli_env,omitempty"`
+
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #SidecarResolveReply is candy/plugin-sidecar's OpResolve reply: the
+// resolved, generation-ready sidecars the host feeds to quadlet gen, the CLI
+// env flags NOT routed to any sidecar (app-only), and the per-deploy sidecar
+// overrides with any routed env folded in.
+type SidecarResolveReply struct {
+	Sidecars []ResolvedSidecar `yaml:"sidecars,omitempty" json:"sidecars,omitempty"`
+
+	AppEnv []string `yaml:"app_env,omitempty" json:"app_env,omitempty"`
+
+	PersistOverrides map[string]RawBody `yaml:"persist_overrides,omitempty" json:"persist_overrides,omitempty"`
+}
+
+// #ResolvedSidecar is a fully-resolved co-deployed container the host
+// consumes for quadlet generation — the resolve-to-envelope form of a
+// sidecar (NO Sidecar / SidecarDef fields survive; the plugin already merged
+// + resolved everything).
+type ResolvedSidecar struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Secret []ResolvedSidecarSecret `yaml:"secret,omitempty" json:"secret,omitempty"`
+
+	Volume []ResolvedSidecarVolume `yaml:"volume,omitempty" json:"volume,omitempty"`
+
+	Security *Security `yaml:"security,omitempty" json:"security,omitempty"`
+}
+
+// #ResolvedSidecarSecret is a resolved sidecar secret (the sidecar-scoped
+// subset of the host's CollectedSecret): the podman secret name + the
+// container/host env-var names + the original manifest secret name.
+type ResolvedSidecarSecret struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Env string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	HostEnv string `yaml:"host_env,omitempty" json:"host_env,omitempty"`
+
+	SecretName string `yaml:"secret_name,omitempty" json:"secret_name,omitempty"`
+}
+
+// #ResolvedSidecarVolume is a resolved sidecar volume: the charly-scoped
+// volume name + its container mount path.
+type ResolvedSidecarVolume struct {
+	VolumeName string `yaml:"volume_name,omitempty" json:"volume_name"`
+
+	ContainerPath string `yaml:"container_path,omitempty" json:"container_path"`
+}
+
 // #PortMapping — one published port's structured runtime mapping (host IP/port ->
 // container port/proto). Surfaces on #DeploymentStatus so renderers + host probes
 // consume it without re-parsing.
@@ -5688,6 +7227,136 @@ type SubstrateStatusReply struct {
 	Single DeploymentStatus `yaml:"single,omitempty" json:"single,omitempty"`
 }
 
+// #ResolvedLocal is the resolve-to-envelope form of a `local:` template — a
+// candy-stack applied to a host. The kernel reads it (candy stack / install
+// opts / plan), never spec.Local.
+type ResolvedLocal struct {
+	Candy []CandyRef `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	InstallOpts *InstallOpts `yaml:"install_opts,omitempty" json:"install_opts,omitempty"`
+
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	// raw is the opaque authored body (the kernel passes it back unread where
+	// a verbatim template is needed).
+	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #ResolvedAndroid is the resolve-to-envelope form of an `android:` device
+// template.
+type ResolvedAndroid struct {
+	Serial string `yaml:"serial,omitempty" json:"serial,omitempty"`
+
+	Device string `yaml:"device,omitempty" json:"device,omitempty"`
+
+	ApiLevel int `yaml:"api_level,omitempty" json:"api_level,omitempty"`
+
+	GoogleAccount *GoogleAccount `yaml:"google_account,omitempty" json:"google_account,omitempty"`
+
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Adb *AdbEndpoint `yaml:"adb,omitempty" json:"adb,omitempty"`
+
+	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #ResolvedPod is the resolve-to-envelope form of a `pod:` template — a box +
+// sidecar + plan bundle. The kernel reads it (currently the include-spliced
+// Plan), never spec.Pod.
+type ResolvedPod struct {
+	Box CandyRef `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Sidecar []PodSidecar `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
+
+	Secret []DeploySecret `yaml:"secret,omitempty" json:"secret,omitempty"`
+
+	EnvDefaults map[string]string `yaml:"env_default,omitempty" json:"env_default,omitempty"`
+
+	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
+
+	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #PodResolveInput carries one opaque pod template body to project.
+type PodResolveInput struct {
+	Pod RawBody `yaml:"pod,omitempty" json:"pod"`
+}
+
+// #PodResolveReply wraps the resolved pod template.
+type PodResolveReply struct {
+	Resolved *ResolvedPod `yaml:"resolved,omitempty" json:"resolved,omitempty"`
+}
+
+// #ResolvedK8s is the resolve-to-envelope form of a `k8s:` cluster template.
+// The kernel reads only KubeconfigContext (the deploy preresolver); the full
+// cluster model rides opaquely in Raw and is decoded by candy/plugin-k8sgen,
+// never the kernel.
+type ResolvedK8s struct {
+	KubeconfigContext string `yaml:"kubeconfig_context,omitempty" json:"kubeconfig_context,omitempty"`
+
+	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// #K8sResolveInput carries one opaque k8s cluster template body to project.
+type K8sResolveInput struct {
+	K8s RawBody `yaml:"k8s,omitempty" json:"k8s"`
+}
+
+// #K8sResolveReply wraps the resolved k8s cluster template.
+type K8sResolveReply struct {
+	Resolved *ResolvedK8s `yaml:"resolved,omitempty" json:"resolved,omitempty"`
+}
+
+// #LocalResolveInput / #AndroidResolveInput carry one opaque template body to
+// project.
+type LocalResolveInput struct {
+	Local RawBody `yaml:"local,omitempty" json:"local"`
+}
+
+type AndroidResolveInput struct {
+	Android RawBody `yaml:"android,omitempty" json:"android"`
+}
+
+// #LocalResolveReply / #AndroidResolveReply wrap the resolved template.
+type LocalResolveReply struct {
+	Resolved *ResolvedLocal `yaml:"resolved,omitempty" json:"resolved,omitempty"`
+}
+
+type AndroidResolveReply struct {
+	Resolved *ResolvedAndroid `yaml:"resolved,omitempty" json:"resolved,omitempty"`
+}
+
+// #SubstrateTemplateResolveRequest is the discriminated OpResolve request for
+// the substrate-template de-type: exactly one of Local / Android / Pod is set.
+type SubstrateTemplateResolveRequest struct {
+	Local *LocalResolveInput `yaml:"local,omitempty" json:"local,omitempty"`
+
+	Android *AndroidResolveInput `yaml:"android,omitempty" json:"android,omitempty"`
+
+	Pod *PodResolveInput `yaml:"pod,omitempty" json:"pod,omitempty"`
+
+	K8s *K8sResolveInput `yaml:"k8s,omitempty" json:"k8s,omitempty"`
+
+	Vm *VmResolveInput `yaml:"vm,omitempty" json:"vm,omitempty"`
+}
+
+// #VmResolveInput carries one opaque vm template body to project (Cutover L).
+type VmResolveInput struct {
+	Vm RawBody `yaml:"vm,omitempty" json:"vm"`
+}
+
+// #VmResolveReply wraps the resolved vm value envelope (#ResolvedVm lives in
+// vm.cue).
+type VmResolveReply struct {
+	Resolved *ResolvedVm `yaml:"resolved,omitempty" json:"resolved,omitempty"`
+}
+
 // #ValidateProjectRequest — which project dir to validate (empty = the host's cwd) + whether to
 // include enabled:false boxes. Mirrors #ResolvedProjectRequest (the sibling resolved-project seam).
 type ValidateProjectRequest struct {
@@ -5740,111 +7409,6 @@ type Vm struct {
 	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
 
 	Snapshots []VmSnapshot `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
-}
-
-type VmNetwork struct {
-	Model string `yaml:"model,omitempty" json:"model,omitempty"`
-
-	Mode string `yaml:"mode,omitempty" json:"mode"`
-
-	Bridge string `yaml:"bridge,omitempty" json:"bridge,omitempty"`
-
-	MAC string `yaml:"mac,omitempty" json:"mac,omitempty"`
-
-	// Each entry is "<host>:<guest>". The host side may be a fixed port OR the
-	// literal `auto` sentinel (matching the pod `port: [auto]` word) — `auto`
-	// auto-allocates a free host port at vm-create (persisted in vm_state,
-	// reused across the create→deploy-add sequence), the sibling of ssh.port_auto.
-	PortForwards []string `yaml:"port_forwards,omitempty" json:"port_forwards,omitempty"`
-}
-
-// ---------------------------------------------------------------------------
-// cloud_init: VmCloudInit. CLOSED. Genuine passthroughs:
-// extra (raw cloud-config string) and network.ethernets (network-config v2,
-// map[string]map[string]any → {[string]: {[string]: _}}).
-// ---------------------------------------------------------------------------
-type VmCloudInit struct {
-	Hostname string `yaml:"hostname,omitempty" json:"hostname,omitempty"`
-
-	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
-
-	Locale string `yaml:"locale,omitempty" json:"locale,omitempty"`
-
-	Users []VmCloudInitUser `yaml:"users,omitempty" json:"users,omitempty"`
-
-	Package []string `yaml:"package,omitempty" json:"package,omitempty"`
-
-	RunCmd []string `yaml:"runcmd,omitempty" json:"runcmd,omitempty"`
-
-	BootCmd []string `yaml:"bootcmd,omitempty" json:"bootcmd,omitempty"`
-
-	WriteFiles []VmCloudInitFile `yaml:"write_files,omitempty" json:"write_files,omitempty"`
-
-	Network *VmCloudInitNetwork `yaml:"network,omitempty" json:"network,omitempty"`
-
-	Mirrors *VmCloudInitMirrors `yaml:"mirrors,omitempty" json:"mirrors,omitempty"`
-
-	CharlyInstall *VmCharlyInstall `yaml:"charly_install,omitempty" json:"charly_install,omitempty"`
-
-	Extra string `yaml:"extra,omitempty" json:"extra,omitempty"`
-}
-
-type VmCloudInitUser struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Sudo bool `yaml:"sudo,omitempty" json:"sudo,omitempty"`
-
-	Groups []string `yaml:"groups,omitempty" json:"groups,omitempty"`
-
-	Shell string `yaml:"shell,omitempty" json:"shell,omitempty"`
-
-	LockPasswd *bool `yaml:"lock_passwd,omitempty" json:"lock_passwd,omitempty"`
-}
-
-type VmCloudInitFile struct {
-	Path string `yaml:"path,omitempty" json:"path"`
-
-	Content string `yaml:"content,omitempty" json:"content,omitempty"`
-
-	Owner string `yaml:"owner,omitempty" json:"owner,omitempty"`
-
-	Perms string `yaml:"perms,omitempty" json:"perms,omitempty"`
-
-	Encoding string `yaml:"encoding,omitempty" json:"encoding,omitempty"`
-}
-
-type VmCloudInitNetwork struct {
-	Version int `yaml:"version,omitempty" json:"version,omitempty"`
-
-	// network-config v2 map[string]map[string]any — typed-open passthrough.
-	Ethernets map[string]map[string]any/* CUE top */ `yaml:"ethernets,omitempty" json:"ethernets,omitempty"`
-}
-
-type VmCloudInitMirrors struct {
-	APT []string `yaml:"apt,omitempty" json:"apt,omitempty"`
-
-	DNF []string `yaml:"dnf,omitempty" json:"dnf,omitempty"`
-
-	Pacman []string `yaml:"pacman,omitempty" json:"pacman,omitempty"`
-}
-
-type VmCharlyInstall struct {
-	// VmCharlyInstall has ONLY `strategy` (the vm-spec skill's url/checksum are
-	// STALE — the Go struct dropped them). auto: scp host binary post-boot;
-	// scp: explicit form; skip: user-managed.
-	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
-}
-
-type VmSnapshot struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
-
-	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
-
-	Quiesce bool `yaml:"quiesce,omitempty" json:"quiesce,omitempty"`
-
-	From string `yaml:"from,omitempty" json:"from,omitempty"`
 }
 
 type VmChecksum struct {

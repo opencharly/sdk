@@ -2,12 +2,12 @@ package spec
 
 // ir_enums.go — the InstallPlan IR discriminator enums, shared between charly's
 // core (package main, via the `= spec.X` alias surface) and any plugin that walks
-// the IR. These are INTERNAL execution enums, NOT wire carriers: the StepView wire
-// struct (deploy_wire.go) serializes them as primitives (`Venue int`, `Gate string`,
-// `Kind string`), so the wire-type-CUE mandate does not apply — and Venue/Phase are
+// the IR. These are INTERNAL execution enums, NOT wire carriers: the #InstallStepView
+// wire struct (schema/deploy.cue) serializes them as primitives (`Venue int`,
+// `Gate string`, `Kind string`), so the wire-type-CUE mandate does not apply — and Venue/Phase are
 // int iota enums that `cue exp gengotypes` cannot faithfully generate anyway. They
 // live in package spec (the one importable home) so the IR is importable without
-// charly core. Hand-written, matching the ReverseOpKind precedent (deploy_wire.go).
+// charly core. Hand-written, matching the ReverseOpKind precedent (spec/deploy_consts.go).
 
 // ---------------------------------------------------------------------------
 // Venue — where a step executes.

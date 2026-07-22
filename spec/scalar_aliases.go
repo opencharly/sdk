@@ -19,6 +19,8 @@
 // HAND-WRITTEN — not emitted by `task cue:gen`.
 package spec
 
+import "encoding/json"
+
 // --- named-pattern scalars (string) ---
 type (
 	Context   = string
@@ -34,6 +36,16 @@ type (
 
 // --- open passthrough map (alias so []RepoBlock IS []map[string]any) ---
 type RepoBlock = map[string]any
+
+// RawBody is an opaque JSON body the kernel stores and transports WITHOUT
+// typing — a same-package alias for json.RawMessage so a CUE
+// `@go(type=map[string]RawBody)` / `@go(type=RawBody)` override renders an
+// opaque field/map in the generated types with no cross-package import
+// (gengotypes would mis-import a qualified `json.RawMessage`). Moved here
+// from the former hand-written deploy_wire.go (SDD conversion) — it is a
+// scalar alias, not a wire struct, so it belongs beside the other scalar
+// collapses in this file.
+type RawBody = json.RawMessage
 
 // --- build vocabulary enums (string) ---
 type (
