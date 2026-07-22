@@ -29,3 +29,30 @@ func VenueFromDescriptor(d spec.VenueDescriptor) (spec.DeployExecutor, error) {
 		return nil, fmt.Errorf("venue descriptor: unknown kind %q", d.Kind)
 	}
 }
+
+// DescriptorFromExecutor is the pure INVERSE of VenueFromDescriptor: it derives a serializable
+// spec.VenueDescriptor from an already-materialized, LIVE executor value. Only the two round-
+// trippable shapes VenueFromDescriptor understands ("shell"/"ssh") are recognized; any other
+// concrete type (e.g. a composed *NestedExecutor, which cannot be flattened into one
+// {kind,host,port} tuple) returns the zero VenueDescriptor{} — callers treat that exactly like
+// VenueFromDescriptor's own "" case (no venue; keep whatever executor is already in hand).
+//
+// The bed-regression fix this promotion serves (FIX ROUND, S3b follow-up): a NESTED external
+// deploy's ancestor executor (deploykit.RootExecutorForDeployNode's "ssh" result, threaded core-
+// side as EmitOpts.ParentExec via the ancestor-chain walk in charly/bundle_add_cmd.go's
+// deriveChildExecutorForPath) is ALWAYS a plain ShellExecutor/*SSHExecutor for a single hop into a
+// vm guest — never a NestedExecutor — so it round-trips through this exact pair of functions.
+// charly/unified_targets.go's pluginDeployTarget.Add uses this to convert that live ancestor
+// executor into venue_json BEFORE dispatch, since a live Go interface value cannot itself cross
+// the []byte wire to candy/plugin-bundle (mirrors candy/plugin-bundle's OWN identically-shaped
+// former venueDescriptorFromExecutor, now deleted — R3, one function for both directions' callers).
+func DescriptorFromExecutor(exec spec.DeployExecutor) spec.VenueDescriptor {
+	switch e := exec.(type) {
+	case ShellExecutor:
+		return spec.VenueDescriptor{Kind: "shell"}
+	case *SSHExecutor:
+		return spec.VenueDescriptor{Kind: "ssh", User: e.User, Host: e.Host, Port: e.Port, Args: e.Args, ConnectTimeout: e.ConnectTimeout}
+	default:
+		return spec.VenueDescriptor{}
+	}
+}

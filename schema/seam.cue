@@ -1458,11 +1458,19 @@
 	checks_json?:     bytes       @go(ChecksJSON, type=RawBody)
 	cmd?:             [...string] @go(Cmd)
 	tty?:             bool        @go(TTY)
-	// venue_json is the ALREADY-MATERIALIZED spec.VenueDescriptor for this deploy, when core
-	// already has one from a prior dispatch in the SAME target's lifetime (Update/Del/Start/Stop/
-	// Status/Logs/Shell/Attach/Rebuild, after "add"'s PrepareVenue already ran once) — the plugin
-	// re-materializes it via kit.VenueFromDescriptor instead of re-running PrepareVenue. Absent on
-	// "add" itself (PrepareVenue runs fresh, plugin-side).
+	// venue_json is the ALREADY-MATERIALIZED spec.VenueDescriptor for this deploy. Two distinct
+	// producers set it: (a) core, when this dispatch is a NESTED non-lifecycle child (a
+	// `local:`/`android:`/`k8s:` deploy under a vm/pod, tree position) — Add flattens the
+	// live ancestor executor (EmitOpts.ParentExec) into this field via kit.DescriptorFromExecutor
+	// BEFORE the very first "add" dispatch, since that live value cannot itself cross the wire
+	// (FIX ROUND, S3b follow-up — its absence on "add" was the R10 bed regression: every nested
+	// child silently applied on the operator's host instead of the parent venue); (b) core again,
+	// carrying FORWARD a prior dispatch's reported venue for the SAME target's lifetime
+	// (Update/Del/Start/Stop/Status/Logs/Shell/Attach/Rebuild, after a lifecycle substrate's "add"
+	// already ran PrepareVenue once). Either way the plugin re-materializes it via
+	// kit.VenueFromDescriptor instead of re-deriving from the node or re-running PrepareVenue.
+	// Absent on "add" for a ROOT (non-nested) OR lifecycle (vm/pod) target — those derive their
+	// own venue fresh (root: RootExecutorForDeployNode(node); lifecycle: PrepareVenue).
 	venue_json?: bytes @go(VenueJSON, type=RawBody)
 	// distro_cfg_json is the marshalled *buildkit.DistroConfig ("add"/"update" only) — recordDeploy's
 	// FillReverseUninstallCmds needs it to render an aur-builder ReverseOpPackageRemove's
