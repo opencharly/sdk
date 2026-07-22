@@ -722,6 +722,123 @@ type AdbEndpoint struct {
 	Host string `yaml:"host,omitempty" json:"host"`
 }
 
+// #HolderAddr is the self-contained address of a deployment (holder or claimant) — enough for the
+// host seams to probe/stop/start it WITHOUT re-reading config, so a lease loaded after a crash can
+// act on it. Carries BOTH yaml (the persisted ledger) and json (the Invoke/reverse-channel
+// envelope) tags — the retag step emits both automatically, mirroring the json key.
+type HolderAddr struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Target string `yaml:"target,omitempty" json:"target"`
+
+	Base string `yaml:"base,omitempty" json:"base"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Vm string `yaml:"vm,omitempty" json:"vm,omitempty"`
+}
+
+// #PreemptedHolder records one holder a lease stopped, its declared exclusive tokens, and its
+// restore policy — so ReleaseClaimant/reconcile restart exactly what was stopped.
+type PreemptedHolder struct {
+	Addr HolderAddr `yaml:"addr,omitempty" json:"addr"`
+
+	Holds []string `yaml:"holds,omitempty" json:"holds"`
+
+	Restore string `yaml:"restore,omitempty" json:"restore"`
+}
+
+// #PreemptLease is one active resource claim — exclusive (a VM with sole use) or shared (a
+// refcounted pod claim; many coexist on one token).
+type PreemptLease struct {
+	Claimant string `yaml:"claimant,omitempty" json:"claimant"`
+
+	Claim HolderAddr `yaml:"claim,omitempty" json:"claim"`
+
+	Tokens []string `yaml:"tokens,omitempty" json:"tokens"`
+
+	Shared bool `yaml:"shared,omitempty" json:"shared,omitempty"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	Transient bool `yaml:"transient,omitempty" json:"transient"`
+
+	Preempted []PreemptedHolder `yaml:"preempted,omitempty" json:"preempted"`
+
+	Created string `yaml:"created,omitempty" json:"created"`
+
+	// owner_pid/owner_start identify the OUTERMOST process that created the lease — the liveness
+	// signal a concurrent charly process's reconcile uses (leaseLive).
+	OwnerPID int64 `yaml:"owner_pid,omitempty" json:"owner_pid,omitempty"`
+
+	OwnerStart string `yaml:"owner_start,omitempty" json:"owner_start,omitempty"`
+}
+
+// #PreemptLedger is the on-disk lease set (~/.local/share/charly/preemption/leases.yml).
+type PreemptLedger struct {
+	Leases []PreemptLease `yaml:"leases,omitempty" json:"leases"`
+}
+
+// #HolderDescriptor is one candidate preemptible holder, pre-projected host-side.
+type HolderDescriptor struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Holds []string `yaml:"holds,omitempty" json:"holds"`
+
+	Addr HolderAddr `yaml:"addr,omitempty" json:"addr"`
+
+	Restore string `yaml:"restore,omitempty" json:"restore"`
+}
+
+// #ArbiterGatherReply is the host's projection of every RUNNING-or-not preemptible holder the
+// arbiter may stop: PreemptionHolds() + holderAddrFor() + preemptEffectiveRestore() are applied
+// host-side so the plugin's holdersToStop is pure config-free coordination.
+type ArbiterGatherReply struct {
+	Holders []HolderDescriptor `yaml:"holders,omitempty" json:"holders"`
+}
+
+// #ArbiterResourcesReply maps each GPU-BACKED arbitration token to its PCI vendor (e.g.
+// "nvidia-gpu" -> "0x10de"). A token ABSENT from the map is arbitration-only (no device to flip;
+// applyMode skips it, firstPoisonedToken ignores it).
+type ArbiterResourcesReply struct {
+	Gpu map[string]string `yaml:"gpu,omitempty" json:"gpu"`
+}
+
+// #ArbiterInvokeInput is the action-multiplexed input the in-core proxy ships to verb:arbiter.
+// Each action populates only the field(s) it needs (the OTHERS stay Go zero-value); claim_addr is
+// REQUIRED rather than optional because the original hand-written type's `omitempty` on a
+// value-typed (non-pointer) HolderAddr field was already a no-op in encoding/json — Go's
+// omitempty never elides a struct value — so marking it required here changes nothing about the
+// actual wire bytes, only how honestly the schema describes them.
+type ArbiterInvokeInput struct {
+	Action string `yaml:"action,omitempty" json:"action"`
+
+	Claimant string `yaml:"claimant,omitempty" json:"claimant,omitempty"`
+
+	Tokens []string `yaml:"tokens,omitempty" json:"tokens,omitempty"`
+
+	ClaimAddr HolderAddr `yaml:"claim_addr,omitempty" json:"claim_addr"`
+
+	Transient bool `yaml:"transient,omitempty" json:"transient,omitempty"`
+
+	Success bool `yaml:"success,omitempty" json:"success,omitempty"`
+
+	Token string `yaml:"token,omitempty" json:"token,omitempty"`
+}
+
+// #ArbiterInvokeReply is the action-multiplexed reply from verb:arbiter.
+type ArbiterInvokeReply struct {
+	Active bool `yaml:"active,omitempty" json:"active,omitempty"`
+
+	Bool bool `yaml:"bool,omitempty" json:"bool,omitempty"`
+
+	Ledger *PreemptLedger `yaml:"ledger,omitempty" json:"ledger,omitempty"`
+
+	Stranded []string `yaml:"stranded,omitempty" json:"stranded,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
 // MergeConfig (config.go). CLOSED.
 type BoxMerge struct {
 	Auto bool `yaml:"auto,omitempty" json:"auto,omitempty"`
@@ -6426,11 +6543,15 @@ type VmSnapInternalReq struct {
 }
 
 // #VmPluginEnv is the host→plugin env for an internal VM-resolution RPC (domain-state/
-// list-domains/resolve-spice/resolve-vnc/qemu-shutdown/snapshot-internal). Matches the SUBSET of
+// list-domains/resolve-spice/resolve-vnc/snapshot-internal). Matches the SUBSET of
 // candy/plugin-vm's own (richer) internal vmEnv decode struct that charly-core's dispatch
 // actually sends — plugin-vm's vmEnv carries an ADDITIONAL `create` field (the `charly vm create`
 // CLI's own in-process construction, never sent by charly-core), which stays a plugin-local
 // concern outside this shared def (containing *VmSpec/VmRuntimeParams, neither CUE-sourced yet).
+// (A former `state_dir` field served ONLY the "qemu-shutdown" op, whose sole sender —
+// charly/vm_qemu_client.go — was deleted in FLOOR-SLIM-proper Unit-8B alongside the arbiter's
+// direct-QEMU stop path; the field was removed in the same cutover, confirmed zero remaining
+// setters via `git grep 'VmPluginEnv{'` across charly/candy/sdk.)
 type VmPluginEnv struct {
 	VmOp string `yaml:"vm_op,omitempty" json:"vm_op"`
 
@@ -6443,8 +6564,6 @@ type VmPluginEnv struct {
 	DeleteDisk bool `yaml:"delete_disk,omitempty" json:"delete_disk,omitempty"`
 
 	Snap *VmSnapInternalReq `yaml:"snap,omitempty" json:"snap,omitempty"`
-
-	StateDir string `yaml:"state_dir,omitempty" json:"state_dir,omitempty"`
 }
 
 // #VmDisplayEndpoint describes how to reach one graphics channel (SPICE or VNC) of a running VM.
