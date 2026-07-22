@@ -150,8 +150,9 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 		userMap["packages"] = packages
 	}
 
-	if len(ci.BootCmd) > 0 {
-		userMap["bootcmd"] = ci.BootCmd
+	bootcmd := composeBootCmd(ci)
+	if len(bootcmd) > 0 {
+		userMap["bootcmd"] = bootcmd
 	}
 
 	runcmd := composeRunCmd(spec, ci)
@@ -163,8 +164,9 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 		userMap["runcmd"] = runcmd
 	}
 
-	if len(ci.WriteFiles) > 0 {
-		userMap["write_files"] = composeWriteFiles(ci.WriteFiles)
+	writeFiles := composeWriteFiles(ci.WriteFiles)
+	if len(writeFiles) > 0 {
+		userMap["write_files"] = writeFiles
 	}
 
 	if ci.Mirrors != nil && len(ci.Mirrors.APT) > 0 {
@@ -384,22 +386,75 @@ func composePackages(userPkgs []string, distro string) []string {
 	return out
 }
 
-// composeRunCmd prepends charly's minimum boot task (enable sshd) and appends the
-// user's runcmd. charly is NOT installed via cloud-init — the vm deploy's PrepareVenue
-// delivers it post-boot per charly_install.strategy (auto/scp stage the host binary;
-// skip verifies presence).
-//
-// The sshd unit name is distro-aware: `sshd` on Arch/Fedora,
-// `ssh` on Debian/Ubuntu (where the systemd unit is named `ssh.service`
-// — `sshd.service` is just a symlink that systemd refuses to enable).
-func composeRunCmd(spec *VmSpec, ci *VmCloudInit) []any {
-	runcmd := make([]any, 0, 1+len(ci.RunCmd))
-	sshUnit := "sshd"
-	switch spec.Source.Distro {
+// sshUnitForDistro resolves the sshd systemd unit name: `sshd` on Arch/Fedora, `ssh` on
+// Debian/Ubuntu (where the systemd unit is named `ssh.service` — `sshd.service` is just a
+// symlink that systemd refuses to enable).
+func sshUnitForDistro(distro string) string {
+	switch distro {
 	case "debian", "ubuntu":
-		sshUnit = "ssh"
+		return "ssh"
+	default:
+		return "sshd"
 	}
-	runcmd = append(runcmd, fmt.Sprintf("systemctl enable --now %s", sshUnit))
+}
+
+// sshHardeningDropInPath is the sshd_config.d drop-in charly writes on every cloud_image VM (D18,
+// bed-robustness batch item 3). Named to sort last among any operator-authored drop-ins.
+const sshHardeningDropInPath = "/etc/ssh/sshd_config.d/99-charly-guest-hardening.conf"
+
+// composeBootCmd prepends charly's own EARLY boot step — masking ssh.socket (D18, bed-robustness
+// batch item 3) — ahead of the user's declared bootcmd. bootcmd runs on EVERY boot, before
+// write_files/packages/runcmd, so this is the earliest point at which a socket-activated sshd
+// (ssh.socket — enabled BY DEFAULT on some cloud images, notably Debian/Ubuntu) can be prevented
+// from accepting connections before cloud-init has finished configuring the guest (host-key
+// regen, user creation, the sshd hardening drop-in below). `|| true`: masking a unit name the
+// image doesn't ship (Arch/Fedora typically have no ssh.socket at all) is a harmless no-op, never
+// a boot failure. runcmd (composeRunCmd, below) is the matching unmask + enable step, run only
+// after cloud-init's OWN work is complete — an orderly key-regen-before-accept sequence instead
+// of "sshd (or its socket) is reachable the instant the kernel finishes booting."
+func composeBootCmd(ci *VmCloudInit) []any {
+	bootcmd := make([]any, 0, 1+len(ci.BootCmd))
+	bootcmd = append(bootcmd, "systemctl mask ssh.socket || true")
+	for _, cmd := range ci.BootCmd {
+		bootcmd = append(bootcmd, cmd)
+	}
+	return bootcmd
+}
+
+// sshHardeningDropInCmd is the self-testing shell snippet that writes sshHardeningDropInPath and
+// validates the FULL resulting sshd config before leaving it in place (D18, bed-robustness batch
+// item 3). OpenSSH ≥ 9.8 defaults `PerSourcePenalties` ON, which penalizes repeated connection
+// attempts from ONE source — exactly what kit.WaitForSSH's readiness poll does, and every VM's
+// guest is reached through the SAME single passt gateway source IP, so the poll can trip its own
+// guest's rate-limit and appear to "reset forever" against an otherwise-healthy guest (the RCA'd
+// kex-reset wedge class this closes). Written as a shell runcmd — NOT a static cloud-init
+// write_files entry — because `PerSourcePenalties` does not exist before OpenSSH 9.8: `sshd -t`
+// validates the config AFTER the write, and the drop-in is deleted again on failure, so an OLDER
+// guest OpenSSH that rejects the unknown directive is NEVER left with a config sshd refuses to
+// start against — fail-safe to the pre-fix behavior (the original penalty risk stands on an old
+// guest), never a bricked sshd. Runs in runcmd (after packages are installed, so the `sshd`
+// binary this depends on exists) and BEFORE the unmask+enable step so sshd's first-ever start
+// already reads a validated config.
+const sshHardeningDropInCmd = `sh -c 'echo "PerSourcePenalties no" > ` + sshHardeningDropInPath + ` && sshd -t || rm -f ` + sshHardeningDropInPath + `'`
+
+// composeRunCmd prepends charly's minimum boot tasks and appends the user's runcmd. charly is NOT
+// installed via cloud-init — the vm deploy's PrepareVenue delivers it post-boot per
+// charly_install.strategy (auto/scp stage the host binary; skip verifies presence).
+//
+// D18 (bed-robustness batch item 3, the RCA'd kex-reset wedge class): the sshd hardening drop-in
+// is written+validated FIRST, then sshd (or its socket, masked by composeBootCmd above) is
+// unmasked and enabled — the LAST charly runcmd step before the user's own — so it starts only
+// after cloud-init's package/user/write_files work AND the drop-in write have completed: an
+// orderly key-regen-before-accept sequence, closing the window where a socket-activated sshd
+// could accept a connection against a guest cloud-init hasn't finished configuring yet.
+func composeRunCmd(spec *VmSpec, ci *VmCloudInit) []any {
+	runcmd := make([]any, 0, 3+len(ci.RunCmd))
+	sshUnit := sshUnitForDistro(spec.Source.Distro)
+	runcmd = append(runcmd,
+		sshHardeningDropInCmd,
+		"systemctl unmask ssh.socket || true",
+		fmt.Sprintf("systemctl enable --now %s", sshUnit),
+	)
 
 	for _, cmd := range ci.RunCmd {
 		runcmd = append(runcmd, cmd)
