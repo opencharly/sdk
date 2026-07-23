@@ -357,7 +357,6 @@ const (
 	ExecutorService_RunHostStep_FullMethodName    = "/charlyplugin.ExecutorService/RunHostStep"
 	ExecutorService_InvokeProvider_FullMethodName = "/charlyplugin.ExecutorService/InvokeProvider"
 	ExecutorService_HostBuild_FullMethodName      = "/charlyplugin.ExecutorService/HostBuild"
-	ExecutorService_HostArbiter_FullMethodName    = "/charlyplugin.ExecutorService/HostArbiter"
 )
 
 // ExecutorServiceClient is the client API for ExecutorService service.
@@ -383,8 +382,6 @@ type ExecutorServiceClient interface {
 	InvokeProvider(ctx context.Context, in *InvokeProviderRequest, opts ...grpc.CallOption) (*InvokeReply, error)
 	// F10 host-build: the calling plugin requests a HOST-side build (the build engine stays in core) — the host runs the registered host-builder for `kind` and returns its result
 	HostBuild(ctx context.Context, in *HostBuildRequest, opts ...grpc.CallOption) (*HostBuildReply, error)
-	// C9 resource-arbiter seams: the COMPILED-IN candy/plugin-preempt (verb:arbiter) calls back mid-logic for its host dependencies (config gather/resources, VM/pod lifecycle running/stop/start, the GPU driver flip switchMode/ensureCDI). action-multiplexed (the GpuProbeInput pattern) — the host runs the seam's in-core default impl and replies
-	HostArbiter(ctx context.Context, in *HostArbiterRequest, opts ...grpc.CallOption) (*HostArbiterReply, error)
 }
 
 type executorServiceClient struct {
@@ -494,15 +491,6 @@ func (c *executorServiceClient) HostBuild(ctx context.Context, in *HostBuildRequ
 	return out, nil
 }
 
-func (c *executorServiceClient) HostArbiter(ctx context.Context, in *HostArbiterRequest, opts ...grpc.CallOption) (*HostArbiterReply, error) {
-	out := new(HostArbiterReply)
-	err := c.cc.Invoke(ctx, ExecutorService_HostArbiter_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // ExecutorServiceServer is the server API for ExecutorService service.
 // All implementations must embed UnimplementedExecutorServiceServer
 // for forward compatibility
@@ -526,8 +514,6 @@ type ExecutorServiceServer interface {
 	InvokeProvider(context.Context, *InvokeProviderRequest) (*InvokeReply, error)
 	// F10 host-build: the calling plugin requests a HOST-side build (the build engine stays in core) — the host runs the registered host-builder for `kind` and returns its result
 	HostBuild(context.Context, *HostBuildRequest) (*HostBuildReply, error)
-	// C9 resource-arbiter seams: the COMPILED-IN candy/plugin-preempt (verb:arbiter) calls back mid-logic for its host dependencies (config gather/resources, VM/pod lifecycle running/stop/start, the GPU driver flip switchMode/ensureCDI). action-multiplexed (the GpuProbeInput pattern) — the host runs the seam's in-core default impl and replies
-	HostArbiter(context.Context, *HostArbiterRequest) (*HostArbiterReply, error)
 	mustEmbedUnimplementedExecutorServiceServer()
 }
 
@@ -567,9 +553,6 @@ func (UnimplementedExecutorServiceServer) InvokeProvider(context.Context, *Invok
 }
 func (UnimplementedExecutorServiceServer) HostBuild(context.Context, *HostBuildRequest) (*HostBuildReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HostBuild not implemented")
-}
-func (UnimplementedExecutorServiceServer) HostArbiter(context.Context, *HostArbiterRequest) (*HostArbiterReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method HostArbiter not implemented")
 }
 func (UnimplementedExecutorServiceServer) mustEmbedUnimplementedExecutorServiceServer() {}
 
@@ -782,24 +765,6 @@ func _ExecutorService_HostBuild_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ExecutorService_HostArbiter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HostArbiterRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExecutorServiceServer).HostArbiter(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ExecutorService_HostArbiter_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutorServiceServer).HostArbiter(ctx, req.(*HostArbiterRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // ExecutorService_ServiceDesc is the grpc.ServiceDesc for ExecutorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -850,10 +815,6 @@ var ExecutorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HostBuild",
 			Handler:    _ExecutorService_HostBuild_Handler,
-		},
-		{
-			MethodName: "HostArbiter",
-			Handler:    _ExecutorService_HostArbiter_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

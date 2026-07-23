@@ -105,7 +105,6 @@ func TestProtocolDocsComplete(t *testing.T) {
 		"StepContract":                 {"WITHOUT a compiled-in case", "non-step capabilities"},
 		"InvokeProviderRequest":        {"reverse context): dispatch op"},
 		"HostBuildRequest":             {"kustomize", "artifact path/handle JSON"},
-		"HostArbiterRequest":           {"ArbiterSeam*", "RunReply/HostBuildReply"},
 		"HostStepRequest":              {"record-and-replay teardown", "RunReply/CaptureReply"},
 		"HTTPDoRequest":                {"httpClientFor", "Go duration string"},
 		"HTTPDoReply":                  {"a failed request rides the error field"},

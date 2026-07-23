@@ -2,18 +2,20 @@
 // SDD conversion, per the standing operator directive: a wire type not previously CUE-sourced is
 // no excuse to keep it hand-written in freshly committed code — WIRE TYPES ARE CUE-SOURCED
 // WITHOUT EXCEPTION, CLAUDE.md SDD). These types are shared between charly's core (package main —
-// the in-core PROXY + the 2 remaining K1-blocked HostArbiter seams, gather/resources) and the
-// COMPILED-IN candy/plugin-preempt (verb:arbiter provider, via the replace → ../../charly module
-// edge): the persisted lease-ledger state, the two HostArbiter seam replies, and the verb:arbiter
-// Invoke action-multiplexed input/reply.
+// the in-core PROXY) and the COMPILED-IN candy/plugin-preempt (verb:arbiter provider, via the
+// replace → ../../charly module edge): the persisted lease-ledger state, and the verb:arbiter
+// Invoke action-multiplexed input/reply. K1-unblock wave 1 retired the ExecutorService.HostArbiter
+// reverse RPC (and its #ArbiterGatherReply/#ArbiterResourcesReply replies) — the arbiter's last 2
+// host dependencies (gather/resources) now read the generic #ResolvedProject envelope instead
+// (resolvedproject.cue), the same seam every other resolved-project consumer uses.
 //
 // None of these are open-tailed (no `{known?: string, {[string]: _}}` shape) — every field is
 // fully typed and closed, so NONE qualify for the hand_state_types.go exception; they are plain
-// seam/state structs and convert without exception. The 3 small string-enum CONST groups this
-// domain also carries (PreemptStopShutdown/PreemptRestoreAlways/PreemptRestoreSuccess,
-// ArbiterSeamGather/ArbiterSeamResources, the 7 ArbiterAction* names) are NOT wire-type structs —
-// they stay hand-written in spec/arbiter_consts.go, mirroring the existing spec/gpu_consts.go
-// precedent (a small hand-written consts file beside its CUE-generated struct siblings).
+// seam/state structs and convert without exception. The small string-enum CONST groups this
+// domain also carries (PreemptStopShutdown/PreemptRestoreAlways/PreemptRestoreSuccess, the 7
+// ArbiterAction* names) are NOT wire-type structs — they stay hand-written in
+// spec/arbiter_consts.go, mirroring the existing spec/gpu_consts.go precedent (a small
+// hand-written consts file beside its CUE-generated struct siblings).
 
 // #HolderAddr is the self-contained address of a deployment (holder or claimant) — enough for the
 // host seams to probe/stop/start it WITHOUT re-reading config, so a lease loaded after a crash can
@@ -57,26 +59,15 @@
 	leases!: [...#PreemptLease] @go(Leases)
 }
 
-// #HolderDescriptor is one candidate preemptible holder, pre-projected host-side.
+// #HolderDescriptor is one candidate preemptible holder, pre-projected (PreemptionHolds() +
+// HolderAddrFor() + PreemptEffectiveRestore(), sdk/deploykit's FilterPreemptibleHolders) so the
+// plugin's holdersToStop is pure config-free coordination. Filled plugin-side now (K1-unblock
+// wave 1, off the #ResolvedProject envelope) rather than by a bespoke host reply type.
 #HolderDescriptor: {
 	name!: string @go(Name)
 	holds!: [...string] @go(Holds)
 	addr!:    #HolderAddr @go(Addr)
 	restore!: string @go(Restore)
-}
-
-// #ArbiterGatherReply is the host's projection of every RUNNING-or-not preemptible holder the
-// arbiter may stop: PreemptionHolds() + holderAddrFor() + preemptEffectiveRestore() are applied
-// host-side so the plugin's holdersToStop is pure config-free coordination.
-#ArbiterGatherReply: {
-	holders!: [...#HolderDescriptor] @go(Holders)
-}
-
-// #ArbiterResourcesReply maps each GPU-BACKED arbitration token to its PCI vendor (e.g.
-// "nvidia-gpu" -> "0x10de"). A token ABSENT from the map is arbitration-only (no device to flip;
-// applyMode skips it, firstPoisonedToken ignores it).
-#ArbiterResourcesReply: {
-	gpu!: {[string]: string} @go(Gpu)
 }
 
 // #ArbiterInvokeInput is the action-multiplexed input the in-core proxy ships to verb:arbiter.

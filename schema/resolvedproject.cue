@@ -261,6 +261,16 @@
 	// DetectExternalizedBuilders + candy_steps builder arm). clause-D word-recognition DATA
 	// consulted BY WORD; filled in the build-render projection (#67).
 	externalized_builders?: {[string]: bool} @go(ExternalizedBuilders)
+	// resources — the resolved `resource:` kind entities (K1-unblock wave 1), keyed by name,
+	// mirroring `deploy` byte-for-byte: the host decodes each project resource:` entity via the
+	// SAME kind-blind resource-kind plugin resolve it always used (never a kernel decode of the
+	// concrete #Resource shape — clause-D/M unaffected), so this is a plain data projection, not a
+	// new engine. Consumer: the resource arbiter (candy/plugin-preempt), which previously reached
+	// this ONLY via the bespoke ExecutorService.HostArbiter "resources" seam
+	// (charly/arbiter_host.go) — the last of its 2 genuinely-LoadUnified-coupled host seams. Reading
+	// it off THIS envelope instead retires that seam, leaving `resources` (this field) as the single
+	// source both the arbiter plugin and any other resolved-project consumer share (R3).
+	resources?: {[string]: #ResolvedResource} @go(Resources,type=map[string]*ResolvedResource)
 }
 
 // #ProjectTemplates — the bare pod:/vm:/local:/k8s:/android: template maps carried as OPAQUE payloads
