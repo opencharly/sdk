@@ -506,42 +506,6 @@ protocol: {
 			]
 		},
 		{
-			"name": "HostArbiterRequest"
-			"doc":  """
-				C9 resource-arbiter reverse channel (ExecutorService.HostArbiter). action names one of the
-				7 arbiter host-seams (spec.ArbiterSeam*); params_json is the seam's spec request; result_json
-				is the seam's spec reply. error = an infra failure of the RPC handler itself (a seam OP failure
-				rides the reply's own error field, like RunReply/HostBuildReply).
-				"""
-			"fields": [
-				{
-					"name":   "action"
-					"type":   "string"
-					"number": 1
-				},
-				{
-					"name":   "params_json"
-					"type":   "bytes"
-					"number": 2
-				},
-			]
-		},
-		{
-			"name": "HostArbiterReply"
-			"fields": [
-				{
-					"name":   "result_json"
-					"type":   "bytes"
-					"number": 1
-				},
-				{
-					"name":   "error"
-					"type":   "string"
-					"number": 2
-				},
-			]
-		},
-		{
 			"name": "VenueReply"
 			"fields": [
 				{
@@ -1107,12 +1071,6 @@ protocol: {
 					"request":  "HostBuildRequest"
 					"response": "HostBuildReply"
 					"doc":      "F10 host-build: the calling plugin requests a HOST-side build (the build engine stays in core) — the host runs the registered host-builder for `kind` and returns its result"
-				},
-				{
-					"name":     "HostArbiter"
-					"request":  "HostArbiterRequest"
-					"response": "HostArbiterReply"
-					"doc":      "C9 resource-arbiter seams: the COMPILED-IN candy/plugin-preempt (verb:arbiter) calls back mid-logic for its host dependencies (config gather/resources, VM/pod lifecycle running/stop/start, the GPU driver flip switchMode/ensureCDI). action-multiplexed (the GpuProbeInput pattern) — the host runs the seam's in-core default impl and replies"
 				},
 			]
 		},

@@ -823,7 +823,10 @@ type PreemptLedger struct {
 	Leases []PreemptLease `yaml:"leases,omitempty" json:"leases"`
 }
 
-// #HolderDescriptor is one candidate preemptible holder, pre-projected host-side.
+// #HolderDescriptor is one candidate preemptible holder, pre-projected (PreemptionHolds() +
+// HolderAddrFor() + PreemptEffectiveRestore(), sdk/deploykit's FilterPreemptibleHolders) so the
+// plugin's holdersToStop is pure config-free coordination. Filled plugin-side now (K1-unblock
+// wave 1, off the #ResolvedProject envelope) rather than by a bespoke host reply type.
 type HolderDescriptor struct {
 	Name string `yaml:"name,omitempty" json:"name"`
 
@@ -832,20 +835,6 @@ type HolderDescriptor struct {
 	Addr HolderAddr `yaml:"addr,omitempty" json:"addr"`
 
 	Restore string `yaml:"restore,omitempty" json:"restore"`
-}
-
-// #ArbiterGatherReply is the host's projection of every RUNNING-or-not preemptible holder the
-// arbiter may stop: PreemptionHolds() + holderAddrFor() + preemptEffectiveRestore() are applied
-// host-side so the plugin's holdersToStop is pure config-free coordination.
-type ArbiterGatherReply struct {
-	Holders []HolderDescriptor `yaml:"holders,omitempty" json:"holders"`
-}
-
-// #ArbiterResourcesReply maps each GPU-BACKED arbitration token to its PCI vendor (e.g.
-// "nvidia-gpu" -> "0x10de"). A token ABSENT from the map is arbitration-only (no device to flip;
-// applyMode skips it, firstPoisonedToken ignores it).
-type ArbiterResourcesReply struct {
-	Gpu map[string]string `yaml:"gpu,omitempty" json:"gpu"`
 }
 
 // #ArbiterInvokeInput is the action-multiplexed input the in-core proxy ships to verb:arbiter.
@@ -1722,6 +1711,17 @@ type ResolvedProject struct {
 	// DetectExternalizedBuilders + candy_steps builder arm). clause-D word-recognition DATA
 	// consulted BY WORD; filled in the build-render projection (#67).
 	ExternalizedBuilders map[string]bool `yaml:"externalized_builders,omitempty" json:"externalized_builders,omitempty"`
+
+	// resources — the resolved `resource:` kind entities (K1-unblock wave 1), keyed by name,
+	// mirroring `deploy` byte-for-byte: the host decodes each project resource:` entity via the
+	// SAME kind-blind resource-kind plugin resolve it always used (never a kernel decode of the
+	// concrete #Resource shape — clause-D/M unaffected), so this is a plain data projection, not a
+	// new engine. Consumer: the resource arbiter (candy/plugin-preempt), which previously reached
+	// this ONLY via the bespoke ExecutorService.HostArbiter "resources" seam
+	// (charly/arbiter_host.go) — the last of its 2 genuinely-LoadUnified-coupled host seams. Reading
+	// it off THIS envelope instead retires that seam, leaving `resources` (this field) as the single
+	// source both the arbiter plugin and any other resolved-project consumer share (R3).
+	Resources map[string]*ResolvedResource `yaml:"resources,omitempty" json:"resources,omitempty"`
 }
 
 // #ResolvedBoxView — the resolved box METADATA a consumer reads: EXACTLY the non-json:"-" fields of

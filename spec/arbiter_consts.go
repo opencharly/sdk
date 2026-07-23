@@ -7,11 +7,17 @@ package spec
 // spec/gpu_consts.go precedent (a small hand-written consts file living beside its CUE-generated
 // struct siblings, spec/cue_types_gen.go's #HolderAddr/#PreemptLease/#ArbiterInvokeInput/…). The
 // struct types this file's consts tag (HolderAddr, PreemptedHolder, PreemptLease, PreemptLedger,
-// HolderDescriptor, ArbiterGatherReply, ArbiterResourcesReply, ArbiterInvokeInput,
-// ArbiterInvokeReply) are CUE-sourced at sdk/schema/arbiter.cue → generated into cue_types_gen.go.
+// HolderDescriptor, ArbiterInvokeInput, ArbiterInvokeReply) are CUE-sourced at
+// sdk/schema/arbiter.cue → generated into cue_types_gen.go.
+//
+// K1-unblock wave 1 retired the ExecutorService.HostArbiter reverse RPC entirely: its last 2
+// actions (gather/resources) now read the generic HostBuild("resolved-project") envelope instead
+// (candy/plugin-preempt/arbiter.go), the same seam every other resolved-project consumer uses —
+// so ArbiterSeamGather/ArbiterSeamResources and the #ArbiterGatherReply/#ArbiterResourcesReply
+// wire types they tagged are DELETED (not merely unused), along with charly/arbiter_host.go.
 
-// --- canonical preemption policy values (shared: the host Gather projection produces Restore,
-// the plugin's releaseLeaseEffects reads it) ------------------------------------------------
+// --- canonical preemption policy values (shared: the resolved-project-reading gather projection
+// produces Restore, the plugin's releaseLeaseEffects reads it) -------------------------------
 
 const (
 	// PreemptStopShutdown is the only supported stop mechanism (graceful ACPI shutdown / podman
@@ -22,23 +28,6 @@ const (
 	// PreemptRestoreSuccess restarts the holder only if the claim released cleanly; on a failed
 	// claim it is left stopped for operator inspection.
 	PreemptRestoreSuccess = "on-success"
-)
-
-// --- HostArbiter reverse-channel seam action names (host serves, plugin calls mid-logic) -----
-//
-// One action-multiplexed RPC (ExecutorService.HostArbiter) carries the 2 seams that remain
-// genuinely K1-blocked (project-config coupled via LoadUnified). FLOOR-SLIM-proper Unit-8 moved
-// the other 6 (running/stop[+wait]/start/switchMode/ensureCDI/gpuCDI) directly into
-// candy/plugin-preempt (holder_dispatch.go) — they were reached over this seam only because
-// their ORIGINAL implementation used charly-core-private mechanisms, not because the work itself
-// needed a live LoadUnified project; the plugin now dispatches the VM/GPU legs itself via the
-// class-agnostic sdk.Executor.InvokeProvider. The plugin sends an ArbiterHost* request tagged by
-// ArbiterAction*; the host runs the seam's CURRENT default implementation
-// (gatherPreemptibleHolders/gatherResources) and replies.
-
-const (
-	ArbiterSeamGather    = "gather"    // -> ArbiterGatherReply (preemptible holders, projected)
-	ArbiterSeamResources = "resources" // -> ArbiterResourcesReply (gpu-backed tokens -> vendor)
 )
 
 // --- verb:arbiter Invoke actions (the in-core PROXY -> the plugin) ---------------------------
