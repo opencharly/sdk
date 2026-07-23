@@ -40,7 +40,6 @@ type (
 	DeployExpose             = spec.DeployExpose
 	DeployProbes             = spec.DeployProbes
 	DeployResources          = spec.DeployResources
-	DeployShellOverlay       = spec.DeployShellOverlay
 	DeployStorage            = spec.DeployStorage
 	DistroDef                = spec.ResolvedDistro
 	DistroPackages           = spec.DistroPackages
