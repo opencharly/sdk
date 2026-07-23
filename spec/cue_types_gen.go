@@ -3514,7 +3514,14 @@ type DeployVenue struct {
 
 // #VenueDescriptor is the SELF-CONTAINED, serializable description of a
 // deploy venue's executor that a substrate LIFECYCLE plugin's
-// OpPrepareVenue / OpTeardownExecutor returns (F6).
+// OpPrepareVenue / OpTeardownExecutor returns (F6). K1-unblock W3 Unit B added the
+// "container" kind (engine/container_name) so a plugin-constructed
+// deploykit.ContainerChain venue — a single-hop *NestedExecutor{Parent:ShellExecutor{},
+// Jump:{Kind:JumpPodmanExec|JumpDockerExec}}, the MOST COMMON check-runner venue — round-trips
+// through kit.DescriptorFromExecutor/VenueFromDescriptor exactly like "shell"/"ssh" already do.
+// This does NOT generalize to arbitrary N-hop composition (a genuinely multi-hop NestedExecutor
+// still degrades to the zero descriptor, unchanged) — it closes the one enumerable, well-known
+// single-hop shape ContainerChain always produces.
 type VenueDescriptor struct {
 	Kind string `yaml:"kind,omitempty" json:"kind"`
 
@@ -3527,6 +3534,13 @@ type VenueDescriptor struct {
 	Args []string `yaml:"args,omitempty" json:"args,omitempty"`
 
 	ConnectTimeout int `yaml:"connect_timeout,omitempty" json:"connect_timeout,omitempty"`
+
+	// engine/container_name are set ONLY for kind "container": the container engine
+	// ("podman"/"docker", selecting JumpPodmanExec vs JumpDockerExec) and the target container
+	// name ContainerChain jumps into.
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	ContainerName string `yaml:"container_name,omitempty" json:"container_name,omitempty"`
 }
 
 // #Diagnostic is one finding from a plugin kind's deep OpValidate check (F7/C8).
