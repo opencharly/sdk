@@ -28,9 +28,9 @@
 // removal: #Deploy.shell (#DeployShellOverlay) was authorable but had ZERO
 // live consumer — MergeDeployShell, its only would-be merge, never had a
 // production call site anywhere in this repo's history — migrated away by
-// the `stripDeployShellOverlay` reshaper hook. PLACEHOLDER — the fresh
-// pr-validator re-stamps this to the merge-time CalVer at merge.
-#SchemaVersion: #CanonCalVer & "2026.203.2359" @go(-)
+// the `stripDeployShellOverlay` reshaper hook. Re-stamped to the merge-time
+// CalVer by the fresh pr-validator.
+#SchemaVersion: #CanonCalVer & "2026.204.1223" @go(-)
 
 // #SchemaFloor is the OLDEST schema version `charly migrate` can migrate FROM. At
 // the migration-baseline reset it EQUALS #SchemaVersion — the deleted 47-step chain
