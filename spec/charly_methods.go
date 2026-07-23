@@ -378,9 +378,12 @@ func (n *Deploy) HasChildren() bool {
 }
 
 // ---------------------------------------------------------------------------
-// Shell (ShellConfig) + DeployShellOverlay — ByShell synthesizes the per-shell
-// map from the explicit bash/zsh/fish/sh pointers (the former custom-unmarshal
-// map). A non-nil per-shell pointer = that shell was authored.
+// Shell (ShellConfig) — ByShell synthesizes the per-shell map from the
+// explicit bash/zsh/fish/sh pointers (the former custom-unmarshal map). A
+// non-nil per-shell pointer = that shell was authored. (The former sibling
+// DeployShellOverlay method was retired with the field itself — the
+// validation-correctness batch's deploy-scope `shell:` overlay removal: it
+// had zero live consumer, see #SchemaVersion's history comment.)
 // ---------------------------------------------------------------------------
 
 func shellMap(bash, zsh, fish, sh *ShellSpec) map[string]*ShellSpec {
@@ -409,12 +412,4 @@ func (s *Shell) ByShell() map[string]*ShellSpec {
 		return nil
 	}
 	return shellMap(s.Bash, s.Zsh, s.Fish, s.Sh)
-}
-
-// ByShell returns the per-shell overlay map (nil when none authored).
-func (o *DeployShellOverlay) ByShell() map[string]*ShellSpec {
-	if o == nil {
-		return nil
-	}
-	return shellMap(o.Bash, o.Zsh, o.Fish, o.Sh)
 }
