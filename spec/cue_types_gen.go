@@ -3353,8 +3353,6 @@ type Deploy struct {
 
 	Iterate *Iterate `yaml:"iterate,omitempty" json:"iterate,omitempty"`
 
-	Shell []DeployShellOverlay `yaml:"shell,omitempty" json:"shell,omitempty"`
-
 	AddCandy []string `yaml:"add_candy,omitempty" json:"add_candy,omitempty"`
 
 	InstallOpts *InstallOpts `yaml:"install_opts,omitempty" json:"install_opts,omitempty"`
@@ -3428,33 +3426,6 @@ type Iterate struct {
 	Env StrMap `yaml:"env,omitempty" json:"env,omitempty"`
 
 	MCPEndpoint *string `yaml:"mcp_endpoint,omitempty" json:"mcp_endpoint,omitempty"`
-}
-
-// DeployShellOverlay (deploy.go) — per-deploy shell-rc overlay: the shared
-// #Shell body extended with the overlay identity/skip keys (id-keyed
-// replace / skip merge semantics, MergeDeployShell).
-type DeployShellOverlay struct {
-	ID string `yaml:"id,omitempty" json:"id,omitempty"`
-
-	Init string `yaml:"init,omitempty" json:"init,omitempty"`
-
-	Origin string `yaml:"origin,omitempty" json:"origin,omitempty"`
-
-	PathAppend []string `yaml:"path_append,omitempty" json:"path_append,omitempty"`
-
-	Path string `yaml:"path,omitempty" json:"path,omitempty"`
-
-	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
-
-	Bash *ShellSpec `yaml:"bash,omitempty" json:"bash,omitempty"`
-
-	Skip bool `yaml:"skip,omitempty" json:"skip,omitempty"`
-
-	Zsh *ShellSpec `yaml:"zsh,omitempty" json:"zsh,omitempty"`
-
-	Fish *ShellSpec `yaml:"fish,omitempty" json:"fish,omitempty"`
-
-	Sh *ShellSpec `yaml:"sh,omitempty" json:"sh,omitempty"`
 }
 
 type K8sDeploy struct {

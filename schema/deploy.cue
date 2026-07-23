@@ -131,7 +131,6 @@
 
 	plan?: [...#Step]
 	iterate?: #Iterate @go(Iterate,optional=nillable)
-	shell?: [...#DeployShellOverlay]
 
 	add_candy?: [...(string & !="")] @go(AddCandy)
 	install_opts?: #InstallOpts @go(InstallOpts,optional=nillable)
@@ -194,16 +193,6 @@
 // PortScope (tunnel.go): "all" scalar | a list of container ports | a
 // port→hostname map (PortMap). Ports are ints; hostnames strings.
 #PortScope: ("all" | [...int] | {[=~"^[0-9]+$"]: string}) @go(-) // gengotypes: hand PortScope
-
-// DeployShellOverlay (deploy.go) — per-deploy shell-rc overlay: the shared
-// #Shell body extended with the overlay identity/skip keys (id-keyed
-// replace / skip merge semantics, MergeDeployShell).
-#DeployShellOverlay: {
-	#Shell
-	id?:     string & !="" @go(ID)
-	origin?: string & !=""
-	skip?:   bool
-}
 
 // DeployProbes (deploy.go) — each probe is an inline Op (the check verb vocab).
 #DeployProbes: {

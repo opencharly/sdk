@@ -103,8 +103,10 @@ var CapabilityLabelMap = map[string]string{
 
 	// Shell-init manifest — three-section (candy/box/deploy) per-shell
 	// rc-snippet contributions. 2026-05 cutover. Read by `charly box
-	// inspect`, `charly bundle from-box`, and the charly.yml `shell:`
-	// overlay merge in MergeDeployShell.
+	// inspect` and `charly bundle from-box`; the Deploy section is
+	// permanently empty today — the deploy-scope `shell:` overlay
+	// authoring field was retired (validation-correctness batch): its
+	// would-be merge, MergeDeployShell, never had a production caller.
 	"Shell": spec.LabelShell,
 
 	// Acceptance-depth rung (none|build|noagent|agent) gating how deep
