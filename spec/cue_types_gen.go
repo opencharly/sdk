@@ -3057,6 +3057,42 @@ type CheckResult struct {
 	CapturedValue string `yaml:"captured_value,omitempty" json:"captured_value,omitempty"`
 }
 
+// #CheckEnv is the SINGLE-SOURCED scalar snapshot of a check verb's invocation context (K1-unblock
+// W3 Unit B) — the ONE #CheckEnv def now generating the struct all THREE of its consumers share
+// (a hand-written mirror per consumer is the exact "wire type not CUE-generated" violation SDD
+// forbids in fresh code): (1) charly/provider_checkenv.go's host-side CheckEnv, filled by
+// snapshotCheckEnv from a live *kit.Runner and threaded to an out-of-process verb's Invoke
+// envelope; (2) sdk's out-of-process verb-serve decode (sdk/checkverb.go), which reconstructs a
+// kit.CheckContext's scalar legs from this exact snapshot; (3) candy/plugin-check's
+// InvokeProvider-backed VerbResolver (verb_resolver.go), which marshals this same shape when
+// asking the host to dispatch a verb on its behalf. A 4th consumer (charly/plugin_dispatch_reverse.go's
+// InvokeProvider host handler) DECODES it host-side to construct a detached kit.CheckContext for
+// a CheckVerbProvider target — the SAME snapshot, not a second shape.
+//
+// Every field is optional (a caller fills only what it has — an in-proc/live snapshot has a live
+// Runner to read from; a box-mode run has no ContainerName/Venue; a detached construction may
+// lack DialTimeoutNs). container_name/venue are HOST-COMPUTED-ONLY fields (never authored,
+// carried for the out-of-process appium/vm-target verbs that need charly's naming convention
+// without re-deriving it) — present on the wire regardless of which of the three marshal sites
+// populates them, since all three now share this one shape.
+type CheckEnv struct {
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	ContainerName string `yaml:"container_name,omitempty" json:"container_name,omitempty"`
+
+	Distros []string `yaml:"distros,omitempty" json:"distros,omitempty"`
+
+	Venue string `yaml:"venue,omitempty" json:"venue,omitempty"`
+
+	VenueKind string `yaml:"venue_kind,omitempty" json:"venue_kind,omitempty"`
+
+	DialTimeoutNs int64 `yaml:"dial_timeout_ns,omitempty" json:"dial_timeout_ns,omitempty"`
+}
+
 // #RetentionRequest is the "retention" HostBuild kind request: the plugin asks the
 // host to run the shared prune engine host-side (the engine needs the core image
 // inventory + label parsing that stays in core). dir is the project directory

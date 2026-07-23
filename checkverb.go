@@ -50,7 +50,7 @@ func (s *checkVerbServer) Invoke(ctx context.Context, req *pb.InvokeRequest) (*p
 			return ResultJSON("fail", "check verb: decode op: "+err.Error())
 		}
 	}
-	var env checkEnvWire
+	var env spec.CheckEnv
 	if len(req.GetEnvJson()) > 0 {
 		_ = json.Unmarshal(req.GetEnvJson(), &env)
 	}
@@ -70,25 +70,13 @@ func (s *checkVerbServer) InvokeStream(req *pb.InvokeRequest, stream pb.Provider
 	return stream.Send(&pb.Frame{ResultJson: rep.GetResultJson()})
 }
 
-// checkEnvWire is the plugin-side decode of the host's CheckEnv (charly/provider_checkenv.go)
-// for the scalar kit.CheckContext legs that ride the env_json snapshot rather than the
-// reverse channel. Only the kit-consumed fields are decoded.
-type checkEnvWire struct {
-	Box           string   `json:"box"`
-	Instance      string   `json:"instance"`
-	Mode          string   `json:"mode"`
-	Distros       []string `json:"distros"`
-	VenueKind     string   `json:"venue_kind"`
-	DialTimeoutNs int64    `json:"dial_timeout_ns"`
-}
-
 // newSDKCheckContext builds the kit.CheckContext an out-of-process kit verb consumes: Exec
 // over ExecutorService, HTTPDo/AddBackground over CheckContextService, and the scalar legs from
 // the env snapshot. It dials the broker exactly ONCE: the host serves BOTH reverse services on
 // the SAME broker id (one grpc.Server via InvokeWithExecutor), and go-plugin's GRPCBroker
 // pairs ONE Dial with ONE AcceptAndServe per id — a second Dial would hang ("timeout waiting
 // for connection info"). gRPC multiplexes both service clients on the single conn.
-func newSDKCheckContext(brokerID uint32, env checkEnvWire) (kit.CheckContext, error) {
+func newSDKCheckContext(brokerID uint32, env spec.CheckEnv) (kit.CheckContext, error) {
 	if servedBroker == nil {
 		return nil, errors.New("sdk: no go-plugin broker (plugin not served over go-plugin)")
 	}
@@ -111,7 +99,7 @@ func newSDKCheckContext(brokerID uint32, env checkEnvWire) (kit.CheckContext, er
 type sdkCheckContext struct {
 	exec *Executor
 	cc   pb.CheckContextServiceClient
-	env  checkEnvWire
+	env  spec.CheckEnv
 }
 
 func (c *sdkCheckContext) Exec() kit.Executor {
@@ -210,7 +198,7 @@ func (c *sdkCheckContext) ResolveImageLabel(ctx context.Context, label string) (
 // InvokeRequest.env_json (the host's CheckEnv snapshot). Dials the broker ONCE — do NOT also
 // call ExecutorFromInvoke on the same Invoke (a second Dial hangs; use cc.Exec() instead).
 func NewCheckContext(brokerID uint32, envJSON []byte) (kit.CheckContext, error) {
-	var env checkEnvWire
+	var env spec.CheckEnv
 	if len(envJSON) > 0 {
 		if err := json.Unmarshal(envJSON, &env); err != nil {
 			return nil, fmt.Errorf("sdk: decode check env: %w", err)
