@@ -6892,38 +6892,6 @@ type CliReply struct {
 	Error string `yaml:"error,omitempty" json:"error,omitempty"`
 }
 
-// #SettingsRequest is the "settings" HostBuild kind request: one config-subsystem
-// op. Op ∈ {get, set, list, reset, path}. Key/Value carry the op's arguments
-// (get/reset: Key; set: Key+Value; list/path: neither; reset with empty Key
-// resets all).
-type SettingsRequest struct {
-	Op string `yaml:"op,omitempty" json:"op"`
-
-	Key string `yaml:"key,omitempty" json:"key,omitempty"`
-
-	Value string `yaml:"value,omitempty" json:"value,omitempty"`
-}
-
-// #SettingsEntry is one resolved config key (the `charly settings list` row).
-type SettingsEntry struct {
-	Key string `yaml:"key,omitempty" json:"key"`
-
-	Value string `yaml:"value,omitempty" json:"value"`
-
-	Source string `yaml:"source,omitempty" json:"source"`
-}
-
-// #SettingsReply is the "settings" HostBuild kind reply: Value for get/path,
-// Entries for list; set/reset return neither. Error is a human-facing message on
-// failure (e.g. an unknown config key).
-type SettingsReply struct {
-	Value string `yaml:"value,omitempty" json:"value,omitempty"`
-
-	Entries []SettingsEntry `yaml:"entries,omitempty" json:"entries,omitempty"`
-
-	Error string `yaml:"error,omitempty" json:"error,omitempty"`
-}
-
 // #SidecarResolveInput is the input to candy/plugin-sidecar's OpResolve leg
 // (the host-side sidecar de-type): the three sidecar-def layers to merge
 // (embedded template base, project-root templates, per-deploy overrides —
