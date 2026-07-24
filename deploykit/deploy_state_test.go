@@ -422,3 +422,51 @@ func TestFindVmDeployNode_AmbiguousFallbackErrors(t *testing.T) {
 		}
 	})
 }
+
+// TestPathLeaf pins the leaf-extraction semantics — including the tolerant
+// (non-error) handling of a malformed dotted path, which is what
+// distinguishes it from SplitDottedPath (that one returns nil for the same
+// input).
+func TestPathLeaf(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"foo", "foo"},
+		{"foo.bar.baz", "baz"},
+		{"host", "host"},
+		{"local", "local"},
+		{"a..b", "b"}, // malformed (doubled dot) — still yields the raw trailing segment
+	}
+	for _, tc := range cases {
+		if got := PathLeaf(tc.in); got != tc.want {
+			t.Errorf("PathLeaf(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestClassifyNodeTarget covers the W4 pure-helpers relocation (moved from
+// charly/bundle_add_cmd.go): node.Target wins when set; otherwise a
+// ref-based deploy's path LEAF classifies "host"/"local" as the local
+// target and everything else as pod.
+func TestClassifyNodeTarget(t *testing.T) {
+	cases := []struct {
+		name string
+		node *BundleNode
+		path string
+		want string
+	}{
+		{"node.Target wins", &BundleNode{Target: "vm"}, "anything", "vm"},
+		{"nested node.Target wins over leaf", &BundleNode{Target: "k8s"}, "stack.web", "k8s"},
+		{"nil node, literal host leaf -> local", nil, "host", "local"},
+		{"nil node, literal local leaf -> local", nil, "local", "local"},
+		{"nil node, nested host leaf -> local", nil, "stack.host", "local"},
+		{"nil node, other leaf -> pod", nil, "my-app", "pod"},
+		{"empty node, no Target, other leaf -> pod", &BundleNode{}, "my-app", "pod"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ClassifyNodeTarget(tc.node, tc.path); got != tc.want {
+				t.Errorf("ClassifyNodeTarget(%+v, %q) = %q, want %q", tc.node, tc.path, got, tc.want)
+			}
+		})
+	}
+}

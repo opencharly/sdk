@@ -230,6 +230,12 @@
 // in-process. ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain
 // the OLD in-core walk built (deriveChildExecutorForPath is pure Go over spec/kit types and is
 // re-run HOST-side here) — a live DeployExecutor never needs to cross the wire.
+//
+// target/vm_entity (W4 pure-helpers relocation) are PRE-RESOLVED plugin-side (classifyNodeTarget
+// / resolveVmEntity — both pure functions of node+path, now living in candy/plugin-bundle) and
+// carried across the wire so the host-side dispatch no longer recomputes them: the host trusts
+// target/vm_entity as sent (an empty vm_entity is itself a valid resolved value — "no vm entity
+// applies to this node" — never a sentinel meaning "recompute me").
 #DeployNodeDispatchRequest: {
 	path!:  string @go(Path)
 	node?:  #Deploy @go(Node, type=*Deploy)
@@ -255,8 +261,58 @@
 	assume_yes?:         bool   @go(AssumeYes)
 	disposable?:         bool   @go(Disposable)
 	lifecycle?:          string @go(Lifecycle)
+	target?:             string @go(Target)
+	vm_entity?:          string @go(VmEntity)
 }
 #DeployNodeDispatchReply: {}
+
+// #ConstructStepRequest/#ConstructStepReply — the "construct-step" HostBuild seam (K5-A item 1,
+// compile-seam ctx-threading): the ONE genuinely host-only piece of the former compileActOp —
+// resolving a `run:` act op's `plugin:` word against the PROVIDER REGISTRY (a clause-M kernel
+// mechanism, never reachable from a plugin directly) to decide whether it lowers into a typed
+// InstallStep (TypedStepProvider.ConstructStep, an in-proc-only Go method today — no change),
+// an ExternalPluginStep (an out-of-process executorInvoker verb), an ExternalStep (a class:step
+// provider's declared StepContract), or the generic OpStep fallthrough. Everything ELSE
+// compileActOp used to read off `layer`/`img` is ALREADY portable sdk/deploykit-side (CandyModel,
+// *buildkit.ResolvedBox, deploykit.ResolveUserSpec) and never needs to cross this wire — the
+// caller (deploykit.BuildDeployPlan, now ctx/exec-threaded) resolves those PORTABLE pieces
+// itself and sends only the reduced scalars the registry-consult logic actually reads. The reply
+// carries the constructed step as an OPAQUE #InstallStepView (StepToView/StepFromView, R3 — the
+// SAME wire-view round-trip every other step-carrying seam uses) so the caller re-materializes a
+// real deploykit.InstallStep without a second per-kind decode path. No new #Op selector is
+// needed: the registry-consult decision is HostBuild-KIND-dispatched (string, like every other
+// seam in this file), not a provider-targeted Invoke — compileActOp's logic runs UNCHANGED
+// host-side inside the seam handler.
+#ConstructStepRequest: {
+	op!:               #Op    @go(Op)
+	candy_name!:        string @go(CandyName)
+	candy_source_dir?:  string @go(CandySourceDir)
+	candy_vars?: {[string]: string} @go(CandyVars)
+	resolved_user?:     string @go(ResolvedUser)
+	pkg_format?:        string @go(PkgFormat)
+	distro_tags?: [...string] @go(DistroTags)
+}
+#ConstructStepReply: {
+	step?: #InstallStepView @go(Step, type=*InstallStepView)
+}
+
+// #RenderServiceRequest/#RenderServiceReply — the "render-service" HostBuild seam (K5-A item 1,
+// compile-seam ctx-threading, increment B): the former charly/service_render.go:RenderService
+// wraps TWO registry consults a plugin cannot do itself — candy/plugin-init's OpResolve
+// (render the unit text/path) and the M16 egress gate (reject a template-render failure's
+// "<no value>" marker before the unit is written) — so the WHOLE function stays host-side,
+// reached as ONE seam call rather than splitting it into two separate InvokeProvider round
+// trips. deploykit.CompileServiceSteps (the ctx/exec-threaded replacement for the retired
+// deploykit.CompileServiceSteps func var) calls this ONLY for a systemd CUSTOM entry that
+// needs unit-text rendering — the packaged-unit case and the supervisord case never reach it.
+#RenderServiceRequest: {
+	entry!: #CandyService @go(Entry)
+	init!:  #ResolvedInit @go(Init)
+	ctx!:   #ServiceRenderContext @go(Ctx)
+}
+#RenderServiceReply: {
+	rendered?: #RenderedService @go(Rendered, type=*RenderedService)
+}
 
 // #DeployMembersRequest/#DeployMembersReply — bring up / tear down a deployment's sibling
 // members (bringUpMembers/tearDownMembers — providerRegistry + ledger + subprocess-dependent,
@@ -417,27 +473,31 @@
 #EphemeralRegisterReply: {}
 
 // #DeployEntityResolveRequest/#DeployEntityResolveReply — the F6-family GENERIC host-side
-// entity-lookup seam (unit 6a, extended for unit 6b's k3s_post/vm_backend_lifecycle consumers): a
+// entity-lookup seam (unit 6a, extended for unit 6b's k3s_post/vm_backend_lifecycle consumers,
+// and for W4's resolveNodeTemplate — candy/plugin-bundle's kind:local template lookup): a
 // substrate PRERESOLVE body (k8s/vm/android, F6) OR a peer consumer resolving a cross-reference
-// (k3s_post's deployVMForwards, vm_backend_lifecycle's vmConfiguredBackend) needs a
-// LoadUnified-coupled lookup a plugin cannot do itself — EITHER (a) its own deploy-tree node by
-// name (the Update-path re-resolve every preresolver does when node==nil, OR a bundle-key
-// cross-reference's From-field hop — today: resolveTreeRoot) or (b) a referenced kind:<word>
-// entity (k8s/android/vm) by name, returned as the WHOLE RESOLVED envelope so a caller just reads
-// its fields (Backend, Network.PortForwards, …) without tracing the resolver's own portability
-// (today: findK8sSpec / findAndroidSpec / a direct uf.VM[name] lookup + resolveVmViaPlugin). ONE
-// discriminated request replaces five per-purpose kinds: `kind` is DATA the host body dispatches
-// on internally (clause-D) — never a compiled-in per-KIND HostBuild registration, so a new
-// consumer needs no new wire shape, only a new `case` in the host handler (or reuse of an
-// existing one — "bundle" and "deploy" share ONE case, both a deploy-tree node lookup by name).
-// `entity` carries the kind-specific result OPAQUELY — ResolvedK8s/ResolvedAndroid/the vm entity
-// (ResolvedVm) are ALL CUE-sourced (schema/substrate_template.cue, schema/vm.cue; SDD conversion),
-// but this seam still carries them as opaque bytes rather than a typed field, because `kind` is
-// DATA the host dispatches on internally (clause-D) and the caller already knows which kind it
-// asked for and decodes accordingly — mirroring the DeployCompileReply / DeployConfigSaveRequest
-// RawBody idiom used throughout this file for the same reason.
+// (k3s_post's deployVMForwards, vm_backend_lifecycle's vmConfiguredBackend, resolveNodeTemplate's
+// kind:local merge) needs a LoadUnified-coupled lookup a plugin cannot do itself — EITHER (a) its
+// own deploy-tree node by name (the Update-path re-resolve every preresolver does when node==nil,
+// OR a bundle-key cross-reference's From-field hop — today: resolveTreeRoot) or (b) a referenced
+// kind:<word> entity (k8s/android/vm/local) by name, returned as the WHOLE RESOLVED envelope so a
+// caller just reads its fields (Backend, Network.PortForwards, Candy, …) without tracing the
+// resolver's own portability (today: findK8sSpec / findAndroidSpec / a direct uf.VM[name] lookup +
+// resolveVmViaPlugin / findLocalSpec). ONE discriminated request replaces per-purpose kinds:
+// `kind` is DATA the host body dispatches on internally (clause-D) — never a compiled-in per-KIND
+// HostBuild registration, so a new consumer needs no new wire shape, only a new `case` in the host
+// handler (or reuse of an existing one — "bundle" and "deploy" share ONE case, both a deploy-tree
+// node lookup by name). `entity` carries the kind-specific result OPAQUELY — ResolvedK8s/
+// ResolvedAndroid/the vm entity (ResolvedVm)/ResolvedLocal are ALL CUE-sourced
+// (schema/substrate_template.cue, schema/vm.cue; SDD conversion), but this seam still carries them
+// as opaque bytes rather than a typed field, because `kind` is DATA the host dispatches on
+// internally (clause-D) and the caller already knows which kind it asked for and decodes
+// accordingly — mirroring the DeployCompileReply / DeployConfigSaveRequest RawBody idiom used
+// throughout this file for the same reason. The "local" case's EMPTY reply (no EntityJSON, no
+// error) is itself meaningful — "no kind:local template by that name" — distinct from a genuine
+// host-side load-failure error; the caller (resolveNodeTemplate) tells the two apart.
 #DeployEntityResolveRequest: {
-	kind!: string @go(Kind) // "" | "deploy" | "bundle" for a deploy-tree node lookup (node.From carries a cross-ref hop); "k8s"|"android"|"vm" for a kind:<word> entity lookup (the WHOLE resolved envelope)
+	kind!: string @go(Kind) // "" | "deploy" | "bundle" for a deploy-tree node lookup (node.From carries a cross-ref hop); "k8s"|"android"|"vm"|"local" for a kind:<word> entity lookup (the WHOLE resolved envelope)
 	name!: string @go(Name)
 	dir?:  string @go(Dir)
 }

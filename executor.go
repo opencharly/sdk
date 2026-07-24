@@ -318,3 +318,23 @@ func (e *Executor) HostBuild(ctx context.Context, kind string, spec []byte) ([]b
 	}
 	return r.GetResultJson(), nil
 }
+
+// DescribeProvider asks the host for the CACHED capability metadata of another provider by
+// (class, word) — no live Describe round-trip, no Invoke (K5-A item 2). found=false means no
+// CONNECTED provider resolves (class, word); a plugin routing on this can distinguish that from a
+// transport failure, which the returned error alone would not. contract is nil unless the
+// resolved provider is class="step" and declares one (F3) — nil for every other class, exactly
+// mirroring ProvidedCapability.step_contract's own optionality.
+func (e *Executor) DescribeProvider(ctx context.Context, class, word string) (found bool, contract *StepContract, err error) {
+	r, err := e.client.DescribeProvider(ctx, &pb.DescribeProviderRequest{Class: class, Word: word})
+	if err != nil {
+		return false, nil, err
+	}
+	if !r.GetFound() {
+		return false, nil, nil
+	}
+	if sc := r.GetStepContract(); sc != nil {
+		contract = &StepContract{Scope: sc.GetScope(), Venue: int(sc.GetVenue()), Gate: sc.GetGate(), Emits: sc.GetEmits()}
+	}
+	return true, contract, nil
+}
