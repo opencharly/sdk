@@ -12,7 +12,8 @@ import (
 // service_render_context.go — BuildServiceRenderContext, promoted from charly/service_render.go
 // (K3 render-seam production move). A PURE spec.ServiceEntry projection (no init-system
 // knowledge, no charly-core state): both charly's own RenderService (still the DEPLOY-mode path,
-// install_build_services.go) and candy/plugin-build's render (the BUILD-mode render-seam,
+// reached over the "render-service" HostBuild seam since K5-A item 1 increment B —
+// host_build_render_service.go) and candy/plugin-build's render (the BUILD-mode render-seam,
 // eliminated by this move) call this ONE shared source (R3) — the packaged/drop-in branch
 // decisions the plugin renders from are precomputed identically either way.
 

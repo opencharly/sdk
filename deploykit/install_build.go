@@ -155,7 +155,10 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 	// `system_services:` (systemd unit names). After the Task 6 migration
 	// lands these both flow through a unified `services:` schema; for now
 	// we read the two fields independently.
-	svcSteps := CompileServiceSteps(layer, img, hostCtx)
+	svcSteps, err := CompileServiceSteps(ctx, ex, layer, img, hostCtx)
+	if err != nil {
+		return nil, fmt.Errorf("BuildDeployPlan: compiling service steps for %q: %w", layer.GetName(), err)
+	}
 	plan.Steps = append(plan.Steps, svcSteps...)
 
 	// 5. Shell-init snippets: the candy manifest `shell:` block. Generic body +
