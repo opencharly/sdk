@@ -5743,6 +5743,12 @@ type CheckBedReply struct {
 
 	Image string `yaml:"image,omitempty" json:"image,omitempty"`
 
+	HasAddCandy bool `yaml:"has_add_candy,omitempty" json:"has_add_candy,omitempty"`
+
+	// bed) — bed_run.go skips --tag at the config/start steps for such a bed: the FRESH artifact to
+	// verify is the overlay deploy-add just built + persisted (resolved via
+	// resolveDeployResolvedImage, the overlay-plans ctx-seed fix's companion bug), not the base
+	// image's own --tag build ref.
 	VMTemplate string `yaml:"vm_template,omitempty" json:"vm_template,omitempty"`
 
 	BedDomain string `yaml:"bed_domain,omitempty" json:"bed_domain,omitempty"`
