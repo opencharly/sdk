@@ -6042,60 +6042,6 @@ type PodConfigSetupRequest struct {
 type PodConfigSetupReply struct {
 }
 
-// #PodConfigStatusRequest carries `charly config status`'s flags. Forwarded to
-// HostBuild("pod-config-status"), which runs the existing encStatus(box,instance) call VERBATIM.
-type PodConfigStatusRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-// #PodConfigStatusReply is the "pod-config-status" host-builder reply — empty.
-type PodConfigStatusReply struct {
-}
-
-// #PodConfigMountRequest carries `charly config mount`'s flags. Forwarded to
-// HostBuild("pod-config-mount"), which runs the existing encMount(box,instance,volume) call
-// VERBATIM.
-type PodConfigMountRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Volume string `yaml:"volume,omitempty" json:"volume,omitempty"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-// #PodConfigMountReply is the "pod-config-mount" host-builder reply — empty.
-type PodConfigMountReply struct {
-}
-
-// #PodConfigUnmountRequest carries `charly config unmount`'s flags. Forwarded to
-// HostBuild("pod-config-unmount"), which runs the existing encUnmount(box,instance,volume) call
-// VERBATIM.
-type PodConfigUnmountRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Volume string `yaml:"volume,omitempty" json:"volume,omitempty"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-// #PodConfigUnmountReply is the "pod-config-unmount" host-builder reply — empty.
-type PodConfigUnmountReply struct {
-}
-
-// #PodConfigPasswdRequest carries `charly config passwd`'s flags. Forwarded to
-// HostBuild("pod-config-passwd"), which runs the existing encPasswd(box,instance) call VERBATIM.
-type PodConfigPasswdRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-// #PodConfigPasswdReply is the "pod-config-passwd" host-builder reply — empty.
-type PodConfigPasswdReply struct {
-}
-
 // #PodConfigRemoveRequest carries `charly config remove`'s flags (the former
 // BoxConfigRemoveCmd's authored fields — distinct from `charly remove`/#PodRemoveRequest, which
 // tears down the whole deploy; this removes only the quadlet + disables the service). Forwarded
