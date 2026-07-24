@@ -1091,49 +1091,12 @@
 // #PodStartReply.
 #PodConfigSetupReply: {}
 
-// #PodConfigStatusRequest carries `charly config status`'s flags. Forwarded to
-// HostBuild("pod-config-status"), which runs the existing encStatus(box,instance) call VERBATIM.
-#PodConfigStatusRequest: {
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-}
-
-// #PodConfigStatusReply is the "pod-config-status" host-builder reply — empty.
-#PodConfigStatusReply: {}
-
-// #PodConfigMountRequest carries `charly config mount`'s flags. Forwarded to
-// HostBuild("pod-config-mount"), which runs the existing encMount(box,instance,volume) call
-// VERBATIM.
-#PodConfigMountRequest: {
-	box!:      string @go(Box)
-	volume?:   string @go(Volume)
-	instance?: string @go(Instance)
-}
-
-// #PodConfigMountReply is the "pod-config-mount" host-builder reply — empty.
-#PodConfigMountReply: {}
-
-// #PodConfigUnmountRequest carries `charly config unmount`'s flags. Forwarded to
-// HostBuild("pod-config-unmount"), which runs the existing encUnmount(box,instance,volume) call
-// VERBATIM.
-#PodConfigUnmountRequest: {
-	box!:      string @go(Box)
-	volume?:   string @go(Volume)
-	instance?: string @go(Instance)
-}
-
-// #PodConfigUnmountReply is the "pod-config-unmount" host-builder reply — empty.
-#PodConfigUnmountReply: {}
-
-// #PodConfigPasswdRequest carries `charly config passwd`'s flags. Forwarded to
-// HostBuild("pod-config-passwd"), which runs the existing encPasswd(box,instance) call VERBATIM.
-#PodConfigPasswdRequest: {
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-}
-
-// #PodConfigPasswdReply is the "pod-config-passwd" host-builder reply — empty.
-#PodConfigPasswdReply: {}
+// #PodConfigStatusRequest/#PodConfigMountRequest/#PodConfigUnmountRequest/#PodConfigPasswdRequest
+// (+ their empty Reply siblings) — the former HostBuild("pod-config-status"/"-mount"/"-unmount"/
+// "-passwd") seam wire forms — are DELETED (wave γ): those four `charly config` leaves now
+// dispatch verb:enc/verb:credential DIRECTLY from candy/plugin-pod (enc_cmd.go) via
+// InvokeProvider, the same ALREADY-LIVE pattern candy/plugin-deploy-pod/lifecycle.go proves for
+// the start/stop path — no host-builder seam left to carry.
 
 // #PodConfigRemoveRequest carries `charly config remove`'s flags (the former
 // BoxConfigRemoveCmd's authored fields — distinct from `charly remove`/#PodRemoveRequest, which
@@ -1154,12 +1117,12 @@
 // hostBuildPodConfigSetup/hostBuildPodConfigRemove, which now FORWARD onward via the SAME
 // InvokeWithExecutor primitive InvokeProvider/grpcSubstrateLifecycle already use, instead of
 // running the orchestration in-core). The plugin runs the ported logic and calls back these
-// NARROW seams for the pieces that are genuinely host/loader/registry-coupled — the ledger's
-// "FINAL/K5 IOU REGISTER" already registers the credential-store/enc.go family as
-// registry-coupled, deliberately deferred inventory (NOT re-designed this wave); these seams wrap
-// the EXISTING core functions VERBATIM, unchanged internally. BoxConfigStatusCmd/MountCmd/
-// UnmountCmd/PasswdCmd do NOT move — they are already one-line forwards to enc.go (itself
-// FINAL/K5-deferred), nothing to port.
+// NARROW seams for the pieces that are genuinely host/loader/registry-coupled. The former
+// "FINAL/K5 IOU REGISTER" credential-store/enc.go deferral for BoxConfigStatusCmd/MountCmd/
+// UnmountCmd/PasswdCmd was CLOSED (wave γ): those four leaves moved wholesale to
+// candy/plugin-pod (enc_cmd.go) — they dispatch verb:enc/verb:credential DIRECTLY via
+// InvokeProvider (the plugin already holds a real reverse-channel executor), so no
+// "pod-config-status/-mount/-unmount/-passwd" seam remains to wrap them.
 
 // #PodConfigEnsureImageRequest: EnsureImage + ExtractMetadata bundle (registry/podman-store
 // coupled — a plugin cannot resolve the local podman image store namespace itself).
@@ -1421,33 +1384,19 @@
 	env?: [...string] @go(Env)
 }
 
-// #PodConfigEncEnsurePlanRequest / Reply: the pod lifecycle's resolvePodEncEnsure body VERBATIM —
-// encPlanFor + the keyring-resilient all-mounted fast path + resolveEncPassphrase, bundled into
-// ONE narrow credential seam (the standing ruling) returning the pre-built spec.EncExecInput the
-// plugin InvokeProviders verb:enc with directly (empty ⇒ no encrypted volumes configured or
-// already-mounted fast path, matching the former ensureEncryptedMounts semantics).
-#PodConfigEncEnsurePlanRequest: {
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-}
-#PodConfigEncEnsurePlanReply: {
-	enc_json?: bytes @go(EncJSON, type=RawBody)
-}
+// #PodConfigEncEnsurePlanRequest/Reply and #PodConfigEncUnmountPlanRequest/Reply (the former
+// pod lifecycle's resolvePodEncEnsure/resolvePodEncUnmount seam wire forms) are DELETED (wave γ):
+// candy/plugin-deploy-pod's start/stop plan resolution now builds its own enc-ensure/enc-unmount
+// plan locally (enc_tunnel_resolve.go, via deploykit.EncPlanForConfig) instead of round-tripping
+// through core — no seam left to carry.
 
-// #PodConfigEncUnmountPlanRequest / Reply: the pod lifecycle's resolvePodEncUnmount body —
-// encPlanFor for the unmount leg (no passphrase needed).
-#PodConfigEncUnmountPlanRequest: {
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-}
-#PodConfigEncUnmountPlanReply: {
-	enc_json?: bytes @go(EncJSON, type=RawBody)
-}
-
-// #PodConfigContainerTunnelRequest / Reply: the pod lifecycle's resolvePodTunnel body — reads the
-// RUNNING container's baked image ref (containerImage), extracts + merges its metadata, and
-// resolves the tunnel config. Distinct from #PodConfigTunnelResolveRequest (which takes an
-// already-resolved MetaJSON) — this seam resolves the image/metadata itself from a container name.
+// #PodConfigContainerTunnelRequest / Reply: reads the RUNNING container's baked image ref
+// (containerImage), extracts + merges its metadata, and resolves the tunnel config. Distinct
+// from #PodConfigTunnelResolveRequest (which takes an already-resolved MetaJSON) — this seam
+// resolves the image/metadata itself from a container name. candy/plugin-deploy-pod's start/stop
+// path builds its own tunnel plan locally now (enc_tunnel_resolve.go, wave γ); this seam STAYS
+// registered because candy/plugin-pod's `charly remove` teardown path (remove_tunnel.go) is a
+// separate, still-live caller.
 #PodConfigContainerTunnelRequest: {
 	box!:      string @go(Box)
 	instance?: string @go(Instance)
