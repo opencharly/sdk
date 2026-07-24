@@ -811,8 +811,9 @@ func (s *RebootStep) Reverse() []ReverseOp { return nil }
 // ExternalPluginStep is the install-timeline IR node for a `run: plugin: <verb>`
 // step whose verb is served by an EXTERNAL (out-of-process) plugin — a grpcProvider,
 // not a built-in TypedStepProvider (package/service) or ProvisionActor (the
-// state-provision shell verbs) or the `command` install verb. compileActOp routes
-// it here; the Invoke op is picked per venue, placement-agnostic above the registry:
+// state-provision shell verbs) or the `command` install verb. constructOpStep (via the
+// "construct-step" seam's registry consult) routes it here; the Invoke op is picked per
+// venue, placement-agnostic above the registry:
 //
 //   - the DEPLOY venue (the install runs ON the target, not into an image): BOTH
 //     target:local AND target:vm externalized, so an ExternalPluginStep on a deploy is

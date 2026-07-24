@@ -346,17 +346,18 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	ExecutorService_Venue_FullMethodName          = "/charlyplugin.ExecutorService/Venue"
-	ExecutorService_RunSystem_FullMethodName      = "/charlyplugin.ExecutorService/RunSystem"
-	ExecutorService_RunUser_FullMethodName        = "/charlyplugin.ExecutorService/RunUser"
-	ExecutorService_PutFile_FullMethodName        = "/charlyplugin.ExecutorService/PutFile"
-	ExecutorService_RunCapture_FullMethodName     = "/charlyplugin.ExecutorService/RunCapture"
-	ExecutorService_RunInteractive_FullMethodName = "/charlyplugin.ExecutorService/RunInteractive"
-	ExecutorService_RunStream_FullMethodName      = "/charlyplugin.ExecutorService/RunStream"
-	ExecutorService_GetFile_FullMethodName        = "/charlyplugin.ExecutorService/GetFile"
-	ExecutorService_RunHostStep_FullMethodName    = "/charlyplugin.ExecutorService/RunHostStep"
-	ExecutorService_InvokeProvider_FullMethodName = "/charlyplugin.ExecutorService/InvokeProvider"
-	ExecutorService_HostBuild_FullMethodName      = "/charlyplugin.ExecutorService/HostBuild"
+	ExecutorService_Venue_FullMethodName            = "/charlyplugin.ExecutorService/Venue"
+	ExecutorService_RunSystem_FullMethodName        = "/charlyplugin.ExecutorService/RunSystem"
+	ExecutorService_RunUser_FullMethodName          = "/charlyplugin.ExecutorService/RunUser"
+	ExecutorService_PutFile_FullMethodName          = "/charlyplugin.ExecutorService/PutFile"
+	ExecutorService_RunCapture_FullMethodName       = "/charlyplugin.ExecutorService/RunCapture"
+	ExecutorService_RunInteractive_FullMethodName   = "/charlyplugin.ExecutorService/RunInteractive"
+	ExecutorService_RunStream_FullMethodName        = "/charlyplugin.ExecutorService/RunStream"
+	ExecutorService_GetFile_FullMethodName          = "/charlyplugin.ExecutorService/GetFile"
+	ExecutorService_RunHostStep_FullMethodName      = "/charlyplugin.ExecutorService/RunHostStep"
+	ExecutorService_InvokeProvider_FullMethodName   = "/charlyplugin.ExecutorService/InvokeProvider"
+	ExecutorService_HostBuild_FullMethodName        = "/charlyplugin.ExecutorService/HostBuild"
+	ExecutorService_DescribeProvider_FullMethodName = "/charlyplugin.ExecutorService/DescribeProvider"
 )
 
 // ExecutorServiceClient is the client API for ExecutorService service.
@@ -382,6 +383,8 @@ type ExecutorServiceClient interface {
 	InvokeProvider(ctx context.Context, in *InvokeProviderRequest, opts ...grpc.CallOption) (*InvokeReply, error)
 	// F10 host-build: the calling plugin requests a HOST-side build (the build engine stays in core) — the host runs the registered host-builder for `kind` and returns its result
 	HostBuild(ctx context.Context, in *HostBuildRequest, opts ...grpc.CallOption) (*HostBuildReply, error)
+	// K5-A item 2: the host resolves another provider by (class,word) and returns its CACHED capability metadata (today: StepContract) — no Invoke, no live Describe round-trip. The metadata twin of InvokeProvider (dispatch) and HostBuild (host-side build).
+	DescribeProvider(ctx context.Context, in *DescribeProviderRequest, opts ...grpc.CallOption) (*DescribeProviderReply, error)
 }
 
 type executorServiceClient struct {
@@ -491,6 +494,15 @@ func (c *executorServiceClient) HostBuild(ctx context.Context, in *HostBuildRequ
 	return out, nil
 }
 
+func (c *executorServiceClient) DescribeProvider(ctx context.Context, in *DescribeProviderRequest, opts ...grpc.CallOption) (*DescribeProviderReply, error) {
+	out := new(DescribeProviderReply)
+	err := c.cc.Invoke(ctx, ExecutorService_DescribeProvider_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExecutorServiceServer is the server API for ExecutorService service.
 // All implementations must embed UnimplementedExecutorServiceServer
 // for forward compatibility
@@ -514,6 +526,8 @@ type ExecutorServiceServer interface {
 	InvokeProvider(context.Context, *InvokeProviderRequest) (*InvokeReply, error)
 	// F10 host-build: the calling plugin requests a HOST-side build (the build engine stays in core) — the host runs the registered host-builder for `kind` and returns its result
 	HostBuild(context.Context, *HostBuildRequest) (*HostBuildReply, error)
+	// K5-A item 2: the host resolves another provider by (class,word) and returns its CACHED capability metadata (today: StepContract) — no Invoke, no live Describe round-trip. The metadata twin of InvokeProvider (dispatch) and HostBuild (host-side build).
+	DescribeProvider(context.Context, *DescribeProviderRequest) (*DescribeProviderReply, error)
 	mustEmbedUnimplementedExecutorServiceServer()
 }
 
@@ -553,6 +567,9 @@ func (UnimplementedExecutorServiceServer) InvokeProvider(context.Context, *Invok
 }
 func (UnimplementedExecutorServiceServer) HostBuild(context.Context, *HostBuildRequest) (*HostBuildReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HostBuild not implemented")
+}
+func (UnimplementedExecutorServiceServer) DescribeProvider(context.Context, *DescribeProviderRequest) (*DescribeProviderReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DescribeProvider not implemented")
 }
 func (UnimplementedExecutorServiceServer) mustEmbedUnimplementedExecutorServiceServer() {}
 
@@ -765,6 +782,24 @@ func _ExecutorService_HostBuild_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ExecutorService_DescribeProvider_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DescribeProviderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecutorServiceServer).DescribeProvider(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExecutorService_DescribeProvider_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecutorServiceServer).DescribeProvider(ctx, req.(*DescribeProviderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ExecutorService_ServiceDesc is the grpc.ServiceDesc for ExecutorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -815,6 +850,10 @@ var ExecutorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HostBuild",
 			Handler:    _ExecutorService_HostBuild_Handler,
+		},
+		{
+			MethodName: "DescribeProvider",
+			Handler:    _ExecutorService_DescribeProvider_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

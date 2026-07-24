@@ -112,6 +112,42 @@ func SplitDottedPath(path string) []string {
 	return out
 }
 
+// PathLeaf returns the last segment of a dotted deployment path.
+// "foo.bar.baz" -> "baz"; "foo" -> "foo"; "" -> "". Unlike
+// SplitDottedPath, a malformed path (leading/trailing/doubled dots)
+// still yields its raw trailing segment rather than nil — callers that
+// only care about the LEAF (e.g. a "host"/"local" literal-name check)
+// want the tolerant form. Shared by the host-side deploy dispatcher and
+// candy/plugin-bundle's node-classification helpers (R3 — one source).
+func PathLeaf(path string) string {
+	if idx := strings.LastIndexByte(path, '.'); idx >= 0 {
+		return path[idx+1:]
+	}
+	return path
+}
+
+// ClassifyNodeTarget picks the target discriminator for a node. Uses
+// node.Target when non-empty (canonical pod|vm|k8s|local|android, set from
+// the node-form kind by the loader's bundleTargetForDisc).
+//
+// For ref-based deploys with no charly.yml entry (e.g. `charly bundle add
+// foo ./box.yml` where foo isn't declared), the deploy name itself is the
+// hint: literal `host` or `local` (as a whole path LEAF) → local target;
+// anything else → pod. A pure function of node+path with no
+// LoadUnified/executor dependency — shared by charly core (deriving the
+// ANCESTOR executor chain in a nested deploy walk) and candy/plugin-bundle
+// (classifying the CURRENT node before dispatch, W4 pure-helpers
+// relocation) — R3, one source for both call sites.
+func ClassifyNodeTarget(node *spec.BundleNode, path string) string {
+	if node != nil && node.Target != "" {
+		return node.Target
+	}
+	if leaf := PathLeaf(path); leaf == "host" || leaf == "local" {
+		return "local"
+	}
+	return "pod"
+}
+
 // deployNodeVenue returns a node's stamped descent VENUE trait (P9) nil-safely — the deploykit
 // analogue of charly's nodeTraits for the SDK-side consult sites, which cannot reach charly's
 // provider registry to resolve traits for an unstamped node. A node with no stamped descent
