@@ -6365,37 +6365,13 @@ type PodConfigHookSecretEnvReply struct {
 	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
-// #PodConfigEncEnsurePlanRequest / Reply: the pod lifecycle's resolvePodEncEnsure body VERBATIM —
-// encPlanFor + the keyring-resilient all-mounted fast path + resolveEncPassphrase, bundled into
-// ONE narrow credential seam (the standing ruling) returning the pre-built spec.EncExecInput the
-// plugin InvokeProviders verb:enc with directly (empty ⇒ no encrypted volumes configured or
-// already-mounted fast path, matching the former ensureEncryptedMounts semantics).
-type PodConfigEncEnsurePlanRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-type PodConfigEncEnsurePlanReply struct {
-	EncJSON RawBody `yaml:"enc_json,omitempty" json:"enc_json,omitempty"`
-}
-
-// #PodConfigEncUnmountPlanRequest / Reply: the pod lifecycle's resolvePodEncUnmount body —
-// encPlanFor for the unmount leg (no passphrase needed).
-type PodConfigEncUnmountPlanRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-type PodConfigEncUnmountPlanReply struct {
-	EncJSON RawBody `yaml:"enc_json,omitempty" json:"enc_json,omitempty"`
-}
-
-// #PodConfigContainerTunnelRequest / Reply: the pod lifecycle's resolvePodTunnel body — reads the
-// RUNNING container's baked image ref (containerImage), extracts + merges its metadata, and
-// resolves the tunnel config. Distinct from #PodConfigTunnelResolveRequest (which takes an
-// already-resolved MetaJSON) — this seam resolves the image/metadata itself from a container name.
+// #PodConfigContainerTunnelRequest / Reply: reads the RUNNING container's baked image ref
+// (containerImage), extracts + merges its metadata, and resolves the tunnel config. Distinct
+// from #PodConfigTunnelResolveRequest (which takes an already-resolved MetaJSON) — this seam
+// resolves the image/metadata itself from a container name. candy/plugin-deploy-pod's start/stop
+// path builds its own tunnel plan locally now (enc_tunnel_resolve.go, wave γ); this seam STAYS
+// registered because candy/plugin-pod's `charly remove` teardown path (remove_tunnel.go) is a
+// separate, still-live caller.
 type PodConfigContainerTunnelRequest struct {
 	Box string `yaml:"box,omitempty" json:"box"`
 

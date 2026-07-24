@@ -1257,33 +1257,19 @@
 	env?: [...string] @go(Env)
 }
 
-// #PodConfigEncEnsurePlanRequest / Reply: the pod lifecycle's resolvePodEncEnsure body VERBATIM —
-// encPlanFor + the keyring-resilient all-mounted fast path + resolveEncPassphrase, bundled into
-// ONE narrow credential seam (the standing ruling) returning the pre-built spec.EncExecInput the
-// plugin InvokeProviders verb:enc with directly (empty ⇒ no encrypted volumes configured or
-// already-mounted fast path, matching the former ensureEncryptedMounts semantics).
-#PodConfigEncEnsurePlanRequest: {
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-}
-#PodConfigEncEnsurePlanReply: {
-	enc_json?: bytes @go(EncJSON, type=RawBody)
-}
+// #PodConfigEncEnsurePlanRequest/Reply and #PodConfigEncUnmountPlanRequest/Reply (the former
+// pod lifecycle's resolvePodEncEnsure/resolvePodEncUnmount seam wire forms) are DELETED (wave γ):
+// candy/plugin-deploy-pod's start/stop plan resolution now builds its own enc-ensure/enc-unmount
+// plan locally (enc_tunnel_resolve.go, via deploykit.EncPlanForConfig) instead of round-tripping
+// through core — no seam left to carry.
 
-// #PodConfigEncUnmountPlanRequest / Reply: the pod lifecycle's resolvePodEncUnmount body —
-// encPlanFor for the unmount leg (no passphrase needed).
-#PodConfigEncUnmountPlanRequest: {
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-}
-#PodConfigEncUnmountPlanReply: {
-	enc_json?: bytes @go(EncJSON, type=RawBody)
-}
-
-// #PodConfigContainerTunnelRequest / Reply: the pod lifecycle's resolvePodTunnel body — reads the
-// RUNNING container's baked image ref (containerImage), extracts + merges its metadata, and
-// resolves the tunnel config. Distinct from #PodConfigTunnelResolveRequest (which takes an
-// already-resolved MetaJSON) — this seam resolves the image/metadata itself from a container name.
+// #PodConfigContainerTunnelRequest / Reply: reads the RUNNING container's baked image ref
+// (containerImage), extracts + merges its metadata, and resolves the tunnel config. Distinct
+// from #PodConfigTunnelResolveRequest (which takes an already-resolved MetaJSON) — this seam
+// resolves the image/metadata itself from a container name. candy/plugin-deploy-pod's start/stop
+// path builds its own tunnel plan locally now (enc_tunnel_resolve.go, wave γ); this seam STAYS
+// registered because candy/plugin-pod's `charly remove` teardown path (remove_tunnel.go) is a
+// separate, still-live caller.
 #PodConfigContainerTunnelRequest: {
 	box!:      string @go(Box)
 	instance?: string @go(Instance)
