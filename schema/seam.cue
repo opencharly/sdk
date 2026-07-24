@@ -1002,6 +1002,18 @@
 	// it across the wire now that the ORCHESTRATION (formerly reading the kong:"-" Go field
 	// directly) moved into the plugin.
 	explicit_ref?: string @go(ExplicitRef)
+	// host_env_json is the marshalled #HostEnv (CharlyBin/Home/Version) — the SAME R10
+	// bed-found bug class #DeployTargetDispatchRequest's own host_env_json field documents
+	// (unified_targets.go's hostEnvJSON(): os.Executable() resolves correctly to the charly
+	// binary only when called IN CORE — a plugin's os.Executable() resolves to the PLUGIN
+	// binary, wrong for an out-of-process placement). Setup's quadlet emission needs the REAL
+	// charly binary path for the encrypted-mount ExecStartPre line
+	// (deploykit.QuadletConfig.CharlyBin); the bug was dormant here until a deploy actually had
+	// an encrypted volume to mount (check-enc-pod's R10 first exercised it once the
+	// project-declared-volume fallback started resolving one). hostBuildPodConfigSetup
+	// populates this via the SAME core hostEnvJSON() helper the dispatch seam uses (R3 — one
+	// host-identity helper, not a second one invented here).
+	host_env_json?: bytes @go(HostEnvJSON, type=RawBody)
 }
 
 // #PodConfigSetupReply is the "pod-config-setup" host-builder reply — empty, mirroring
@@ -1114,6 +1126,26 @@
 }
 #PodConfigLoadDeployReply: {
 	config_json?: bytes @go(ConfigJSON, type=RawBody) // marshalled *deploykit.BundleConfig; absent ⇒ nil
+}
+
+// #PodConfigProjectVolumeRequest / Reply: resolves the deploy's PROJECT-declared `volume:`
+// override — the entity as AUTHORED in the project's own charly.yml (e.g. a disposable check
+// bed's `volume: [{name: enc-data, type: encrypted}]`), which the per-host overlay
+// (#PodConfigLoadDeployRequest, ~/.config/charly/charly.yml) never carries on its own. Genuinely
+// loader-coupled (LoadUnified is a core Mechanism a plugin cannot import): the host resolves the
+// SAME merged project+operator tree `charly bundle add` walks (resolveTreeRoot — the per-host
+// overlay wins over the project declaration only when it actually carries an override for this
+// key, matching MergeDeployConfigs' existing precedence) and returns ONLY the resolved entry's
+// Volume field, scoped to one deploy key. Setup (config_setup.go) calls this as the LAST fallback
+// in its deployVolumes resolution chain (CLI flag > env > per-host overlay > project declaration)
+// and persists a hit into the overlay exactly as a --volume flag would, so the declaration takes
+// effect on every subsequent read without re-resolving the project each time.
+#PodConfigProjectVolumeRequest: {
+	box!:      string @go(Box)
+	instance?: string @go(Instance)
+}
+#PodConfigProjectVolumeReply: {
+	volume_json?: bytes @go(VolumeJSON, type=RawBody) // marshalled []spec.DeployVolume; absent ⇒ none declared
 }
 
 // #PodConfigSaveBundleRequest / Reply: saveBundleConfigNodeForm(dc) — persists a (plugin-mutated)
