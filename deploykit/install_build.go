@@ -17,6 +17,7 @@ package deploykit
 // leaving *how* to render up to each target.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/opencharly/sdk"
 	"github.com/opencharly/sdk/spec"
 )
 
@@ -86,7 +88,7 @@ type HostContext struct {
 // (from ResolveCandyOrder) and builds one plan per candy, then merges
 // them. Keeping one plan per candy makes refcounting trivial in the
 // ledger: each candy's teardown is independent.
-func BuildDeployPlan(layer CandyModel, img *ResolvedBox, hostCtx HostContext) (*InstallPlan, error) {
+func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, img *ResolvedBox, hostCtx HostContext) (*InstallPlan, error) {
 	if layer == nil {
 		return nil, fmt.Errorf("BuildDeployPlan: nil candy")
 	}
@@ -143,7 +145,10 @@ func BuildDeployPlan(layer CandyModel, img *ResolvedBox, hostCtx HostContext) (*
 
 	// 3. The install timeline: the candy plan's build/deploy-context run: steps,
 	// lowered into typed install steps (or generic OpSteps).
-	taskSteps := CompileOpSteps(layer, img)
+	taskSteps, err := CompileOpSteps(ctx, ex, layer, img)
+	if err != nil {
+		return nil, fmt.Errorf("BuildDeployPlan: compiling op steps for %q: %w", layer.GetName(), err)
+	}
 	plan.Steps = append(plan.Steps, taskSteps...)
 
 	// 4. Services: both legacy `service:` (supervisord INI fragments) and
@@ -685,7 +690,7 @@ func BuildSystemPackagesStep(format string, phase Phase, packages []string, raw 
 // plan-runtime provisioning the check Runner executes — NOT the install
 // timeline — and is skipped here (avoids double-execution); check:/agent-*/
 // include: steps are never lowered.
-func CompileOpSteps(layer CandyModel, img *ResolvedBox) []InstallStep {
+func CompileOpSteps(ctx context.Context, ex *sdk.Executor, layer CandyModel, img *ResolvedBox) ([]InstallStep, error) {
 	var out []InstallStep
 	for i := range layer.PlanSteps() {
 		step := &layer.PlanSteps()[i]
@@ -699,21 +704,27 @@ func CompileOpSteps(layer CandyModel, img *ResolvedBox) []InstallStep {
 		if OpInContext(op, spec.CtxRuntime) && !OpInContext(op, spec.CtxBuild) && !OpInContext(op, spec.CtxDeploy) {
 			continue
 		}
-		if s := CompileActOp(op, layer, img); s != nil {
+		s, err := constructOpStep(ctx, ex, op, layer, img)
+		if err != nil {
+			return nil, err
+		}
+		if s != nil {
 			out = append(out, s)
 		}
 	}
-	return out
+	return out, nil
 }
 
-// compileActOp lowers a single install-timeline op into the right InstallStep via the
-// TypedStepProvider seam: a `plugin:` verb whose provider lowers into a typed step
+// constructOpStep (compile_construct_step.go) lowers a single install-timeline op into
+// the right InstallStep: a `plugin:` verb whose provider lowers into a typed step
 // (package → SystemPackagesStep, service → ServicePackagedStep) is constructed via that
-// provider's ConstructStep, so its Reverse() records the LOAD-BEARING reversals — a generic
-// OpStep would drop them. Every other verb (the install verbs + command + the
-// RenderProvisionScript plugin verbs) stays a generic OpStep. Callers decide which ops reach
-// here — CompileOpSteps passes the plan's build/deploy-context run: steps (the install
-// timeline is act by definition, regardless of a verb's runtime-context do:assert default).
+// provider's ConstructStep (over the "construct-step" seam), so its Reverse() records the
+// LOAD-BEARING reversals — a generic OpStep would drop them. Every other verb (the
+// install verbs + command + the RenderProvisionScript plugin verbs) stays a generic
+// OpStep, built locally (buildGenericOpStep) with no wire round-trip. Callers decide
+// which ops reach here — CompileOpSteps passes the plan's build/deploy-context run:
+// steps (the install timeline is act by definition, regardless of a verb's
+// runtime-context do:assert default).
 
 // opStepScope classifies a resolved user directive into install scope — root
 // (or empty / 0) is system, everything else user. Shared by the OpStep and
