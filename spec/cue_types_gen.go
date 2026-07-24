@@ -3093,15 +3093,24 @@ type CheckEnv struct {
 	DialTimeoutNs int64 `yaml:"dial_timeout_ns,omitempty" json:"dial_timeout_ns,omitempty"`
 }
 
-// #RetentionRequest is the "retention" HostBuild kind request: the plugin asks the
-// host to run the shared prune engine host-side (the engine needs the core image
-// inventory + label parsing that stays in core). dir is the project directory
-// (os.Getwd() in the plugin) — always present, never empty. keep=0 means "use the
-// resolved defaults"; invalidate (non-empty) runs ONLY the targeted image-tag
-// invalidation. deep runs the store-wide untagged/dangling-image purge category
-// (`charly clean --deep`) — unlike images (which only ever touches charly-labeled
-// tags/dangling ids), deep removes EVERY untagged image in local storage, including
-// unlabeled multi-stage build intermediates images can never see.
+// #RetentionRequest is the verb:retention request. dir is the project directory
+// (os.Getwd()) — always present, never empty. keep=0 means "use the resolved
+// defaults"; invalidate (non-empty) runs ONLY the targeted image-tag invalidation.
+// deep runs the store-wide untagged/dangling-image purge category (`charly clean
+// --deep`) — unlike images (which only ever touches charly-labeled tags/dangling
+// ids), deep removes EVERY untagged image in local storage, including unlabeled
+// multi-stage build intermediates the images category can never see. list runs
+// the read-only tag inventory (`charly box list tags`) — no dir needed beyond
+// resolving the engine, nothing is removed. build_prune is the narrow post-`charly
+// box build` step: retention-prune image tags + stale .build/_candy staging dirs
+// ONLY (the historic charly/retention.go pruneAfterBuild scope) — deliberately
+// NOT the fuller images category (which also sweeps dangling images + buildah
+// staging), so a build's own post-step behavior is unchanged by this relocation.
+// keep_images/keep_check_runs are the caller's PRE-RESOLVED defaults.keep_images/
+// keep_check_runs (0 = disabled) — this engine never reads charly.yml itself; a
+// core caller (already running LoadConfig in-process) resolves these directly, a
+// plugin caller fetches them via the "retention-defaults" HostBuild seam first.
+// keep (the CLI --keep override) wins over both when > 0.
 type RetentionRequest struct {
 	Dir string `yaml:"dir,omitempty" json:"dir"`
 
@@ -3113,14 +3122,35 @@ type RetentionRequest struct {
 
 	Deep bool `yaml:"deep,omitempty" json:"deep,omitempty"`
 
+	List bool `yaml:"list,omitempty" json:"list,omitempty"`
+
+	BuildPrune bool `yaml:"build_prune,omitempty" json:"build_prune,omitempty"`
+
 	Keep int `yaml:"keep,omitempty" json:"keep,omitempty"`
+
+	KeepImages int `yaml:"keep_images,omitempty" json:"keep_images,omitempty"`
+
+	KeepCheckRuns int `yaml:"keep_check_runs,omitempty" json:"keep_check_runs,omitempty"`
 
 	Invalidate string `yaml:"invalidate,omitempty" json:"invalidate,omitempty"`
 }
 
-// #RetentionReply is the "retention" HostBuild kind reply: the removed (or
-// would-remove, under dry_run) image refs, build-candy dirs, and check-run paths,
-// plus the effective retention counts, for the plugin to present.
+// #TagInfo is one locally stored image tag, as presented by `charly box list
+// tags` (verb:retention list=true): version is "-" when the image carries no
+// parseable ai.opencharly.version label.
+type TagInfo struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Ref string `yaml:"ref,omitempty" json:"ref"`
+
+	Version string `yaml:"version,omitempty" json:"version"`
+
+	InUse bool `yaml:"in_use,omitempty" json:"in_use"`
+}
+
+// #RetentionReply is the verb:retention reply: the removed (or would-remove,
+// under dry_run) image refs, build-candy dirs, and check-run paths, plus the
+// effective retention counts, for the caller to present.
 //
 // deep_ids/deep_bytes report the store-wide untagged-image purge (deep): the removed
 // (or would-remove) image IDs and the sum of their reported storage Size in bytes.
@@ -3134,6 +3164,9 @@ type RetentionRequest struct {
 // --deep --dry-run` presents deep_bytes as "up to" for exactly this reason; pairing
 // --deep with --invalidate (removing stale TAGS too, so their exclusively-held
 // layers also become unreferenced) gets closer to the reported figure.
+//
+// tag_groups is the `list` reply payload: every locally stored charly-labeled tag,
+// newest-first per box.
 //
 // error is a human-facing message on a non-recoverable failure.
 type RetentionReply struct {
@@ -3150,6 +3183,8 @@ type RetentionReply struct {
 	DeepIDs []string `yaml:"deep_ids,omitempty" json:"deep_ids,omitempty"`
 
 	DeepBytes int64 `yaml:"deep_bytes,omitempty" json:"deep_bytes,omitempty"`
+
+	TagGroups []TagInfo `yaml:"tag_groups,omitempty" json:"tag_groups,omitempty"`
 
 	KeepImages int `yaml:"keep_images,omitempty" json:"keep_images,omitempty"`
 
