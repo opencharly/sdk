@@ -912,6 +912,12 @@
 	order?:        [...string]     @go(Order)
 	host_context!: bytes           @go(HostContextJSON, type=RawBody)
 	tag?:          string          @go(Tag)
+	// The add_candy:/--add-candy ref(s) (if any) this compile call's own candy set was widened
+	// with host-side (scanCandiesForRef's synthetic-augmented scan, for a REMOTE ref) — threaded
+	// into the plugin's OWN HostBuild("resolved-project") re-fetch (as its extra_candy_refs) so
+	// the envelope's candy map ALSO carries them (RCA'd K1-alpha regression: the two scans were
+	// independent, so a remote add-candy resolved host-side never reached the envelope).
+	extra_candy_refs?: [...string] @go(ExtraCandyRefs)
 }
 
 // #DeployCompileReply is the OpCompile reply: the compiled plans as marshalled

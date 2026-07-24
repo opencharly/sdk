@@ -304,4 +304,15 @@
 	// applies the same local override used by the later R10 session only for the
 	// duration of this projection.
 	local_superproject?: bool @go(LocalSuperproject)
+	// A caller compiling against an `add_candy:`/`--add-candy` ref (a candy the project's own
+	// image-closure walk never reaches — the reachability-scoped remote-ref collection is
+	// deliberately narrower than "every candy anywhere," R1) widens the scan the SAME way
+	// ScanAllCandyWithConfigOpts' ResolveOpts.ExtraCandyRefs already does for a check bed's own
+	// add_candy: (deploy_add_shared.go's deployNodePluginContext) — without this, the compile
+	// plugin's OWN independent resolved-project re-fetch (candy/plugin-bundle's compile.go)
+	// never discovers a remote add-candy ref the HOST's separate scanCandiesForRef call already
+	// pulled in via its own synthetic-augmented scan, and BuildDeployPlan fails "candy not in
+	// resolved-project envelope" (RCA'd K1-alpha regression, check-addcandy-pod/check-stepkind-
+	// emit-pod).
+	extra_candy_refs?: [...string] @go(ExtraCandyRefs)
 }
