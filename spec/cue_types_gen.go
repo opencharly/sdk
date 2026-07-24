@@ -2365,6 +2365,15 @@ type BuildEnv struct {
 	ImageBuildDir string `yaml:"image_build_dir,omitempty" json:"image_build_dir,omitempty"`
 
 	ContextRelPrefix string `yaml:"context_rel_prefix,omitempty" json:"context_rel_prefix,omitempty"`
+
+	// A pod-overlay deploy's add_candy: refs (if any) — threaded so a HOST-COUPLED word's OpEmit
+	// (candy/plugin-installstep's getGenerator) can widen ITS OWN "resolved-project" envelope
+	// re-fetch the same way ScanAllCandyWithConfigOpts' ResolveOpts.ExtraCandyRefs already widens
+	// the host's own overlay Generator (hostBuildOverlay). Without this, an add_candy candy the
+	// overlay build correctly resolved host-side is absent from this plugin's INDEPENDENT
+	// envelope fetch, and candyByName's REMOTE-candy fallback still misses (RCA'd K1-alpha
+	// regression: check-addcandy-pod's overlay-deploy path, "candy not found").
+	ExtraCandyRefs []string `yaml:"extra_candy_refs,omitempty" json:"extra_candy_refs,omitempty"`
 }
 
 // #EmitReply is what a plugin verb/builder returns from an OpEmit Invoke at
