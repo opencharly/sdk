@@ -3375,6 +3375,16 @@ type Deploy struct {
 
 	Volume []DeployVolume `yaml:"volume,omitempty" json:"volume,omitempty"`
 
+	// volume_project_checked marks that this deploy's PROJECT-declared `volume:` override has
+	// already been consulted ONCE (true regardless of whether the project declared one), so
+	// resolveDeployVolumes (candy/plugin-deploy-pod) never re-queries the project on a
+	// subsequent `charly config`/`charly update` merely because the per-host overlay's Volume
+	// field happens to be empty (that emptiness is ALSO produced by an unrelated overlay write —
+	// e.g. the port-resolution block — that never touched volumes at all, so key-existence alone
+	// cannot distinguish "checked, found nothing" from "not checked yet"). charly-written state
+	// (like resolved_port/resolved_image), never authored.
+	VolumeProjectChecked bool `yaml:"volume_project_checked,omitempty" json:"volume_project_checked,omitempty"`
+
 	// The Go type is OPAQUE (map[string]json.RawMessage): CUE still validates each
 	// per-deploy sidecar override against #Sidecar, but the kernel stores it as
 	// opaque bodies — ALL sidecar business logic lives in candy/plugin-sidecar's
@@ -5809,6 +5819,12 @@ type CheckBedReply struct {
 
 	Image string `yaml:"image,omitempty" json:"image,omitempty"`
 
+	HasAddCandy bool `yaml:"has_add_candy,omitempty" json:"has_add_candy,omitempty"`
+
+	// bed) — bed_run.go skips --tag at the config/start steps for such a bed: the FRESH artifact to
+	// verify is the overlay deploy-add just built + persisted (resolved via
+	// resolveDeployResolvedImage, the overlay-plans ctx-seed fix's companion bug), not the base
+	// image's own --tag build ref.
 	VMTemplate string `yaml:"vm_template,omitempty" json:"vm_template,omitempty"`
 
 	BedDomain string `yaml:"bed_domain,omitempty" json:"bed_domain,omitempty"`
