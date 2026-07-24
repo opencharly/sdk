@@ -491,6 +491,56 @@ protocol: {
 			]
 		},
 		{
+			"name": "DescribeProviderRequest"
+			"doc":  """
+				DescribeProviderRequest (K5-A item 2): ask the host for the CACHED capability
+				metadata of another provider by (class, word) — no live Describe round-trip, no
+				Invoke. This is what a plugin needs to make a routing DECISION about a peer
+				provider (e.g. "does class:step word X declare Emits=true?") without holding its
+				own copy of the provider registry — the same registry-consult gap InvokeProvider
+				solves for DISPATCH, DescribeProvider solves for METADATA. class/word are DATA (the
+				F11 uniform-API invariant): the RPC itself never names a plugin word.
+				"""
+			"fields": [
+				{
+					"name":   "class"
+					"type":   "string"
+					"number": 1
+				},
+				{
+					"name":   "word"
+					"type":   "string"
+					"number": 2
+				},
+			]
+		},
+		{
+			"name": "DescribeProviderReply"
+			"doc":  """
+				found=false means (class, word) resolves to no CONNECTED provider (mirrors
+				InvokeProvider's own "provider not connected" failure mode, but as a query result
+				rather than an RPC error — a plugin routing decision often wants to distinguish
+				"not found" from a transport failure). step_contract is populated only when the
+				resolved provider is class="step" AND declares one (F3) — absent/nil for every
+				other class, exactly like ProvidedCapability.step_contract's own optionality. Kept
+				narrowly scoped to StepContract (the ONE cached sub-shape a consumer needs today,
+				oci_step_emit.go's relocation) rather than the whole ProvidedCapability — extend
+				with additional cached fields only when a consumer actually needs them.
+				"""
+			"fields": [
+				{
+					"name":   "found"
+					"type":   "bool"
+					"number": 1
+				},
+				{
+					"name":   "step_contract"
+					"type":   "StepContract"
+					"number": 2
+				},
+			]
+		},
+		{
 			"name": "HostBuildReply"
 			"fields": [
 				{
@@ -1071,6 +1121,12 @@ protocol: {
 					"request":  "HostBuildRequest"
 					"response": "HostBuildReply"
 					"doc":      "F10 host-build: the calling plugin requests a HOST-side build (the build engine stays in core) — the host runs the registered host-builder for `kind` and returns its result"
+				},
+				{
+					"name":     "DescribeProvider"
+					"request":  "DescribeProviderRequest"
+					"response": "DescribeProviderReply"
+					"doc":      "K5-A item 2: the host resolves another provider by (class,word) and returns its CACHED capability metadata (today: StepContract) — no Invoke, no live Describe round-trip. The metadata twin of InvokeProvider (dispatch) and HostBuild (host-side build)."
 				},
 			]
 		},
