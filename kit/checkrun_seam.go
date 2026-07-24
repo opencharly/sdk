@@ -43,11 +43,13 @@ type CheckRunReply struct {
 	// the host delegates to the guest over SSH (`charly check live <pod>` run INSIDE the guest),
 	// whose stdout/stderr + exit code the plugin forwards verbatim. Nil for every plan-run mode.
 	Passthrough *StepPass `json:"passthrough,omitempty"`
-	// Score is the "score"-mode reply (P12 Wave-2): the AI-harness SCORING result — RunCheckLive's
-	// per-step verdicts (the substituted, nonce-carrying scoring plan walked host-side) the plugin
-	// scorer consumes (summary, StepByID, Classify). Nil for the box/live/feature plan-run modes,
-	// which carry their verdicts in Steps. CUE-sourced (spec.CheckRunResults) so ONE definition
-	// serves both the host and the relocated plugin scorer (SDD; no alias).
+	// Score is the "score"-mode reply (originally P12 Wave-2; the mode dispatches directly
+	// plugin-side since K1-unblock wave arm 3): the AI-harness SCORING result — the plugin's own
+	// pluginRunCheckLive's per-step verdicts (the substituted, nonce-carrying scoring plan walked
+	// plugin-side) the plugin scorer consumes (summary, StepByID, Classify). Nil for the
+	// box/live/feature plan-run modes, which carry their verdicts in Steps. CUE-sourced
+	// (spec.CheckRunResults) so this same definition still serves the wire shape uniformly
+	// (SDD; no alias) even though both producer and consumer are now plugin-side.
 	Score *spec.CheckRunResults `json:"score,omitempty"`
 }
 

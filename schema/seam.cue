@@ -670,9 +670,10 @@
 // exception the wire mandate's spike-proven path authorizes is now narrowed to EXACTLY
 // the one field that forced it, not the whole type.
 //
-// P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan the
-// host walks via RunCheckLive (NOT the OCI-baked plan the "live" mode extracts). Its per-step
-// scoring verdicts ride the kit.CheckRunReply.Score field (a *CheckRunResults, below).
+// P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan
+// candy/plugin-check's pluginRunCheckLive walks (NOT the OCI-baked plan the "live" mode
+// extracts; walked plugin-side directly since K1-unblock wave arm 3, no host round-trip). Its
+// per-step scoring verdicts ride the kit.CheckRunReply.Score field (a *CheckRunResults, below).
 #CheckRunRequest: {
 	mode!:     string @go(Mode)
 	name?:     string @go(Name)
@@ -686,15 +687,16 @@
 	agent?:    string @go(Agent)
 	timeout?:  string @go(Timeout)
 	no_agent?: bool @go(NoAgent)
-	plan?: [...#Step] @go(Plan) // "score" mode: the substituted scoring plan RunCheckLive walks
+	plan?: [...#Step] @go(Plan) // "score" mode: the substituted scoring plan pluginRunCheckLive walks
 }
 
-// #CheckRunResults / #StepScore / #ScoreSummary — the AI-harness SCORING result model (P12
-// Wave-2). RunCheckLive returns a *CheckRunResults (the scored check:/agent-check: verdicts,
-// keyed by step id for plateau tracking); it doubles as the `charly check box --format yaml`
-// payload the harness scorer parses (ParseCharlyTestOutput). These are plain structs — the
-// gengotypes workhorse — CUE-sourced so BOTH core (RunCheckLive, the "score"-mode reply's
-// Score field) and the relocated plugin scorer import ONE definition (SDD; no alias). Every
+// #CheckRunResults / #StepScore / #ScoreSummary — the AI-harness SCORING result model
+// (originally P12 Wave-2; the mode's walk moved plugin-side in K1-unblock wave arm 3).
+// pluginRunCheckLive returns a *CheckRunResults (the scored check:/agent-check: verdicts, keyed
+// by step id for plateau tracking); it doubles as the `charly check box --format yaml` payload
+// the harness scorer parses (ParseCharlyTestOutput). These are plain structs — the gengotypes
+// workhorse — CUE-sourced so the "score"-mode reply's Score field and the plugin scorer that
+// produces AND consumes it import ONE definition (SDD; no alias). Every
 // field mirrors the former hand-written Go tag set: required (!) fields carry no json-omitempty
 // (json wire byte-identical for the seam reply); optional (?) fields carry it. The retag pass
 // adds ,omitempty to every YAML tag uniformly — inert here since ID/Status are always set and a
@@ -727,6 +729,28 @@
 	fail!:  int @go(Fail, type=int)
 	skip!:  int @go(Skip, type=int)
 }
+
+// #CheckLoadPluginsRequest asks the host to connect the out-of-process plugin candies a check
+// plan's verb words reference (K1-unblock wave — the "live" check-run arm). Verb dispatch itself
+// crosses the wire generically via InvokeProvider (S1 — command:check's pluginVerbResolver), but
+// InvokeProvider only resolves an ALREADY-CONNECTED provider (or a compiled-in one); connecting an
+// out-of-process candy is the plugin-loading M-mechanism (the kernel/plugin boundary law's clause
+// M — plugin discovery/loading/connect stays core), so this seam is the entry point a plugin calls
+// BEFORE dispatching a plan whose verbs may need an out-of-process candy connected. The host runs
+// the UNCHANGED core engine (LoadConfig + resolveCheckRunnerContext: ScanAllCandyWithConfigOpts +
+// collectReferencedPluginWords + loadProjectPlugins) as a pure SIDE EFFECT on its own
+// providerRegistry — every subsequent InvokeProvider call in this same `charly check run`
+// invocation then resolves. Class-generic action noun "check-load-plugins" (F11 — never a
+// substrate/provider word).
+#CheckLoadPluginsRequest: {
+	name!: string @go(Name) // the deploy/bed name whose plan drives the reference scan
+	dir?:  string @go(Dir)  // project dir (empty -> host cwd), matching LoadUnified(dir)
+}
+
+// #CheckLoadPluginsReply is empty on success — connect failures are best-effort WARNINGS on the
+// host (mirroring resolveCheckRunnerContext's existing behavior: an unresolvable plugin fails
+// loudly later, at actual verb dispatch, never here).
+#CheckLoadPluginsReply: {}
 
 // #CheckBedRequest — the transitional check-bed host-session seam (P12 Wave-2, K5-mortal).
 // A compiled-in plugin-check drives the R10 bed sequence over HostBuild("cli"), but the

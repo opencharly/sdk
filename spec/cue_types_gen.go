@@ -3057,6 +3057,42 @@ type CheckResult struct {
 	CapturedValue string `yaml:"captured_value,omitempty" json:"captured_value,omitempty"`
 }
 
+// #CheckEnv is the SINGLE-SOURCED scalar snapshot of a check verb's invocation context (K1-unblock
+// W3 Unit B) — the ONE #CheckEnv def now generating the struct all THREE of its consumers share
+// (a hand-written mirror per consumer is the exact "wire type not CUE-generated" violation SDD
+// forbids in fresh code): (1) charly/provider_checkenv.go's host-side CheckEnv, filled by
+// snapshotCheckEnv from a live *kit.Runner and threaded to an out-of-process verb's Invoke
+// envelope; (2) sdk's out-of-process verb-serve decode (sdk/checkverb.go), which reconstructs a
+// kit.CheckContext's scalar legs from this exact snapshot; (3) candy/plugin-check's
+// InvokeProvider-backed VerbResolver (verb_resolver.go), which marshals this same shape when
+// asking the host to dispatch a verb on its behalf. A 4th consumer (charly/plugin_dispatch_reverse.go's
+// InvokeProvider host handler) DECODES it host-side to construct a detached kit.CheckContext for
+// a CheckVerbProvider target — the SAME snapshot, not a second shape.
+//
+// Every field is optional (a caller fills only what it has — an in-proc/live snapshot has a live
+// Runner to read from; a box-mode run has no ContainerName/Venue; a detached construction may
+// lack DialTimeoutNs). container_name/venue are HOST-COMPUTED-ONLY fields (never authored,
+// carried for the out-of-process appium/vm-target verbs that need charly's naming convention
+// without re-deriving it) — present on the wire regardless of which of the three marshal sites
+// populates them, since all three now share this one shape.
+type CheckEnv struct {
+	Box string `yaml:"box,omitempty" json:"box,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	ContainerName string `yaml:"container_name,omitempty" json:"container_name,omitempty"`
+
+	Distros []string `yaml:"distros,omitempty" json:"distros,omitempty"`
+
+	Venue string `yaml:"venue,omitempty" json:"venue,omitempty"`
+
+	VenueKind string `yaml:"venue_kind,omitempty" json:"venue_kind,omitempty"`
+
+	DialTimeoutNs int64 `yaml:"dial_timeout_ns,omitempty" json:"dial_timeout_ns,omitempty"`
+}
+
 // #RetentionRequest is the "retention" HostBuild kind request: the plugin asks the
 // host to run the shared prune engine host-side (the engine needs the core image
 // inventory + label parsing that stays in core). dir is the project directory
@@ -3524,7 +3560,14 @@ type DeployVenue struct {
 
 // #VenueDescriptor is the SELF-CONTAINED, serializable description of a
 // deploy venue's executor that a substrate LIFECYCLE plugin's
-// OpPrepareVenue / OpTeardownExecutor returns (F6).
+// OpPrepareVenue / OpTeardownExecutor returns (F6). K1-unblock W3 Unit B added the
+// "container" kind (engine/container_name) so a plugin-constructed
+// deploykit.ContainerChain venue — a single-hop *NestedExecutor{Parent:ShellExecutor{},
+// Jump:{Kind:JumpPodmanExec|JumpDockerExec}}, the MOST COMMON check-runner venue — round-trips
+// through kit.DescriptorFromExecutor/VenueFromDescriptor exactly like "shell"/"ssh" already do.
+// This does NOT generalize to arbitrary N-hop composition (a genuinely multi-hop NestedExecutor
+// still degrades to the zero descriptor, unchanged) — it closes the one enumerable, well-known
+// single-hop shape ContainerChain always produces.
 type VenueDescriptor struct {
 	Kind string `yaml:"kind,omitempty" json:"kind"`
 
@@ -3537,6 +3580,13 @@ type VenueDescriptor struct {
 	Args []string `yaml:"args,omitempty" json:"args,omitempty"`
 
 	ConnectTimeout int `yaml:"connect_timeout,omitempty" json:"connect_timeout,omitempty"`
+
+	// engine/container_name are set ONLY for kind "container": the container engine
+	// ("podman"/"docker", selecting JumpPodmanExec vs JumpDockerExec) and the target container
+	// name ContainerChain jumps into.
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	ContainerName string `yaml:"container_name,omitempty" json:"container_name,omitempty"`
 }
 
 // #Diagnostic is one finding from a plugin kind's deep OpValidate check (F7/C8).
@@ -5617,9 +5667,10 @@ type PodLogsOpts struct {
 // exception the wire mandate's spike-proven path authorizes is now narrowed to EXACTLY
 // the one field that forced it, not the whole type.
 //
-// P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan the
-// host walks via RunCheckLive (NOT the OCI-baked plan the "live" mode extracts). Its per-step
-// scoring verdicts ride the kit.CheckRunReply.Score field (a *CheckRunResults, below).
+// P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan
+// candy/plugin-check's pluginRunCheckLive walks (NOT the OCI-baked plan the "live" mode
+// extracts; walked plugin-side directly since K1-unblock wave arm 3, no host round-trip). Its
+// per-step scoring verdicts ride the kit.CheckRunReply.Score field (a *CheckRunResults, below).
 type CheckRunRequest struct {
 	Mode string `yaml:"mode,omitempty" json:"mode"`
 
@@ -5648,12 +5699,13 @@ type CheckRunRequest struct {
 	Plan []Step `yaml:"plan,omitempty" json:"plan,omitempty"`
 }
 
-// #CheckRunResults / #StepScore / #ScoreSummary — the AI-harness SCORING result model (P12
-// Wave-2). RunCheckLive returns a *CheckRunResults (the scored check:/agent-check: verdicts,
-// keyed by step id for plateau tracking); it doubles as the `charly check box --format yaml`
-// payload the harness scorer parses (ParseCharlyTestOutput). These are plain structs — the
-// gengotypes workhorse — CUE-sourced so BOTH core (RunCheckLive, the "score"-mode reply's
-// Score field) and the relocated plugin scorer import ONE definition (SDD; no alias). Every
+// #CheckRunResults / #StepScore / #ScoreSummary — the AI-harness SCORING result model
+// (originally P12 Wave-2; the mode's walk moved plugin-side in K1-unblock wave arm 3).
+// pluginRunCheckLive returns a *CheckRunResults (the scored check:/agent-check: verdicts, keyed
+// by step id for plateau tracking); it doubles as the `charly check box --format yaml` payload
+// the harness scorer parses (ParseCharlyTestOutput). These are plain structs — the gengotypes
+// workhorse — CUE-sourced so the "score"-mode reply's Score field and the plugin scorer that
+// produces AND consumes it import ONE definition (SDD; no alias). Every
 // field mirrors the former hand-written Go tag set: required (!) fields carry no json-omitempty
 // (json wire byte-identical for the seam reply); optional (?) fields carry it. The retag pass
 // adds ,omitempty to every YAML tag uniformly — inert here since ID/Status are always set and a
@@ -5698,6 +5750,30 @@ type ScoreSummary struct {
 	Fail int `yaml:"fail,omitempty" json:"fail"`
 
 	Skip int `yaml:"skip,omitempty" json:"skip"`
+}
+
+// #CheckLoadPluginsRequest asks the host to connect the out-of-process plugin candies a check
+// plan's verb words reference (K1-unblock wave — the "live" check-run arm). Verb dispatch itself
+// crosses the wire generically via InvokeProvider (S1 — command:check's pluginVerbResolver), but
+// InvokeProvider only resolves an ALREADY-CONNECTED provider (or a compiled-in one); connecting an
+// out-of-process candy is the plugin-loading M-mechanism (the kernel/plugin boundary law's clause
+// M — plugin discovery/loading/connect stays core), so this seam is the entry point a plugin calls
+// BEFORE dispatching a plan whose verbs may need an out-of-process candy connected. The host runs
+// the UNCHANGED core engine (LoadConfig + resolveCheckRunnerContext: ScanAllCandyWithConfigOpts +
+// collectReferencedPluginWords + loadProjectPlugins) as a pure SIDE EFFECT on its own
+// providerRegistry — every subsequent InvokeProvider call in this same `charly check run`
+// invocation then resolves. Class-generic action noun "check-load-plugins" (F11 — never a
+// substrate/provider word).
+type CheckLoadPluginsRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+}
+
+// #CheckLoadPluginsReply is empty on success — connect failures are best-effort WARNINGS on the
+// host (mirroring resolveCheckRunnerContext's existing behavior: an unresolvable plugin fails
+// loudly later, at actual verb dispatch, never here).
+type CheckLoadPluginsReply struct {
 }
 
 // #CheckBedRequest — the transitional check-bed host-session seam (P12 Wave-2, K5-mortal).

@@ -90,16 +90,110 @@ func TestDescriptorFromExecutor_SSH(t *testing.T) {
 }
 
 // TestDescriptorFromExecutor_Unrecognized proves the default case: a
-// concrete executor type DescriptorFromExecutor does not recognize (e.g. a
-// composed *NestedExecutor, which cannot be flattened into one
-// {kind,host,port} tuple) returns the zero VenueDescriptor{} — callers treat
-// that identically to VenueFromDescriptor's own "" case (no venue; keep
-// whatever executor is already in hand).
+// concrete executor type/shape DescriptorFromExecutor does not recognize
+// (e.g. a genuinely multi-hop composed *NestedExecutor, which cannot be
+// flattened into one descriptor tuple) returns the zero VenueDescriptor{} —
+// callers treat that identically to VenueFromDescriptor's own "" case (no
+// venue; keep whatever executor is already in hand). Table-driven over three
+// shapes deliberately OUTSIDE the recognized single-hop container arm: an SSH
+// jump (a genuine second hop), a non-ShellExecutor parent (composition), and
+// non-empty ExtraArgs (the container arm can't preserve them in the
+// descriptor, so it correctly declines rather than silently dropping them).
 func TestDescriptorFromExecutor_Unrecognized(t *testing.T) {
-	nested := &NestedExecutor{Parent: ShellExecutor{}, Jump: NestedJump{Kind: JumpPodmanExec, Target: "child"}}
-	d := DescriptorFromExecutor(nested)
-	if !reflect.DeepEqual(d, spec.VenueDescriptor{}) {
-		t.Fatalf("want the zero VenueDescriptor for an unrecognized executor type, got %#v", d)
+	cases := map[string]*NestedExecutor{
+		"ssh jump (genuine second hop)": {
+			Parent: ShellExecutor{},
+			Jump:   NestedJump{Kind: JumpSSH, Target: "charly-arch"},
+		},
+		"non-shell parent (composition)": {
+			Parent: &SSHExecutor{Host: "charly-arch"},
+			Jump:   NestedJump{Kind: JumpPodmanExec, Target: "child"},
+		},
+		"non-empty ExtraArgs": {
+			Parent: ShellExecutor{},
+			Jump:   NestedJump{Kind: JumpPodmanExec, Target: "child", ExtraArgs: []string{"--env", "FOO=bar"}},
+		},
+	}
+	for name, nested := range cases {
+		t.Run(name, func(t *testing.T) {
+			d := DescriptorFromExecutor(nested)
+			if !reflect.DeepEqual(d, spec.VenueDescriptor{}) {
+				t.Fatalf("want the zero VenueDescriptor for an unrecognized shape, got %#v", d)
+			}
+		})
+	}
+}
+
+// TestDescriptorFromExecutor_Container proves the K1-unblock W3 Unit B arm: the ONE enumerable
+// *NestedExecutor shape deploykit.ContainerChain always produces (Parent a plain ShellExecutor{},
+// a single JumpPodmanExec/JumpDockerExec hop, no ExtraArgs) round-trips to a "container"
+// descriptor carrying Engine + ContainerName.
+func TestDescriptorFromExecutor_Container(t *testing.T) {
+	cases := []struct {
+		name       string
+		jumpKind   JumpKind
+		wantEngine string
+	}{
+		{"podman", JumpPodmanExec, "podman"},
+		{"docker", JumpDockerExec, "docker"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nested := &NestedExecutor{Parent: ShellExecutor{}, Jump: NestedJump{Kind: tc.jumpKind, Target: "charly-checkbox-1-1"}}
+			d := DescriptorFromExecutor(nested)
+			want := spec.VenueDescriptor{Kind: "container", Engine: tc.wantEngine, ContainerName: "charly-checkbox-1-1"}
+			if !reflect.DeepEqual(d, want) {
+				t.Fatalf("want %#v, got %#v", want, d)
+			}
+		})
+	}
+}
+
+// TestVenueFromDescriptor_Container proves the forward direction: a "container" descriptor
+// re-materializes the exact NestedExecutor shape deploykit.ContainerChain produces. Engine
+// defaults to podman when empty, matching ContainerChain's own default.
+func TestVenueFromDescriptor_Container(t *testing.T) {
+	cases := []struct {
+		name         string
+		engine       string
+		wantJumpKind JumpKind
+	}{
+		{"podman", "podman", JumpPodmanExec},
+		{"docker", "docker", JumpDockerExec},
+		{"empty engine defaults to podman", "", JumpPodmanExec},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exec, err := VenueFromDescriptor(spec.VenueDescriptor{Kind: "container", Engine: tc.engine, ContainerName: "charly-checkbox-1-1"})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			nested, ok := exec.(*NestedExecutor)
+			if !ok {
+				t.Fatalf("want *NestedExecutor, got %#v", exec)
+			}
+			if _, ok := nested.Parent.(ShellExecutor); !ok {
+				t.Fatalf("want a plain ShellExecutor{} parent, got %#v", nested.Parent)
+			}
+			if nested.Jump.Kind != tc.wantJumpKind || nested.Jump.Target != "charly-checkbox-1-1" {
+				t.Fatalf("Jump not threaded through correctly: %#v", nested.Jump)
+			}
+		})
+	}
+}
+
+// TestVenueDescriptorRoundTrip_Container proves the full round-trip property (matching
+// TestVenueDescriptorRoundTrip_Shell/SSH's shape) for the container venue every plain
+// pod/container check runs against — the check-runner family's most common case.
+func TestVenueDescriptorRoundTrip_Container(t *testing.T) {
+	original := ContainerChainFromDescriptor("podman", "charly-checkbox-1-1")
+	d := DescriptorFromExecutor(original)
+	exec, err := VenueFromDescriptor(d)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(exec, original) {
+		t.Fatalf("round trip did not reproduce the original executor: want %#v, got %#v", original, exec)
 	}
 }
 

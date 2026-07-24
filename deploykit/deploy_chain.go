@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/vmshared"
 )
 
@@ -246,15 +247,13 @@ func RootExecutorForDeployNode(node *BundleNode) (DeployExecutor, error) {
 // simple `charly check live <name>` path where there is no nested dotted path to
 // walk — equivalent to ResolveDeployChain on a single-segment dotted
 // path that resolves to a pod node, but skips the tree lookup.
+//
+// Delegates to kit.ContainerChainFromDescriptor (K1-unblock W3 Unit B, R3 — one construction, not
+// two): that function is the SAME shape, promoted to sdk/kit so kit.VenueFromDescriptor's new
+// "container" VenueDescriptor kind re-materializes byte-identically to this constructor, letting
+// a plugin-constructed ContainerChain venue round-trip over InvokeProvider's VenueDescriptor seam.
 func ContainerChain(engine, containerName string) DeployExecutor {
-	jumpKind := JumpPodmanExec
-	if engine == "docker" {
-		jumpKind = JumpDockerExec
-	}
-	return &NestedExecutor{
-		Parent: ShellExecutor{},
-		Jump:   NestedJump{Kind: jumpKind, Target: containerName},
-	}
+	return kit.ContainerChainFromDescriptor(engine, containerName)
 }
 
 // didYouMeanDeploy returns a "; available deployments: a, b, c" hint

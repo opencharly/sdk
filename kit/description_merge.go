@@ -4,9 +4,10 @@ import "github.com/opencharly/sdk/spec"
 
 // description_merge.go — P12a follow-up: MergeDeployDescriptions relocated from
 // charly/description_collect.go. Pure over LabelDescriptionSet/LabeledDescription/spec.Step
-// (already kit-native types, see planrun.go) — zero core state. charly core's callers
-// (check_cmd.go's checkLivePod, the "live" gather engine) are themselves GATED (need
-// LoadUnified/ExtractMetadata), so they stay core and call kit.MergeDeployDescriptions.
+// (already kit-native types, see planrun.go) — zero core state. Its sole caller, the "live"
+// gather engine's pod path, is plugin-side too (candy/plugin-check/live_gather.go's
+// pluginCheckLivePod, K1-unblock wave arm 1 — the former charly/check_cmd.go's checkLivePod,
+// deleted) and calls kit.MergeDeployDescriptions directly.
 
 // MergeDeployDescriptions overlays a deployment node's local `plan:` steps onto
 // a label-baked LabelDescriptionSet's Deploy section. A baked deploy step with

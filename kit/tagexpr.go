@@ -50,10 +50,10 @@ func (t *TagExpr) Match(tags []string) bool {
 // ValidateTagExpr syntax-checks an optional --tag expression (rejecting a malformed one)
 // without keeping the parsed *TagExpr — moved from charly/check_feature_run.go (CHECK-wave), a
 // pure wrapper with zero core-state coupling. It does NOT apply the parsed expression as a step
-// filter: kit.RunPlan (the walk both hostFeatureBox and hostFeatureLive drive) takes no
-// tag-filter parameter and walks every step unconditionally — a confirmed, RCA'd, non-blocking
-// gap (per-tag filtering was never wired past this parse), routed to the next check-correctness
-// thematic batch.
+// filter: kit.RunPlan (the walk both hostFeatureBox, still core, and
+// candy/plugin-check's pluginCheckRunFeatureLive drive) takes no tag-filter parameter and walks
+// every step unconditionally — a confirmed, RCA'd, non-blocking gap (per-tag filtering was never
+// wired past this parse), routed to the next check-correctness thematic batch.
 func ValidateTagExpr(tag string) error {
 	if strings.TrimSpace(tag) == "" {
 		return nil

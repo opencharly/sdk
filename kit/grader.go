@@ -3,11 +3,12 @@ package kit
 // grader.go — the Agent Driven Evaluation (ADE) agent grader (P12a: relocated from
 // charly/check_feature_grader.go). AgentGrader is the production StepGrader (the
 // interface + GraderRequest live in planrun.go, in this same package): it drives the
-// configured `kind: agent` CLI against a live deployment. Core CONSTRUCTS an
-// `&AgentGrader{}` value directly (host_build_check_run.go's hostCheckRunFeatureLive,
-// resolving the agent spec via resolveGraderAgent — a GATED core function that stays
-// core because it needs LoadUnified), so AgentGrader itself must live somewhere core
-// can reference without importing a plugin candy — sdk/kit, never candy/plugin-check.
+// configured `kind: agent` CLI against a live deployment. candy/plugin-check CONSTRUCTS
+// an `&AgentGrader{}` value directly (feature_run_gather.go's pluginCheckRunFeatureLive,
+// resolving the agent spec via resolveAgentSpec — an InvokeProvider(kind:agent, OpResolve)
+// call off the resolved-project envelope's AgentBodies, K1-unblock wave arm 2, no core
+// round-trip), so AgentGrader lives in sdk/kit where both a plugin candy and (were core
+// ever to need it again) core itself can reference it without a cross-module import.
 //
 // ADE binds each plan step to a verifier BY SHAPE: a step that embeds a check verb
 // (file/http/cdp/mcp/command/…) is graded DETERMINISTICALLY by the runner; a
