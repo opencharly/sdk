@@ -728,6 +728,28 @@
 	skip!:  int @go(Skip, type=int)
 }
 
+// #CheckLoadPluginsRequest asks the host to connect the out-of-process plugin candies a check
+// plan's verb words reference (K1-unblock wave — the "live" check-run arm). Verb dispatch itself
+// crosses the wire generically via InvokeProvider (S1 — command:check's pluginVerbResolver), but
+// InvokeProvider only resolves an ALREADY-CONNECTED provider (or a compiled-in one); connecting an
+// out-of-process candy is the plugin-loading M-mechanism (the kernel/plugin boundary law's clause
+// M — plugin discovery/loading/connect stays core), so this seam is the entry point a plugin calls
+// BEFORE dispatching a plan whose verbs may need an out-of-process candy connected. The host runs
+// the UNCHANGED core engine (LoadConfig + resolveCheckRunnerContext: ScanAllCandyWithConfigOpts +
+// collectReferencedPluginWords + loadProjectPlugins) as a pure SIDE EFFECT on its own
+// providerRegistry — every subsequent InvokeProvider call in this same `charly check run`
+// invocation then resolves. Class-generic action noun "check-load-plugins" (F11 — never a
+// substrate/provider word).
+#CheckLoadPluginsRequest: {
+	name!: string @go(Name) // the deploy/bed name whose plan drives the reference scan
+	dir?:  string @go(Dir)  // project dir (empty -> host cwd), matching LoadUnified(dir)
+}
+
+// #CheckLoadPluginsReply is empty on success — connect failures are best-effort WARNINGS on the
+// host (mirroring resolveCheckRunnerContext's existing behavior: an unresolvable plugin fails
+// loudly later, at actual verb dispatch, never here).
+#CheckLoadPluginsReply: {}
+
 // #CheckBedRequest — the transitional check-bed host-session seam (P12 Wave-2, K5-mortal).
 // A compiled-in plugin-check drives the R10 bed sequence over HostBuild("cli"), but the
 // lock/lease/env lifecycle + the node-derived bed shape are core state a separate module
