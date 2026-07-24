@@ -5065,6 +5065,12 @@ type DeployTreeResolveReply struct {
 // in-process. ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain
 // the OLD in-core walk built (deriveChildExecutorForPath is pure Go over spec/kit types and is
 // re-run HOST-side here) — a live DeployExecutor never needs to cross the wire.
+//
+// target/vm_entity (W4 pure-helpers relocation) are PRE-RESOLVED plugin-side (classifyNodeTarget
+// / resolveVmEntity — both pure functions of node+path, now living in candy/plugin-bundle) and
+// carried across the wire so the host-side dispatch no longer recomputes them: the host trusts
+// target/vm_entity as sent (an empty vm_entity is itself a valid resolved value — "no vm entity
+// applies to this node" — never a sentinel meaning "recompute me").
 type DeployNodeDispatchRequest struct {
 	Path string `yaml:"path,omitempty" json:"path"`
 
@@ -5109,6 +5115,10 @@ type DeployNodeDispatchRequest struct {
 	Disposable bool `yaml:"disposable,omitempty" json:"disposable,omitempty"`
 
 	Lifecycle string `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+
+	VmEntity string `yaml:"vm_entity,omitempty" json:"vm_entity,omitempty"`
 }
 
 type DeployNodeDispatchReply struct {
