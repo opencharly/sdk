@@ -2365,6 +2365,15 @@ type BuildEnv struct {
 	ImageBuildDir string `yaml:"image_build_dir,omitempty" json:"image_build_dir,omitempty"`
 
 	ContextRelPrefix string `yaml:"context_rel_prefix,omitempty" json:"context_rel_prefix,omitempty"`
+
+	// A pod-overlay deploy's add_candy: refs (if any) — threaded so a HOST-COUPLED word's OpEmit
+	// (candy/plugin-installstep's getGenerator) can widen ITS OWN "resolved-project" envelope
+	// re-fetch the same way ScanAllCandyWithConfigOpts' ResolveOpts.ExtraCandyRefs already widens
+	// the host's own overlay Generator (hostBuildOverlay). Without this, an add_candy candy the
+	// overlay build correctly resolved host-side is absent from this plugin's INDEPENDENT
+	// envelope fetch, and candyByName's REMOTE-candy fallback still misses (RCA'd K1-alpha
+	// regression: check-addcandy-pod's overlay-deploy path, "candy not found").
+	ExtraCandyRefs []string `yaml:"extra_candy_refs,omitempty" json:"extra_candy_refs,omitempty"`
 }
 
 // #EmitReply is what a plugin verb/builder returns from an OpEmit Invoke at
@@ -4832,6 +4841,18 @@ type ResolvedProjectRequest struct {
 	// applies the same local override used by the later R10 session only for the
 	// duration of this projection.
 	LocalSuperproject bool `yaml:"local_superproject,omitempty" json:"local_superproject,omitempty"`
+
+	// A caller compiling against an `add_candy:`/`--add-candy` ref (a candy the project's own
+	// image-closure walk never reaches — the reachability-scoped remote-ref collection is
+	// deliberately narrower than "every candy anywhere," R1) widens the scan the SAME way
+	// ScanAllCandyWithConfigOpts' ResolveOpts.ExtraCandyRefs already does for a check bed's own
+	// add_candy: (deploy_add_shared.go's deployNodePluginContext) — without this, the compile
+	// plugin's OWN independent resolved-project re-fetch (candy/plugin-bundle's compile.go)
+	// never discovers a remote add-candy ref the HOST's separate scanCandiesForRef call already
+	// pulled in via its own synthetic-augmented scan, and BuildDeployPlan fails "candy not in
+	// resolved-project envelope" (RCA'd K1-alpha regression, check-addcandy-pod/check-stepkind-
+	// emit-pod).
+	ExtraCandyRefs []string `yaml:"extra_candy_refs,omitempty" json:"extra_candy_refs,omitempty"`
 }
 
 type Resource struct {
@@ -6015,6 +6036,13 @@ type DeployCompileRequest struct {
 	HostContextJSON RawBody `yaml:"host_context,omitempty" json:"host_context"`
 
 	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+
+	// The add_candy:/--add-candy ref(s) (if any) this compile call's own candy set was widened
+	// with host-side (scanCandiesForRef's synthetic-augmented scan, for a REMOTE ref) — threaded
+	// into the plugin's OWN HostBuild("resolved-project") re-fetch (as its extra_candy_refs) so
+	// the envelope's candy map ALSO carries them (RCA'd K1-alpha regression: the two scans were
+	// independent, so a remote add-candy resolved host-side never reached the envelope).
+	ExtraCandyRefs []string `yaml:"extra_candy_refs,omitempty" json:"extra_candy_refs,omitempty"`
 }
 
 // #DeployCompileReply is the OpCompile reply: the compiled plans as marshalled

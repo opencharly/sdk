@@ -17,6 +17,14 @@
 	dev_local_pkg?:      bool   @go(DevLocalPkg)
 	image_build_dir?:    string @go(ImageBuildDir)
 	context_rel_prefix?: string @go(ContextRelPrefix)
+	// A pod-overlay deploy's add_candy: refs (if any) — threaded so a HOST-COUPLED word's OpEmit
+	// (candy/plugin-installstep's getGenerator) can widen ITS OWN "resolved-project" envelope
+	// re-fetch the same way ScanAllCandyWithConfigOpts' ResolveOpts.ExtraCandyRefs already widens
+	// the host's own overlay Generator (hostBuildOverlay). Without this, an add_candy candy the
+	// overlay build correctly resolved host-side is absent from this plugin's INDEPENDENT
+	// envelope fetch, and candyByName's REMOTE-candy fallback still misses (RCA'd K1-alpha
+	// regression: check-addcandy-pod's overlay-deploy path, "candy not found").
+	extra_candy_refs?: [...string] @go(ExtraCandyRefs)
 }
 
 // #EmitReply is what a plugin verb/builder returns from an OpEmit Invoke at
