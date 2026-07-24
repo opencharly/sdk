@@ -4,8 +4,10 @@ package kit
 // remote machine over SSH. Shells out to the system `ssh` binary so
 // ~/.ssh/config, agent forwarding, and ControlMaster all Just Work.
 //
-// This is the DI-shell relocation (S6, the same shape as install_build_act.go's
-// deploykit.CompileActOp = compileActOp): ReexecOverSSH's body is 100%
+// This is the DI-shell relocation (S6, the same shape as
+// deploykit/compile_construct_step.go's buildGenericOpStep — K5-A item 1's
+// ctx/exec-threaded successor to the retired core-init()-set
+// deploykit.CompileActOp func var): ReexecOverSSH's body is 100%
 // stdlib+sdk/kit — zero core-only calls — so it lives here as a plain exported
 // function. The ONE thing that MUST stay in charly's own main.go is the ~15-line
 // "should I reexec" decision (shouldReexecForHost) — it must run before Kong
