@@ -33,8 +33,9 @@ import (
 //
 // MergeDeployDescriptions (the per-host deploy-plan overlay onto a baked LabelDescriptionSet)
 // lives in sdk/kit (description_merge.go) — pure over LabelDescriptionSet/spec.Step, zero core
-// state. Its callers (check_cmd.go's checkLivePod, the "live" gather engine) stay core (they
-// need LoadUnified/ExtractMetadata) and call kit.MergeDeployDescriptions.
+// state. Its sole caller, the "live" gather engine's pod path, is plugin-side too
+// (candy/plugin-check/live_gather.go's pluginCheckLivePod, K1-unblock wave arm 1 — the former
+// charly/check_cmd.go's checkLivePod, deleted) and calls kit.MergeDeployDescriptions directly.
 
 // stampStepIntentDo writes the keyword-derived do-mode onto a verb-carrying step's Op.IntentDo
 // (via the shared spec.StepDoMode derivation), so the baked ai.opencharly.description label

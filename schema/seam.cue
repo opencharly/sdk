@@ -670,9 +670,10 @@
 // exception the wire mandate's spike-proven path authorizes is now narrowed to EXACTLY
 // the one field that forced it, not the whole type.
 //
-// P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan the
-// host walks via RunCheckLive (NOT the OCI-baked plan the "live" mode extracts). Its per-step
-// scoring verdicts ride the kit.CheckRunReply.Score field (a *CheckRunResults, below).
+// P12 Wave-2: the "score" mode adds Plan — a substituted, nonce-carrying scoring plan
+// candy/plugin-check's pluginRunCheckLive walks (NOT the OCI-baked plan the "live" mode
+// extracts; walked plugin-side directly since K1-unblock wave arm 3, no host round-trip). Its
+// per-step scoring verdicts ride the kit.CheckRunReply.Score field (a *CheckRunResults, below).
 #CheckRunRequest: {
 	mode!:     string @go(Mode)
 	name?:     string @go(Name)
@@ -686,15 +687,16 @@
 	agent?:    string @go(Agent)
 	timeout?:  string @go(Timeout)
 	no_agent?: bool @go(NoAgent)
-	plan?: [...#Step] @go(Plan) // "score" mode: the substituted scoring plan RunCheckLive walks
+	plan?: [...#Step] @go(Plan) // "score" mode: the substituted scoring plan pluginRunCheckLive walks
 }
 
-// #CheckRunResults / #StepScore / #ScoreSummary — the AI-harness SCORING result model (P12
-// Wave-2). RunCheckLive returns a *CheckRunResults (the scored check:/agent-check: verdicts,
-// keyed by step id for plateau tracking); it doubles as the `charly check box --format yaml`
-// payload the harness scorer parses (ParseCharlyTestOutput). These are plain structs — the
-// gengotypes workhorse — CUE-sourced so BOTH core (RunCheckLive, the "score"-mode reply's
-// Score field) and the relocated plugin scorer import ONE definition (SDD; no alias). Every
+// #CheckRunResults / #StepScore / #ScoreSummary — the AI-harness SCORING result model
+// (originally P12 Wave-2; the mode's walk moved plugin-side in K1-unblock wave arm 3).
+// pluginRunCheckLive returns a *CheckRunResults (the scored check:/agent-check: verdicts, keyed
+// by step id for plateau tracking); it doubles as the `charly check box --format yaml` payload
+// the harness scorer parses (ParseCharlyTestOutput). These are plain structs — the gengotypes
+// workhorse — CUE-sourced so the "score"-mode reply's Score field and the plugin scorer that
+// produces AND consumes it import ONE definition (SDD; no alias). Every
 // field mirrors the former hand-written Go tag set: required (!) fields carry no json-omitempty
 // (json wire byte-identical for the seam reply); optional (?) fields carry it. The retag pass
 // adds ,omitempty to every YAML tag uniformly — inert here since ID/Status are always set and a
