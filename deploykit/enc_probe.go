@@ -91,7 +91,31 @@ func EncPlanFor(boxName, instance, volume, scopeDir string) ([]spec.EncVolumePla
 	if err != nil {
 		return nil, err
 	}
-	storageDir := DeployStorageDir(boxName, instance)
+	return buildEncPlan(mounts, storagePath, DeployStorageDir(boxName, instance), volume, scopeDir), nil
+}
+
+// EncPlanForConfig is EncPlanFor's SEAM-ROUTABLE sibling: identical plan-building logic,
+// but takes an ALREADY-LOADED dc instead of reaching the package-level LoadBundleConfig()
+// itself. EncPlanFor (and the LoadEncryptedVolume it calls) is placement-DEPENDENT — it
+// silently degrades to "no encrypted volumes" (not an error) unless DeployStateHost is
+// registered, which only happens in charly-core's own init(); safe today because
+// candy/plugin-pod's command:config is compiled-in-only, but that is a per-BUILD fact, not
+// a guarantee (the exact class of latent bug candy/plugin-pod/remove_orchestration.go's
+// resolveSidecarNames hit and fixed the same way). A caller that might ever run
+// out-of-process loads dc itself via LoadBundleConfigViaSeam (the EXISTING
+// "pod-config-load-bundle" seam — R3, no new seam invented) and calls this instead — see
+// candy/plugin-pod/enc_cmd.go.
+func EncPlanForConfig(dc *BundleConfig, boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
+	mounts, storagePath, err := LoadEncryptedVolumeFromConfig(dc, boxName, instance)
+	if err != nil {
+		return nil, err
+	}
+	return buildEncPlan(mounts, storagePath, DeployStorageDir(boxName, instance), volume, scopeDir), nil
+}
+
+// buildEncPlan is the plan-assembly body shared by EncPlanFor/EncPlanForConfig (R3) — pure,
+// no config-loading, so it carries no placement dependency of its own.
+func buildEncPlan(mounts []vmshared.DeployVolumeConfig, storagePath, storageDir, volume, scopeDir string) []spec.EncVolumePlan {
 	var plan []spec.EncVolumePlan
 	for _, m := range mounts {
 		if volume != "" && m.Name != volume {
@@ -109,7 +133,7 @@ func EncPlanFor(boxName, instance, volume, scopeDir string) ([]spec.EncVolumePla
 			Mounted:     IsEncryptedMounted(plainDir),
 		})
 	}
-	return plan, nil
+	return plan
 }
 
 // FuseConfPath is the fuse.conf location; a package var so tests point it elsewhere.
@@ -135,11 +159,6 @@ func FuseAllowOtherEnabled() bool {
 // LoadEncryptedVolume loads encrypted volume configs from charly.yml for an image.
 // Returns the deploy volume configs with type=encrypted and the encrypted storage path.
 func LoadEncryptedVolume(boxName, instance string) ([]vmshared.DeployVolumeConfig, string, error) {
-	rt, err := kit.ResolveRuntime()
-	if err != nil {
-		return nil, "", err
-	}
-
 	// Propagate LoadBundleConfig errors instead of swallowing them. A
 	// schema error (e.g. the 2026-05-12 require-image cutover rejecting
 	// pre-cutover deploy.yml entries) used to silently degrade to "no
@@ -151,6 +170,18 @@ func LoadEncryptedVolume(boxName, instance string) ([]vmshared.DeployVolumeConfi
 	dc, err := LoadBundleConfig()
 	if err != nil {
 		return nil, "", fmt.Errorf("loading deploy config for encrypted volumes: %w", err)
+	}
+	return LoadEncryptedVolumeFromConfig(dc, boxName, instance)
+}
+
+// LoadEncryptedVolumeFromConfig is LoadEncryptedVolume's SEAM-ROUTABLE sibling — identical
+// lookup logic given an ALREADY-LOADED dc (nil dc == no per-host overlay, matching
+// LoadBundleConfig's own nil-on-absent contract). See EncPlanForConfig's doc comment for
+// the placement-dependency rationale a caller of this variant is avoiding.
+func LoadEncryptedVolumeFromConfig(dc *BundleConfig, boxName, instance string) ([]vmshared.DeployVolumeConfig, string, error) {
+	rt, err := kit.ResolveRuntime()
+	if err != nil {
+		return nil, "", err
 	}
 	if dc == nil {
 		return nil, rt.EncryptedStoragePath, nil
@@ -230,15 +261,33 @@ func EncStatus(boxName, instance string) error {
 	if err != nil {
 		return err
 	}
+	printEncStatus(mounts, storagePath, DeployStorageDir(boxName, instance))
+	return nil
+}
 
+// EncStatusFromConfig is EncStatus's SEAM-ROUTABLE sibling — identical output given an
+// ALREADY-LOADED dc. See EncPlanForConfig's doc comment for the placement-dependency
+// rationale a caller of this variant is avoiding.
+func EncStatusFromConfig(dc *BundleConfig, boxName, instance string) error {
+	mounts, storagePath, err := LoadEncryptedVolumeFromConfig(dc, boxName, instance)
+	if err != nil {
+		return err
+	}
+	printEncStatus(mounts, storagePath, DeployStorageDir(boxName, instance))
+	return nil
+}
+
+// printEncStatus is the output body shared by EncStatus/EncStatusFromConfig (R3) — pure,
+// no config-loading, so it carries no placement dependency of its own.
+func printEncStatus(mounts []vmshared.DeployVolumeConfig, storagePath, storageDir string) {
 	if len(mounts) == 0 {
 		fmt.Println("No encrypted bind mounts configured")
-		return nil
+		return
 	}
 
 	fmt.Printf("%-20s %-12s %-8s %s\n", "NAME", "INITIALIZED", "MOUNTED", "PATH")
 	for _, m := range mounts {
-		volDir := ResolveEncVolumeDir(m, storagePath, DeployStorageDir(boxName, instance))
+		volDir := ResolveEncVolumeDir(m, storagePath, storageDir)
 		cipherDir := filepath.Join(volDir, "cipher")
 		plainDir := filepath.Join(volDir, "plain")
 
@@ -252,7 +301,6 @@ func EncStatus(boxName, instance string) error {
 		}
 		fmt.Printf("%-20s %-12s %-8s %s\n", m.Name, initialized, mounted, plainDir)
 	}
-	return nil
 }
 
 // HasEncryptedBindMounts returns true if any bind mount is encrypted.
