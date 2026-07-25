@@ -77,16 +77,24 @@ type ProjectWalker interface {
 }
 
 // MaterializedProject accumulates the kind-decoded ENTITY maps ONE document's or ONE discovered
-// node's fold produces — the SAME 9 fields charly-core's *UnifiedFile carries for this purpose
-// (Box/Candy/VM/Pod/K8s/Local/Android/Bundle/PluginKinds); the host copies them in before a
-// Materializer call and back out after (cheap map-header copies — maps are reference types, so
-// this is NOT a deep copy).
+// node's fold produces — the SAME fields charly-core's *UnifiedFile carries for this purpose
+// (Box/Candy/Bundle/PluginKinds); the host copies them in before a Materializer call and back out
+// after (cheap map-header copies — maps are reference types, so this is NOT a deep copy).
+//
+// The 5 standalone-substrate-TEMPLATE kinds (vm/pod/k8s/local/android) do NOT get their own
+// dedicated fields here — they fold into PluginKinds[disc][name] like every other templated kind
+// (distro/builder/init/sidecar/resource/agent already do), so foldStandaloneTemplateReply
+// (charly/node_normalize.go) needs NO per-kind-word switch to pick a destination field: the
+// generic write `acc.PluginKinds[disc][name] = replyJSON` IS the fold, for any disc. charly-core's
+// UnifiedFile.VM()/.Pod()/.K8s()/.Local()/.Android() are now DERIVED accessor methods reading
+// PluginKinds, mirroring the established Distros()/Builders()/Inits() pattern — not stored fields
+// — so there is nothing left to copy for them either.
 //
 // SDD classification (hand-written, non-wire — precedent: ParsedProject/LoadedProject/CandyRefs/
 // ScannedCandy above, the established sibling family this type extends): same-process PIPELINE
 // STATE crossing ONLY the compiled-in typed Materializer seam below — never marshaled, because the
 // loader plugin is bootstrap-critical and ALWAYS compiled-in (see the package doc above). A live
-// `cue exp gengotypes` spike on this exact shape (9 fields, all already-portable
+// `cue exp gengotypes` spike on this exact shape (all fields already-portable
 // map[string]json.RawMessage / map[string]BundleNode / map[string]map[string]json.RawMessage —
 // zero disjunctions, zero open tails) would generate a faithful plain struct per the CAN/CANNOT
 // quick reference in /charly-internals:go — CUE-sourcing it is NOT precluded by shape. It stays
@@ -99,11 +107,6 @@ type ProjectWalker interface {
 type MaterializedProject struct {
 	Box         map[string]json.RawMessage
 	Candy       map[string]json.RawMessage
-	VM          map[string]json.RawMessage
-	Pod         map[string]json.RawMessage
-	K8s         map[string]json.RawMessage
-	Local       map[string]json.RawMessage
-	Android     map[string]json.RawMessage
 	Bundle      map[string]BundleNode
 	PluginKinds map[string]map[string]json.RawMessage
 }
