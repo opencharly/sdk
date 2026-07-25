@@ -1,10 +1,15 @@
 package deploykit
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/opencharly/sdk/spec"
 )
 
 // TestIsEncryptedInitialized / TestHasEncryptedBindMounts / TestEncServiceFilename /
@@ -239,6 +244,239 @@ func TestCipherPopulatedPlainEmpty(t *testing.T) {
 		}
 		if CipherPopulatedPlainEmpty(cipher, filepath.Join(dir, "missing-plain")) {
 			t.Error("expected false (plain dir does not exist)")
+		}
+	})
+}
+
+// --- LoadEncryptedVolumeFromConfig / EncPlanForConfig / EncStatusFromConfig ---
+//
+// These are the SEAM-ROUTABLE siblings of LoadEncryptedVolume/EncPlanFor/EncStatus: instead
+// of reaching the package-level LoadBundleConfig() themselves, they take an ALREADY-LOADED
+// *BundleConfig. Every fixture below sets an explicit Host: on its encrypted volume so the
+// derived CipherDir/PlainDir/ScopeUnit are fully deterministic — independent of whatever
+// engine.encrypted_storage_path a live ~/.config/charly/charly.yml on the test host might
+// carry (only kit.ResolveRuntime()'s ENGINE AUTO-DETECT is exercised for real, which needs
+// nothing beyond `podman`/`docker` on PATH and never fails the test on its own).
+
+// encFixtureConfig builds a *BundleConfig with one encrypted + one plain volume under
+// DeployKey(boxName, instance), each with an explicit Host: so downstream path derivation
+// needs no runtime-config lookup.
+func encFixtureConfig(boxName, instance, encHost, plainHost string) *BundleConfig {
+	return &BundleConfig{
+		Bundle: map[string]BundleNode{
+			DeployKey(boxName, instance): {
+				Volume: []spec.DeployVolume{
+					{Name: "secrets", Type: "encrypted", Host: encHost},
+					{Name: "data", Type: "plain", Host: plainHost},
+				},
+			},
+		},
+	}
+}
+
+func TestLoadEncryptedVolumeFromConfig(t *testing.T) {
+	t.Run("filters to encrypted-type volumes only, for the matching deploy key", func(t *testing.T) {
+		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		mounts, _, err := LoadEncryptedVolumeFromConfig(dc, "myapp", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(mounts) != 1 || mounts[0].Name != "secrets" || mounts[0].Type != "encrypted" {
+			t.Errorf("LoadEncryptedVolumeFromConfig() mounts = %+v, want exactly the one encrypted volume", mounts)
+		}
+	})
+
+	t.Run("no entry for the deploy key returns an empty (not error) result", func(t *testing.T) {
+		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		mounts, _, err := LoadEncryptedVolumeFromConfig(dc, "other-app", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(mounts) != 0 {
+			t.Errorf("LoadEncryptedVolumeFromConfig(unmatched key) mounts = %+v, want empty", mounts)
+		}
+	})
+
+	t.Run("nil dc (no per-host overlay) returns an empty result, no error", func(t *testing.T) {
+		mounts, _, err := LoadEncryptedVolumeFromConfig(nil, "myapp", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(mounts) != 0 {
+			t.Errorf("LoadEncryptedVolumeFromConfig(nil dc) mounts = %+v, want empty", mounts)
+		}
+	})
+
+	t.Run("instance-qualified deploy key is looked up distinctly from the base key", func(t *testing.T) {
+		dc := encFixtureConfig("myapp", "prod", "/srv/enc/secrets-prod", "/srv/plain/data-prod")
+		// The base (no-instance) key must NOT see the instance-qualified entry's volumes.
+		baseMounts, _, err := LoadEncryptedVolumeFromConfig(dc, "myapp", "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(baseMounts) != 0 {
+			t.Errorf("base-key lookup leaked the instance-qualified entry: %+v", baseMounts)
+		}
+		instMounts, _, err := LoadEncryptedVolumeFromConfig(dc, "myapp", "prod")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(instMounts) != 1 || instMounts[0].Host != "/srv/enc/secrets-prod" {
+			t.Errorf("instance-key lookup = %+v, want the prod-instance encrypted volume", instMounts)
+		}
+	})
+}
+
+func TestEncPlanForConfig(t *testing.T) {
+	t.Run("builds a plan entry with the deterministic derived paths + fresh-state defaults", func(t *testing.T) {
+		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		plan, err := EncPlanForConfig(dc, "myapp", "", "", "myapp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan) != 1 {
+			t.Fatalf("EncPlanForConfig() plan = %+v, want exactly 1 entry (plain volume excluded)", plan)
+		}
+		got := plan[0]
+		if got.Name != "secrets" {
+			t.Errorf("plan[0].Name = %q, want secrets", got.Name)
+		}
+		if got.CipherDir != filepath.Join("/srv/enc/secrets", "cipher") {
+			t.Errorf("plan[0].CipherDir = %q, want %q", got.CipherDir, filepath.Join("/srv/enc/secrets", "cipher"))
+		}
+		if got.PlainDir != filepath.Join("/srv/enc/secrets", "plain") {
+			t.Errorf("plan[0].PlainDir = %q, want %q", got.PlainDir, filepath.Join("/srv/enc/secrets", "plain"))
+		}
+		if got.ScopeUnit != "charly-enc-myapp-secrets" {
+			t.Errorf("plan[0].ScopeUnit = %q, want charly-enc-myapp-secrets", got.ScopeUnit)
+		}
+		// Neither /srv/enc/secrets/cipher nor its gocryptfs.conf exist on this test host, so
+		// Initialized must be false — proving IsEncryptedInitialized was actually consulted
+		// (not just defaulted true).
+		if got.Initialized {
+			t.Error("plan[0].Initialized = true, want false (no gocryptfs.conf on disk)")
+		}
+	})
+
+	t.Run("Mounted reflects the IsEncryptedMounted probe (package var, mockable)", func(t *testing.T) {
+		orig := IsEncryptedMounted
+		defer func() { IsEncryptedMounted = orig }()
+		var probedPath string
+		IsEncryptedMounted = func(plainDir string) bool {
+			probedPath = plainDir
+			return true
+		}
+		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		plan, err := EncPlanForConfig(dc, "myapp", "", "", "myapp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan) != 1 || !plan[0].Mounted {
+			t.Fatalf("plan = %+v, want Mounted true (from the mocked probe)", plan)
+		}
+		wantPath := filepath.Join("/srv/enc/secrets", "plain")
+		if probedPath != wantPath {
+			t.Errorf("IsEncryptedMounted was probed with %q, want %q", probedPath, wantPath)
+		}
+	})
+
+	t.Run("volume filter narrows the plan to the named volume only", func(t *testing.T) {
+		dc := &BundleConfig{
+			Bundle: map[string]BundleNode{
+				DeployKey("myapp", ""): {
+					Volume: []spec.DeployVolume{
+						{Name: "secrets", Type: "encrypted", Host: "/srv/enc/secrets"},
+						{Name: "media", Type: "encrypted", Host: "/srv/enc/media"},
+					},
+				},
+			},
+		}
+		plan, err := EncPlanForConfig(dc, "myapp", "", "media", "myapp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan) != 1 || plan[0].Name != "media" {
+			t.Errorf("EncPlanForConfig(volume filter) = %+v, want exactly the media volume", plan)
+		}
+	})
+
+	t.Run("volume filter matching nothing returns an empty plan, no error", func(t *testing.T) {
+		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		plan, err := EncPlanForConfig(dc, "myapp", "", "does-not-exist", "myapp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan) != 0 {
+			t.Errorf("EncPlanForConfig(unmatched filter) = %+v, want empty", plan)
+		}
+	})
+
+	t.Run("no encrypted volumes at all returns an empty plan, no error", func(t *testing.T) {
+		dc := &BundleConfig{Bundle: map[string]BundleNode{
+			DeployKey("myapp", ""): {Volume: []spec.DeployVolume{{Name: "data", Type: "plain", Host: "/srv/plain/data"}}},
+		}}
+		plan, err := EncPlanForConfig(dc, "myapp", "", "", "myapp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(plan) != 0 {
+			t.Errorf("EncPlanForConfig(no encrypted volumes) = %+v, want empty", plan)
+		}
+	})
+}
+
+// captureStdout redirects os.Stdout for the duration of fn and returns everything written.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing pipe writer: %v", err)
+	}
+	os.Stdout = orig
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("reading pipe: %v", err)
+	}
+	return buf.String()
+}
+
+func TestEncStatusFromConfig(t *testing.T) {
+	t.Run("no encrypted mounts prints the empty-state message", func(t *testing.T) {
+		dc := &BundleConfig{Bundle: map[string]BundleNode{
+			DeployKey("myapp", ""): {Volume: []spec.DeployVolume{{Name: "data", Type: "plain", Host: "/srv/plain/data"}}},
+		}}
+		out := captureStdout(t, func() {
+			if err := EncStatusFromConfig(dc, "myapp", ""); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "No encrypted bind mounts configured") {
+			t.Errorf("output %q missing the empty-state message", out)
+		}
+	})
+
+	t.Run("prints one row per encrypted mount with its live initialized/mounted state", func(t *testing.T) {
+		orig := IsEncryptedMounted
+		defer func() { IsEncryptedMounted = orig }()
+		IsEncryptedMounted = func(plainDir string) bool { return true }
+
+		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		out := captureStdout(t, func() {
+			if err := EncStatusFromConfig(dc, "myapp", ""); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+		if !strings.Contains(out, "secrets") {
+			t.Errorf("output %q missing the volume name", out)
+		}
+		if !strings.Contains(out, fmt.Sprintf("%-20s %-12s %-8s %s", "secrets", "no", "yes", filepath.Join("/srv/enc/secrets", "plain"))) {
+			t.Errorf("output %q missing the expected formatted row (initialized=no, mounted=yes)", out)
 		}
 	})
 }
