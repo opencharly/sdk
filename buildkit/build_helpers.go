@@ -104,20 +104,22 @@ func CharlyBinaryUpToDate(binPath, srcDir string) (bool, error) {
 	return upToDate, nil
 }
 
-// BootstrapPackagesForBox returns base + per-image bootstrap packages. Per-image overrides
-// aren't currently surfaced via charly.yml; this returns just the distro defaults for now.
-// Mirrors the VM-bootstrap engine's equivalent lookup at the OCI-image build path (the box
+// BootstrapPackagesForBox returns base bootstrap packages for a resolved distro. Per-image
+// overrides aren't currently surfaced via charly.yml; this returns just the distro defaults for
+// now. Mirrors the VM-bootstrap engine's equivalent lookup at the OCI-image build path (the box
 // config `from: builder:<name>` consumers). Same dispatch rules: Pacstrap.BasePackages for
-// pacstrap-flavored, Debootstrap.BasePackages for debootstrap-flavored.
-func BootstrapPackagesForBox(img *ResolvedBox) []string {
-	if img.DistroDef == nil {
+// pacstrap-flavored, Debootstrap.BasePackages for debootstrap-flavored. Takes the resolved
+// distro directly (not the whole ResolvedBox) so a caller holding only the distro descriptor —
+// e.g. the wire-carried spec.BuildResolveBox.DistroDef — needs no wrapper struct.
+func BootstrapPackagesForBox(distro *spec.ResolvedDistro) []string {
+	if distro == nil {
 		return nil
 	}
-	if img.DistroDef.Pacstrap != nil {
-		return img.DistroDef.Pacstrap.BasePackages
+	if distro.Pacstrap != nil {
+		return distro.Pacstrap.BasePackages
 	}
-	if img.DistroDef.Debootstrap != nil {
-		return img.DistroDef.Debootstrap.BasePackages
+	if distro.Debootstrap != nil {
+		return distro.Debootstrap.BasePackages
 	}
 	return nil
 }

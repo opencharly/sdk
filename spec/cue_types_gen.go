@@ -1600,6 +1600,144 @@ type BuildResolveBox struct {
 	MergeMaxMB int64 `yaml:"merge_max_mb,omitempty" json:"merge_max_mb,omitempty"`
 
 	MergeMaxTotalMB int64 `yaml:"merge_max_total_mb,omitempty" json:"merge_max_total_mb,omitempty"`
+
+	// from/bootstrap_builder_image/distro_def/bootstrap_builder are the privileged-bootstrap
+	// inputs (a `from: builder:<name>` image) the candy needs to run
+	// buildkit.RunPrivileged itself instead of the host doing it in the build-prep seam.
+	// bootstrap_builder is the SPECIFIC resolved #Builder for `from`'s builder name (not the
+	// whole per-image builder map) — the minimal slice runPrivilegedBootstrap actually reads.
+	// Both nil/empty for a non-bootstrap image (the common case).
+	From string `yaml:"from,omitempty" json:"from,omitempty"`
+
+	BootstrapBuilderImage string `yaml:"bootstrap_builder_image,omitempty" json:"bootstrap_builder_image,omitempty"`
+
+	DistroDef *ResolvedDistro `yaml:"distro_def,omitempty" json:"distro_def,omitempty"`
+
+	BootstrapBuilder *Builder `yaml:"bootstrap_builder,omitempty" json:"bootstrap_builder,omitempty"`
+}
+
+// --- resolve-to-envelope wire type (Cutover M, the long pole; SDD conversion,
+// per the standing operator directive: a hand-written wire struct not yet
+// CUE-sourced is conversion-in-progress, never a sanctioned exception).
+// candy/plugin-distro resolves an authored `distro:` build-vocabulary entity
+// into a ResolvedDistro the kernel's build engine consumes without importing
+// the concrete spec.Distro. Written out explicitly (not embedding #Distro) so
+// every field's required/optional state is independently auditable against
+// the former hand type. The host keeps RenderTemplate + the cache-mount vocab
+// (per the plan); the plugin owns the distro KNOWLEDGE (schema/typed
+// shape/validation). PrimaryFormat()/LocalPkgFormat() are pure Go METHODS —
+// CUE cannot express them — and stay hand-written in spec/distro_methods.go
+// (mirrors Op.Kind() in spec/charly_methods.go: a method, not a type).
+type ResolvedDistro struct {
+	Inherits string `yaml:"inherits,omitempty" json:"inherits,omitempty"`
+
+	InheritPackages bool `yaml:"inherit_packages,omitempty" json:"inherit_packages,omitempty"`
+
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	Bootstrap Bootstrap `yaml:"bootstrap,omitempty" json:"bootstrap,omitempty"`
+
+	Workarounds []string `yaml:"workaround,omitempty" json:"workaround,omitempty"`
+
+	Format map[string]*Format `yaml:"format,omitempty" json:"format,omitempty"`
+
+	BaseUser *BaseUser `yaml:"base_user,omitempty" json:"base_user,omitempty"`
+
+	Pacstrap *Pacstrap `yaml:"pacstrap,omitempty" json:"pacstrap,omitempty"`
+
+	Debootstrap *Debootstrap `yaml:"debootstrap,omitempty" json:"debootstrap,omitempty"`
+
+	AlpineBootstrap *AlpineBootstrap `yaml:"alpine_bootstrap,omitempty" json:"alpine_bootstrap,omitempty"`
+
+	Bootloader *Bootloader `yaml:"bootloader,omitempty" json:"bootloader,omitempty"`
+
+	Dnf *Dnf `yaml:"dnf,omitempty" json:"dnf,omitempty"`
+
+	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
+}
+
+// install_cmd is the bootstrap command; ubuntu sets it to "" (kept WITHOUT
+// `& !=""` so the empty-string base case validates).
+type Bootstrap struct {
+	InstallCmd string `yaml:"install_cmd,omitempty" json:"install_cmd"`
+
+	Package []string `yaml:"package,omitempty" json:"package,omitempty"`
+
+	CacheMount []CacheMount `yaml:"cache_mount,omitempty" json:"cache_mount,omitempty"`
+}
+
+type BaseUser struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	UID int `yaml:"uid,omitempty" json:"uid"`
+
+	GID int `yaml:"gid,omitempty" json:"gid"`
+
+	Home string `yaml:"home,omitempty" json:"home"`
+}
+
+type Pacstrap struct {
+	BasePackages []string `yaml:"base_package,omitempty" json:"base_package,omitempty"`
+
+	KeyringInitCmd string `yaml:"keyring_init_cmd,omitempty" json:"keyring_init_cmd,omitempty"`
+
+	MirrorlistURL string `yaml:"mirrorlist_url,omitempty" json:"mirrorlist_url,omitempty"`
+
+	ExtraRepos []PacstrapRepo `yaml:"extra_repo,omitempty" json:"extra_repo,omitempty"`
+
+	RuntimePacmanConf string `yaml:"runtime_pacman_conf,omitempty" json:"runtime_pacman_conf,omitempty"`
+}
+
+type PacstrapRepo struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Server string `yaml:"server,omitempty" json:"server"`
+
+	SigLevel string `yaml:"siglevel,omitempty" json:"siglevel,omitempty"`
+}
+
+type Debootstrap struct {
+	Suite string `yaml:"suite,omitempty" json:"suite,omitempty"`
+
+	Mirror string `yaml:"mirror,omitempty" json:"mirror,omitempty"`
+
+	Variant string `yaml:"variant,omitempty" json:"variant,omitempty"`
+
+	Components string `yaml:"components,omitempty" json:"components,omitempty"`
+
+	IncludePackages []string `yaml:"include_package,omitempty" json:"include_package,omitempty"`
+
+	BasePackages []string `yaml:"base_package,omitempty" json:"base_package,omitempty"`
+
+	ExtraRepos []DebootstrapRepo `yaml:"extra_repo,omitempty" json:"extra_repo,omitempty"`
+}
+
+type DebootstrapRepo struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	URL string `yaml:"url,omitempty" json:"url"`
+
+	Suite string `yaml:"suite,omitempty" json:"suite,omitempty"`
+
+	Components string `yaml:"components,omitempty" json:"components,omitempty"`
+}
+
+type AlpineBootstrap struct {
+	MirrorURL string `yaml:"mirror_url,omitempty" json:"mirror_url,omitempty"`
+}
+
+type Bootloader struct {
+	InstallTemplate string `yaml:"install_template,omitempty" json:"install_template,omitempty"`
+
+	InitramfsTemplate string `yaml:"initramfs_template,omitempty" json:"initramfs_template,omitempty"`
+
+	FstabTemplate string `yaml:"fstab_template,omitempty" json:"fstab_template,omitempty"`
+}
+
+type Dnf struct {
+	MaxParallelDownloads int64 `yaml:"max_parallel_downloads,omitempty" json:"max_parallel_downloads,omitempty"`
+
+	Fastestmirror bool `yaml:"fastestmirror,omitempty" json:"fastestmirror,omitempty"`
 }
 
 type BuildResolveReply struct {
@@ -3756,90 +3894,6 @@ type Distro struct {
 	Dnf *Dnf `yaml:"dnf,omitempty" json:"dnf,omitempty"`
 }
 
-// install_cmd is the bootstrap command; ubuntu sets it to "" (kept WITHOUT
-// `& !=""` so the empty-string base case validates).
-type Bootstrap struct {
-	InstallCmd string `yaml:"install_cmd,omitempty" json:"install_cmd"`
-
-	Package []string `yaml:"package,omitempty" json:"package,omitempty"`
-
-	CacheMount []CacheMount `yaml:"cache_mount,omitempty" json:"cache_mount,omitempty"`
-}
-
-type BaseUser struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	UID int `yaml:"uid,omitempty" json:"uid"`
-
-	GID int `yaml:"gid,omitempty" json:"gid"`
-
-	Home string `yaml:"home,omitempty" json:"home"`
-}
-
-type Pacstrap struct {
-	BasePackages []string `yaml:"base_package,omitempty" json:"base_package,omitempty"`
-
-	KeyringInitCmd string `yaml:"keyring_init_cmd,omitempty" json:"keyring_init_cmd,omitempty"`
-
-	MirrorlistURL string `yaml:"mirrorlist_url,omitempty" json:"mirrorlist_url,omitempty"`
-
-	ExtraRepos []PacstrapRepo `yaml:"extra_repo,omitempty" json:"extra_repo,omitempty"`
-
-	RuntimePacmanConf string `yaml:"runtime_pacman_conf,omitempty" json:"runtime_pacman_conf,omitempty"`
-}
-
-type PacstrapRepo struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	Server string `yaml:"server,omitempty" json:"server"`
-
-	SigLevel string `yaml:"siglevel,omitempty" json:"siglevel,omitempty"`
-}
-
-type Debootstrap struct {
-	Suite string `yaml:"suite,omitempty" json:"suite,omitempty"`
-
-	Mirror string `yaml:"mirror,omitempty" json:"mirror,omitempty"`
-
-	Variant string `yaml:"variant,omitempty" json:"variant,omitempty"`
-
-	Components string `yaml:"components,omitempty" json:"components,omitempty"`
-
-	IncludePackages []string `yaml:"include_package,omitempty" json:"include_package,omitempty"`
-
-	BasePackages []string `yaml:"base_package,omitempty" json:"base_package,omitempty"`
-
-	ExtraRepos []DebootstrapRepo `yaml:"extra_repo,omitempty" json:"extra_repo,omitempty"`
-}
-
-type DebootstrapRepo struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-
-	URL string `yaml:"url,omitempty" json:"url"`
-
-	Suite string `yaml:"suite,omitempty" json:"suite,omitempty"`
-
-	Components string `yaml:"components,omitempty" json:"components,omitempty"`
-}
-
-type AlpineBootstrap struct {
-	MirrorURL string `yaml:"mirror_url,omitempty" json:"mirror_url,omitempty"`
-}
-
-type Bootloader struct {
-	InstallTemplate string `yaml:"install_template,omitempty" json:"install_template,omitempty"`
-
-	InitramfsTemplate string `yaml:"initramfs_template,omitempty" json:"initramfs_template,omitempty"`
-
-	FstabTemplate string `yaml:"fstab_template,omitempty" json:"fstab_template,omitempty"`
-}
-
-type Dnf struct {
-	MaxParallelDownloads int64 `yaml:"max_parallel_downloads,omitempty" json:"max_parallel_downloads,omitempty"`
-
-	Fastestmirror bool `yaml:"fastestmirror,omitempty" json:"fastestmirror,omitempty"`
-}
-
 type Format struct {
 	CacheMount []CacheMount `yaml:"cache_mount,omitempty" json:"cache_mount,omitempty"`
 
@@ -3862,46 +3916,6 @@ type FormatRule struct {
 	Field string `yaml:"field,omitempty" json:"field"`
 
 	Rule string `yaml:"rule,omitempty" json:"rule"`
-}
-
-// --- resolve-to-envelope wire type (Cutover M, the long pole; SDD conversion,
-// per the standing operator directive: a hand-written wire struct not yet
-// CUE-sourced is conversion-in-progress, never a sanctioned exception).
-// candy/plugin-distro resolves an authored `distro:` build-vocabulary entity
-// into a ResolvedDistro the kernel's build engine consumes without importing
-// the concrete spec.Distro. Written out explicitly (not embedding #Distro) so
-// every field's required/optional state is independently auditable against
-// the former hand type. The host keeps RenderTemplate + the cache-mount vocab
-// (per the plan); the plugin owns the distro KNOWLEDGE (schema/typed
-// shape/validation). PrimaryFormat()/LocalPkgFormat() are pure Go METHODS —
-// CUE cannot express them — and stay hand-written in spec/distro_methods.go
-// (mirrors Op.Kind() in spec/charly_methods.go: a method, not a type).
-type ResolvedDistro struct {
-	Inherits string `yaml:"inherits,omitempty" json:"inherits,omitempty"`
-
-	InheritPackages bool `yaml:"inherit_packages,omitempty" json:"inherit_packages,omitempty"`
-
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-
-	Bootstrap Bootstrap `yaml:"bootstrap,omitempty" json:"bootstrap,omitempty"`
-
-	Workarounds []string `yaml:"workaround,omitempty" json:"workaround,omitempty"`
-
-	Format map[string]*Format `yaml:"format,omitempty" json:"format,omitempty"`
-
-	BaseUser *BaseUser `yaml:"base_user,omitempty" json:"base_user,omitempty"`
-
-	Pacstrap *Pacstrap `yaml:"pacstrap,omitempty" json:"pacstrap,omitempty"`
-
-	Debootstrap *Debootstrap `yaml:"debootstrap,omitempty" json:"debootstrap,omitempty"`
-
-	AlpineBootstrap *AlpineBootstrap `yaml:"alpine_bootstrap,omitempty" json:"alpine_bootstrap,omitempty"`
-
-	Bootloader *Bootloader `yaml:"bootloader,omitempty" json:"bootloader,omitempty"`
-
-	Dnf *Dnf `yaml:"dnf,omitempty" json:"dnf,omitempty"`
-
-	Raw RawBody `yaml:"raw,omitempty" json:"raw,omitempty"`
 }
 
 // #DistroResolveInput carries one opaque distro body to project.
