@@ -135,8 +135,8 @@ func (c *Config) BoxNames() []string {
 // ResolveBoxRef resolves a (possibly qualified) box name to its BoxConfig and the Config
 // (namespace context) it lives in. Bare names resolve in c; `ns.name` descends into
 // c.Namespaces[ns] recursively. Exported: called cross-package from charly's deploy_ref.go,
-// check_bed_run.go, ensure_image.go, validate.go, refs.go, and from sdk/buildkit's resolveBase
-// (via the *Config it's given).
+// check_bed_run.go, host_build_box_ref_resolve.go, validate.go, refs.go, and from sdk/buildkit's
+// resolveBase (via the *Config it's given).
 func (c *Config) ResolveBoxRef(ref string) (BoxConfig, *Config, bool) {
 	if ns, rest, ok := SplitNamespaceRef(ref); ok {
 		sub, ok := c.Namespaces[ns]

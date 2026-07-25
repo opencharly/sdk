@@ -171,7 +171,8 @@ type BuilderRunOpts struct {
 	// builder ref to its concrete podman storage key (side-effect-free — safe in the
 	// dry-run path). EnsureImage guarantees the image is present, falling back to a
 	// local `charly box build <basename>` when it is project-buildable. The charly
-	// callers close over Cfg + ProjectDir; see charly/ensure_image.go.
+	// callers close over Cfg + ProjectDir; see charly/host_build_box_ref_resolve.go
+	// (ResolveImage) and charly/dispatch_build_ensure.go (EnsureImage).
 	ResolveImage func(image string) (string, error)
 	EnsureImage  func(ctx context.Context, image string) error
 

@@ -416,7 +416,7 @@ service Provider {
 //
 // RunHostStep is the HOST-ENGINE channel (the generalization of the former F3 build channel): the
 // irreducible host machinery — the build ENGINE (Generator / OCITarget / ResolveBox /
-// podman / BuilderRun / EnsureImagePresent / makepkg), the DistroConfig package-template
+// podman / BuilderRun / the injected EnsureImage closure / makepkg), the DistroConfig package-template
 // render, the in-proc provider registry (ProvisionActor act verbs), and the broker that
 // dispatches ANOTHER plugin — STAYS in charly's core (package main — it cannot move into
 // the leaf plugin/kit package without dragging package main in). So an OUT-OF-PROCESS

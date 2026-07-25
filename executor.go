@@ -232,7 +232,7 @@ func (e *Executor) GetFile(ctx context.Context, path string, asRoot bool) ([]byt
 
 // RunHostStep is the HOST-ENGINE channel leg (the generalization of the former F3 build channel): a
 // deploy/step plugin walking an InstallPlan that hits one of the five step kinds it cannot
-// execute itself — BuilderStep (podman / makepkg / EnsureImagePresent), LocalPkgInstallStep,
+// execute itself — BuilderStep (podman / makepkg / the injected EnsureImage closure), LocalPkgInstallStep,
 // SystemPackagesStep (the DistroConfig package-template render), an act-verb OpStep (a
 // builtin ProvisionActor that needs the in-proc registry), or an ExternalPluginStep (a verb
 // served by ANOTHER out-of-process plugin, dispatched over a nested reverse channel) — drives
