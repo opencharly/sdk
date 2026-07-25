@@ -372,9 +372,11 @@ type DeployTraits struct {
 	// the substrate holds an exclusive host-resource lease boundary (vm)
 	ExclusiveVenue bool `protobuf:"varint,5,opt,name=exclusive_venue,json=exclusiveVenue,proto3" json:"exclusive_venue,omitempty"`
 	// the substrate is a deploy-chain LEAF — it cannot be descended into (k8s)
-	LeafOnly      bool `protobuf:"varint,6,opt,name=leaf_only,json=leafOnly,proto3" json:"leaf_only,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	LeafOnly bool `protobuf:"varint,6,opt,name=leaf_only,json=leafOnly,proto3" json:"leaf_only,omitempty"`
+	// the substrate's Start/Stop accept direct-mode CLI opts AND need the Q1 resource-arbiter claim bracketed around the dispatch (pod); a substrate that manages its own venue lifecycle + resource claim (vm) leaves this false
+	BracketedLifecycle bool `protobuf:"varint,7,opt,name=bracketed_lifecycle,json=bracketedLifecycle,proto3" json:"bracketed_lifecycle,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DeployTraits) Reset() {
@@ -445,6 +447,13 @@ func (x *DeployTraits) GetExclusiveVenue() bool {
 func (x *DeployTraits) GetLeafOnly() bool {
 	if x != nil {
 		return x.LeafOnly
+	}
+	return false
+}
+
+func (x *DeployTraits) GetBracketedLifecycle() bool {
+	if x != nil {
+		return x.BracketedLifecycle
 	}
 	return false
 }
@@ -2505,14 +2514,15 @@ const file_plugin_proto_rawDesc = "" +
 	"\x12command_model_json\x18\r \x01(\fR\x10commandModelJson\"7\n" +
 	"\rCLISubcommand\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04help\x18\x02 \x01(\tR\x04help\"\xd7\x01\n" +
+	"\x04help\x18\x02 \x01(\tR\x04help\"\x88\x02\n" +
 	"\fDeployTraits\x12\x14\n" +
 	"\x05venue\x18\x01 \x01(\tR\x05venue\x12!\n" +
 	"\fimage_backed\x18\x02 \x01(\bR\vimageBacked\x12#\n" +
 	"\rimage_context\x18\x03 \x01(\bR\fimageContext\x12#\n" +
 	"\rmachine_venue\x18\x04 \x01(\bR\fmachineVenue\x12'\n" +
 	"\x0fexclusive_venue\x18\x05 \x01(\bR\x0eexclusiveVenue\x12\x1b\n" +
-	"\tleaf_only\x18\x06 \x01(\bR\bleafOnly\"d\n" +
+	"\tleaf_only\x18\x06 \x01(\bR\bleafOnly\x12/\n" +
+	"\x13bracketed_lifecycle\x18\a \x01(\bR\x12bracketedLifecycle\"d\n" +
 	"\fStepContract\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x14\n" +
 	"\x05venue\x18\x02 \x01(\x05R\x05venue\x12\x12\n" +
