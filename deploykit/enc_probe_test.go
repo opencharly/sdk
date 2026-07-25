@@ -261,7 +261,8 @@ func TestCipherPopulatedPlainEmpty(t *testing.T) {
 // encFixtureConfig builds a *BundleConfig with one encrypted + one plain volume under
 // DeployKey(boxName, instance), each with an explicit Host: so downstream path derivation
 // needs no runtime-config lookup.
-func encFixtureConfig(boxName, instance, encHost, plainHost string) *BundleConfig {
+func encFixtureConfig(instance, encHost, plainHost string) *BundleConfig {
+	const boxName = "myapp"
 	return &BundleConfig{
 		Bundle: map[string]BundleNode{
 			DeployKey(boxName, instance): {
@@ -276,7 +277,7 @@ func encFixtureConfig(boxName, instance, encHost, plainHost string) *BundleConfi
 
 func TestLoadEncryptedVolumeFromConfig(t *testing.T) {
 	t.Run("filters to encrypted-type volumes only, for the matching deploy key", func(t *testing.T) {
-		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		dc := encFixtureConfig("", "/srv/enc/secrets", "/srv/plain/data")
 		mounts, _, err := LoadEncryptedVolumeFromConfig(dc, "myapp", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -287,7 +288,7 @@ func TestLoadEncryptedVolumeFromConfig(t *testing.T) {
 	})
 
 	t.Run("no entry for the deploy key returns an empty (not error) result", func(t *testing.T) {
-		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		dc := encFixtureConfig("", "/srv/enc/secrets", "/srv/plain/data")
 		mounts, _, err := LoadEncryptedVolumeFromConfig(dc, "other-app", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -308,7 +309,7 @@ func TestLoadEncryptedVolumeFromConfig(t *testing.T) {
 	})
 
 	t.Run("instance-qualified deploy key is looked up distinctly from the base key", func(t *testing.T) {
-		dc := encFixtureConfig("myapp", "prod", "/srv/enc/secrets-prod", "/srv/plain/data-prod")
+		dc := encFixtureConfig("prod", "/srv/enc/secrets-prod", "/srv/plain/data-prod")
 		// The base (no-instance) key must NOT see the instance-qualified entry's volumes.
 		baseMounts, _, err := LoadEncryptedVolumeFromConfig(dc, "myapp", "")
 		if err != nil {
@@ -329,7 +330,7 @@ func TestLoadEncryptedVolumeFromConfig(t *testing.T) {
 
 func TestEncPlanForConfig(t *testing.T) {
 	t.Run("builds a plan entry with the deterministic derived paths + fresh-state defaults", func(t *testing.T) {
-		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		dc := encFixtureConfig("", "/srv/enc/secrets", "/srv/plain/data")
 		plan, err := EncPlanForConfig(dc, "myapp", "", "", "myapp")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -366,7 +367,7 @@ func TestEncPlanForConfig(t *testing.T) {
 			probedPath = plainDir
 			return true
 		}
-		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		dc := encFixtureConfig("", "/srv/enc/secrets", "/srv/plain/data")
 		plan, err := EncPlanForConfig(dc, "myapp", "", "", "myapp")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -401,7 +402,7 @@ func TestEncPlanForConfig(t *testing.T) {
 	})
 
 	t.Run("volume filter matching nothing returns an empty plan, no error", func(t *testing.T) {
-		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		dc := encFixtureConfig("", "/srv/enc/secrets", "/srv/plain/data")
 		plan, err := EncPlanForConfig(dc, "myapp", "", "does-not-exist", "myapp")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -466,7 +467,7 @@ func TestEncStatusFromConfig(t *testing.T) {
 		defer func() { IsEncryptedMounted = orig }()
 		IsEncryptedMounted = func(plainDir string) bool { return true }
 
-		dc := encFixtureConfig("myapp", "", "/srv/enc/secrets", "/srv/plain/data")
+		dc := encFixtureConfig("", "/srv/enc/secrets", "/srv/plain/data")
 		out := captureStdout(t, func() {
 			if err := EncStatusFromConfig(dc, "myapp", ""); err != nil {
 				t.Fatalf("unexpected error: %v", err)

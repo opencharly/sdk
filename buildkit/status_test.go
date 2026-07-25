@@ -81,8 +81,8 @@ func TestStatusSeverity(t *testing.T) {
 		})
 	}
 	// Pin the ORDERING invariant WorstStatus relies on: broken > testing > working.
-	if !(StatusSeverity(StatusBroken) > StatusSeverity(StatusTesting) &&
-		StatusSeverity(StatusTesting) > StatusSeverity(StatusWorking)) {
+	if StatusSeverity(StatusBroken) <= StatusSeverity(StatusTesting) ||
+		StatusSeverity(StatusTesting) <= StatusSeverity(StatusWorking) {
 		t.Fatal("StatusSeverity ordering invariant broken > testing > working does not hold")
 	}
 }
