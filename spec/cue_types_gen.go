@@ -5438,16 +5438,14 @@ type DeployConfigSaveReply struct {
 // #AndroidEntityResolution is the kind="android" payload carried OPAQUELY inside
 // #DeployEntityResolveReply.entity (unit 6a): the resolved kind:android #ResolvedAndroid spec
 // (CUE-sourced at schema/substrate_template.cue, SDD conversion — carried OPAQUELY here anyway,
-// see the #DeployEntityResolveRequest doc below for why) PLUS the google-play credentials,
-// resolved host-side (the credential STORE touch — DefaultCredentialStore — is core-only; the
-// plugin never calls it directly, matching every other cutover's InvokeProvider-adjacent
-// credential deferral).
+// see the #DeployEntityResolveRequest doc below for why). The google-play credentials are NO
+// LONGER threaded through this seam (deploy-cone cutover 1): candy/plugin-adb resolves them
+// itself via a direct peer InvokeProvider(verb:credential) call — the same peer-to-peer pattern
+// candy/plugin-vm already uses for verb:arbiter/verb:gpu/verb:egress — instead of the host
+// pre-resolving them behind "deploy-entity-resolve". The former "credential STORE touch is
+// core-only" justification was stale: InvokeProvider reaches ANY verb from ANY plugin.
 type AndroidEntityResolution struct {
 	SpecJSON RawBody `yaml:"spec,omitempty" json:"spec,omitempty"`
-
-	GoogleEmail string `yaml:"google_email,omitempty" json:"google_email,omitempty"`
-
-	GoogleToken string `yaml:"google_token,omitempty" json:"google_token,omitempty"`
 }
 
 // #EphemeralRegisterRequest/#EphemeralRegisterReply — the host→command:bundle OpEphemeralRegister
