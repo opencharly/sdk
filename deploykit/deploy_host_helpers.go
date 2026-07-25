@@ -64,12 +64,12 @@ func (e *HostReverseExec) ReverseKeepRepoChanges() bool     { return e.KeepRepoC
 func (e *HostReverseExec) ReverseKeepServices() bool        { return e.KeepServices }
 func (e *HostReverseExec) ReverseRunner() kit.ReverseRunner { return e.Runner }
 
-// RemoveEnvdFile is an injected seam: charly core's env.d file removal
-// (shell_profile.go, a pure filesystem helper) is the ONE non-portable leaf
-// TeardownHostDeploy calls — set by charly core's init(). A nil func (a caller that never
-// wires it) is a no-op, matching the original "_ = RemoveEnvdFile(...)" best-effort
-// semantics (the error was always discarded).
-var RemoveEnvdFile = func(hostHome, candyName string) error { return nil }
+// RemoveEnvdFile removes a candy's env.d entry. It is a plain forward to
+// kit.RemoveEnvdFile (a pure filesystem helper with zero charly-core
+// dependency — the earlier "injected seam, charly-core sets it via init()"
+// pattern was residue from before the helper was proven portable; TeardownHostDeploy's
+// best-effort call site discards the error either way).
+var RemoveEnvdFile = kit.RemoveEnvdFile
 
 // TeardownHostDeploy reverses a single host/external deploy record: for each candy whose
 // refcount drops to zero it replays the recorded ReverseOps, removes the env.d file, and

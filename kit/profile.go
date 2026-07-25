@@ -248,3 +248,12 @@ func RemoveManagedBlockAt(path, marker string) error {
 	}
 	return os.WriteFile(path, []byte(stripped), 0644)
 }
+
+// RemoveEnvdFile deletes an env.d entry. Silently succeeds when absent.
+func RemoveEnvdFile(home, candyName string) error {
+	err := os.Remove(EnvdFilePath(home, candyName))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
