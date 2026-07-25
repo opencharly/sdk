@@ -54,6 +54,7 @@ func DescentFromTraits(t *spec.DeployTraits) *spec.DescentDescriptor {
 		d.MachineVenue = t.MachineVenue
 		d.ExclusiveVenue = t.ExclusiveVenue
 		d.LeafOnly = t.LeafOnly
+		d.BracketedLifecycle = t.BracketedLifecycle
 	}
 	switch {
 	case t == nil:

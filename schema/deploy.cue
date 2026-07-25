@@ -32,6 +32,11 @@
 	exclusive_venue?: bool @go(ExclusiveVenue)
 	// leaf_only: the substrate is a deploy-chain LEAF — it cannot be descended into (k8s).
 	leaf_only?: bool @go(LeafOnly)
+	// bracketed_lifecycle: the substrate's Start/Stop accept direct-mode CLI opts (env/port/
+	// volume/bind/no-auto-detect on Start, unmount on Stop) AND need the Q1 resource-arbiter
+	// claim bracketed around the dispatch (pod). A substrate that manages its own venue
+	// lifecycle + resource claim (vm, via `charly vm start`/`stop`) leaves this false.
+	bracketed_lifecycle?: bool @go(BracketedLifecycle)
 }
 
 // #DescentDescriptor is the loader-DERIVED venue-hop descriptor (Cutover H + P9).

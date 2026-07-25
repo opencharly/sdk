@@ -3285,6 +3285,12 @@ type DeployTraits struct {
 
 	// leaf_only: the substrate is a deploy-chain LEAF — it cannot be descended into (k8s).
 	LeafOnly bool `yaml:"leaf_only,omitempty" json:"leaf_only,omitempty"`
+
+	// bracketed_lifecycle: the substrate's Start/Stop accept direct-mode CLI opts (env/port/
+	// volume/bind/no-auto-detect on Start, unmount on Stop) AND need the Q1 resource-arbiter
+	// claim bracketed around the dispatch (pod). A substrate that manages its own venue
+	// lifecycle + resource claim (vm, via `charly vm start`/`stop`) leaves this false.
+	BracketedLifecycle bool `yaml:"bracketed_lifecycle,omitempty" json:"bracketed_lifecycle,omitempty"`
 }
 
 // #DescentDescriptor is the loader-DERIVED venue-hop descriptor (Cutover H + P9).
@@ -3331,6 +3337,12 @@ type DescentDescriptor struct {
 
 	// leaf_only: the substrate is a deploy-chain LEAF — it cannot be descended into (k8s).
 	LeafOnly bool `yaml:"leaf_only,omitempty" json:"leaf_only,omitempty"`
+
+	// bracketed_lifecycle: the substrate's Start/Stop accept direct-mode CLI opts (env/port/
+	// volume/bind/no-auto-detect on Start, unmount on Stop) AND need the Q1 resource-arbiter
+	// claim bracketed around the dispatch (pod). A substrate that manages its own venue
+	// lifecycle + resource claim (vm, via `charly vm start`/`stop`) leaves this false.
+	BracketedLifecycle bool `yaml:"bracketed_lifecycle,omitempty" json:"bracketed_lifecycle,omitempty"`
 }
 
 type Deploy struct {
