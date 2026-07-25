@@ -18,6 +18,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// RunDiscover is the STANDALONE discover-only entry point (K1 keystone, task #24 unit 3):
+// charly's ApplyDiscover (unified.go) calls this directly — reusing the SAME runDiscover/
+// parseDiscoveredManifest walker mechanism the whole-project Walk drives internally for its own
+// depth-0 discover pass — rather than duplicating the walk+parse logic. Bypasses the
+// spec.ProjectWalker plugin-swap indirection deliberately: ApplyDiscover has never gone through the
+// whole-project walker (it talks to the parser/threaded seam primitives directly, mirroring
+// Walk's OWN internal discover call), so a custom loader plugin overriding Walk's discover behavior
+// was never honored by ApplyDiscover before this move either — this preserves that pre-existing
+// scope exactly.
+func RunDiscover(rootDir string, specs []kit.ScanSpec, seams spec.WalkSeams) ([]spec.DiscoveredManifest, error) {
+	w := &walker{seams: seams}
+	return w.runDiscover(rootDir, specs)
+}
+
 // runDiscover walks every flat scan spec on specs and parses every discovered manifest's documents
 // into a spec.DiscoveredManifest — one per discovered directory. Faithful port of
 // UnifiedFile.ApplyDiscover, minus the host-only entity registration (materialize, kept host-side).
