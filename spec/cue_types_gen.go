@@ -6294,60 +6294,6 @@ type PodConfigSetupRequest struct {
 type PodConfigSetupReply struct {
 }
 
-// #PodConfigStatusRequest carries `charly config status`'s flags. Forwarded to
-// HostBuild("pod-config-status"), which runs the existing encStatus(box,instance) call VERBATIM.
-type PodConfigStatusRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-// #PodConfigStatusReply is the "pod-config-status" host-builder reply — empty.
-type PodConfigStatusReply struct {
-}
-
-// #PodConfigMountRequest carries `charly config mount`'s flags. Forwarded to
-// HostBuild("pod-config-mount"), which runs the existing encMount(box,instance,volume) call
-// VERBATIM.
-type PodConfigMountRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Volume string `yaml:"volume,omitempty" json:"volume,omitempty"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-// #PodConfigMountReply is the "pod-config-mount" host-builder reply — empty.
-type PodConfigMountReply struct {
-}
-
-// #PodConfigUnmountRequest carries `charly config unmount`'s flags. Forwarded to
-// HostBuild("pod-config-unmount"), which runs the existing encUnmount(box,instance,volume) call
-// VERBATIM.
-type PodConfigUnmountRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Volume string `yaml:"volume,omitempty" json:"volume,omitempty"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-// #PodConfigUnmountReply is the "pod-config-unmount" host-builder reply — empty.
-type PodConfigUnmountReply struct {
-}
-
-// #PodConfigPasswdRequest carries `charly config passwd`'s flags. Forwarded to
-// HostBuild("pod-config-passwd"), which runs the existing encPasswd(box,instance) call VERBATIM.
-type PodConfigPasswdRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-// #PodConfigPasswdReply is the "pod-config-passwd" host-builder reply — empty.
-type PodConfigPasswdReply struct {
-}
-
 // #PodConfigRemoveRequest carries `charly config remove`'s flags (the former
 // BoxConfigRemoveCmd's authored fields — distinct from `charly remove`/#PodRemoveRequest, which
 // tears down the whole deploy; this removes only the quadlet + disables the service). Forwarded
@@ -6693,37 +6639,13 @@ type PodConfigHookSecretEnvReply struct {
 	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
-// #PodConfigEncEnsurePlanRequest / Reply: the pod lifecycle's resolvePodEncEnsure body VERBATIM —
-// encPlanFor + the keyring-resilient all-mounted fast path + resolveEncPassphrase, bundled into
-// ONE narrow credential seam (the standing ruling) returning the pre-built spec.EncExecInput the
-// plugin InvokeProviders verb:enc with directly (empty ⇒ no encrypted volumes configured or
-// already-mounted fast path, matching the former ensureEncryptedMounts semantics).
-type PodConfigEncEnsurePlanRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-type PodConfigEncEnsurePlanReply struct {
-	EncJSON RawBody `yaml:"enc_json,omitempty" json:"enc_json,omitempty"`
-}
-
-// #PodConfigEncUnmountPlanRequest / Reply: the pod lifecycle's resolvePodEncUnmount body —
-// encPlanFor for the unmount leg (no passphrase needed).
-type PodConfigEncUnmountPlanRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-}
-
-type PodConfigEncUnmountPlanReply struct {
-	EncJSON RawBody `yaml:"enc_json,omitempty" json:"enc_json,omitempty"`
-}
-
-// #PodConfigContainerTunnelRequest / Reply: the pod lifecycle's resolvePodTunnel body — reads the
-// RUNNING container's baked image ref (containerImage), extracts + merges its metadata, and
-// resolves the tunnel config. Distinct from #PodConfigTunnelResolveRequest (which takes an
-// already-resolved MetaJSON) — this seam resolves the image/metadata itself from a container name.
+// #PodConfigContainerTunnelRequest / Reply: reads the RUNNING container's baked image ref
+// (containerImage), extracts + merges its metadata, and resolves the tunnel config. Distinct
+// from #PodConfigTunnelResolveRequest (which takes an already-resolved MetaJSON) — this seam
+// resolves the image/metadata itself from a container name. candy/plugin-deploy-pod's start/stop
+// path builds its own tunnel plan locally now (enc_tunnel_resolve.go, wave γ); this seam STAYS
+// registered because candy/plugin-pod's `charly remove` teardown path (remove_tunnel.go) is a
+// separate, still-live caller.
 type PodConfigContainerTunnelRequest struct {
 	Box string `yaml:"box,omitempty" json:"box"`
 
@@ -7216,38 +7138,6 @@ type CliReply struct {
 	Stdout string `yaml:"stdout,omitempty" json:"stdout,omitempty"`
 
 	ExitCode int `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
-
-	Error string `yaml:"error,omitempty" json:"error,omitempty"`
-}
-
-// #SettingsRequest is the "settings" HostBuild kind request: one config-subsystem
-// op. Op ∈ {get, set, list, reset, path}. Key/Value carry the op's arguments
-// (get/reset: Key; set: Key+Value; list/path: neither; reset with empty Key
-// resets all).
-type SettingsRequest struct {
-	Op string `yaml:"op,omitempty" json:"op"`
-
-	Key string `yaml:"key,omitempty" json:"key,omitempty"`
-
-	Value string `yaml:"value,omitempty" json:"value,omitempty"`
-}
-
-// #SettingsEntry is one resolved config key (the `charly settings list` row).
-type SettingsEntry struct {
-	Key string `yaml:"key,omitempty" json:"key"`
-
-	Value string `yaml:"value,omitempty" json:"value"`
-
-	Source string `yaml:"source,omitempty" json:"source"`
-}
-
-// #SettingsReply is the "settings" HostBuild kind reply: Value for get/path,
-// Entries for list; set/reset return neither. Error is a human-facing message on
-// failure (e.g. an unknown config key).
-type SettingsReply struct {
-	Value string `yaml:"value,omitempty" json:"value,omitempty"`
-
-	Entries []SettingsEntry `yaml:"entries,omitempty" json:"entries,omitempty"`
 
 	Error string `yaml:"error,omitempty" json:"error,omitempty"`
 }
