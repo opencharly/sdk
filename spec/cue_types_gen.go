@@ -2959,6 +2959,70 @@ type BuilderReverseReply struct {
 	ReverseOps []ReverseOp `yaml:"reverse_ops,omitempty" json:"reverse_ops,omitempty"`
 }
 
+// #BoxRefResolveRequest / #BoxRefResolveReply — the "box-ref-resolve" HostBuild
+// seam: resolve a short-name or full-ref image identifier against charly.yml.
+type BoxRefResolveRequest struct {
+	Image string `yaml:"image,omitempty" json:"image"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+}
+
+type BoxRefResolveReply struct {
+	// exists_ref / pull_ref is the fully-qualified registry ref to check for local
+	// presence / hand to `podman pull`; "" when the identifier could not be
+	// resolved (no project reachable, or an unknown short name).
+	ExistsRef string `yaml:"exists_ref,omitempty" json:"exists_ref,omitempty"`
+
+	PullRef string `yaml:"pull_ref,omitempty" json:"pull_ref,omitempty"`
+
+	// build_fallback_short is the short name (bare or namespace-qualified, e.g.
+	// "fedora.fedora-builder") `charly box build` should target when the pull
+	// fails; "" when no local build-fallback is possible for this identifier.
+	BuildFallbackShort string `yaml:"build_fallback_short,omitempty" json:"build_fallback_short,omitempty"`
+
+	// produced_ref is the registry ref build_fallback_short resolves to today
+	// (registry+name, tag-less) — used to tag-alias a pinned-tag input ref onto
+	// the freshly built image.
+	ProducedRef string `yaml:"produced_ref,omitempty" json:"produced_ref,omitempty"`
+}
+
+// #RemoteImageResolveRequest / #RemoteImageResolveReply — the
+// "remote-image-resolve" HostBuild seam: resolve an @github.com/org/repo/box
+// ref to its registry pull ref + cached source dir (wraps ResolveRemoteImage).
+type RemoteImageResolveRequest struct {
+	Ref string `yaml:"ref,omitempty" json:"ref"`
+
+	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
+}
+
+type RemoteImageResolveReply struct {
+	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref,omitempty"`
+
+	CacheDir string `yaml:"cache_dir,omitempty" json:"cache_dir,omitempty"`
+
+	BoxName string `yaml:"box_name,omitempty" json:"box_name,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
+// #BuildEnsureRequest / #BuildEnsureReply — the build:ensure word's Invoke
+// envelope: ensure an image is present in local podman storage, falling back
+// to a local (or remote-cached) build when the identifier maps to a project
+// charly.yml entry.
+type BuildEnsureRequest struct {
+	Image string `yaml:"image,omitempty" json:"image"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	BuildEngine string `yaml:"build_engine,omitempty" json:"build_engine,omitempty"`
+
+	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine,omitempty"`
+}
+
+type BuildEnsureReply struct {
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
 type Candy struct {
 	// --- identity (required: ADE mandates version+name+description+plan) ---
 	Version CalVer `yaml:"version,omitempty" json:"version"`
@@ -4972,25 +5036,6 @@ type PodDisposableRequest struct {
 // #PodDisposableReply carries the single overlay-disposability bit.
 type PodDisposableReply struct {
 	Disposable bool `yaml:"disposable,omitempty" json:"disposable,omitempty"`
-}
-
-// #EnsureImageRequest asks the host to ensure an image is present locally — pulling a remote ref
-// or building it locally as needed (K4: EnsureImagePresent, unchanged core logic — resolving a
-// remote ref, pulling, or falling back to a local `charly box build`, all of which need the
-// project loader / Config / the provider registry a plugin cannot hold). The two portable tiers
-// (LocalImageExists / TransferImage) run plugin-side BEFORE this seam is reached; this covers only
-// the "not present on either engine" cold-start fallback. Class-generic action noun "ensure-image"
-// (F11 — never a substrate word); shared by every deploy substrate that resolves a runtime image
-// (pod, vm's builder-image path), not pod-exclusive.
-type EnsureImageRequest struct {
-	ImageRef string `yaml:"image_ref,omitempty" json:"image_ref"`
-
-	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine"`
-}
-
-// #EnsureImageReply is empty on success — a non-nil host error means the image could not be made
-// available (rides the RPC error, not a reply field).
-type EnsureImageReply struct {
 }
 
 // #DeployOverlayRequest asks the host for the PER-HOST deploy-config overlay (K4:

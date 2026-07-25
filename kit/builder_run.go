@@ -53,11 +53,11 @@ func BuilderRun(ctx context.Context, opts BuilderRunOpts) ([]byte, error) {
 	// `podman run` needs the CONCRETE storage key, not a namespace-qualified or
 	// short builder ref (e.g. the cachyos project's aur builder "charly.arch-builder"
 	// is not a podman image — podman reports "image not known"). Resolve it via
-	// the SAME resolver EnsureImagePresent uses for its present-check, then run
-	// podman against the resolved ref. EnsureImagePresent (below) is still called
-	// with the ORIGINAL ref so its resolve + pull + build-from-charly.yml fallback
-	// for short names keeps working. resolveImageRefForEnsure is side-effect-free,
-	// so it is safe in the dry-run path too.
+	// the SAME resolver the injected EnsureImage closure uses for its present-check
+	// (the caller's resolveImageRefForEnsure), then run podman against the resolved
+	// ref. EnsureImage (below) is still called with the ORIGINAL ref so its resolve +
+	// pull + build-from-charly.yml fallback for short names keeps working.
+	// opts.ResolveImage is side-effect-free, so it is safe in the dry-run path too.
 	origImage := opts.BuilderImage
 	if opts.BuilderImage != "" && opts.ResolveImage != nil {
 		if resolved, rerr := opts.ResolveImage(opts.BuilderImage); rerr == nil && resolved != "" {
@@ -80,11 +80,12 @@ func BuilderRun(ctx context.Context, opts BuilderRunOpts) ([]byte, error) {
 	}
 
 	// Ensure the builder image is present in local podman storage
-	// before we hand it to `podman run`. Going through the canonical
-	// ensure path means a 401 / unreachable-registry / not-yet-pushed
-	// failure falls back to a local `charly box build` when the image
-	// is project-buildable, instead of `podman run`'s implicit
-	// auto-pull blowing up with a stale auth error.
+	// before we hand it to `podman run`, via the injected EnsureImage
+	// closure (the caller's dispatchBuildEnsure). Going through the
+	// canonical ensure path means a 401 / unreachable-registry /
+	// not-yet-pushed failure falls back to a local `charly box build`
+	// when the image is project-buildable, instead of `podman run`'s
+	// implicit auto-pull blowing up with a stale auth error.
 	if origImage != "" && opts.EnsureImage != nil {
 		if err := opts.EnsureImage(ctx, origImage); err != nil {
 			return nil, fmt.Errorf("BuilderRun: ensure %s: %w", origImage, err)
@@ -116,11 +117,11 @@ func BuildBuilderRunArgs(opts BuilderRunOpts) []string {
 	gid := os.Getgid()
 
 	args := []string{"run", "--rm"}
-	// EnsureImagePresent handled the pull/build before this call, so
-	// disable podman's implicit auto-pull. Without this flag, podman
-	// would re-attempt the registry pull on its own and the same 401 /
-	// auth / network failure that EnsureImagePresent already worked
-	// around would resurface here.
+	// The injected EnsureImage closure handled the pull/build before this
+	// call, so disable podman's implicit auto-pull. Without this flag,
+	// podman would re-attempt the registry pull on its own and the same
+	// 401 / auth / network failure EnsureImage already worked around
+	// would resurface here.
 	args = append(args, "--pull=never")
 	if opts.RunAsRoot {
 		args = append(args, "--user", "0:0")

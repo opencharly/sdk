@@ -76,23 +76,6 @@
 	disposable?: bool @go(Disposable)
 }
 
-// #EnsureImageRequest asks the host to ensure an image is present locally — pulling a remote ref
-// or building it locally as needed (K4: EnsureImagePresent, unchanged core logic — resolving a
-// remote ref, pulling, or falling back to a local `charly box build`, all of which need the
-// project loader / Config / the provider registry a plugin cannot hold). The two portable tiers
-// (LocalImageExists / TransferImage) run plugin-side BEFORE this seam is reached; this covers only
-// the "not present on either engine" cold-start fallback. Class-generic action noun "ensure-image"
-// (F11 — never a substrate word); shared by every deploy substrate that resolves a runtime image
-// (pod, vm's builder-image path), not pod-exclusive.
-#EnsureImageRequest: {
-	image_ref!:  string @go(ImageRef)
-	run_engine!: string @go(RunEngine)
-}
-
-// #EnsureImageReply is empty on success — a non-nil host error means the image could not be made
-// available (rides the RPC error, not a reply field).
-#EnsureImageReply: {}
-
 // #DeployOverlayRequest asks the host for the PER-HOST deploy-config overlay (K4:
 // deploykit.LoadDeployConfigForRead — the runtime ledger at ~/.config/charly/charly.yml, NOT the
 // project charly.yml the resolved-project envelope projects; Mode Purity keeps the two apart, same
