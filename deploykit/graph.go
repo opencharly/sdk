@@ -246,8 +246,8 @@ func BoxNeedsBuilder(img *buildkit.ResolvedBox, boxes map[string]*buildkit.Resol
 // are filtered out. Base is appended only when it names an internal box;
 // builder-backed images legitimately have no base.
 //
-// One helper, three callers (ResolveBoxOrder, ResolveBoxLevels, filterBox in
-// build.go) so adding a future edge kind lands in one place.
+// One helper, three callers (ResolveBoxOrder, ResolveBoxLevels, FilterBox
+// below) so adding a future edge kind lands in one place.
 func BoxDirectDeps(name string, img *buildkit.ResolvedBox, boxes map[string]*buildkit.ResolvedBox, includeFormatBuilders bool) []string {
 	var deps []string
 	if !img.IsExternalBase && img.Base != "" && img.Base != name {
@@ -270,6 +270,46 @@ func BoxDirectDeps(name string, img *buildkit.ResolvedBox, boxes map[string]*bui
 		}
 	}
 	return deps
+}
+
+// FilterBox filters the build order to only include the requested images and their
+// dependencies (relocated from charly/build.go — the BUILD-cone cutover; pure over the
+// resolved box graph, no loader/registry coupling). Collects requested images and their
+// transitive deps (Base + format builders + BootstrapBuilderImage) via BoxDirectDeps, so this
+// walker stays in lockstep with ResolveBoxOrder + ResolveBoxLevels (2026-05
+// cachyos-pacstrap-builder regression). includeFormatBuilders=true unconditionally: a filtered
+// build set must always include format-builder images the requested targets need at build
+// time, regardless of BoxNeedsBuilder.
+func FilterBox(order []string, requested []string, boxes map[string]*buildkit.ResolvedBox) ([]string, error) {
+	for _, name := range requested {
+		if _, ok := boxes[name]; !ok {
+			return nil, fmt.Errorf("unknown box %q", name)
+		}
+	}
+
+	needed := make(map[string]bool)
+	var addDeps func(name string)
+	addDeps = func(name string) {
+		if needed[name] {
+			return
+		}
+		needed[name] = true
+		img := boxes[name]
+		for _, dep := range BoxDirectDeps(name, img, boxes, true) {
+			addDeps(dep)
+		}
+	}
+	for _, name := range requested {
+		addDeps(name)
+	}
+
+	var filtered []string
+	for _, name := range order {
+		if needed[name] {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered, nil
 }
 
 // ResolveBoxOrder resolves box dependencies and returns them in build order.
