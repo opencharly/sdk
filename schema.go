@@ -161,12 +161,13 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 		}
 		if c.DeployTraits != nil {
 			pc.DeployTraits = &pb.DeployTraits{
-				Venue:          c.DeployTraits.Venue,
-				ImageBacked:    c.DeployTraits.ImageBacked,
-				ImageContext:   c.DeployTraits.ImageContext,
-				MachineVenue:   c.DeployTraits.MachineVenue,
-				ExclusiveVenue: c.DeployTraits.ExclusiveVenue,
-				LeafOnly:       c.DeployTraits.LeafOnly,
+				Venue:              c.DeployTraits.Venue,
+				ImageBacked:        c.DeployTraits.ImageBacked,
+				ImageContext:       c.DeployTraits.ImageContext,
+				MachineVenue:       c.DeployTraits.MachineVenue,
+				ExclusiveVenue:     c.DeployTraits.ExclusiveVenue,
+				LeafOnly:           c.DeployTraits.LeafOnly,
+				BracketedLifecycle: c.DeployTraits.BracketedLifecycle,
 			}
 		}
 		out = append(out, pc)

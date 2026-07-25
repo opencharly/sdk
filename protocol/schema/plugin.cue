@@ -207,6 +207,12 @@ protocol: {
 					"number": 6
 					"doc":    "the substrate is a deploy-chain LEAF — it cannot be descended into (k8s)"
 				},
+				{
+					"name":   "bracketed_lifecycle"
+					"type":   "bool"
+					"number": 7
+					"doc":    "the substrate's Start/Stop accept direct-mode CLI opts AND need the Q1 resource-arbiter claim bracketed around the dispatch (pod); a substrate that manages its own venue lifecycle + resource claim (vm) leaves this false"
+				},
 			]
 		},
 		{

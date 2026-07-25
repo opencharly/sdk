@@ -1,9 +1,10 @@
 // discover.go — the K1 port of charly/unified.go's discover walk (ApplyDiscover / applyDiscoveredManifest):
 // scans each `discover:` spec for directories carrying its manifest (via the shared kit.FindEntityDirs
 // primitive) and PARSES every document each discovered manifest contains into a spec.DiscoveredManifest.
-// Faithful port, MINUS the host-only candy-image lazy-ref registration + normalizeNodeInto fold
-// (materialize — the registry-coupled kind-decode the host keeps, boundary law) — this file only WALKS +
-// PARSES, exactly like the rest of loaderkit.
+// Faithful port, MINUS the host-only candy-image lazy-ref registration + the per-node materialize FOLD
+// (candy/plugin-loader's own Materializer seam, K1 unit 1 — the not-found policy lives there too now;
+// only the ACTUAL registry resolve + provider dispatch stays host-side, boundary law clause M) — this
+// file only WALKS + PARSES, exactly like the rest of loaderkit.
 package loaderkit
 
 import (
@@ -49,8 +50,9 @@ func (w *walker) runDiscover(rootDir string, specs []kit.ScanSpec) ([]spec.Disco
 // parseDiscoveredManifest loads one discovered manifest and PARSES every document it contains
 // (classify → skip empty → gate → parse) into a spec.DiscoveredManifest. Faithful port of
 // UnifiedFile.applyDiscoveredManifest, MINUS the host-only candy-image lazy-ref registration +
-// normalizeNodeInto fold (materialize, kept host-side) — this only accumulates the parsed
-// spec.ParsedProject per document; the host registers/folds each node by shape afterward.
+// the per-node materialize FOLD (candy/plugin-loader's Materializer, K1 unit 1) — this only
+// accumulates the parsed spec.ParsedProject per document; the host registers/folds each node by
+// shape afterward (materializeDiscoveredNode, charly/materialize.go).
 func (w *walker) parseDiscoveredManifest(dir, manifest, rootDir string) (spec.DiscoveredManifest, error) {
 	target := filepath.Join(dir, manifest)
 	data, err := os.ReadFile(target)

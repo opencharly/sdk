@@ -87,6 +87,8 @@ message DeployTraits {
   bool exclusive_venue = 5;
   // the substrate is a deploy-chain LEAF — it cannot be descended into (k8s)
   bool leaf_only = 6;
+  // the substrate's Start/Stop accept direct-mode CLI opts AND need the Q1 resource-arbiter claim bracketed around the dispatch (pod); a substrate that manages its own venue lifecycle + resource claim (vm) leaves this false
+  bool bracketed_lifecycle = 7;
 }
 
 // StepContract — a class="step" plugin's DECLARED install-step contract (F3): where the

@@ -1,14 +1,21 @@
 package spec
 
-import "gopkg.in/yaml.v3"
+import (
+	"encoding/json"
+
+	"gopkg.in/yaml.v3"
+)
 
 // loader_seam.go — the hand-written CONTRACT types for the unified-config loader seam (K1/#46).
 // These are interface + data contracts (no mechanism): the parse + walk machinery lives in
-// sdk/loaderkit, the materialize in charly core. They live in spec (the shared contract home,
-// alongside the CUE-generated #ParsedProject / #LoadedProject wire types) so BOTH the loader
-// plugin (candy/plugin-loader → loaderkit) and the host may reference them without either
-// importing the other — charly core imports NEITHER loaderkit NOR any other sdk mechanism kit;
-// it reaches the whole-project WALK exclusively through the typed ProjectWalker seam below,
+// sdk/loaderkit, and — since K1 unit 1 — the per-node kind-decode MATERIALIZE dispatch POLICY
+// lives there too (Materializer below; the ACTUAL registry resolve + provider dispatch stays
+// host-side, clause M, reached through MaterializeSeams exactly like WalkSeams above). They live
+// in spec (the shared contract home, alongside the CUE-generated #ParsedProject / #LoadedProject
+// wire types) so BOTH the loader plugin (candy/plugin-loader → loaderkit) and the host may
+// reference them without either importing the other — charly core imports NEITHER loaderkit NOR
+// any other sdk mechanism kit; it reaches the whole-project WALK exclusively through the typed
+// ProjectWalker seam below, and the per-node MATERIALIZE exclusively through Materializer, both
 // resolved from the registered compiled-in loader plugin (mirroring DocParser/Threaded for PARSE).
 
 // Threaded is the host-computed, registry-derived DATA the per-document parse consults instead of
@@ -67,6 +74,74 @@ type WalkSeams struct {
 // cycle-break with the root project's own repo identity.
 type ProjectWalker interface {
 	WalkProject(rootDir string, rootData []byte, rootIdentity string, seams WalkSeams) (LoadedProject, error)
+}
+
+// MaterializedProject accumulates the kind-decoded ENTITY maps ONE document's or ONE discovered
+// node's fold produces — the SAME fields charly-core's *UnifiedFile carries for this purpose
+// (Box/Candy/Bundle/PluginKinds); the host copies them in before a Materializer call and back out
+// after (cheap map-header copies — maps are reference types, so this is NOT a deep copy).
+//
+// The 5 standalone-substrate-TEMPLATE kinds (vm/pod/k8s/local/android) do NOT get their own
+// dedicated fields here — they fold into PluginKinds[disc][name] like every other templated kind
+// (distro/builder/init/sidecar/resource/agent already do), so foldStandaloneTemplateReply
+// (charly/node_normalize.go) needs NO per-kind-word switch to pick a destination field: the
+// generic write `acc.PluginKinds[disc][name] = replyJSON` IS the fold, for any disc. charly-core's
+// UnifiedFile.VM()/.Pod()/.K8s()/.Local()/.Android() are now DERIVED accessor methods reading
+// PluginKinds, mirroring the established Distros()/Builders()/Inits() pattern — not stored fields
+// — so there is nothing left to copy for them either.
+//
+// SDD classification (hand-written, non-wire — precedent: ParsedProject/LoadedProject/CandyRefs/
+// ScannedCandy above, the established sibling family this type extends): same-process PIPELINE
+// STATE crossing ONLY the compiled-in typed Materializer seam below — never marshaled, because the
+// loader plugin is bootstrap-critical and ALWAYS compiled-in (see the package doc above). A live
+// `cue exp gengotypes` spike on this exact shape (all fields already-portable
+// map[string]json.RawMessage / map[string]BundleNode / map[string]map[string]json.RawMessage —
+// zero disjunctions, zero open tails) would generate a faithful plain struct per the CAN/CANNOT
+// quick reference in /charly-internals:go — CUE-sourcing it is NOT precluded by shape. It stays
+// hand-written here instead because it is not a wire type at all: it never crosses a real
+// marshal/unmarshal boundary (the compiled-in placement passes it as a live *MaterializedProject
+// Go pointer, exactly like WalkSeams' live callbacks above) — the SAME reasoning CandyRefs/
+// ScannedCandy already document for this file, which the SDD "wire types are CUE-sourced without
+// exception" mandate does not reach (it binds host↔plugin / render-context WIRE carriers; this is
+// same-process pipeline state, the class loader_seam.go's own precedent already carves out).
+type MaterializedProject struct {
+	Box         map[string]json.RawMessage
+	Candy       map[string]json.RawMessage
+	Bundle      map[string]BundleNode
+	PluginKinds map[string]map[string]json.RawMessage
+}
+
+// MaterializeSeams is the set of host-supplied callbacks the per-node kind-decode DISPATCH needs
+// for everything registry-coupled — resolving a node's discriminator word to its live Provider and
+// invoking it stays host-side (boundary law clause M: provider_registry.go + provider_kind_invoke.go
+// are the TRUE mechanism, same bucket as WalkSeams.Boundary/ResolveRef/GateDoc above); the
+// Materializer NEVER touches the provider registry directly.
+type MaterializeSeams struct {
+	// DecodeEntity resolves pn's discriminator against the provider registry and, if a provider is
+	// found, folds the decoded entity into acc (mutating whichever field the kind belongs in) — the
+	// SAME dispatch the former in-core normalizeNodeInto/runPluginKind always performed. found=false
+	// (no error) means the registry has no provider for pn.Disc — the Materializer applies its OWN
+	// not-found policy from there, using Threaded + the callbacks below.
+	DecodeEntity func(pn ParsedNode, acc *MaterializedProject) (found bool, err error)
+	// BuildBundleEntity folds pn as a deploy-substrate entity into acc.Bundle — the fallback for a
+	// RECOGNIZED (Threaded.DeploySubstrates) but not-yet-connected external deploy substrate word.
+	BuildBundleEntity func(pn ParsedNode, acc *MaterializedProject) error
+	// InKindConnectPass reports whether the loader is inside the re-entrant connect-declared-kind
+	// pre-pass (a nested load triggered by connecting a plugin) — a still-unconnected declared kind
+	// is silently deferred (skip, no error) during this pass.
+	InKindConnectPass func() bool
+	// DeclaredKindConnectError returns the retained build/connect failure for a declared-but-
+	// unconnected kind word, or nil if it simply hasn't been reached yet.
+	DeclaredKindConnectError func(word string) error
+}
+
+// Materializer is the swappable per-node kind-decode DISPATCH seam (#46 unit 1, K1): the loader
+// plugin candy implements it (candy/plugin-loader, delegating to loaderkit.Materialize), and the
+// host resolves the registered loader provider to it and calls it once per parsed entity node — so
+// an alternative loader plugin applies a different not-found/fallback policy by implementing this.
+// Typed (no wire envelope), mirroring DocParser/ProjectWalker/CandyScanner above.
+type Materializer interface {
+	MaterializeNode(pn ParsedNode, t Threaded, seams MaterializeSeams, acc *MaterializedProject) error
 }
 
 // CandyScanner is the swappable CANDY-SCAN seam (W9): the loader plugin candy implements it

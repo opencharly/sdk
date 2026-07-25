@@ -60,6 +60,16 @@
 	merge_auto?:         bool @go(MergeAuto)
 	merge_max_mb?:       int  @go(MergeMaxMB)
 	merge_max_total_mb?: int  @go(MergeMaxTotalMB)
+	// from/bootstrap_builder_image/distro_def/bootstrap_builder are the privileged-bootstrap
+	// inputs (a `from: builder:<name>` image) the candy needs to run
+	// buildkit.RunPrivileged itself instead of the host doing it in the build-prep seam.
+	// bootstrap_builder is the SPECIFIC resolved #Builder for `from`'s builder name (not the
+	// whole per-image builder map) — the minimal slice runPrivilegedBootstrap actually reads.
+	// Both nil/empty for a non-bootstrap image (the common case).
+	from?:                    string    @go(From)
+	bootstrap_builder_image?: string    @go(BootstrapBuilderImage)
+	distro_def?:              #ResolvedDistro @go(DistroDef,optional=nillable)
+	bootstrap_builder?:       #Builder  @go(BootstrapBuilder,optional=nillable)
 }
 
 // #BuildResolveReply is the host-resolved drive-model the candy's podman drive
