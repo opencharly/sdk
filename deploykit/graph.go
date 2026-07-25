@@ -556,3 +556,30 @@ func CandyProvidedByBox(boxName string, boxes map[string]*buildkit.ResolvedBox, 
 
 	return provided, nil
 }
+
+// PruneContainerInitForSystemd drops the `supervisord` candy (the CONTAINER init system) from a
+// resolved DEPLOY candy order when the target is systemd (a host/vm MachineVenue compile). On a
+// systemd target the OS init is the one and only init system — every candy's `service:` entries
+// render as systemd units — so pulling in supervisord is wrong (it lands installed-but-unused, a
+// second init). Pod/k8s deploys and OCI image builds keep supervisord (it IS their init), so this
+// only affects host/vm deploys. Candies that `require: supervisord` purely for graph ordering are
+// unaffected at runtime — their services run under systemd regardless of whether the supervisord
+// package is present.
+//
+// Relocated from charly/bundle_add_cmd.go (K4 unit B, core-min wave 3) — a pure function of
+// order+HostContext.MachineVenue with no core-only dependency, now shared (R3) by charly-core's
+// compileBoxSelection (unchanged, box shape) AND candy/plugin-bundle's candy-selection path (K4
+// unit B) instead of being duplicated on both sides.
+func PruneContainerInitForSystemd(order []string, hostCtx HostContext) []string {
+	if !hostCtx.MachineVenue {
+		return order
+	}
+	out := make([]string, 0, len(order))
+	for _, n := range order {
+		if n == "supervisord" {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}

@@ -886,38 +886,86 @@
 	reason!: string @go(Reason)
 }
 
-// #DeployCompileRequest is the per-node COMPILE seam (K4-B): the host computes the
-// per-node selection (resolved box — authored OR synthetic — projected to a
-// ResolvedBoxView; the FINAL pruned candy order; the host-side HostContext incl. the
-// preresolved BuilderContext) and asks the command:bundle plugin's OpCompile handler to
-// compile. The plugin fetches the resolved-project envelope itself via
-// HostBuild("resolved-project") (the established seam — it does NOT receive the whole
-// project in the request), re-hydrates the box vocab via deploykit.NewSpecResolvedBox and
-// each candy model via deploykit.NewSpecCandyModel, loops deploykit.BuildDeployPlan over
-// the host-provided order, and returns []InstallPlanView. The host re-materializes
-// []*InstallPlan from the views via deploykit.PlanFromView.
+// #DeployCompileRequest is the per-node COMPILE seam (K4-B / K4 unit B): the host asks the
+// command:bundle plugin's OpCompile handler to compile, in one of THREE selection SHAPES (a
+// discriminated set, not three Ops — R3). The plugin fetches the resolved-project envelope
+// itself via HostBuild("resolved-project") (the established seam — it does NOT receive the
+// whole project in the request), loops deploykit.BuildDeployPlan over the resolved order, and
+// returns []InstallPlanView. The host re-materializes []*InstallPlan from the views via
+// deploykit.PlanFromView.
 //
-// BoxView is the resolved box to compile against, INLINE (the host projects authored
-// boxes via projectResolvedBox AND synthetics via syntheticHostBox/syntheticVmBox the SAME
-// way — both become a spec.ResolvedBoxView). HostContextJSON is the marshalled
-// deploykit.HostContext (MachineVenue/Distro/Glibc/BuilderImage + the preresolved
-// BuilderContext map) — a hand-written sdk/deploykit type with no CUE def, so it rides as
-// an opaque RawBody envelope (the VmJSON/PodConfigJSON idiom; the plugin unmarshals into
-// deploykit.HostContext, which it imports via github.com/opencharly/sdk/deploykit). Tag is
-// the image CalVer pin (for the plan Version field when set). Dir is the project dir the
-// plugin threads into its HostBuild("resolved-project") call (empty → plugin cwd).
+//   - BOX-VIEW selection (compileCandyOnBoxSelection, the add_candy-on-pod/k8s shape, ctx!=nil —
+//     UNCHANGED): box_view + order are POPULATED host-side (the host projects an
+//     ALREADY-RESOLVED base image via projectResolvedBox — the base image itself came from a
+//     separate host-side ResolveBox call in compileNodePlans, so there is no envelope-only path
+//     to it yet) and the plugin trusts them as sent.
+//   - CANDY selection (compileStandaloneCandySelection, the target:local/vm standalone-candy
+//     shape, K4 unit B candy-half): candy_ref is set — the plugin resolves the candy key + topo
+//     order itself from its own envelope (deploykit.ResolveCandyOrder over rp.CandyModels,
+//     already pure) and builds ITS OWN synthetic box (vmshared.DetectHostDistro/DetectHostGlibc
+//     for a host target — already sdk-portable; the kind:vm provider's own OpResolve leg for a
+//     vm target, mirroring the kind:local OpResolve reuse in node_resolve.go's
+//     lookupLocalTemplate, K4 unit A).
+//   - BOX-REF selection (compileBoxSelection, the primary pod/k8s image shape, K4 unit B
+//     box-half): box_ref is set — the plugin reads rp.Boxes[box_ref] (the SAME ResolvedBoxView
+//     hostBuildResolvedProject already computed to BUILD the envelope in the first place — no
+//     re-derivation, R3) directly via deploykit.NewSpecResolvedBox, and resolves the candy topo
+//     order itself from img.Candy over rp.CandyModels (deploykit.ResolveCandyOrder, same as the
+//     CANDY shape).
+//
+// Exactly one of box_view, candy_ref, box_ref is set. Neither CANDY nor BOX-REF needs
+// LoadUnified or the provider-CONNECT registry (verified live, K4 unit B: candy/plugin-bundle's
+// own ALREADY-EXISTING preresolveBuilderContexts, called unconditionally for every OpCompile,
+// already S2-lazy-connects any externalized builder the resolved order+img trigger via
+// exec.InvokeProvider — an exhaustive repo grep found zero target:local/vm or pod/k8s deploy
+// anywhere needing a builder plugin outside the calling project's own candy closure, the one
+// edge S2's Pass-1 project-scan can't cover), so neither needs a new HostBuild kind.
+//
+// HostContextJSON is the marshalled deploykit.HostContext (MachineVenue/Distro/Glibc/
+// BuilderImage + the preresolved BuilderContext map) — a hand-written sdk/deploykit type
+// with no CUE def, so it rides as an opaque RawBody envelope (the VmJSON/PodConfigJSON
+// idiom; the plugin unmarshals into deploykit.HostContext, which it imports via
+// github.com/opencharly/sdk/deploykit) — ALWAYS host-computed for every shape (detectHostContext's
+// MachineVenue probe + preresolveActiveInitInto's LoadUnified-coupled init lookup; only the
+// box/candy SELECTION moved). Tag is the image CalVer pin (for the plan Version field when
+// set). Dir is the project dir the plugin threads into its HostBuild("resolved-project") call
+// (empty → plugin cwd).
 #DeployCompileRequest: {
-	dir!:          string          @go(Dir)
-	box_view!:     #ResolvedBoxView @go(BoxView)
-	order?:        [...string]     @go(Order)
-	host_context!: bytes           @go(HostContextJSON, type=RawBody)
-	tag?:          string          @go(Tag)
+	dir!:          string           @go(Dir)
+	box_view?:     #ResolvedBoxView @go(BoxView)
+	order?:        [...string]      @go(Order)
+	host_context!: bytes            @go(HostContextJSON, type=RawBody)
+	tag?:          string           @go(Tag)
 	// The add_candy:/--add-candy ref(s) (if any) this compile call's own candy set was widened
 	// with host-side (scanCandiesForRef's synthetic-augmented scan, for a REMOTE ref) — threaded
 	// into the plugin's OWN HostBuild("resolved-project") re-fetch (as its extra_candy_refs) so
 	// the envelope's candy map ALSO carries them (RCA'd K1-alpha regression: the two scans were
 	// independent, so a remote add-candy resolved host-side never reached the envelope).
 	extra_candy_refs?: [...string] @go(ExtraCandyRefs)
+	// candy_ref selects the CANDY shape above (K4 unit B): the authored ref string (bare local
+	// name OR a `@github…` remote ref) the plugin resolves via BareRef against its own
+	// rp.CandyModels/rp.Candies (widened, when remote, by extra_candy_refs carrying the SAME raw
+	// ref — mirroring compileStandaloneCandySelection's ExtraCandyRefs: []string{ref.Raw}
+	// widening). Absent for the other shapes.
+	candy_ref?: string @go(CandyRef)
+	// vm_entity selects the CANDY shape's synthetic-box kind, TOLERANTLY (mirrors the OLD host
+	// syntheticVmBox call site exactly — never a hard requirement): the plugin tries vm_entity
+	// against its own rp.Templates.VM; a HIT resolves it via the kind:vm provider's OpResolve leg
+	// for a guest-tuned box; a MISS (including vm_entity=="") falls through to a plain host-adhoc
+	// box via vmshared.DetectHostDistro. A non-vm deploy's node.From (e.g. a `local:` node's
+	// kind:local template ref) is ALSO threaded into vm_entity upstream (resolveVmEntity returns
+	// node.From unconditionally, not only for a real vm cross-ref) — so a miss here is the
+	// COMMON case, not an error condition. Ignored for the other shapes.
+	vm_entity?: string @go(VmEntity)
+	// box_ref selects the BOX-REF shape above (K4 unit B box-half): the box's own name (never a
+	// remote ref — compileRefSelection already rejects a remote image ref before this request is
+	// built). The plugin's own HostBuild("resolved-project") re-fetch is asked to include_disabled
+	// so an explicitly-named `enabled: false` box still resolves (mirrors the OLD host
+	// ResolveBox(cfg, ref.Name, …) call, which never checked IsEnabled at all — enabled-filtering
+	// is a ResolveAllBox/listing concern, not a by-name-resolve one; zero disabled boxes exist
+	// repo-wide today, so this is a zero-cost future-proofing widening, not a live behavior
+	// change). Absent for the other shapes.
+	box_ref?: string @go(BoxRef)
 }
 
 // #DeployCompileReply is the OpCompile reply: the compiled plans as marshalled
