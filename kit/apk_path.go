@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // apk_path.go — the shared committed-APK path resolver (FINAL/K5 unit 6a, relocated from
@@ -42,4 +43,33 @@ func ResolveApkPath(ref, candyDir string) (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// ResolveCommittedApk resolves a relative committed-APK path (the adb/appium
+// `apk: ./tests/data/...` fixture) against the ORIGINATING candy's source tree, given
+// the caller's own candy-name→source-dir map (candyDirs) — CHECK-cone move, extracted
+// from charly's checkrun_charly_verbs.go resolveCheckApk so the pure candy-anchoring logic
+// is available to any caller holding a CandyDirs snapshot (host or plugin), not just the
+// core hostVerbResolver method. origin must be "candy:<key>" — the check's Origin form
+// CollectDescriptions stamps, and <key> must match a key in candyDirs.
+//
+// It FAILS HARD on every condition where the fixture cannot be anchored — a non-candy
+// origin, an absent candyDirs entry, or a file missing under the candy tree. There is NO
+// fallback and NO silent cwd-relative pass-through.
+func ResolveCommittedApk(apk, origin string, candyDirs map[string]string, candyScanErr error) (string, error) {
+	if apk == "" || filepath.IsAbs(apk) {
+		return apk, nil
+	}
+	key, ok := strings.CutPrefix(origin, "candy:")
+	if !ok {
+		return "", fmt.Errorf("committed APK %q has origin %q, not a candy origin — cannot anchor it to a candy source tree (the step's candy Origin was not propagated)", apk, origin)
+	}
+	dir := candyDirs[key]
+	if dir == "" {
+		if candyScanErr != nil {
+			return "", fmt.Errorf("committed APK %q (candy %q): candy source-dir scan failed: %w", apk, key, candyScanErr)
+		}
+		return "", fmt.Errorf("committed APK %q: candy %q is absent from the source scan (%d candies scanned) — cannot anchor the fixture", apk, key, len(candyDirs))
+	}
+	return ResolveApkPath(apk, dir)
 }
