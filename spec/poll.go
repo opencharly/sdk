@@ -1,4 +1,4 @@
-package vmshared
+package spec
 
 import (
 	"context"
@@ -17,8 +17,15 @@ import (
 // duplication AND an R4 magic-number problem: under heavy PARALLEL testing,
 // concurrent builds starve service startup, so a slow-but-still-progressing
 // deploy blows past those short fixed deadlines and fails — even though it would
-// have become ready. pollUntil replaces all of them with one synchronization
+// have become ready. PollUntil replaces all of them with one synchronization
 // primitive whose bounds are config-sourced + validated (see ReadinessConfig).
+//
+// Home note (FLOOR-legal leaf): this poll/readiness primitive lives in package
+// spec — the always-floor-legal wire/vocabulary leaf any charly file (kernel
+// floor included) may import. It is stdlib-only (context/errors/fmt/time) and
+// carries no vmshared/plugin dependency, so it does not enlarge spec's
+// dependency surface. vmshared re-exports the symbols (poll_reexport.go) for its
+// existing cross-module users.
 //
 // Two honest readiness modes — chosen by the call-site builders below, because
 // a single "no-progress" rule is WRONG for half the sites:
@@ -54,13 +61,13 @@ import (
 //      mid-pass guillotine that kills a slow-but-progressing pass under heavy load.
 //   2. AbsoluteCap: a generous wall-clock ceiling (or NoProgress when monotonic).
 //   3. ctx cancellation: a dispatcher-level cancel wins at the inter-tick select.
-// pollUntil self-validates these at entry (fail-closed) — it does not trust the
+// PollUntil self-validates these at entry (fail-closed) — it does not trust the
 // config-load validation, because direct/zero-value construction bypasses it.
 
 // PollCondition is the caller's readiness probe, invoked once per tick under a
 // per-attempt timeout context.
 //
-//	ready    — the awaited state is reached; pollUntil returns nil.
+//	ready    — the awaited state is reached; PollUntil returns nil.
 //	progress — a MONOTONIC forward-motion score (higher == more progress, e.g. a
 //	           count or an AI score). The no-progress watchdog resets only when
 //	           this reaches a NEW HIGH-WATER value, so oscillation/regression
@@ -79,11 +86,11 @@ var (
 	ErrPollCapExceeded = errors.New("poll: absolute cap exceeded")
 	// ErrPollFatal — wrap a cond error in this to abort the poll immediately.
 	ErrPollFatal = errors.New("poll: fatal condition error")
-	// ErrPollConfig — pollUntil's own entry validation rejected the config.
+	// ErrPollConfig — PollUntil's own entry validation rejected the config.
 	ErrPollConfig = errors.New("poll: invalid configuration")
 )
 
-// PollConfig parameterizes one pollUntil call. Build it via ResolvedReadiness's
+// PollConfig parameterizes one PollUntil call. Build it via ResolvedReadiness's
 // Wait / WaitCapped / StopGate so no call site carries a magic literal.
 type PollConfig struct {
 	Name        string        // label woven into log lines + errors, e.g. "ssh-ready check-k3s-vm"
@@ -131,11 +138,11 @@ func (c PollConfig) validate() error {
 	return nil
 }
 
-// pollUntil drives cond to readiness using the modes described on PollConfig.
+// PollUntil drives cond to readiness using the modes described on PollConfig.
 // Returns nil on ready; a %w-wrapped ErrPollStalled / ErrPollCapExceeded /
 // ErrPollFatal / ErrPollConfig, or ctx.Err(), otherwise. Context-cancellable;
 // deterministic under an injected clock (zero real sleeping in tests).
-func pollUntil(ctx context.Context, cfg PollConfig, cond PollCondition) error {
+func PollUntil(ctx context.Context, cfg PollConfig, cond PollCondition) error {
 	if err := cfg.validate(); err != nil {
 		return err
 	}
@@ -247,7 +254,7 @@ type ResolvedReadiness struct {
 }
 
 // Named fallback constants — the single source of the defaults, referenced by
-// both resolveReadiness (config.go) and the zero-value path here. Not magic
+// both ResolveReadiness (readiness.go) and the zero-value path here. Not magic
 // literals scattered at call sites: one named home, config-overridable, validated.
 const (
 	readinessIntervalLocalFallback  = 250 * time.Millisecond
@@ -263,6 +270,21 @@ const (
 	readinessNoProgressFallback      = 90 * time.Second
 	readinessAbsoluteCapFallback     = 30 * time.Minute
 	readinessStopGraceFallback       = 180 * time.Second
+)
+
+// Exported fallback aliases — the exported surface vmshared (and, through it,
+// the VM plugin) re-export as the operator-visible fallback defaults. The
+// unexported consts above stay the intra-spec single source; these expose them
+// across the package boundary without a second literal.
+const (
+	ReadinessIntervalLocalFallback   = readinessIntervalLocalFallback
+	ReadinessIntervalRemoteFallback  = readinessIntervalRemoteFallback
+	ReadinessIntervalHeavyFallback   = readinessIntervalHeavyFallback
+	ReadinessPerAttemptFallback      = readinessPerAttemptFallback
+	ReadinessPerAttemptHeavyFallback = readinessPerAttemptHeavyFallback
+	ReadinessNoProgressFallback      = readinessNoProgressFallback
+	ReadinessAbsoluteCapFallback     = readinessAbsoluteCapFallback
+	ReadinessStopGraceFallback       = readinessStopGraceFallback
 )
 
 func (rr ResolvedReadiness) interval(class PollClass) time.Duration {
