@@ -89,6 +89,12 @@ message DeployTraits {
   bool leaf_only = 6;
   // the substrate's Start/Stop accept direct-mode CLI opts AND need the Q1 resource-arbiter claim bracketed around the dispatch (pod); a substrate that manages its own venue lifecycle + resource claim (vm) leaves this false
   bool bracketed_lifecycle = 7;
+  // the substrate is a valid kind:check bed target (pod/vm/local/android); k8s and unknown words are not
+  bool bed_target = 8;
+  // the substrate's Add/Del path wires the ephemeral register/teardown seam (TTL timer + charly.yml persistence) — vm only today
+  bool supports_ephemeral = 9;
+  // the substrate has a backing chain from_snapshot restores from — vm only
+  bool supports_from_snapshot = 10;
 }
 
 // StepContract — a class="step" plugin's DECLARED install-step contract (F3): where the

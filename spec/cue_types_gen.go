@@ -3493,6 +3493,20 @@ type DeployTraits struct {
 	// claim bracketed around the dispatch (pod). A substrate that manages its own venue
 	// lifecycle + resource claim (vm, via `charly vm start`/`stop`) leaves this false.
 	BracketedLifecycle bool `yaml:"bracketed_lifecycle,omitempty" json:"bracketed_lifecycle,omitempty"`
+
+	// bed_target: the substrate is a valid `kind:check` bed target — pod/vm/local/android run a
+	// disposable check bed; k8s (leaf_only) does not. validateCheckBeds reads this instead of
+	// switching on the substrate word (the boundary-law incomplete-seam gate).
+	BedTarget bool `yaml:"bed_target,omitempty" json:"bed_target,omitempty"`
+
+	// supports_ephemeral: the substrate's Add/Del path wires the ephemeral register/teardown seam
+	// (TTL timer + charly.yml persistence) — vm only today; pod/k8s reject `ephemeral: true` until
+	// their Add/Del wire the same seam. validateEphemeral reads this instead of a substrate switch.
+	SupportsEphemeral bool `yaml:"supports_ephemeral,omitempty" json:"supports_ephemeral,omitempty"`
+
+	// supports_from_snapshot: the substrate has a backing chain `from_snapshot:` restores from — vm
+	// only (pod/k8s have no backing chains). validateEphemeral reads this instead of a word switch.
+	SupportsFromSnapshot bool `yaml:"supports_from_snapshot,omitempty" json:"supports_from_snapshot,omitempty"`
 }
 
 // #DescentDescriptor is the loader-DERIVED venue-hop descriptor (Cutover H + P9).
@@ -3545,6 +3559,20 @@ type DescentDescriptor struct {
 	// claim bracketed around the dispatch (pod). A substrate that manages its own venue
 	// lifecycle + resource claim (vm, via `charly vm start`/`stop`) leaves this false.
 	BracketedLifecycle bool `yaml:"bracketed_lifecycle,omitempty" json:"bracketed_lifecycle,omitempty"`
+
+	// bed_target: the substrate is a valid `kind:check` bed target — pod/vm/local/android run a
+	// disposable check bed; k8s (leaf_only) does not. validateCheckBeds reads this instead of
+	// switching on the substrate word (the boundary-law incomplete-seam gate).
+	BedTarget bool `yaml:"bed_target,omitempty" json:"bed_target,omitempty"`
+
+	// supports_ephemeral: the substrate's Add/Del path wires the ephemeral register/teardown seam
+	// (TTL timer + charly.yml persistence) — vm only today; pod/k8s reject `ephemeral: true` until
+	// their Add/Del wire the same seam. validateEphemeral reads this instead of a substrate switch.
+	SupportsEphemeral bool `yaml:"supports_ephemeral,omitempty" json:"supports_ephemeral,omitempty"`
+
+	// supports_from_snapshot: the substrate has a backing chain `from_snapshot:` restores from — vm
+	// only (pod/k8s have no backing chains). validateEphemeral reads this instead of a word switch.
+	SupportsFromSnapshot bool `yaml:"supports_from_snapshot,omitempty" json:"supports_from_snapshot,omitempty"`
 }
 
 type Deploy struct {

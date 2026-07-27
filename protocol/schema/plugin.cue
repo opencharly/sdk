@@ -213,6 +213,24 @@ protocol: {
 					"number": 7
 					"doc":    "the substrate's Start/Stop accept direct-mode CLI opts AND need the Q1 resource-arbiter claim bracketed around the dispatch (pod); a substrate that manages its own venue lifecycle + resource claim (vm) leaves this false"
 				},
+				{
+					"name":   "bed_target"
+					"type":   "bool"
+					"number": 8
+					"doc":    "the substrate is a valid kind:check bed target (pod/vm/local/android); k8s and unknown words are not"
+				},
+				{
+					"name":   "supports_ephemeral"
+					"type":   "bool"
+					"number": 9
+					"doc":    "the substrate's Add/Del path wires the ephemeral register/teardown seam (TTL timer + charly.yml persistence) — vm only today"
+				},
+				{
+					"name":   "supports_from_snapshot"
+					"type":   "bool"
+					"number": 10
+					"doc":    "the substrate has a backing chain from_snapshot restores from — vm only"
+				},
 			]
 		},
 		{

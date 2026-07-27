@@ -375,8 +375,14 @@ type DeployTraits struct {
 	LeafOnly bool `protobuf:"varint,6,opt,name=leaf_only,json=leafOnly,proto3" json:"leaf_only,omitempty"`
 	// the substrate's Start/Stop accept direct-mode CLI opts AND need the Q1 resource-arbiter claim bracketed around the dispatch (pod); a substrate that manages its own venue lifecycle + resource claim (vm) leaves this false
 	BracketedLifecycle bool `protobuf:"varint,7,opt,name=bracketed_lifecycle,json=bracketedLifecycle,proto3" json:"bracketed_lifecycle,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// the substrate is a valid kind:check bed target (pod/vm/local/android); k8s and unknown words are not
+	BedTarget bool `protobuf:"varint,8,opt,name=bed_target,json=bedTarget,proto3" json:"bed_target,omitempty"`
+	// the substrate's Add/Del path wires the ephemeral register/teardown seam (TTL timer + charly.yml persistence) — vm only today
+	SupportsEphemeral bool `protobuf:"varint,9,opt,name=supports_ephemeral,json=supportsEphemeral,proto3" json:"supports_ephemeral,omitempty"`
+	// the substrate has a backing chain from_snapshot restores from — vm only
+	SupportsFromSnapshot bool `protobuf:"varint,10,opt,name=supports_from_snapshot,json=supportsFromSnapshot,proto3" json:"supports_from_snapshot,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *DeployTraits) Reset() {
@@ -454,6 +460,27 @@ func (x *DeployTraits) GetLeafOnly() bool {
 func (x *DeployTraits) GetBracketedLifecycle() bool {
 	if x != nil {
 		return x.BracketedLifecycle
+	}
+	return false
+}
+
+func (x *DeployTraits) GetBedTarget() bool {
+	if x != nil {
+		return x.BedTarget
+	}
+	return false
+}
+
+func (x *DeployTraits) GetSupportsEphemeral() bool {
+	if x != nil {
+		return x.SupportsEphemeral
+	}
+	return false
+}
+
+func (x *DeployTraits) GetSupportsFromSnapshot() bool {
+	if x != nil {
+		return x.SupportsFromSnapshot
 	}
 	return false
 }
@@ -2514,7 +2541,7 @@ const file_plugin_proto_rawDesc = "" +
 	"\x12command_model_json\x18\r \x01(\fR\x10commandModelJson\"7\n" +
 	"\rCLISubcommand\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04help\x18\x02 \x01(\tR\x04help\"\x88\x02\n" +
+	"\x04help\x18\x02 \x01(\tR\x04help\"\x8c\x03\n" +
 	"\fDeployTraits\x12\x14\n" +
 	"\x05venue\x18\x01 \x01(\tR\x05venue\x12!\n" +
 	"\fimage_backed\x18\x02 \x01(\bR\vimageBacked\x12#\n" +
@@ -2522,7 +2549,12 @@ const file_plugin_proto_rawDesc = "" +
 	"\rmachine_venue\x18\x04 \x01(\bR\fmachineVenue\x12'\n" +
 	"\x0fexclusive_venue\x18\x05 \x01(\bR\x0eexclusiveVenue\x12\x1b\n" +
 	"\tleaf_only\x18\x06 \x01(\bR\bleafOnly\x12/\n" +
-	"\x13bracketed_lifecycle\x18\a \x01(\bR\x12bracketedLifecycle\"d\n" +
+	"\x13bracketed_lifecycle\x18\a \x01(\bR\x12bracketedLifecycle\x12\x1d\n" +
+	"\n" +
+	"bed_target\x18\b \x01(\bR\tbedTarget\x12-\n" +
+	"\x12supports_ephemeral\x18\t \x01(\bR\x11supportsEphemeral\x124\n" +
+	"\x16supports_from_snapshot\x18\n" +
+	" \x01(\bR\x14supportsFromSnapshot\"d\n" +
 	"\fStepContract\x12\x14\n" +
 	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x14\n" +
 	"\x05venue\x18\x02 \x01(\x05R\x05venue\x12\x12\n" +
