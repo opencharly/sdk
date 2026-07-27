@@ -1,11 +1,16 @@
 package deploykit
 
-import "strings"
+import (
+	"strings"
 
-// hooks_collect.go — the pure candy-hooks merge logic (W9: the CollectHooks split, same
-// rationale as MergeCandySecurity in security.go). charly's CollectHooks (hooks.go) stays the
-// host-side wrapper that resolves the box's FULL candy chain (base-inheriting — a *Config/
-// walkBaseChain concern, genuinely core) and calls this pure fold over the CandyModel interface.
+	"github.com/opencharly/sdk/spec"
+)
+
+// hooks_collect.go — the candy-hooks merge logic (W9: MergeCandyHooks) AND — since the core-min
+// wave-3 build-cluster split — the full CollectHooks aggregator relocated from charly/hooks.go.
+// CollectHooks resolves the box's FULL candy chain (base-inheriting, via BoxCandyChain) and folds
+// it via MergeCandyHooks; both halves are pure (Config = spec.Config is the loader's own type,
+// BoxCandyChain is an sdk mechanism), shared by the host projector and the build render.
 
 // MergeCandyHooks concatenates PostEnable/PreRemove hook scripts across an ordered candy chain,
 // one section per script kind, newline-joined in candy order. Returns nil when no candy in the
@@ -34,4 +39,19 @@ func MergeCandyHooks(candies []CandyModel) *HooksConfig {
 		PostEnable: strings.Join(postEnable, "\n"),
 		PreRemove:  strings.Join(preRemove, "\n"),
 	}
+}
+
+// CollectHooks collects and concatenates hooks from all candies in a box's candy chain, in candy
+// order. Relocated from charly/hooks.go in the core-min wave-3 build-cluster split. The candy
+// chain resolution (BoxCandyChain) and the concatenation (MergeCandyHooks) are both pure sdk.
+func CollectHooks(cfg *spec.Config, layers map[string]CandyModel, boxName string) *HooksConfig {
+	allCandyNames, _ := BoxCandyChain(cfg, layers, boxName)
+
+	candies := make([]CandyModel, 0, len(allCandyNames))
+	for _, name := range allCandyNames {
+		if layer, ok := layers[name]; ok {
+			candies = append(candies, layer)
+		}
+	}
+	return MergeCandyHooks(candies)
 }
