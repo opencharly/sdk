@@ -188,23 +188,22 @@
 	force?:             bool            @go(Force)
 }
 
-// #DeployTreeResolveRequest/#DeployTreeResolveReply — K4 lane A. candy/plugin-bundle now OWNS
-// the `charly bundle add` dispatch CONTROL FLOW (Run's target-path resolve + the pre-order tree
-// walk); resolveTreeRoot (reads LoadUnified, a core Mechanism the plugin cannot import) stays
-// host-side, returning the WHOLE merged project+operator deploy tree so the plugin walks it
-// itself via the already-pure sdk/deploykit WalkDeploymentTree/ResolveNodePath. Also connects the
-// deployment's out-of-tree plugin candies (loadDeployPlugins) — the ONE per-invocation preamble
-// every dispatch needs before ResolveTarget can route to an external substrate. root_venue_ssh
-// reports whether the resolved root's stamped descent traits are the "ssh" venue (a vm root) —
-// the plugin dispatches node-only in that case (nested pods deploy IN the guest), mirroring the
-// prior in-core check without needing the registry-backed nodeTraits call itself.
-#DeployTreeResolveRequest: {
+// #DeployPluginsConnectRequest/#DeployPluginsConnectReply — the K1-LOADER RELOCATION witness (Unit
+// D). candy/plugin-bundle now DRIVES loaderkit.LoadUnified ITSELF, plugin-side, over the
+// reverse-channel LoaderExecutor (execLoaderExecutor → the "loader-*" host legs), to resolve the
+// `charly bundle add` deploy tree — the host no longer runs resolveTreeRoot for the walk. This seam
+// is the ONE host-only PREAMBLE the plugin still needs: connect the deployment's out-of-tree plugin
+// candies (loadDeployPlugins — registry-coupled, a core Mechanism) BEFORE ResolveTarget can route to
+// an external substrate, and return the resolved project dir (host os.Getwd — the SAME dir
+// resolveTreeRoot uses) the plugin passes to loaderkit.LoadUnified. The plugin reads root-venue-ssh
+// itself from the tree's stamped node.Descent (loaderkit.LoadUnified stamps it), so no host trait
+// call — proving plugin-bundle → loaderkit.LoadUnified end-to-end.
+#DeployPluginsConnectRequest: {
 	path!:      string @go(Path) // the target dotted path (Run's targetPath == c.Name)
 	add_candy?: [...string] @go(AddCandy) // CLI --add-candy, threaded into loadDeployPlugins's scan
 }
-#DeployTreeResolveReply: {
-	tree?:          {[string]: #Deploy} @go(Tree, type=map[string]*Deploy)
-	root_venue_ssh?: bool                @go(RootVenueSSH)
+#DeployPluginsConnectReply: {
+	dir!: string @go(Dir) // the resolved project dir (host os.Getwd) the plugin passes to loaderkit.LoadUnified
 }
 
 // #DeployNodeDispatchRequest/#DeployNodeDispatchReply — the per-node `charly bundle add`
@@ -1726,4 +1725,18 @@
 	stdout?:    string @go(Stdout)
 	exit_code?: int    @go(ExitCode,type=int)
 	error?:     string @go(Error)
+}
+
+// #LoaderWalkRequest is the "loader-walk" host-builder envelope (K1-LOADER RELOCATION,
+// Unit B/D): a plugin driving loaderkit.LoadUnified plugin-side asks the HOST to run the
+// kind-blind import/discover/namespace walk for a project dir over the ALREADY
+// bootstrap-transformed root bytes. RootData is the raw (bootstrap-phase-transformed) YAML,
+// carried as base64-over-JSON []byte (NOT RawBody — it is YAML, not JSON). The reply is a
+// spec.LoadedProject marshalled directly (no reply envelope needed). Every OTHER loader leg
+// carries an existing type verbatim over the []byte wire: loader-bootstrap ([]byte→[]byte),
+// loader-threaded (∅→spec.Threaded), loader-materialize (spec.LoadedProject→loaderkit.UnifiedFile),
+// loader-android-validate / loader-preempt-validate (loaderkit.UnifiedFile→error).
+#LoaderWalkRequest: {
+	dir!:       string @go(Dir)
+	root_data?: bytes  @go(RootData)
 }
