@@ -5997,6 +5997,41 @@ type ScoreSummary struct {
 	Skip int `yaml:"skip,omitempty" json:"skip"`
 }
 
+// #CheckVenueResolveRequest asks plugin-check to CLASSIFY a check target's venue — the kind-decode
+// (checkVmTarget/checkLocalTarget branch on the stamped venue trait) that is CHECK CAPABILITY LOGIC,
+// not kernel fabric (#118 boundary-law self-test: a floor file switching on a kind is a leaked
+// R-item). The host's floor reverse-legs (endpoint / graphics / gRPC exec-attach) call this INSTEAD
+// of an in-core classifier duplicate, then re-materialize the returned generic #VenueDescriptor via
+// kit.VenueFromDescriptor (single-hop) — or, for a nested target the flat descriptor cannot express,
+// rebuild the N-hop chain host-side via the kind-blind deploykit.ResolveDeployChain. plugin-check
+// reaches the merged deploy tree via its OWN HostBuild("resolved-project"), so this seam carries
+// only name+instance. Class-generic action noun (F11).
+type CheckVenueResolveRequest struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+}
+
+// #CheckVenueResolveReply is the wire-safe projection of the plugin-side CheckVenue: the generic
+// #VenueDescriptor (the host re-materializes it into a live DeployExecutor — a live executor never
+// crosses the wire) plus the scalar venue facts the host legs consume (kind for the vm-vs-not
+// graphics branch + the IsContainer var-resolution gate; engine/name for container port mapping +
+// image-label reads; vm_name for the VM graphics leg; nested marks a genuinely multi-hop target the
+// single-hop descriptor degrades to zero for, so the host rebuilds its chain via ResolveDeployChain).
+type CheckVenueResolveReply struct {
+	Descriptor VenueDescriptor `yaml:"descriptor,omitempty" json:"descriptor"`
+
+	Kind string `yaml:"kind,omitempty" json:"kind"`
+
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	VMName string `yaml:"vm_name,omitempty" json:"vm_name,omitempty"`
+
+	Nested bool `yaml:"nested,omitempty" json:"nested,omitempty"`
+}
+
 // #CheckLoadPluginsRequest asks the host to connect the out-of-process plugin candies a check
 // plan's verb words reference (K1-unblock wave — the "live" check-run arm). Verb dispatch itself
 // crosses the wire generically via InvokeProvider (S1 — command:check's pluginVerbResolver), but
