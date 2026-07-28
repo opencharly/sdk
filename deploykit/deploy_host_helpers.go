@@ -121,8 +121,9 @@ func BuildArtifactEnv(secretEnv map[string]string, node *spec.BundleNode) map[st
 // candy's artifact list — name-blind (it reads each artifact's own declaration, never a
 // candy name). The declaration-reading half of the k3s-server artifact-declaration-driven
 // dispatch fix (P13-KERNEL); the WORD-KEYED HANDLER TABLE (function pointers into
-// charly-core-only bodies like K3sPostProvision) stays host-side as the thin dispatch
-// anchor — charly/deploy_add_shared.go's artifactRegisterHandlers, never here.
+// k3sPostProvision and friends) stays PLUGIN-side as the thin dispatch anchor
+// (candy/plugin-bundle/secrets_artifacts.go's artifactRegisterHandlers, Cone A shape 3 —
+// relocated wholesale from the deleted charly/deploy_add_shared.go), never here.
 func CandyArtifactRegisters(layers []spec.CandyReader) map[string]bool {
 	out := map[string]bool{}
 	for _, layer := range layers {
@@ -136,4 +137,45 @@ func CandyArtifactRegisters(layers []spec.CandyReader) map[string]bool {
 		}
 	}
 	return out
+}
+
+// DeriveDeploymentName turns "quay.io/myorg/openclaw:v1" → "openclaw" and
+// "registry.example.com/path/foo" → "foo" — the shared default-name derivation for a
+// source-less `charly bundle from-box` deploy (both the pod path, charly/bundle_from_box_cmd.go,
+// and the k8s path, candy/plugin-bundle/deploy_from_box.go — R3, one function, two callers).
+func DeriveDeploymentName(imageRef string) string {
+	// Strip tag.
+	ref := imageRef
+	if idx := lastIndexByteInRef(ref, ':'); idx >= 0 {
+		ref = ref[:idx]
+	}
+	// Return last path component.
+	if idx := lastIndexByteInRef(ref, '/'); idx >= 0 {
+		return ref[idx+1:]
+	}
+	return ref
+}
+
+// lastIndexByteInRef returns the last index of c in s, ignoring any '/' that
+// appears after a port number in a registry host (e.g., "localhost:5000/foo:v1"
+// should not treat the ":5000" colon as a tag boundary). Simple heuristic:
+// return last ':' only if it appears after the last '/'.
+func lastIndexByteInRef(s string, c byte) int {
+	lastSlash := -1
+	for i := 0; i < len(s); i++ {
+		if s[i] == '/' {
+			lastSlash = i
+		}
+	}
+	last := -1
+	start := 0
+	if c == ':' {
+		start = lastSlash + 1 // only look after final path segment for tag
+	}
+	for i := start; i < len(s); i++ {
+		if s[i] == c {
+			last = i
+		}
+	}
+	return last
 }
