@@ -5660,7 +5660,7 @@ type EphemeralTeardownReply struct {
 // STAYS in charly/ since `charly bundle from-box --target k8s`
 // (k8s_deploy_from_box.go) is its OTHER, non-moving caller). Cluster/Capabilities ride
 // opaque (the established RawBody idiom this file uses throughout for hand-written
-// sdk/deploykit types with no CUE def — e.g. #PodConfigHookSecretEnvRequest.MetaJSON).
+// host-side types with no CUE def — e.g. CapsJSON/ClusterJSON in this very def below).
 type K8sGenerateKustomizeRequest struct {
 	Name string `yaml:"name,omitempty" json:"name"`
 
