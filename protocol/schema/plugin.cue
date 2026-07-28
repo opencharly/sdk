@@ -943,33 +943,6 @@ protocol: {
 			]
 		},
 		{
-			"name": "ResolveClusterContextRequest"
-			"doc":  "ResolveClusterContextRequest: the charly k8s cluster-profile name to map to a context."
-			"fields": [
-				{
-					"name":   "cluster"
-					"type":   "string"
-					"number": 1
-				},
-			]
-		},
-		{
-			"name": "ResolveClusterContextReply"
-			"doc":  "ResolveClusterContextReply: the resolved kubeconfig context (\"\" = no matching profile)."
-			"fields": [
-				{
-					"name":   "context"
-					"type":   "string"
-					"number": 1
-				},
-				{
-					"name":   "error"
-					"type":   "string"
-					"number": 2
-				},
-			]
-		},
-		{
 			"name": "ResolveImageLabelRequest"
 			"doc":  "ResolveImageLabelRequest: the OCI label name to read (e.g. \"ai.opencharly.mcp_provide\")."
 			"fields": [
@@ -1204,18 +1177,6 @@ protocol: {
 						qemu+ssh:// tunnel (tracked for post-Invoke teardown), the socket->TCP bridge a TCP-only
 						client needs, and the credential-store password. Class-generic: parameterized by kind,
 						shared by the vnc + spice verbs (never a per-verb RPC).
-						"""
-				},
-				{
-					"name":     "ResolveClusterContext"
-					"request":  "ResolveClusterContextRequest"
-					"response": "ResolveClusterContextReply"
-					"doc":      """
-						ResolveClusterContext: map a charly k8s cluster-profile NAME to its kubeconfig context by
-						reading the project's kind:k8s spec (findK8sSpec) — the host owns the project loader the
-						out-of-process plugin cannot reach. Class-generic (concept-named, not verb-named): any
-						cluster-probing verb declares its cluster profile and gets the context. Empty context (no
-						matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
 						"""
 				},
 				{

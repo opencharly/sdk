@@ -133,7 +133,6 @@ func TestProtocolDocsComplete(t *testing.T) {
 	methods := map[string][]string{
 		"CheckContextService.ResolveEndpoint":         {"ssh -L forward", "Class-"},
 		"CheckContextService.ResolveGraphicsEndpoint": {"go-libvirt", "never a per-verb RPC"},
-		"CheckContextService.ResolveClusterContext":   {"findK8sSpec", "kubeconfig current-context"},
 		"CheckContextService.ResolveImageLabel":       {"ai.opencharly.mcp_provide", "label absent"},
 	}
 	for name, phrases := range methods {
