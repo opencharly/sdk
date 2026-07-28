@@ -17,10 +17,11 @@ import (
 // charly/enc.go (Cutover B unit 2). These are genuinely portable (no provider-registry or
 // credential-store coupling — pure FS probes, exec.Command wrappers, and charly.yml reads
 // via the SAME deploykit.LoadBundleConfig every deploy-config consumer already uses), so they
-// move here rather than staying behind a HostBuild seam. What does NOT move (charly/enc.go,
-// STILL core): encExecViaPlugin (verb:enc InvokeProvider dispatch) and the credential-store
-// family (resolveEncPassphrase*/awaitKeyringUnlockViaPlugin — registered FINAL/K5 inventory,
-// blocked on an InvokeProvider lazy-connect enabler for verb:credential). candy/plugin-deploy-pod
+// move here rather than staying behind a HostBuild seam. The verb:enc OpExecute dispatch is now
+// fully plugin-owned (candy/plugin-deploy-pod + candy/plugin-pod each drive verb:enc via their own
+// InvokeProvider; the former core encExecViaPlugin shim + the pod-config-enc-mounts seam are
+// RETIRED). What stays in charly-core's enc.go: only coreCredentialAccess (the credential-store
+// adapter secrets.go still binds). candy/plugin-deploy-pod
 // had ALREADY hand-duplicated 3 of these (isEncryptedMountedLocal/cipherPopulatedPlainEmptyLocal/
 // verifyBindMountsLocal in config_setup_helpers.go) because the originals weren't movable as a
 // whole — those duplicates are deleted in the same cutover, now calling this package instead (R3).

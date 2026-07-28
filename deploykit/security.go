@@ -8,19 +8,16 @@ import (
 )
 
 // security.go — the pure security-argv-building helpers (K4 lane B: relocated from
-// charly/security.go), PLUS the candy-merge logic (W9: the CollectSecurity split). The prior header
-// here read "CollectSecurity... STAYS in charly core" — that was true of the function AS A WHOLE, but
-// conflated two genuinely separate concerns: WHICH candies compose a box (a *Config/candy-tree walk —
-// box-resolution, genuinely core) and HOW their security configs merge (a pure candy-order fold with
-// zero *Config coupling). MergeCandySecurity below is the second half, so charly's CollectSecurity
-// (security.go) becomes a thin host wrapper: resolve the box's candy order (unchanged, still needs
-// *Config), then call this pure merge over the CandyModel interface — matching the split every other
-// build-render/OCI-label-collector R-item in this file already follows (SecurityArgs/ResourceCapArgs).
+// charly/security.go), the candy-merge logic (W9: the MergeCandySecurity split), AND — since the
+// core-min wave-3 build-cluster split — the full CollectSecurity aggregator that resolves WHICH
+// candies compose a box (BoxDirectCandies, a spec.Config candy-tree walk with no charly-core
+// coupling) and folds them via MergeCandySecurity. The prior header framed CollectSecurity as a
+// "thin host wrapper that STAYS in charly core"; that framing is retired — Config = spec.Config is
+// the loader's own type and BoxDirectCandies is an sdk mechanism, so the whole aggregator is pure
+// and lives here beside its merge, shared by the host projector, the build render, and box-inspect.
 // SecurityArgs/ResourceCapArgs are the pure, side-effect-free argv builders three charly call sites
-// (config_image.go, start.go, pod_lifecycle_resolve.go) call DIRECTLY as deploykit.SecurityArgs — R1
-// fix: this header previously claimed a "security_aliases.go passthrough" that never existed; charly
-// carried its own byte-identical duplicate instead (deleted in the same change as the CollectSecurity
-// split above). IpcModeBlocksShmSize already lives here (quadlet.go).
+// (config_image.go, start.go, pod_lifecycle_resolve.go) call DIRECTLY as deploykit.SecurityArgs.
+// IpcModeBlocksShmSize already lives here (quadlet.go).
 
 // MergeCandySecurity folds a box's ordered candy security configs into one SecurityConfig, then
 // applies the box-level override — the pure half of charly's CollectSecurity (candy_chain resolution
@@ -267,4 +264,32 @@ func ResourceCapArgs(sec spec.SecurityConfig) []string {
 		args = append(args, "--cpus", sec.Cpus)
 	}
 	return args
+}
+
+// CollectSecurity resolves a box's own candy tree (leaf-specific — security does NOT inherit from
+// a base box; the shared BoxDirectCandies walk), then folds every candy's security config via
+// MergeCandySecurity and applies the box-level override. Relocated from charly/security.go in the
+// core-min wave-3 build-cluster split (Config = spec.Config, BoxDirectCandies is an sdk mechanism,
+// so the whole aggregator is pure).
+func CollectSecurity(cfg *spec.Config, layers map[string]CandyModel, boxName string) SecurityConfig {
+	img, ok := cfg.BoxConfig(boxName)
+	if !ok {
+		return SecurityConfig{}
+	}
+
+	// Resolve the box's own candy tree (leaf-specific — security does NOT
+	// inherit from a base box). Fall back to the raw direct refs on a
+	// resolution error, as before.
+	allCandies, err := BoxDirectCandies(cfg, layers, boxName)
+	if err != nil {
+		allCandies = img.Candy
+	}
+
+	candies := make([]CandyModel, 0, len(allCandies))
+	for _, name := range allCandies {
+		if ly, ok := layers[name]; ok {
+			candies = append(candies, ly)
+		}
+	}
+	return MergeCandySecurity(candies, img.Security)
 }

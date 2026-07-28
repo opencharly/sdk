@@ -824,11 +824,11 @@ func (s *RebootStep) Reverse() []ReverseOp { return nil }
 //     the real venue and RETURNS its teardown ReverseOps which the host records into the
 //     ledger (record-and-replay — only recorded ops are reversed at `charly bundle del`).
 //     This is the deploy-context counterpart of the build-context OpEmit leg (tasks.go
-//     emitPluginFragment), reusing the SAME spec.DeployReply / ReverseOp wire as the
+//     invokeVerbBuildEmit), reusing the SAME spec.DeployReply / ReverseOp wire as the
 //     external deploy TARGET (candy/plugin-bundle/deploy_target.go, S3b — was charly
 //     core's deploy_target_external.go before the deploy-dispatch cluster moved) — R3.
 //   - EmitOCI (a BUILD venue — the pod-overlay Containerfile): Invoke(OpEmit) via the
-//     SHARED emitPluginFragment, splicing the plugin's Containerfile FRAGMENT verbatim
+//     SHARED invokeVerbBuildEmit, splicing the plugin's Containerfile FRAGMENT verbatim
 //     — it cannot deploy-execute at build (no live venue). Identical behaviour to the
 //     box-build path (writeCandySteps → emitTasks `case "plugin"`), just relocated.
 //     EmitOCI is the ONLY in-proc Emit* this provider still implements.

@@ -1,4 +1,4 @@
-package vmshared
+package spec
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// fakeClock drives pollUntil deterministically: after(d) advances the clock by
+// fakeClock drives PollUntil deterministically: after(d) advances the clock by
 // d (modelling the inter-tick sleep) and fires immediately, so tests never sleep
 // for real. PerAttempt is set huge in these tests so the real-time per-attempt
 // context never fires (it is exercised separately in TestPollUntil_PerAttempt).
@@ -36,7 +36,7 @@ func TestPollUntil_AdvancingNeverStalls(t *testing.T) {
 	cfg.NoProgress = 90 * time.Second
 	cfg.AbsoluteCap = 30 * time.Minute
 	var n float64
-	err := pollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
+	err := PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
 		n++
 		return n >= 50, n, nil // climbs 1,2,...; ready at 50 (>> NoProgress/interval ticks)
 	})
@@ -51,7 +51,7 @@ func TestPollUntil_FrozenStalls(t *testing.T) {
 	cfg := fakeCfg(c, "frozen")
 	cfg.NoProgress = 90 * time.Second // 6 ticks @ 15s
 	cfg.AbsoluteCap = 30 * time.Minute
-	err := pollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
+	err := PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
 		return false, 5, nil // frozen at 5
 	})
 	if !errors.Is(err, ErrPollStalled) {
@@ -68,7 +68,7 @@ func TestPollUntil_OscillatingCrashLoopStalls(t *testing.T) {
 	cfg.AbsoluteCap = 30 * time.Minute
 	vals := []float64{5, 3, 5, 2, 5, 3, 5, 4, 5, 1} // never exceeds the first peak (5)
 	i := 0
-	err := pollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
+	err := PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
 		v := vals[i%len(vals)]
 		i++
 		return false, v, nil
@@ -84,7 +84,7 @@ func TestPollUntil_CapOnlyExceeds(t *testing.T) {
 	cfg := fakeCfg(c, "cap")
 	cfg.NoProgress = 0 // binary/edge mode
 	cfg.AbsoluteCap = 90 * time.Second
-	err := pollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
+	err := PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
 		return false, 0, nil // never ready, no progress signal
 	})
 	if !errors.Is(err, ErrPollCapExceeded) {
@@ -100,7 +100,7 @@ func TestPollUntil_CapOnlyBinaryFlipSucceeds(t *testing.T) {
 	cfg.NoProgress = 0
 	cfg.AbsoluteCap = 30 * time.Minute
 	ticks := 0
-	err := pollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
+	err := PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
 		ticks++
 		return ticks >= 40, 0, nil // frozen "down" for 40 ticks (~10m), then up
 	})
@@ -116,7 +116,7 @@ func TestPollUntil_FatalAbortsNow(t *testing.T) {
 	cfg.NoProgress = 90 * time.Second
 	cfg.AbsoluteCap = 30 * time.Minute
 	calls := 0
-	err := pollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
+	err := PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
 		calls++
 		return false, 0, fmt.Errorf("ssh process died: %w", ErrPollFatal)
 	})
@@ -136,7 +136,7 @@ func TestPollUntil_TransientErrorsDoNotAdvance(t *testing.T) {
 	cfg.AbsoluteCap = 30 * time.Minute
 	var seen atomic.Int32
 	cfg.OnTransient = func(error) { seen.Add(1) }
-	err := pollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
+	err := PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
 		return false, 0, errors.New("connection refused") // transient forever
 	})
 	if !errors.Is(err, ErrPollStalled) {
@@ -154,7 +154,7 @@ func TestPollUntil_PerAttemptBoundsBlockingCond(t *testing.T) {
 	cfg := PollConfig{Name: "blocking", Interval: 5 * time.Millisecond, PerAttempt: 20 * time.Millisecond, AbsoluteCap: 200 * time.Millisecond}
 	done := make(chan error, 1)
 	go func() {
-		done <- pollUntil(context.Background(), cfg, func(ctx context.Context) (bool, float64, error) {
+		done <- PollUntil(context.Background(), cfg, func(ctx context.Context) (bool, float64, error) {
 			select {
 			case <-ctx.Done(): // honors the per-attempt timeout
 				return false, 0, ctx.Err()
@@ -169,7 +169,7 @@ func TestPollUntil_PerAttemptBoundsBlockingCond(t *testing.T) {
 			t.Fatalf("blocking cond should be per-attempt-cancelled then hit the cap, got %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("pollUntil HUNG on a blocking cond — per-attempt bound failed")
+		t.Fatal("PollUntil HUNG on a blocking cond — per-attempt bound failed")
 	}
 }
 
@@ -178,7 +178,7 @@ func TestPollUntil_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	cfg := PollConfig{Name: "cancel", Interval: time.Second, PerAttempt: time.Second, AbsoluteCap: time.Hour}
-	err := pollUntil(ctx, cfg, func(c context.Context) (bool, float64, error) {
+	err := PollUntil(ctx, cfg, func(c context.Context) (bool, float64, error) {
 		return false, 0, c.Err()
 	})
 	if !errors.Is(err, context.Canceled) {
@@ -189,7 +189,7 @@ func TestPollUntil_ContextCancel(t *testing.T) {
 // 10. ready=true returns nil immediately.
 func TestPollUntil_ReadyImmediately(t *testing.T) {
 	cfg := PollConfig{Name: "ready", Interval: time.Second, PerAttempt: time.Second, AbsoluteCap: time.Hour}
-	if err := pollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) { return true, 0, nil }); err != nil {
+	if err := PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) { return true, 0, nil }); err != nil {
 		t.Fatalf("ready must return nil, got %v", err)
 	}
 }
@@ -203,7 +203,7 @@ func TestPollUntil_ValidationFailsClosed(t *testing.T) {
 		{Name: "no-bounds", Interval: time.Second, PerAttempt: time.Second, NoProgress: 0, AbsoluteCap: 0},
 	}
 	for _, cfg := range cases {
-		if err := pollUntil(context.Background(), cfg, cond); !errors.Is(err, ErrPollConfig) {
+		if err := PollUntil(context.Background(), cfg, cond); !errors.Is(err, ErrPollConfig) {
 			t.Fatalf("%s: want ErrPollConfig, got %v", cfg.Name, err)
 		}
 	}

@@ -6,7 +6,7 @@ import (
 
 // render_seam.go — the per-method param/result structs for the HostBuild("render-seam")
 // dispatch (#67 render-DRIVE move). plugin-build wires each deploykit.Generator seam that STILL
-// needs a host callback (EmitPluginOp, inline-builder, ensure-builders) to
+// needs a host callback (inline-builder, ensure-builders) to
 // HostBuild("render-seam", RenderSeamRequest{Method, Params}) where Params is ONE of the structs
 // below marshalled to JSON. The host (host_build_render_seam.go) unmarshals Params by Method,
 // calls the corresponding CORE function (byte-parity by construction — the EXACT funcs the core
@@ -21,13 +21,14 @@ import (
 // their render-seam methods + param/result structs are GONE. LocalPkg is ALSO GONE (W3): its
 // "host rebuilds from the live *Candy graph" claim was stale — RenderLocalPkgImageInstall now
 // runs directly in-package on the step its caller already built from the SAME envelope data
-// (sdk/deploykit/localpkg.go). The three REMAINING host-coupled seams below have a genuine
-// host-only dependency: EnsureBuilders/InlineBuilder need the live loader's scan+connect
-// machinery (rides K1, #40) AND the provider registry (a permanent kernel M-mechanism);
-// EmitPluginOp needs a Go-level type-assertion (ProvisionActor/BuildEmitter) against a BUILTIN
-// provider's concrete type, which only charly core holds (a builtin provider's generic Invoke()
-// is an intentional error-stub — the perf invariant that lets a builtin skip the wire envelope,
-// sdk/deploykit "InvokeProvider" doc) — both PERMANENT, not K1-doomed.
+// (sdk/deploykit/localpkg.go). EmitPluginOp is GONE too (P8b): its "only charly core can
+// type-assert a builtin provider's concrete type" claim FAILED the boundary law — a package-main
+// prov.(ProvisionActor) branch is a concrete-type leak, not a permanent seam. A state-provision
+// verb now serves OpEmit UNIFORMLY and self-declares its act shell via EmitReply.ActScript, so
+// the render dispatches every verb through InvokeProvider(OpEmit) directly (no host callback).
+// The two REMAINING host-coupled seams below have a genuine host-only dependency:
+// EnsureBuilders/InlineBuilder need the live loader's scan+connect machinery (rides K1, #40) AND
+// the provider registry (a permanent kernel M-mechanism) — loader-doomed, not permanent.
 //
 // These structs live in deploykit (shared by charly core + candy/plugin-build, both of which
 // import deploykit) and may reference spec types (BuilderDef = spec.Builder, BuildStageContext,
@@ -39,7 +40,6 @@ import (
 const (
 	RenderSeamInlineBuilder  = "inline-builder"
 	RenderSeamEnsureBuilders = "ensure-builders"
-	RenderSeamEmitPluginOp   = "emit-plugin-op"
 )
 
 // InlineBuilderParams carries the inputs to core resolveInlineBuilderSeam. BDef is spec.Builder
@@ -62,19 +62,4 @@ type InlineBuilderResult struct {
 type EnsureBuildersParams struct {
 	Dir   string   `json:"dir"`
 	Words []string `json:"words"`
-}
-
-// EmitPluginOpParams carries the plugin-verb op to the core EmitPluginOp logic (the
-// providerRegistry.ResolveVerb + ProvisionActor/OpEmit dispatch). The img (for distros) is read
-// from the cached Generator's gen.Boxes[box_name].
-type EmitPluginOpParams struct {
-	Dir     string   `json:"dir"`
-	BoxName string   `json:"box_name"`
-	Op      *spec.Op `json:"op"`
-}
-
-// EmitPluginOpResult carries the rendered fragment + whether it is an act-script.
-type EmitPluginOpResult struct {
-	Out      string `json:"out"`
-	IsScript bool   `json:"is_script"`
 }

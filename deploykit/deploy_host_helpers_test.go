@@ -14,6 +14,23 @@ func testArtifactCandy(name string, artifacts []spec.CandyArtifact) spec.CandyRe
 	return NewSpecCandyModel(spec.CandyModel{Name: name, Artifact: artifacts}, spec.CandyView{Name: name})
 }
 
+// TestDeriveDeploymentName relocated from the deleted charly/deploy_nested_pod_test.go
+// (Cone A shape 3) — DeriveDeploymentName now has two callers (charly/bundle_from_box_cmd.go's
+// pod path, candy/plugin-bundle/deploy_from_box.go's k8s path), so it lives here, R3.
+func TestDeriveDeploymentName(t *testing.T) {
+	cases := []struct{ ref, want string }{
+		{"ghcr.io/opencharly/selkies-kde-nvidia:2026.153.1026", "selkies-kde-nvidia"},
+		{"localhost/charly-selkies-kde:latest", "charly-selkies-kde"},
+		{"selkies-kde-nvidia", "selkies-kde-nvidia"},
+		{"docker.io/library/redis:7", "redis"},
+	}
+	for _, c := range cases {
+		if got := DeriveDeploymentName(c.ref); got != c.want {
+			t.Errorf("DeriveDeploymentName(%q) = %q, want %q", c.ref, got, c.want)
+		}
+	}
+}
+
 // TestCandyArtifactRegisters_NameBlind proves the collector reads each candy's OWN
 // artifact declaration, never the candy's NAME — the exact axis the P13-KERNEL
 // k3s-server dispatch fix targets. A candy literally named "k3s-server" contributes

@@ -271,6 +271,16 @@
 	// it off THIS envelope instead retires that seam, leaving `resources` (this field) as the single
 	// source both the arbiter plugin and any other resolved-project consumer share (R3).
 	resources?: {[string]: #ResolvedResource} @go(Resources,type=map[string]*ResolvedResource)
+	// primaries — the plugin-verb PRIMARY-field D-fact: a plugin verb WORD → its declared primary
+	// input field (`cdp` → `method`, `file` → `file`), the SAME registry-derived kind-recognition
+	// DATA the LOAD path already snapshots as spec.Threaded.Primaries (loaderThreaded), carried here
+	// SAVE-side too. The deploy-state WRITER's plan RESUGAR (deploy_nodeform.go's resugarPlan —
+	// collapsing an internal plugin/plugin_input pair back to the authored `<word>: <input>` sugar)
+	// needs this map to collapse a single-primary input to its scalar shorthand; carrying it on the
+	// envelope lets a plugin holding this projection resugar a plan WITHOUT dialing the host provider
+	// registry (the K4 keystone that unblocks moving the deploy-state marshal plugin-side). clause-D
+	// word-recognition DATA consulted BY WORD, never a per-kind branch; filled on every resolve path.
+	primaries?: {[string]: string} @go(Primaries)
 }
 
 // #ProjectTemplates — the bare pod:/vm:/local:/k8s:/android: template maps carried as OPAQUE payloads

@@ -37,6 +37,17 @@
 	// claim bracketed around the dispatch (pod). A substrate that manages its own venue
 	// lifecycle + resource claim (vm, via `charly vm start`/`stop`) leaves this false.
 	bracketed_lifecycle?: bool @go(BracketedLifecycle)
+	// bed_target: the substrate is a valid `kind:check` bed target — pod/vm/local/android run a
+	// disposable check bed; k8s (leaf_only) does not. validateCheckBeds reads this instead of
+	// switching on the substrate word (the boundary-law incomplete-seam gate).
+	bed_target?: bool @go(BedTarget)
+	// supports_ephemeral: the substrate's Add/Del path wires the ephemeral register/teardown seam
+	// (TTL timer + charly.yml persistence) — vm only today; pod/k8s reject `ephemeral: true` until
+	// their Add/Del wire the same seam. validateEphemeral reads this instead of a substrate switch.
+	supports_ephemeral?: bool @go(SupportsEphemeral)
+	// supports_from_snapshot: the substrate has a backing chain `from_snapshot:` restores from — vm
+	// only (pod/k8s have no backing chains). validateEphemeral reads this instead of a word switch.
+	supports_from_snapshot?: bool @go(SupportsFromSnapshot)
 }
 
 // #DescentDescriptor is the loader-DERIVED venue-hop descriptor (Cutover H + P9).

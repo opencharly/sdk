@@ -213,6 +213,24 @@ protocol: {
 					"number": 7
 					"doc":    "the substrate's Start/Stop accept direct-mode CLI opts AND need the Q1 resource-arbiter claim bracketed around the dispatch (pod); a substrate that manages its own venue lifecycle + resource claim (vm) leaves this false"
 				},
+				{
+					"name":   "bed_target"
+					"type":   "bool"
+					"number": 8
+					"doc":    "the substrate is a valid kind:check bed target (pod/vm/local/android); k8s and unknown words are not"
+				},
+				{
+					"name":   "supports_ephemeral"
+					"type":   "bool"
+					"number": 9
+					"doc":    "the substrate's Add/Del path wires the ephemeral register/teardown seam (TTL timer + charly.yml persistence) — vm only today"
+				},
+				{
+					"name":   "supports_from_snapshot"
+					"type":   "bool"
+					"number": 10
+					"doc":    "the substrate has a backing chain from_snapshot restores from — vm only"
+				},
 			]
 		},
 		{
@@ -925,33 +943,6 @@ protocol: {
 			]
 		},
 		{
-			"name": "ResolveClusterContextRequest"
-			"doc":  "ResolveClusterContextRequest: the charly k8s cluster-profile name to map to a context."
-			"fields": [
-				{
-					"name":   "cluster"
-					"type":   "string"
-					"number": 1
-				},
-			]
-		},
-		{
-			"name": "ResolveClusterContextReply"
-			"doc":  "ResolveClusterContextReply: the resolved kubeconfig context (\"\" = no matching profile)."
-			"fields": [
-				{
-					"name":   "context"
-					"type":   "string"
-					"number": 1
-				},
-				{
-					"name":   "error"
-					"type":   "string"
-					"number": 2
-				},
-			]
-		},
-		{
 			"name": "ResolveImageLabelRequest"
 			"doc":  "ResolveImageLabelRequest: the OCI label name to read (e.g. \"ai.opencharly.mcp_provide\")."
 			"fields": [
@@ -1045,7 +1036,7 @@ protocol: {
 
 				RunHostStep is the HOST-ENGINE channel (the generalization of the former F3 build channel): the
 				irreducible host machinery — the build ENGINE (Generator / OCITarget / ResolveBox /
-				podman / BuilderRun / EnsureImagePresent / makepkg), the DistroConfig package-template
+				podman / BuilderRun / the injected EnsureImage closure / makepkg), the DistroConfig package-template
 				render, the in-proc provider registry (ProvisionActor act verbs), and the broker that
 				dispatches ANOTHER plugin — STAYS in charly's core (package main — it cannot move into
 				the leaf plugin/kit package without dragging package main in). So an OUT-OF-PROCESS
@@ -1186,18 +1177,6 @@ protocol: {
 						qemu+ssh:// tunnel (tracked for post-Invoke teardown), the socket->TCP bridge a TCP-only
 						client needs, and the credential-store password. Class-generic: parameterized by kind,
 						shared by the vnc + spice verbs (never a per-verb RPC).
-						"""
-				},
-				{
-					"name":     "ResolveClusterContext"
-					"request":  "ResolveClusterContextRequest"
-					"response": "ResolveClusterContextReply"
-					"doc":      """
-						ResolveClusterContext: map a charly k8s cluster-profile NAME to its kubeconfig context by
-						reading the project's kind:k8s spec (findK8sSpec) — the host owns the project loader the
-						out-of-process plugin cannot reach. Class-generic (concept-named, not verb-named): any
-						cluster-probing verb declares its cluster profile and gets the context. Empty context (no
-						matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
 						"""
 				},
 				{

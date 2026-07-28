@@ -28,6 +28,21 @@ type Threaded struct {
 	DeploySubstrates map[string]bool   // recognizedDeploySubstrate
 	StructuralKinds  map[string]bool   // externalKindMayNestMembers
 	Primaries        map[string]string // pluginPrimaryFor: verb word → scalar-sugar primary field
+	// DeployTraits is the substrate word → DECLARED #DeployTraits map (K1-LOADER RELOCATION): the
+	// descent stamp reads THIS registry-derived DATA snapshot instead of querying the provider
+	// registry live, so the venue-hop descent stamp (loaderkit.StampBundleDescents) is registry-free
+	// and can run plugin-side. The host fills it (deployTraitsFor per recognized kind/substrate word)
+	// exactly as the former live stampBundleDescents did; a word absent from the map resolves to the
+	// external-in-place default, matching deployTraitsFor's nil-for-unrecognized-word semantics.
+	DeployTraits map[string]*DeployTraits
+	// ExternalDeploySubstrates is the EXACT set of words for which the host's registry-live
+	// isExternalDeploySubstrate returns true (K1-LOADER RELOCATION): the host fills it by EVALUATING
+	// its own isExternalDeploySubstrate over every recognized substrate word, so a plugin-side
+	// validator (loaderkit.ValidateCheckBeds) checks membership here instead of RECONSTRUCTING the
+	// host's resourceKindSet ∧ externalizedDeploySubstrates ∧ recognizedDeploySubstrate decision —
+	// the byte-exact predicate is threaded, never approximated. A word absent from the set is
+	// NOT an external deploy substrate (isExternalDeploySubstrate would return false for it).
+	ExternalDeploySubstrates map[string]bool
 }
 
 // DocParser is the swappable per-document PARSE seam: the loader plugin candy implements it

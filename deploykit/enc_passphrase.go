@@ -16,8 +16,9 @@ import (
 // secret_provision.go defines) instead of calling ResolveCredential/DefaultCredentialStore
 // by name, so charly-core and a future out-of-process caller share ONE implementation (R3).
 //
-// What stays in charly-core's enc.go: encExecViaPlugin (the verb:enc OpExecute dispatch —
-// providerRegistry.resolve is core-registry-only) and awaitKeyringUnlockViaPlugin (needs the
+// The verb:enc OpExecute dispatch is now fully plugin-owned (candy/plugin-deploy-pod +
+// candy/plugin-pod drive verb:enc via their own InvokeProvider; the former core encExecViaPlugin
+// shim + the pod-config-enc-mounts seam are RETIRED). awaitKeyringUnlockViaPlugin needs the
 // CONCRETE core CredentialStore's awaitUnlock/credentialAwaiter — it is threaded into
 // ResolveEncPassphraseForMount below as an injected `waiter` closure, exactly like the
 // pre-existing resolver/reset closures, so this package needs no knowledge of its shape

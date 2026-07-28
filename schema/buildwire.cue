@@ -28,10 +28,17 @@
 }
 
 // #EmitReply is what a plugin verb/builder returns from an OpEmit Invoke at
-// build time: a verbatim Containerfile FRAGMENT the generator splices into
-// the emitted Containerfile.
+// build time. By default fragment is a verbatim Containerfile FRAGMENT the
+// generator splices into the emitted Containerfile. When act_script is true
+// the fragment is instead a raw state-provision ACT SHELL (the former
+// ProvisionActor.RenderProvisionScript output): the render wraps it in a RUN
+// via the same EmitCmd path a literal command verb uses, rather than splicing
+// it verbatim. This lets a state-provision verb self-declare its build-emit
+// shape over the uniform Invoke(OpEmit), so the render dispatches every verb
+// through InvokeProvider(OpEmit) with no package-main concrete-type assert.
 #EmitReply: {
-	fragment!: string @go(Fragment)
+	fragment!:   string @go(Fragment)
+	act_script?: bool   @go(ActScript)
 }
 
 // #StepEmitRequest is the F-STEP-EMIT HostBuild envelope for a HOST-COUPLED
@@ -182,4 +189,94 @@
 // #BuilderReverseReply is the OpReverse reply: the builder's teardown ops.
 #BuilderReverseReply: {
 	reverse_ops?: [...#ReverseOp] @go(ReverseOps)
+}
+
+// --- build:ensure wire (core-min wave 3, build-engine cluster relocation) ---
+//
+// The former core ensure-image + cross-engine-transfer ORCHESTRATION (decide
+// pull-vs-build, exec podman pull/tag, cross-engine transfer) moved into the
+// compiled-in candy/plugin-build as a third word alongside box/generate:
+// build:ensure. It reaches the host for the two things it genuinely cannot do
+// itself: resolving a user-authored image identifier against the project's
+// charly.yml (the "box-ref-resolve" HostBuild seam, wrapping ResolveBox /
+// FindBoxByLeaf — loader-cone, still core) and resolving an @github.com/...
+// remote ref to its cached registry ref ("remote-image-resolve", wrapping
+// ResolveRemoteImage — also loader-cone). The build fallback itself reaches
+// the EXISTING build:box word in-process (no new seam).
+
+// #BoxRefResolveRequest / #BoxRefResolveReply — the "box-ref-resolve" HostBuild
+// seam: resolve a short-name or full-ref image identifier against charly.yml.
+#BoxRefResolveRequest: {
+	image!: string @go(Image)
+	dir?:   string @go(Dir)
+}
+
+#BoxRefResolveReply: {
+	// exists_ref / pull_ref is the fully-qualified registry ref to check for local
+	// presence / hand to `podman pull`; "" when the identifier could not be
+	// resolved (no project reachable, or an unknown short name).
+	exists_ref?: string @go(ExistsRef)
+	pull_ref?:   string @go(PullRef)
+	// build_fallback_short is the short name (bare or namespace-qualified, e.g.
+	// "fedora.fedora-builder") `charly box build` should target when the pull
+	// fails; "" when no local build-fallback is possible for this identifier.
+	build_fallback_short?: string @go(BuildFallbackShort)
+	// produced_ref is the registry ref build_fallback_short resolves to today
+	// (registry+name, tag-less) — used to tag-alias a pinned-tag input ref onto
+	// the freshly built image.
+	produced_ref?: string @go(ProducedRef)
+}
+
+// #RemoteImageResolveRequest / #RemoteImageResolveReply — the
+// "remote-image-resolve" HostBuild seam: resolve an @github.com/org/repo/box
+// ref to its registry pull ref + cached source dir (wraps ResolveRemoteImage).
+#RemoteImageResolveRequest: {
+	ref!: string @go(Ref)
+	tag?: string @go(Tag)
+}
+
+#RemoteImageResolveReply: {
+	image_ref?: string @go(ImageRef)
+	cache_dir?: string @go(CacheDir)
+	box_name?:  string @go(BoxName)
+	error?:     string @go(Error)
+}
+
+// #BuildEnsureRequest / #BuildEnsureReply — the build:ensure word's Invoke
+// envelope: ensure an image is present in local podman storage, falling back
+// to a local (or remote-cached) build when the identifier maps to a project
+// charly.yml entry.
+#BuildEnsureRequest: {
+	image!:        string @go(Image)
+	dir?:          string @go(Dir)
+	build_engine?: string @go(BuildEngine)
+	run_engine?:   string @go(RunEngine)
+}
+
+#BuildEnsureReply: {
+	error?: string @go(Error)
+}
+
+// #BuildPkgRequest / #BuildPkgReply — the build:pkg word's Invoke envelope: `charly box pkg`'s
+// CLI→DRIVE envelope (mirrors #BuildRequest's shape, K3 build-tail move — the former hidden core
+// `__box-pkg` reentry is DELETED, its body now runs plugin-side in candy/plugin-build).
+#BuildPkgRequest: {
+	format?: [...string] @go(Format) // requested package formats (empty → every format the candy declares)
+	candy?:  string @go(Candy)       // candy whose localpkg sources to build
+	out?:    string @go(Out)         // output directory for the built package files
+	dir?:    string @go(Dir)         // project dir the host reconstructs config from
+}
+
+#BuildPkgReply: {
+	written?: [...string] @go(Written)
+	error?:   string @go(Error)
+}
+
+// #BuildEngineScanRemoteRequest — the `buildengine-scan-remote` host-leg request (K3 build-engine, U6):
+// scan the wanted bare refs out of a downloaded repo cache dir. The plugin's ScanSeams.ScanRemote
+// closure fills it; the host runs requireCandyScanner().ScanRemoteCandy over the cache.
+#BuildEngineScanRemoteRequest: {
+	cache_dir!: string   @go(CacheDir)
+	repo_path!: string   @go(RepoPath)
+	refs?: [...string]   @go(Refs)
 }

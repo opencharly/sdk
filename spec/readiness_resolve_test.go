@@ -1,4 +1,4 @@
-package vmshared
+package spec
 
 import (
 	"strings"

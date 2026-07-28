@@ -197,15 +197,40 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// --- wire the seams ---
 	c := renderSeamCaller{ctx: ctx, ex: ex}
 
-	// EmitPluginOp: still host-side — the ProvisionActor/BuildEmitter type-assertion only charly
-	// core can perform against a BUILTIN provider's concrete type (its generic Invoke() is an
-	// intentional error-stub for placement-invisible perf, so InvokeProvider can't substitute).
+	// EmitPluginOp: rendered FULLY plugin-side via a UNIFORM InvokeProvider(OpEmit) peer-dispatch
+	// (P8b seam-death — the RenderSeamEmitPluginOp host callback is DELETED). A state-provision
+	// verb self-declares its act shell via EmitReply.ActScript (the render RUN-wraps it via
+	// EmitCmd), so no package-main concrete-type assert is needed: every verb — builtin or
+	// external — dispatches through the SAME Invoke(OpEmit) envelope. The FULL op rides op.Params
+	// (a state-provision act reads SHARED #Op modifiers — mode/content — beyond plugin_input);
+	// the BuildEnv distros ride op.Env.
 	dg.EmitPluginOp = func(op *spec.Op, img *buildkit.ResolvedBox) (string, bool, error) {
-		var res EmitPluginOpResult
-		if err := c.hostBuild(RenderSeamEmitPluginOp, EmitPluginOpParams{Dir: dir, BoxName: img.Name, Op: op}, &res); err != nil {
-			return "", false, err
+		params, err := json.Marshal(op)
+		if err != nil {
+			return "", false, fmt.Errorf("run: plugin verb %q build-emit: marshal op: %w", op.Plugin, err)
 		}
-		return res.Out, res.IsScript, nil
+		var distros []string
+		if img != nil {
+			distros = img.Tags
+		}
+		env, err := json.Marshal(spec.BuildEnv{Distros: distros})
+		if err != nil {
+			return "", false, fmt.Errorf("run: plugin verb %q build-emit: marshal build env: %w", op.Plugin, err)
+		}
+		resJSON, err := ex.InvokeProvider(ctx, "verb", op.Plugin, sdk.OpEmit, params, env, sdk.InvokeProviderOpts{})
+		if err != nil {
+			return "", false, fmt.Errorf("run: plugin verb %q build-emit: %w", op.Plugin, err)
+		}
+		var reply spec.EmitReply
+		if len(resJSON) > 0 {
+			if uerr := json.Unmarshal(resJSON, &reply); uerr != nil {
+				return "", false, fmt.Errorf("run: plugin verb %q build-emit: decode OpEmit reply: %w", op.Plugin, uerr)
+			}
+		}
+		if !reply.ActScript && strings.TrimSpace(reply.Fragment) == "" {
+			return "", false, fmt.Errorf("run: plugin verb %q returned an empty OpEmit fragment — it has no build-context act (a runtime-only verb in a build run: step? use context: [runtime])", op.Plugin)
+		}
+		return reply.Fragment, reply.ActScript, nil
 	}
 
 	// CollectBoxPorts / CollectBoxVolume: from the envelope view (pre-computed by the host projector).
@@ -286,26 +311,12 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return reply, nil
 	}
 
-	// EmitBakedPlugins: via HostBuild("bake-plugins") — the host builds + stages plugin binaries +
-	// returns the COPY/chmod fragment.
+	// EmitBakedPlugins: direct call (K3 build-tail move, coneB-buildtail) — buildPluginBinary is
+	// 100% pure os/exec (proven by the already-moved ensureCharlyBinaryFresh), so this needs no
+	// host round-trip at all; the former "bake-plugins" HostBuild seam (charly/host_build_bake_plugins.go)
+	// is DELETED.
 	dg.EmitBakedPlugins = func(b *strings.Builder, boxName string, candyOrder []string) error {
-		reqJSON, err := json.Marshal(spec.BakePluginsRequest{Dir: dir, BoxName: boxName, CandyOrder: candyOrder})
-		if err != nil {
-			return fmt.Errorf("bake-plugins: marshal request: %w", err)
-		}
-		replyJSON, err := ex.HostBuild(ctx, "bake-plugins", reqJSON)
-		if err != nil {
-			return fmt.Errorf("bake-plugins: %w", err)
-		}
-		var reply spec.BakePluginsReply
-		if err := json.Unmarshal(replyJSON, &reply); err != nil {
-			return fmt.Errorf("bake-plugins: decode reply: %w", err)
-		}
-		if reply.Error != "" {
-			return fmt.Errorf("bake-plugins: %s", reply.Error)
-		}
-		b.WriteString(reply.Fragment)
-		return nil
+		return EmitBakedPlugins(ctx, b, dg.BuildDir, boxName, candyOrder, dg.Candies)
 	}
 
 	return dg, nil

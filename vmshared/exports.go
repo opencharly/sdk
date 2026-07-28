@@ -22,7 +22,6 @@ var (
 	OpenOutputPath           = openOutputPath
 	OvmfCandidatesForDistro  = ovmfCandidatesForDistro
 	ParseGlibcVersion        = parseGlibcVersion
-	PollUntil                = pollUntil
 	RegistryPath             = registryPath
 	ResolveCloudInitSSHUser  = resolveCloudInitSSHUser
 	ResolveCPUDefaults       = resolveCPUDefaults
@@ -33,16 +32,4 @@ var (
 	SplitPortForward         = splitPortForward
 	VmDiskPath               = vmDiskPath
 	WriterForPath            = writerForPath
-)
-
-// Re-exported constants.
-const (
-	ReadinessAbsoluteCapFallback     = readinessAbsoluteCapFallback
-	ReadinessIntervalHeavyFallback   = readinessIntervalHeavyFallback
-	ReadinessIntervalLocalFallback   = readinessIntervalLocalFallback
-	ReadinessIntervalRemoteFallback  = readinessIntervalRemoteFallback
-	ReadinessNoProgressFallback      = readinessNoProgressFallback
-	ReadinessPerAttemptFallback      = readinessPerAttemptFallback
-	ReadinessPerAttemptHeavyFallback = readinessPerAttemptHeavyFallback
-	ReadinessStopGraceFallback       = readinessStopGraceFallback
 )

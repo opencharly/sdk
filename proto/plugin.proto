@@ -89,6 +89,12 @@ message DeployTraits {
   bool leaf_only = 6;
   // the substrate's Start/Stop accept direct-mode CLI opts AND need the Q1 resource-arbiter claim bracketed around the dispatch (pod); a substrate that manages its own venue lifecycle + resource claim (vm) leaves this false
   bool bracketed_lifecycle = 7;
+  // the substrate is a valid kind:check bed target (pod/vm/local/android); k8s and unknown words are not
+  bool bed_target = 8;
+  // the substrate's Add/Del path wires the ephemeral register/teardown seam (TTL timer + charly.yml persistence) — vm only today
+  bool supports_ephemeral = 9;
+  // the substrate has a backing chain from_snapshot restores from — vm only
+  bool supports_from_snapshot = 10;
 }
 
 // StepContract — a class="step" plugin's DECLARED install-step contract (F3): where the
@@ -357,17 +363,6 @@ message ResolveGraphicsEndpointReply {
   string error = 6;
 }
 
-// ResolveClusterContextRequest: the charly k8s cluster-profile name to map to a context.
-message ResolveClusterContextRequest {
-  string cluster = 1;
-}
-
-// ResolveClusterContextReply: the resolved kubeconfig context ("" = no matching profile).
-message ResolveClusterContextReply {
-  string context = 1;
-  string error = 2;
-}
-
 // ResolveImageLabelRequest: the OCI label name to read (e.g. "ai.opencharly.mcp_provide").
 message ResolveImageLabelRequest {
   string label = 1;
@@ -416,7 +411,7 @@ service Provider {
 //
 // RunHostStep is the HOST-ENGINE channel (the generalization of the former F3 build channel): the
 // irreducible host machinery — the build ENGINE (Generator / OCITarget / ResolveBox /
-// podman / BuilderRun / EnsureImagePresent / makepkg), the DistroConfig package-template
+// podman / BuilderRun / the injected EnsureImage closure / makepkg), the DistroConfig package-template
 // render, the in-proc provider registry (ProvisionActor act verbs), and the broker that
 // dispatches ANOTHER plugin — STAYS in charly's core (package main — it cannot move into
 // the leaf plugin/kit package without dragging package main in). So an OUT-OF-PROCESS
@@ -486,12 +481,6 @@ service CheckContextService {
   // client needs, and the credential-store password. Class-generic: parameterized by kind,
   // shared by the vnc + spice verbs (never a per-verb RPC).
   rpc ResolveGraphicsEndpoint(ResolveGraphicsEndpointRequest) returns (ResolveGraphicsEndpointReply);
-  // ResolveClusterContext: map a charly k8s cluster-profile NAME to its kubeconfig context by
-  // reading the project's kind:k8s spec (findK8sSpec) — the host owns the project loader the
-  // out-of-process plugin cannot reach. Class-generic (concept-named, not verb-named): any
-  // cluster-probing verb declares its cluster profile and gets the context. Empty context (no
-  // matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
-  rpc ResolveClusterContext(ResolveClusterContextRequest) returns (ResolveClusterContextReply);
   // ResolveImageLabel: read one OCI label value off the deployment-under-test's image — the
   // host owns the podman engine + container→image resolution the out-of-process plugin cannot
   // reach. Class-generic (parameterized by label name): the mcp verb reads ai.opencharly.mcp_provide;

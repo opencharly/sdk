@@ -297,10 +297,11 @@ func ComputeDeployID(box string, layers, addCandies []string) string {
 }
 
 // PrimaryDistroTag picks the distro tag this plan is materialized against.
-// img.Distro is the AUTHORITATIVE deploy-target distro chain and always wins:
-// syntheticHostBox sets the operator host's tags, syntheticVmBox the GUEST's,
-// and ResolveBox the image's — so a vm deploy resolves the guest distro, a host
-// deploy the operator's, a pod/image deploy the image's. For a host deploy
+// img.Distro is the AUTHORITATIVE deploy-target distro chain and always wins: the caller's
+// synthetic-box construction sets the operator host's tags for a host target / the GUEST's for a
+// vm target (candy/plugin-bundle/candy_select.go's syntheticHostBoxFromEnvelope /
+// syntheticVmBoxFromEnvelope, K4 unit B), and ResolveBox the image's — so a vm deploy resolves
+// the guest distro, a host deploy the operator's, a pod/image deploy the image's. For a host deploy
 // img.Distro[0] == hostCtx.Distro (both from DetectHostDistro; PrimaryTag() ==
 // Tags[0]), so this is byte-identical to the old host path while fixing vm
 // deploys (whose hostCtx.Distro is the OPERATOR's distro, NOT the guest's — the
@@ -912,9 +913,9 @@ func StringSliceFromYAML(v any) ([]string, bool) {
 // path on the local deploy target) into ONE compile-time filter.
 // ServiceRenderDistros returns the distro tag chain a service entry's distro:
 // filter is matched against for a deploy target. img.Distro is the AUTHORITATIVE
-// deploy-target chain and always wins (mirrors PrimaryDistroTag): syntheticVmBox
-// sets the GUEST chain (e.g. ["debian:13","debian"]), syntheticHostBox the
-// operator host's, ResolveBox the image's. Using hostCtx.Distro here was the
+// deploy-target chain and always wins (mirrors PrimaryDistroTag): the caller's synthetic-box
+// construction sets the GUEST chain (e.g. ["debian:13","debian"]) for a vm target / the
+// operator host's for a host target, ResolveBox the image's. Using hostCtx.Distro here was the
 // bug that made a vm deploy filter services against the OPERATOR's distro
 // (arch) instead of the guest's (debian) — detectHostContext defaults
 // hostCtx.MachineVenue=true + the operator distro even for a vm deploy, so a
