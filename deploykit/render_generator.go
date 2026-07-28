@@ -44,6 +44,17 @@ type Generator struct {
 	// disposable check-bed image builds. See RenderLocalPkgImageInstall (localpkg.go).
 	DevLocalPkg bool
 
+	// Config + InitConfig are the RESOLVE-side inputs the host render-prep pass
+	// (RenderPrepBox/RenderPrepAll in render_prep.go, K3-U3) reads to fill the
+	// per-box build-render caches (RenderCandyOrder/CandyCaps/ActiveInits/
+	// InitSystem/InitDef/BakedMetadata) before the resolved-project envelope is
+	// projected. The host (charly's toDeploykit) sets both from its resolved state;
+	// the plugin-build render path (NewRenderGeneratorFromProject) leaves them nil
+	// and reads the pre-computed caches from the envelope instead, so it never
+	// invokes render-prep.
+	Config     *spec.Config
+	InitConfig *buildkit.InitConfig
+
 	// externalBuilderReplies caches each candy's external-builder OpResolve reply
 	// for ONE image (Invoked once per candy); RESET per image.
 	externalBuilderReplies map[string]spec.BuilderResolveReply

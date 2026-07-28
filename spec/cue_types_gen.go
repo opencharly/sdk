@@ -3023,6 +3023,17 @@ type BuildEnsureReply struct {
 	Error string `yaml:"error,omitempty" json:"error,omitempty"`
 }
 
+// #BuildEngineScanRemoteRequest — the `buildengine-scan-remote` host-leg request (K3 build-engine, U6):
+// scan the wanted bare refs out of a downloaded repo cache dir. The plugin's ScanSeams.ScanRemote
+// closure fills it; the host runs requireCandyScanner().ScanRemoteCandy over the cache.
+type BuildEngineScanRemoteRequest struct {
+	CacheDir string `yaml:"cache_dir,omitempty" json:"cache_dir"`
+
+	RepoPath string `yaml:"repo_path,omitempty" json:"repo_path"`
+
+	Refs []string `yaml:"refs,omitempty" json:"refs,omitempty"`
+}
+
 type Candy struct {
 	// --- identity (required: ADE mandates version+name+description+plan) ---
 	Version CalVer `yaml:"version,omitempty" json:"version"`

@@ -249,3 +249,12 @@
 #BuildEnsureReply: {
 	error?: string @go(Error)
 }
+
+// #BuildEngineScanRemoteRequest — the `buildengine-scan-remote` host-leg request (K3 build-engine, U6):
+// scan the wanted bare refs out of a downloaded repo cache dir. The plugin's ScanSeams.ScanRemote
+// closure fills it; the host runs requireCandyScanner().ScanRemoteCandy over the cache.
+#BuildEngineScanRemoteRequest: {
+	cache_dir!: string   @go(CacheDir)
+	repo_path!: string   @go(RepoPath)
+	refs?: [...string]   @go(Refs)
+}
