@@ -5633,11 +5633,13 @@ type DeployEntityResolveReply struct {
 	EntityJSON RawBody `yaml:"entity,omitempty" json:"entity,omitempty"`
 }
 
-// #EphemeralTeardownRequest/#EphemeralTeardownReply — the host→command:bundle
-// OpEphemeralTeardown leg: TeardownEphemeralLifecycle's LAST-action-of-Del counterpart
-// (recursive nested-child teardown, TTL timer cancel, snapshot/parent refcount decrement,
-// charly.yml cleanup), called from every substrate's post-teardown hook (today:
-// vm_lifecycle_preresolve.go's vmLifecyclePostTeardown).
+// #EphemeralTeardownRequest/#EphemeralTeardownReply — the OpEphemeralTeardown leg any
+// substrate's own post-teardown handling can Invoke directly (recursive nested-child teardown,
+// TTL timer cancel, snapshot/parent refcount decrement, charly.yml cleanup lives in
+// candy/plugin-bundle's teardownEphemeral). Today's one caller is candy/plugin-deploy-vm/
+// lifecycle.go's vmPostTeardown (F6 vm-lifecycle move, coneB-vmlifecycle — formerly a host-side
+// pre-dispatch hook, charly/vm_lifecycle_preresolve.go's vmLifecyclePostTeardown, dispatched
+// in-proc via the now-deleted charly/ephemeral_dispatch.go's TeardownEphemeralLifecycle).
 type EphemeralTeardownRequest struct {
 	Name string `yaml:"name,omitempty" json:"name"`
 
