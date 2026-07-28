@@ -5252,71 +5252,6 @@ type DeployPluginsConnectReply struct {
 	Dir string `yaml:"dir,omitempty" json:"dir"`
 }
 
-// #DeployNodeDispatchRequest/#DeployNodeDispatchReply — the per-node `charly bundle add`
-// terminal step (K4 lane A keystone, RDD-spike-proven): resolve+compile+ResolveTarget+Add for
-// ONE tree position, reached once per node from the plugin's own walk instead of core walking
-// in-process. ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain
-// the OLD in-core walk built (deriveChildExecutorForPath is pure Go over spec/kit types and is
-// re-run HOST-side here) — a live DeployExecutor never needs to cross the wire.
-//
-// target/vm_entity (W4 pure-helpers relocation) are PRE-RESOLVED plugin-side (classifyNodeTarget
-// / resolveVmEntity — both pure functions of node+path, now living in candy/plugin-bundle) and
-// carried across the wire so the host-side dispatch no longer recomputes them: the host trusts
-// target/vm_entity as sent (an empty vm_entity is itself a valid resolved value — "no vm entity
-// applies to this node" — never a sentinel meaning "recompute me").
-type DeployNodeDispatchRequest struct {
-	Path string `yaml:"path,omitempty" json:"path"`
-
-	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
-
-	AncestorPaths []string `yaml:"ancestor_paths,omitempty" json:"ancestor_paths,omitempty"`
-
-	AncestorNodes []Deploy `yaml:"ancestor_nodes,omitempty" json:"ancestor_nodes,omitempty"`
-
-	Ref string `yaml:"ref,omitempty" json:"ref,omitempty"`
-
-	AddCandy []string `yaml:"add_candy,omitempty" json:"add_candy,omitempty"`
-
-	Tag string `yaml:"tag,omitempty" json:"tag,omitempty"`
-
-	DryRun bool `yaml:"dry_run,omitempty" json:"dry_run,omitempty"`
-
-	// node_only mirrors `charly bundle add --node-only`: threaded onto the resolved
-	// *externalDeployTarget so its Add skips the substrate's PostApply (e.g. a vm's nested
-	// target:pod children) — the walk itself already dispatches only this ONE node either way,
-	// this flag additionally suppresses the SUBSTRATE's own post-apply fan-out.
-	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
-
-	Format string `yaml:"format,omitempty" json:"format,omitempty"`
-
-	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
-
-	Verify bool `yaml:"verify,omitempty" json:"verify,omitempty"`
-
-	WithServices bool `yaml:"with_services,omitempty" json:"with_services,omitempty"`
-
-	AllowRepoChanges bool `yaml:"allow_repo_changes,omitempty" json:"allow_repo_changes,omitempty"`
-
-	AllowRootTasks bool `yaml:"allow_root_tasks,omitempty" json:"allow_root_tasks,omitempty"`
-
-	SkipIncompatible bool `yaml:"skip_incompatible,omitempty" json:"skip_incompatible,omitempty"`
-
-	BuilderImage string `yaml:"builder_image,omitempty" json:"builder_image,omitempty"`
-
-	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
-
-	Disposable bool `yaml:"disposable,omitempty" json:"disposable,omitempty"`
-
-	Lifecycle string `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
-
-	Target string `yaml:"target,omitempty" json:"target,omitempty"`
-
-	VmEntity string `yaml:"vm_entity,omitempty" json:"vm_entity,omitempty"`
-}
-
-type DeployNodeDispatchReply struct {
-}
-
 // #ConstructStepRequest/#ConstructStepReply — the "construct-step" HostBuild seam (K5-A item 1,
 // compile-seam ctx-threading): the ONE genuinely host-only piece of the former compileActOp —
 // resolving a `run:` act op's `plugin:` word against the PROVIDER REGISTRY (a clause-M kernel
@@ -5420,6 +5355,65 @@ type DeployNodeDelDispatchRequest struct {
 }
 
 type DeployNodeDelDispatchReply struct {
+}
+
+// #DeployResolveTargetAddRequest/#DeployResolveTargetAddReply — the K4-C SHAPE-2 per-node
+// terminal step: ResolveTarget + DeployContext + target.Add for ONE tree position, reached once
+// per node from the plugin's own walk. UNLIKE the retired #DeployNodeDispatchRequest (which had
+// the host RE-COMPILE the plans via an in-proc OpCompile round-trip — the plugin→host→plugin
+// double-bounce), the plugin now COMPILES the InstallPlans IN-PROC (walk.go dispatchOne →
+// compileNodePlans → compilePlansForRequest, no OpCompile hop) and ships the ALREADY-COMPILED
+// plans (with deployID + AddCandies stamped plugin-side, round-tripped through InstallPlanView) as
+// plans_json. The host half does ONLY the genuine floor-M residue a plugin cannot: reconstruct
+// the ancestor executor chain (deriveChildExecutorForPath — registry-coupled), loadConfigForDeploy
+// (LoadUnified), ResolveTarget + DeployContext + utgt.Add.
+//
+// ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain the OLD in-core
+// walk built (deriveChildExecutorForPath is pure Go over spec/kit types, re-run HOST-side) — a
+// live DeployExecutor never crosses the wire. target is the plugin-classified substrate word (a
+// pure ClassifyNodeTarget of node+path), carried so the host synthesizes a Target-only node when
+// node is nil (a ref-based deploy with no charly.yml entry). The gate flags are the FINAL resolved
+// EmitOpts values (node.InstallOpts already applied over the CLI flags plugin-side); dry_run never
+// reaches this seam — a dry-run prints the compiled plans plugin-side and returns without dispatch.
+type DeployResolveTargetAddRequest struct {
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	DeployName string `yaml:"deploy_name,omitempty" json:"deploy_name"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	Target string `yaml:"target,omitempty" json:"target"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir"`
+
+	// plans_json is the marshalled []spec.InstallPlanView (deployID + AddCandies already stamped
+	// plugin-side); the host re-materializes []*spec.InstallPlan via deploykit.PlanFromView.
+	PlansJSON RawBody `yaml:"plans_json,omitempty" json:"plans_json"`
+
+	AncestorPaths []string `yaml:"ancestor_paths,omitempty" json:"ancestor_paths,omitempty"`
+
+	AncestorNodes []Deploy `yaml:"ancestor_nodes,omitempty" json:"ancestor_nodes,omitempty"`
+
+	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
+
+	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
+
+	Verify bool `yaml:"verify,omitempty" json:"verify,omitempty"`
+
+	WithServices bool `yaml:"with_services,omitempty" json:"with_services,omitempty"`
+
+	AllowRepoChanges bool `yaml:"allow_repo_changes,omitempty" json:"allow_repo_changes,omitempty"`
+
+	AllowRootTasks bool `yaml:"allow_root_tasks,omitempty" json:"allow_root_tasks,omitempty"`
+
+	SkipIncompatible bool `yaml:"skip_incompatible,omitempty" json:"skip_incompatible,omitempty"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	BuilderImage string `yaml:"builder_image,omitempty" json:"builder_image,omitempty"`
+}
+
+type DeployResolveTargetAddReply struct {
 }
 
 // #DeployAddRequest carries the `charly bundle add` command flags (the former
@@ -6139,11 +6133,19 @@ type CheckBedMember struct {
 // returns []InstallPlanView. The host re-materializes []*InstallPlan from the views via
 // deploykit.PlanFromView.
 //
-//   - BOX-VIEW selection (compileCandyOnBoxSelection, the add_candy-on-pod/k8s shape, ctx!=nil —
-//     UNCHANGED): box_view + order are POPULATED host-side (the host projects an
-//     ALREADY-RESOLVED base image via projectResolvedBox — the base image itself came from a
-//     separate host-side ResolveBox call in compileNodePlans, so there is no envelope-only path
-//     to it yet) and the plugin trusts them as sent.
+//   - BOX-VIEW selection (an already-resolved base image, ctx!=nil): box_view + order are
+//     POPULATED host-side (the host projects an ALREADY-RESOLVED base image via
+//     projectResolvedBox) and the plugin trusts them as sent. Retained for any caller that still
+//     resolves the base image host-side; the add_candy-on-pod/k8s path itself now uses the
+//     ADD-CANDY-ON-BOX shape below.
+//   - ADD-CANDY-ON-BOX selection (compileCandyOnBoxSelection, the add_candy-on-pod/k8s shape, K4
+//     box-half completion): candy_ref (the add_candy overlay ref) AND base_box_ref (the primary
+//     pod/k8s base image name) are BOTH set — the plugin reads rp.Boxes[base_box_ref] (the SAME
+//     ResolvedBoxView the primary BOX-REF shape reads, R3) as the COMPILE CONTEXT, resolves the
+//     add_candy's OWN topo order from rp.CandyModels (deploykit.ResolveCandyOrder over
+//     {BareRef(candy_ref)}, widened by extra_candy_refs for a remote overlay), prunes
+//     container-init-for-systemd, and compiles that order against the base image — replacing the
+//     former host-side buildkit.ResolveBox(baseImg) + scanCandiesForRef path.
 //   - CANDY selection (compileStandaloneCandySelection, the target:local/vm standalone-candy
 //     shape, K4 unit B candy-half): candy_ref is set — the plugin resolves the candy key + topo
 //     order itself from its own envelope (deploykit.ResolveCandyOrder over rp.CandyModels,
@@ -6158,7 +6160,8 @@ type CheckBedMember struct {
 //     order itself from img.Candy over rp.CandyModels (deploykit.ResolveCandyOrder, same as the
 //     CANDY shape).
 //
-// Exactly one of box_view, candy_ref, box_ref is set. Neither CANDY nor BOX-REF needs
+// Exactly one of {box_view, box_ref, candy_ref-alone} is set, OR the ADD-CANDY-ON-BOX pair
+// (candy_ref + base_box_ref) together. Neither CANDY nor BOX-REF needs
 // LoadUnified or the provider-CONNECT registry (verified live, K4 unit B: candy/plugin-bundle's
 // own ALREADY-EXISTING preresolveBuilderContexts, called unconditionally for every OpCompile,
 // already S2-lazy-connects any externalized builder the resolved order+img trigger via
@@ -6219,6 +6222,13 @@ type DeployCompileRequest struct {
 	// repo-wide today, so this is a zero-cost future-proofing widening, not a live behavior
 	// change). Absent for the other shapes.
 	BoxRef string `yaml:"box_ref,omitempty" json:"box_ref,omitempty"`
+
+	// base_box_ref selects the ADD-CANDY-ON-BOX shape (K4 box-half completion) WHEN set alongside
+	// candy_ref: the primary pod/k8s base image's own name, read from rp.Boxes[base_box_ref] as the
+	// COMPILE CONTEXT the candy_ref overlay compiles against — replacing the former host-side
+	// buildkit.ResolveBox(baseImg) + scanCandiesForRef. Absent for every other shape (a standalone
+	// candy_ref with NO base_box_ref stays the CANDY shape, synthetic-box compiled).
+	BaseBoxRef string `yaml:"base_box_ref,omitempty" json:"base_box_ref,omitempty"`
 }
 
 // #DeployCompileReply is the OpCompile reply: the compiled plans as marshalled

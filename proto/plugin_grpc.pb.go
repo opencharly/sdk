@@ -865,7 +865,6 @@ const (
 	CheckContextService_AddBackground_FullMethodName           = "/charlyplugin.CheckContextService/AddBackground"
 	CheckContextService_ResolveEndpoint_FullMethodName         = "/charlyplugin.CheckContextService/ResolveEndpoint"
 	CheckContextService_ResolveGraphicsEndpoint_FullMethodName = "/charlyplugin.CheckContextService/ResolveGraphicsEndpoint"
-	CheckContextService_ResolveClusterContext_FullMethodName   = "/charlyplugin.CheckContextService/ResolveClusterContext"
 	CheckContextService_ResolveImageLabel_FullMethodName       = "/charlyplugin.CheckContextService/ResolveImageLabel"
 )
 
@@ -886,12 +885,6 @@ type CheckContextServiceClient interface {
 	// client needs, and the credential-store password. Class-generic: parameterized by kind,
 	// shared by the vnc + spice verbs (never a per-verb RPC).
 	ResolveGraphicsEndpoint(ctx context.Context, in *ResolveGraphicsEndpointRequest, opts ...grpc.CallOption) (*ResolveGraphicsEndpointReply, error)
-	// ResolveClusterContext: map a charly k8s cluster-profile NAME to its kubeconfig context by
-	// reading the project's kind:k8s spec (findK8sSpec) — the host owns the project loader the
-	// out-of-process plugin cannot reach. Class-generic (concept-named, not verb-named): any
-	// cluster-probing verb declares its cluster profile and gets the context. Empty context (no
-	// matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
-	ResolveClusterContext(ctx context.Context, in *ResolveClusterContextRequest, opts ...grpc.CallOption) (*ResolveClusterContextReply, error)
 	// ResolveImageLabel: read one OCI label value off the deployment-under-test's image — the
 	// host owns the podman engine + container→image resolution the out-of-process plugin cannot
 	// reach. Class-generic (parameterized by label name): the mcp verb reads ai.opencharly.mcp_provide;
@@ -943,15 +936,6 @@ func (c *checkContextServiceClient) ResolveGraphicsEndpoint(ctx context.Context,
 	return out, nil
 }
 
-func (c *checkContextServiceClient) ResolveClusterContext(ctx context.Context, in *ResolveClusterContextRequest, opts ...grpc.CallOption) (*ResolveClusterContextReply, error) {
-	out := new(ResolveClusterContextReply)
-	err := c.cc.Invoke(ctx, CheckContextService_ResolveClusterContext_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *checkContextServiceClient) ResolveImageLabel(ctx context.Context, in *ResolveImageLabelRequest, opts ...grpc.CallOption) (*ResolveImageLabelReply, error) {
 	out := new(ResolveImageLabelReply)
 	err := c.cc.Invoke(ctx, CheckContextService_ResolveImageLabel_FullMethodName, in, out, opts...)
@@ -978,12 +962,6 @@ type CheckContextServiceServer interface {
 	// client needs, and the credential-store password. Class-generic: parameterized by kind,
 	// shared by the vnc + spice verbs (never a per-verb RPC).
 	ResolveGraphicsEndpoint(context.Context, *ResolveGraphicsEndpointRequest) (*ResolveGraphicsEndpointReply, error)
-	// ResolveClusterContext: map a charly k8s cluster-profile NAME to its kubeconfig context by
-	// reading the project's kind:k8s spec (findK8sSpec) — the host owns the project loader the
-	// out-of-process plugin cannot reach. Class-generic (concept-named, not verb-named): any
-	// cluster-probing verb declares its cluster profile and gets the context. Empty context (no
-	// matching profile) is a valid reply — the plugin falls back to the kubeconfig current-context.
-	ResolveClusterContext(context.Context, *ResolveClusterContextRequest) (*ResolveClusterContextReply, error)
 	// ResolveImageLabel: read one OCI label value off the deployment-under-test's image — the
 	// host owns the podman engine + container→image resolution the out-of-process plugin cannot
 	// reach. Class-generic (parameterized by label name): the mcp verb reads ai.opencharly.mcp_provide;
@@ -1007,9 +985,6 @@ func (UnimplementedCheckContextServiceServer) ResolveEndpoint(context.Context, *
 }
 func (UnimplementedCheckContextServiceServer) ResolveGraphicsEndpoint(context.Context, *ResolveGraphicsEndpointRequest) (*ResolveGraphicsEndpointReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveGraphicsEndpoint not implemented")
-}
-func (UnimplementedCheckContextServiceServer) ResolveClusterContext(context.Context, *ResolveClusterContextRequest) (*ResolveClusterContextReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ResolveClusterContext not implemented")
 }
 func (UnimplementedCheckContextServiceServer) ResolveImageLabel(context.Context, *ResolveImageLabelRequest) (*ResolveImageLabelReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResolveImageLabel not implemented")
@@ -1099,24 +1074,6 @@ func _CheckContextService_ResolveGraphicsEndpoint_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CheckContextService_ResolveClusterContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ResolveClusterContextRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CheckContextServiceServer).ResolveClusterContext(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CheckContextService_ResolveClusterContext_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CheckContextServiceServer).ResolveClusterContext(ctx, req.(*ResolveClusterContextRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _CheckContextService_ResolveImageLabel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ResolveImageLabelRequest)
 	if err := dec(in); err != nil {
@@ -1157,10 +1114,6 @@ var CheckContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveGraphicsEndpoint",
 			Handler:    _CheckContextService_ResolveGraphicsEndpoint_Handler,
-		},
-		{
-			MethodName: "ResolveClusterContext",
-			Handler:    _CheckContextService_ResolveClusterContext_Handler,
 		},
 		{
 			MethodName: "ResolveImageLabel",

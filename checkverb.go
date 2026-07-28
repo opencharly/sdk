@@ -170,17 +170,6 @@ func (c *sdkCheckContext) ResolveGraphicsEndpoint(ctx context.Context, kind stri
 	}, nil
 }
 
-func (c *sdkCheckContext) ResolveClusterContext(ctx context.Context, cluster string) (string, error) {
-	rep, err := c.cc.ResolveClusterContext(ctx, &pb.ResolveClusterContextRequest{Cluster: cluster})
-	if err != nil {
-		return "", err
-	}
-	if rep.GetError() != "" {
-		return "", errors.New(rep.GetError())
-	}
-	return rep.GetContext(), nil
-}
-
 func (c *sdkCheckContext) ResolveImageLabel(ctx context.Context, label string) (string, error) {
 	rep, err := c.cc.ResolveImageLabel(ctx, &pb.ResolveImageLabelRequest{Label: label})
 	if err != nil {
