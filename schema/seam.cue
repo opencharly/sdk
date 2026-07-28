@@ -1357,18 +1357,6 @@
 	is_keyring?: bool @go(IsKeyring)
 }
 
-// #PodConfigEncMountsRequest / Reply: ensureEncryptedMounts + (optional) encUnmount — the
-// gocryptfs FUSE mount lifecycle (FINAL/K5-deferred registry-coupled family per the enc.go
-// header: encExecViaPlugin + resolveEncPassphrase* route through the host provider registry +
-// DefaultCredentialStore, neither portable without the InvokeProvider rewrite this family
-// defers). This is the "ONE narrow credential seam" the standing ruling names.
-#PodConfigEncMountsRequest: {
-	box!:          string @go(Box)
-	instance?:     string @go(Instance)
-	auto_gen!:     bool   @go(AutoGen)
-	keep_mounted!: bool   @go(KeepMounted)
-}
-#PodConfigEncMountsReply: {}
 
 // #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
 // — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).

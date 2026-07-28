@@ -6720,24 +6720,6 @@ type PodConfigProvisionSecretsReply struct {
 	IsKeyring bool `yaml:"is_keyring,omitempty" json:"is_keyring,omitempty"`
 }
 
-// #PodConfigEncMountsRequest / Reply: ensureEncryptedMounts + (optional) encUnmount — the
-// gocryptfs FUSE mount lifecycle (FINAL/K5-deferred registry-coupled family per the enc.go
-// header: encExecViaPlugin + resolveEncPassphrase* route through the host provider registry +
-// DefaultCredentialStore, neither portable without the InvokeProvider rewrite this family
-// defers). This is the "ONE narrow credential seam" the standing ruling names.
-type PodConfigEncMountsRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
-
-	KeepMounted bool `yaml:"keep_mounted,omitempty" json:"keep_mounted"`
-}
-
-type PodConfigEncMountsReply struct {
-}
-
 // #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
 // — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
 type PodConfigInjectEnvProvidesRequest struct {
