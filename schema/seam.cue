@@ -32,22 +32,24 @@
 // VmJSON is the resolved vm value envelope (uf.VM[entity] via resolveVmViaPlugin,
 // #Vm-defaulted host-side), ResourcesJSON the resolved resource map
 // (uf.resolveResources() — drives GPU auto-allocation) — both opaque JSON of a
-// hand-written runtime type with no CUE def. Backend is the resolved vm backend
-// (resolveVmBackend, which also starts the libvirt user session); Claimant +
-// ClaimantNode carry the exclusive-resource claimant (lookupVMClaimant) the
-// handler acquires a preempt lease for. VmBackend/BuildEngine/RunEngine are the
-// runtime-settings fields (ResolveRuntime) the create/build pipeline reads.
-// VmState is the entity's persisted deploy-ledger runtime state (instance-id,
-// ssh_port, disk path) — the READ half of the ledger dep (loadDeployConfigForRead
-// → LookupKey "vm:<entity>") so the plugin reuses the persisted auto-port +
-// regenerates the seed ISO without holding the deploy-config lock. VmEntities is
-// the project's declared kind:vm entity NAMES (the keys of uf.VM) — the
-// enumeration `charly vm import` needs to detect name conflicts. Fields absent
-// for an entity that does not need them stay zero.
+// hand-written runtime type with no CUE def. Claimant + ClaimantNode carry the
+// exclusive-resource claimant (lookupVMClaimant) the handler acquires a preempt
+// lease for. VmBackend/BuildEngine/RunEngine are the runtime-settings fields
+// (ResolveRuntime) the create/build pipeline reads; VmBackend also feeds the
+// plugin-side backend resolve (candy/plugin-vm/vm_backend_resolve.go, F6
+// vm-lifecycle move, coneB-vmlifecycle — the resolved Backend value itself no
+// longer crosses the wire; the plugin computes it from VmBackend + its own
+// "deploy-entity-resolve" call). VmState is the entity's persisted
+// deploy-ledger runtime state (instance-id, ssh_port, disk path) — the READ
+// half of the ledger dep (loadDeployConfigForRead → LookupKey "vm:<entity>")
+// so the plugin reuses the persisted auto-port + regenerates the seed ISO
+// without holding the deploy-config lock. VmEntities is the project's
+// declared kind:vm entity NAMES (the keys of uf.VM) — the enumeration
+// `charly vm import` needs to detect name conflicts. Fields absent for an
+// entity that does not need them stay zero.
 #ConfigResolveReply: {
 	vm_json?:        bytes  @go(VmJSON, type=RawBody)
 	resources_json?: bytes  @go(ResourcesJSON, type=RawBody)
-	backend?:        string @go(Backend)
 	claimant?:       string @go(Claimant)
 	claimant_node?:  #Deploy @go(ClaimantNode, optional=nillable)
 	vm_backend?:     string @go(VmBackend)
@@ -454,11 +456,13 @@
 #EphemeralRegisterReply: {}
 
 // #DeployEntityResolveRequest/#DeployEntityResolveReply — the F6-family GENERIC host-side
-// entity-lookup seam (unit 6a, extended for unit 6b's k3s_post/vm_backend_lifecycle consumers,
-// and for W4's resolveNodeTemplate — candy/plugin-bundle's kind:local template lookup): a
-// substrate PRERESOLVE body (k8s/vm/android, F6) OR a peer consumer resolving a cross-reference
-// (k3s_post's deployVMForwards, vm_backend_lifecycle's vmConfiguredBackend, resolveNodeTemplate's
-// kind:local merge) needs a LoadUnified-coupled lookup a plugin cannot do itself — EITHER (a) its
+// entity-lookup seam (unit 6a, extended for unit 6b's k3s_post consumer, candy/plugin-vm's own
+// vmConfiguredBackendPlugin (F6 vm-lifecycle move, coneB-vmlifecycle — formerly charly-core's
+// vm_backend_lifecycle.go's vmConfiguredBackend, now plugin-side), and for W4's
+// resolveNodeTemplate — candy/plugin-bundle's kind:local template lookup): a substrate PRERESOLVE
+// body (k8s/vm/android, F6) OR a peer consumer resolving a cross-reference (k3s_post's
+// deployVMForwards, vmConfiguredBackendPlugin, resolveNodeTemplate's kind:local merge) needs a
+// LoadUnified-coupled lookup a plugin cannot do itself — EITHER (a) its
 // own deploy-tree node by name (the Update-path re-resolve every preresolver does when node==nil,
 // OR a bundle-key cross-reference's From-field hop — today: resolveTreeRoot) or (b) a referenced
 // kind:<word> entity (k8s/android/vm/local) by name, returned as the WHOLE RESOLVED envelope so a
