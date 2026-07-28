@@ -6,23 +6,16 @@ import (
 	"github.com/opencharly/sdk/kit"
 )
 
-// container_resolve.go — the deploy-key → running-container resolvers (K4: relocated from
-// charly/container.go and charly/volume_cp_tags_cmd.go). Homed in deploykit (not kit) because they
-// need ResolveBoxEngineForDeploy, a deploykit-only mechanism (kit cannot import deploykit).
-//
-// CURRENT STATE (corrected 2026-07-20, DEPLOY-wave R1 finding): charly/container.go's
-// resolveContainer and charly/volume_cp_tags_cmd.go's resolveSidecarContainer are STILL bare,
-// undeleted duplicates of ResolveContainer/ResolveSidecarContainer below — an incomplete cutover,
-// not a completed one. The bare core versions remain the ones actually called by
-// check_members.go, check_endpoint_resolve.go, cmd.go, check_venue.go, check_cmd.go,
-// host_build_check_run.go, pod_lifecycle_resolve.go, and android_deploy_cmd.go (verified by grep,
-// not assumed) — every one of those is CHECK-wave or android-wave territory, so the dedup sweep
-// (repoint each caller to deploykit.ResolveContainer/.ResolveSidecarContainer, delete the core
-// duplicates) is tracked to the CHECK wave's inventory, not done here. candy/plugin-pod does
-// NOT exist on charly main as of this commit — it is a new candy born on the companion
-// DEPLOY-wave charly PR, whose VolumeCmd/CpCmd leaves will be the first confirmed consumer to
-// import these deploykit functions directly (K3 ZERO-ALIASES — no alias file), once that PR
-// merges.
+// container_resolve.go — the deploy-key → running-container resolvers (K4: relocated from the
+// deleted charly/container.go and charly/volume_cp_tags_cmd.go). Homed in deploykit (not kit)
+// because they need ResolveBoxEngineForDeploy, a deploykit-only mechanism (kit cannot import
+// deploykit). The dedup this file's header used to track as incomplete (a 2026-07-20 R1 finding:
+// bare core duplicates of ResolveContainer/ResolveSidecarContainer still called by
+// check_members.go/cmd.go/etc.) is DONE: both charly/container.go and charly/volume_cp_tags_cmd.go
+// are deleted, no bare `func resolveContainer`/`func resolveSidecarContainer` remains anywhere in
+// charly core, and every caller (charly's check_members.go/check_endpoint_resolve.go/
+// check_venue_resolve.go + candy/plugin-check/plugin-cmd/plugin-pod/plugin-adb/plugin-deploy-pod)
+// imports THESE functions directly. This is the ONE shared implementation.
 
 // ResolveContainer resolves engine + container name, verifying the container is running.
 // Use "." as image name for local mode (returns empty engine and name).
