@@ -7293,8 +7293,9 @@ type CliReply struct {
 // carried as base64-over-JSON []byte (NOT RawBody — it is YAML, not JSON). The reply is a
 // spec.LoadedProject marshalled directly (no reply envelope needed). Every OTHER loader leg
 // carries an existing type verbatim over the []byte wire: loader-bootstrap ([]byte→[]byte),
-// loader-threaded (∅→spec.Threaded), loader-materialize (spec.LoadedProject→loaderkit.UnifiedFile),
-// loader-android-validate / loader-preempt-validate (loaderkit.UnifiedFile→error).
+// loader-threaded (∅→spec.Threaded), loader-materialize (spec.LoadedProject→loaderkit.UnifiedFile).
+// The former loader-android-validate / loader-preempt-validate legs dissolved — a plugin-side loader
+// now self-serves those validators over InvokeProvider(kind, OpResolve).
 type LoaderWalkRequest struct {
 	Dir string `yaml:"dir,omitempty" json:"dir"`
 
