@@ -6442,6 +6442,31 @@ type PodServiceRequest struct {
 type PodServiceReply struct {
 }
 
+// #PodCmdRequest carries `charly cmd <box> <command>`'s per-invocation fields for the
+// "pod-cmd" host-builder (candy/plugin-cmd drives it): the host does ONLY the irreducible
+// dispatchLifecycleTarget("cmd") + LifecycleTarget.Attach step (host_build_pod_lifecycle_dispatch.go's
+// hostBuildPodCmd), mirroring hostBuildPodShell exactly — the interactive `-i` exec runs over the
+// SAME host-held exec.RunInteractive leg (stdio never crosses the wire). The plugin owns the CLI
+// grammar + the completion notification itself.
+type PodCmdRequest struct {
+	Box string `yaml:"box,omitempty" json:"box"`
+
+	Command string `yaml:"command,omitempty" json:"command,omitempty"`
+
+	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
+
+	Sidecar string `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
+}
+
+// #PodCmdReply is the "pod-cmd" host-builder reply. It carries the container command's exit_code so
+// `charly cmd`'s own non-zero exit propagates to the operator's process code (the plugin reconstructs
+// an *sdk.ExitCodeError from it) — the exit code cannot ride the HostBuild ERROR return, which
+// stringifies the typed *sdk.ExitCodeError; it must ride a reply FIELD, exactly as the former
+// __cmd/CliReply.ExitCode path did. A genuine (non-exit-code) failure still propagates as the error.
+type PodCmdReply struct {
+	ExitCode int `yaml:"exit_code,omitempty" json:"exit_code,omitempty"`
+}
+
 // #PodConfigSetupRequest carries the `charly config [setup]` command flags (the former
 // BoxConfigSetupCmd's authored fields, PLUS explicit_ref — bundle_from_box_cmd.go's
 // programmatically-set source-less-deploy field, below). P13-KERNEL direction-flip: forwarded
