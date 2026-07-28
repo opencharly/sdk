@@ -311,26 +311,12 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return reply, nil
 	}
 
-	// EmitBakedPlugins: via HostBuild("bake-plugins") — the host builds + stages plugin binaries +
-	// returns the COPY/chmod fragment.
+	// EmitBakedPlugins: direct call (K3 build-tail move, coneB-buildtail) — buildPluginBinary is
+	// 100% pure os/exec (proven by the already-moved ensureCharlyBinaryFresh), so this needs no
+	// host round-trip at all; the former "bake-plugins" HostBuild seam (charly/host_build_bake_plugins.go)
+	// is DELETED.
 	dg.EmitBakedPlugins = func(b *strings.Builder, boxName string, candyOrder []string) error {
-		reqJSON, err := json.Marshal(spec.BakePluginsRequest{Dir: dir, BoxName: boxName, CandyOrder: candyOrder})
-		if err != nil {
-			return fmt.Errorf("bake-plugins: marshal request: %w", err)
-		}
-		replyJSON, err := ex.HostBuild(ctx, "bake-plugins", reqJSON)
-		if err != nil {
-			return fmt.Errorf("bake-plugins: %w", err)
-		}
-		var reply spec.BakePluginsReply
-		if err := json.Unmarshal(replyJSON, &reply); err != nil {
-			return fmt.Errorf("bake-plugins: decode reply: %w", err)
-		}
-		if reply.Error != "" {
-			return fmt.Errorf("bake-plugins: %s", reply.Error)
-		}
-		b.WriteString(reply.Fragment)
-		return nil
+		return EmitBakedPlugins(ctx, b, dg.BuildDir, boxName, candyOrder, dg.Candies)
 	}
 
 	return dg, nil
