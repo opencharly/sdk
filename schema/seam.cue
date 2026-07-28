@@ -90,7 +90,7 @@
 // invocations (an intervening `charly config`), and PrepareVenue-time data is stale by the time
 // OpStart/OpStop/OpShell run much later — this is NOT threaded through the one-shot
 // LifecyclePrepareInput. Class-generic action noun "deploy-overlay" (F11 — never a substrate
-// word); the SAME need config_image.go's eventual move has (R3 — one seam, not two).
+// word).
 #DeployOverlayRequest: {
 	context!: string @go(Context) // caller label for host-side diagnostics, e.g. "charly start tunnel"
 }
@@ -1322,29 +1322,6 @@
 }
 #PodConfigTunnelResolveReply: {
 	tunnel_json?: bytes @go(TunnelJSON, type=RawBody) // marshalled *TunnelConfig; absent ⇒ nil
-}
-
-// #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
-// — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
-#PodConfigInjectEnvProvidesRequest: {
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-	env_provides?: {[string]: string} @go(EnvProvides)
-	port_map_json?: bytes @go(PortMapJSON, type=RawBody) // marshalled map[int]int
-}
-#PodConfigInjectEnvProvidesReply: {
-	changed?: bool @go(Changed)
-}
-
-// #PodConfigInjectMCPProvidesRequest / Reply: injectMCPProvides(box,instance,mcpProvides,portMap).
-#PodConfigInjectMCPProvidesRequest: {
-	box!:               string @go(Box)
-	instance?:          string @go(Instance)
-	mcp_provides_json?: bytes  @go(MCPProvidesJSON, type=RawBody) // marshalled []spec.MCPServerYAML
-	port_map_json?:     bytes  @go(PortMapJSON, type=RawBody)
-}
-#PodConfigInjectMCPProvidesReply: {
-	changed?: bool @go(Changed)
 }
 
 // #DeployConfigSaveStateRequest / Reply: deploykit.SaveDeployState(box,instance,input,

@@ -6685,37 +6685,6 @@ type PodConfigTunnelResolveReply struct {
 	TunnelJSON RawBody `yaml:"tunnel_json,omitempty" json:"tunnel_json,omitempty"`
 }
 
-// #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
-// — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
-type PodConfigInjectEnvProvidesRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	EnvProvides map[string]string `yaml:"env_provides,omitempty" json:"env_provides,omitempty"`
-
-	PortMapJSON RawBody `yaml:"port_map_json,omitempty" json:"port_map_json,omitempty"`
-}
-
-type PodConfigInjectEnvProvidesReply struct {
-	Changed bool `yaml:"changed,omitempty" json:"changed,omitempty"`
-}
-
-// #PodConfigInjectMCPProvidesRequest / Reply: injectMCPProvides(box,instance,mcpProvides,portMap).
-type PodConfigInjectMCPProvidesRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	MCPProvidesJSON RawBody `yaml:"mcp_provides_json,omitempty" json:"mcp_provides_json,omitempty"`
-
-	PortMapJSON RawBody `yaml:"port_map_json,omitempty" json:"port_map_json,omitempty"`
-}
-
-type PodConfigInjectMCPProvidesReply struct {
-	Changed bool `yaml:"changed,omitempty" json:"changed,omitempty"`
-}
-
 // #DeployConfigSaveStateRequest / Reply: deploykit.SaveDeployState(box,instance,input,
 // marshalDeployNode) — the terminal per-deploy persist. input_json is the marshalled
 // deploykit.SaveDeployStateInput (a hand-written sdk/deploykit type with no CUE def — the
