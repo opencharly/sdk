@@ -12,9 +12,11 @@ import (
 // relocated from charly/vm_deploy_state.go): each one is PURE over an already-loaded *BundleConfig
 // / *spec.ResolvedVm, touching no LoadUnified and no charly-core type. They stay in deploykit
 // (rather than vmshared) because they operate on deploykit's OWN BundleConfig type — vmshared
-// cannot import deploykit (deploykit already imports vmshared; the reverse is a cycle). The
-// charly-core WRITE path (saveVmDeployState/removeVmDeployEntry — pluginPrimaries-registry +
-// acquireDeployConfigLock coupled) stays in charly/vm_deploy_state.go and calls these directly.
+// cannot import deploykit (deploykit already imports vmshared; the reverse is a cycle). The WRITE
+// path (SaveVmDeployState/RemoveVmDeployEntry, vm_deploy_state.go — F6 vm-lifecycle move,
+// coneB-vmlifecycle) now lives in THIS SAME package and calls these directly; only the two
+// genuinely host-resident primitives it needs (the process-shared flock + the
+// pluginPrimaries-registry-coupled marshal callback) stay charly-core, injected as callbacks.
 
 // ResolveVmSshPort picks the host-side SSH port forward, reusing the persisted vm_state.ssh_port
 // (idempotent across rebuilds) when ssh.port_auto is set. The project-config READ is the one

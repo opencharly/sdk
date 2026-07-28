@@ -462,7 +462,7 @@ func MergeBundleNode(dst, src BundleNode) BundleNode {
 }
 
 // IsAutoVmDeployEntry reports whether a VM deploy entry carries NOTHING beyond
-// the fields saveVmDeployState auto-sets — target: vm, vm:, and vm_state. Such
+// the fields SaveVmDeployState auto-sets — target: vm, vm:, and vm_state. Such
 // an entry is a pure runtime-state record (e.g. a disposable check-bed VM) that
 // `charly vm destroy` should delete so it doesn't accumulate. Any OTHER non-zero
 // field means operator-authored per-host config (preemptible, env, tunnel,
