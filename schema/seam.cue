@@ -1318,27 +1318,6 @@
 	tunnel_json?: bytes @go(TunnelJSON, type=RawBody) // marshalled *TunnelConfig; absent ⇒ nil
 }
 
-// #PodConfigResolveSidecarsRequest / Reply: the sidecar resolve+secret-provision bundle
-// (embeddedSidecarBodies' go:embed data lives ONLY in the charly binary, not the plugin binary;
-// resolveSidecarsViaPlugin + the sidecar-secret ProvisionPodmanSecrets loop are registry/
-// credential-coupled per the same FINAL/K5 family).
-#PodConfigResolveSidecarsRequest: {
-	deploy_sidecars_json?: bytes    @go(DeploySidecarsJSON, type=RawBody) // map[string]json.RawMessage
-	project_templates_json?: bytes  @go(ProjectTemplatesJSON, type=RawBody)
-	cli_env?: [...string] @go(CliEnv)
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-	run_engine!: string @go(RunEngine)
-	auto_gen!:   bool   @go(AutoGen)
-	refresh_secret?: [...string] @go(RefreshSecret)
-}
-#PodConfigResolveSidecarsReply: {
-	persist_overrides_json?:  bytes @go(PersistOverridesJSON, type=RawBody)
-	resolved_sidecars_json?:  bytes @go(ResolvedSidecarsJSON, type=RawBody)
-	app_env?: [...string] @go(AppEnv)
-	extra_env?: [...string] @go(ExtraEnv) // fallback env from sidecar secret provisioning
-}
-
 // #PodConfigProvisionSecretsRequest / Reply: CollectSecretsFromLabels + CollectCandySecretAccepts
 // + ApplySecretRefresh + ProvisionPodmanSecrets + resolveSecretBackend bundle — the credential-
 // store/podman-secret provisioning family (FINAL/K5-deferred, wrapped verbatim).
@@ -1496,6 +1475,7 @@
 #PodConfigListSidecarsReply: {
 	names?: [...string] @go(Names)
 	descriptions?: {[string]: string} @go(Descriptions)
+	bodies_json?: bytes @go(BodiesJSON, type=RawBody) // map[string]json.RawMessage — the full go:embed sidecar bodies the resolve leg needs (plugin-deploy-pod/sidecar_resolve.go)
 }
 
 // sdk.OpConfigSetup / sdk.OpConfigRemove (the two new Ops the deploy:pod plugin's Invoke

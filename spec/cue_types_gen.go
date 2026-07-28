@@ -6661,38 +6661,6 @@ type PodConfigTunnelResolveReply struct {
 	TunnelJSON RawBody `yaml:"tunnel_json,omitempty" json:"tunnel_json,omitempty"`
 }
 
-// #PodConfigResolveSidecarsRequest / Reply: the sidecar resolve+secret-provision bundle
-// (embeddedSidecarBodies' go:embed data lives ONLY in the charly binary, not the plugin binary;
-// resolveSidecarsViaPlugin + the sidecar-secret ProvisionPodmanSecrets loop are registry/
-// credential-coupled per the same FINAL/K5 family).
-type PodConfigResolveSidecarsRequest struct {
-	DeploySidecarsJSON RawBody `yaml:"deploy_sidecars_json,omitempty" json:"deploy_sidecars_json,omitempty"`
-
-	ProjectTemplatesJSON RawBody `yaml:"project_templates_json,omitempty" json:"project_templates_json,omitempty"`
-
-	CliEnv []string `yaml:"cli_env,omitempty" json:"cli_env,omitempty"`
-
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine"`
-
-	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
-
-	RefreshSecret []string `yaml:"refresh_secret,omitempty" json:"refresh_secret,omitempty"`
-}
-
-type PodConfigResolveSidecarsReply struct {
-	PersistOverridesJSON RawBody `yaml:"persist_overrides_json,omitempty" json:"persist_overrides_json,omitempty"`
-
-	ResolvedSidecarsJSON RawBody `yaml:"resolved_sidecars_json,omitempty" json:"resolved_sidecars_json,omitempty"`
-
-	AppEnv []string `yaml:"app_env,omitempty" json:"app_env,omitempty"`
-
-	ExtraEnv []string `yaml:"extra_env,omitempty" json:"extra_env,omitempty"`
-}
-
 // #PodConfigProvisionSecretsRequest / Reply: CollectSecretsFromLabels + CollectCandySecretAccepts
 // + ApplySecretRefresh + ProvisionPodmanSecrets + resolveSecretBackend bundle — the credential-
 // store/podman-secret provisioning family (FINAL/K5-deferred, wrapped verbatim).
@@ -6883,6 +6851,8 @@ type PodConfigListSidecarsReply struct {
 	Names []string `yaml:"names,omitempty" json:"names,omitempty"`
 
 	Descriptions map[string]string `yaml:"descriptions,omitempty" json:"descriptions,omitempty"`
+
+	BodiesJSON RawBody `yaml:"bodies_json,omitempty" json:"bodies_json,omitempty"`
 }
 
 // #PodUpdateRequest carries the `charly update` command flags (the former UpdateCmd's
