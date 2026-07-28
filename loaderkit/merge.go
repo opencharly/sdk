@@ -19,7 +19,7 @@ import (
 // loader plugin, not in charly/ core.
 
 // MergeUnified merges src into dst such that dst's existing values WIN on
-// conflict at the same leaf (root-wins). This means when materializeLoadedProject
+// conflict at the same leaf (root-wins). This means when MaterializeLoadedProject
 // replays the walk's documents in order (the root file first, then its flat
 // imports), the root file's values are already present before any import's
 // fields are considered, so root wins.
