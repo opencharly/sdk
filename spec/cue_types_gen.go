@@ -7331,6 +7331,57 @@ type LoaderWalkRequest struct {
 	RootData []byte `yaml:"root_data,omitempty" json:"root_data,omitempty"`
 }
 
+// #DeployCandySecretsRequest/#DeployCandySecretsReply — the "deploy-candy-secrets" HostBuild
+// seam (Cone A shape 3): the genuine floor-M half of the former core-resident prepareCandySecrets
+// — scanning the project for the candies backing a compiled plan set (ScanAllCandyWithConfig, a
+// K1/K4 loader-migration-inventory mechanism a plugin cannot run itself) and resolving their
+// secret_requires:/secret_accepts: env against the credential store (itself already a core→plugin
+// adapter to verb:credential). candy/plugin-bundle's handleDeployApply calls this ONCE, BEFORE the
+// substrate dispatch, then injects the returned secret_env into its OWN in-proc plans via the
+// already-portable deploykit.InjectSecretsIntoPlans — no plan mutation crosses the wire.
+// register_hints is the set of distinct candy Artifact().Register values present in the resolved
+// candy set (e.g. "kubeconfig") — computed here (same candy scan) so handleDeployApply can decide,
+// AFTER the substrate dispatch + artifact retrieval, which handler (if any) to InvokeProvider —
+// data-driven, never a per-candy-name special case.
+type DeployCandySecretsRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir"`
+
+	PlansJSON RawBody `yaml:"plans_json,omitempty" json:"plans_json"`
+}
+
+type DeployCandySecretsReply struct {
+	SecretEnv map[string]string `yaml:"secret_env,omitempty" json:"secret_env,omitempty"`
+
+	RegisterHints []string `yaml:"register_hints,omitempty" json:"register_hints,omitempty"`
+}
+
+// #DeployArtifactsRetrieveRequest/#DeployArtifactsRetrieveReply — the "deploy-artifacts-retrieve"
+// HostBuild seam (Cone A shape 3): the genuine floor-M half of the former core-resident
+// retrieveArtifactsAndK3s — re-scanning the project for the deploy's candies (same
+// ScanAllCandyWithConfig coupling as the secrets seam above) and pulling back each one's declared
+// `artifacts:` via deploykit.RetrieveCandyArtifacts over the deploy's OWN venue executor
+// (re-materialized from venue_json — the SAME kit.VenueFromDescriptor conversion every other
+// venue-consuming seam uses). Runs AFTER the substrate dispatch succeeds (the venue must already
+// exist). The register-hint-driven k3s-post-provision DISPATCH itself is NOT here — that decision
+// + the verb:kube InvokeProvider call happen plugin-side in handleDeployApply, using the
+// register_hints the sibling #DeployCandySecretsReply already returned (one candy scan feeds both).
+type DeployArtifactsRetrieveRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir"`
+
+	PlansJSON RawBody `yaml:"plans_json,omitempty" json:"plans_json"`
+
+	ArtifactKey string `yaml:"artifact_key,omitempty" json:"artifact_key"`
+
+	DeployName string `yaml:"deploy_name,omitempty" json:"deploy_name"`
+
+	ArtifactEnv map[string]string `yaml:"artifact_env,omitempty" json:"artifact_env,omitempty"`
+
+	VenueJSON RawBody `yaml:"venue_json,omitempty" json:"venue_json,omitempty"`
+}
+
+type DeployArtifactsRetrieveReply struct {
+}
+
 // #SidecarResolveInput is the input to candy/plugin-sidecar's OpResolve leg
 // (the host-side sidecar de-type): the three sidecar-def layers to merge
 // (embedded template base, project-root templates, per-deploy overrides —
