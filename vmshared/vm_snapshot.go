@@ -233,7 +233,8 @@ type SnapshotCreateOpts struct {
 	Quiesce bool
 
 	// LibvirtBackend, when non-nil, overrides the auto-detected backend.
-	// Default: probe via existing resolveVmBackend.
+	// Default: probe via the caller's own backend-resolve (candy/plugin-vm's
+	// resolveVmBackendPlugin).
 	LibvirtBackend string
 }
 
