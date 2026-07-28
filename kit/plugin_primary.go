@@ -3,19 +3,19 @@ package kit
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/opencharly/sdk/spec"
 )
 
-// plugin_primary.go — the plugin-verb PRIMARY-input registry + the plan RESUGAR (K4: relocated
-// from charly/node_desugar.go — pure state + yaml.Node transforms, no project-loader dependency).
-// The registry itself is whole-program state (every compiled-in plugin registers its primary at
-// init, and the byte-gated prescan registers an external plugin's declared primary before parse),
-// but it needs no loader access — only spec.AuthoringVerbs (already sdk-native) for the collision
-// guard. charly core's two registration call sites (provider_registry.go, plugin_prescan.go) call
-// kit.RegisterPluginPrimary directly (K3 ZERO-ALIASES — no alias file); ResugarPlan is consumed by
-// sdk/deploykit's marshalBundleNode AND candy/plugin-deploy-pod's deploy-state writer.
+// plugin_primary.go — the plugin-verb PRIMARY-input registry (K4: relocated from
+// charly/node_desugar.go — pure state, no project-loader dependency). The registry itself is
+// whole-program state (every compiled-in plugin registers its primary at init, and the byte-gated
+// prescan registers an external plugin's declared primary before parse), but it needs no loader
+// access — only spec.AuthoringVerbs (already sdk-native) for the collision guard. charly core's two
+// registration call sites (provider_registry.go, plugin_prescan.go) call kit.RegisterPluginPrimary
+// directly (K3 ZERO-ALIASES — no alias file). The plan RESUGAR (the save-side desugar inverse) is
+// data-driven and lives in sdk/deploykit's MarshalBundleNode (it threads the primaries D-fact from
+// the resolved-project envelope, plugin-reachable — the former registry-driven kit.ResugarPlan was
+// retired in the deploy_nodeform convergence).
 
 // authoredOpFieldSet is the CUE-derived reserved #Op field set — a verb word colliding with one of
 // these is rejected at registration (the sugar rule could never reach it). Recomputed here directly
@@ -64,54 +64,3 @@ func PluginPrimaryFor(word string) (string, bool) {
 	return f, ok
 }
 
-// ResugarPlan is the desugar's INVERSE, used by the deploy-state WRITER
-// (sdk/deploykit's marshalBundleNode): each step's internal plugin/plugin_input pair rewrites
-// back to the authored `<word>: <input>` sugar (collapsing a single-primary map
-// to the scalar shorthand), so a written file round-trips through the
-// parse-time desugar instead of tripping its authored-envelope ban.
-func ResugarPlan(plan *yaml.Node) {
-	if plan == nil || plan.Kind != yaml.SequenceNode {
-		return
-	}
-	for _, st := range plan.Content {
-		if st.Kind != yaml.MappingNode {
-			continue
-		}
-		pluginIdx, inputIdx := -1, -1
-		for i := 0; i+1 < len(st.Content); i += 2 {
-			switch st.Content[i].Value {
-			case "plugin":
-				pluginIdx = i
-			case "plugin_input":
-				inputIdx = i
-			}
-		}
-		if pluginIdx < 0 {
-			continue
-		}
-		word := st.Content[pluginIdx+1].Value
-		input := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-		if inputIdx >= 0 {
-			input = st.Content[inputIdx+1]
-		}
-		// scalar-collapse: input == {<primary>: <scalar>}
-		if prim, ok := PluginPrimaryFor(word); ok && input.Kind == yaml.MappingNode &&
-			len(input.Content) == 2 && input.Content[0].Value == prim &&
-			input.Content[1].Kind == yaml.ScalarNode {
-			input = input.Content[1]
-		}
-		nc := make([]*yaml.Node, 0, len(st.Content))
-		for i := 0; i+1 < len(st.Content); i += 2 {
-			switch i {
-			case pluginIdx:
-				nc = append(nc, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: word,
-					HeadComment: st.Content[i].HeadComment}, input)
-			case inputIdx:
-				// dropped — folded into the sugar key's value
-			default:
-				nc = append(nc, st.Content[i], st.Content[i+1])
-			}
-		}
-		st.Content = nc
-	}
-}

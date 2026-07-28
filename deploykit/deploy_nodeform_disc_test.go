@@ -28,6 +28,8 @@ func TestBundleDiscForEntity_PodWorkloadNotGroup(t *testing.T) {
 	}{
 		{"resolved_port -> pod", "resolved_port:\n  - 36531:2222\n  - 39391:3000\n", "pod"},
 		{"image -> pod", "image: ghcr.io/opencharly/x:latest\n", "pod"},
+		{"resolved_image -> pod", "resolved_image: ghcr.io/opencharly/x@sha256:abc\n", "pod"},
+		{"volume_project_checked -> pod", "volume_project_checked: true\n", "pod"},
 		{"authored port -> pod", "port:\n  - 8080:80\n", "pod"},
 		{"no workload -> group", "disposable: true\n", "group"},
 		{"explicit host target -> local", "target: host\n", "local"},
