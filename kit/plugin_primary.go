@@ -63,4 +63,3 @@ func PluginPrimaryFor(word string) (string, bool) {
 	f, ok := PluginPrimaries[word]
 	return f, ok
 }
-
