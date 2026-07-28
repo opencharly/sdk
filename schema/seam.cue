@@ -1782,3 +1782,31 @@
 #BoxFetchResolveReply: {
 	path?: string @go(Path)
 }
+
+// #RawProjectRequest / #RawProject — the CHEAP raw-loader HostBuild seam ("raw-project"), the
+// endgame keystone that lets the loader-coupled deploy files MOVE to their plugins (the ruling:
+// loader-coupling is the work, not a defer reason). It mirrors resolved-project (#ResolvedProject)
+// but SKIPS the expensive ResolveBox-per-box cost: a plugin that only needs the RAW loader reads
+// (kind templates, the folded deploy tree with stamped Descent, the plugin-primaries D-fact) fetches
+// this instead of paying the full box resolution the resolved-project envelope also pays. Kind-blind
+// throughout — templates/deploy carry OPAQUE bytes the consuming plugin decodes itself. Additive:
+// later fields (config defaults, etc.) join as the consumer unit that first needs them lands (the
+// SAME additive pattern #ResolvedProject uses).
+#RawProjectRequest: {
+	dir?:                string @go(Dir)
+	include_disabled?:   bool   @go(IncludeDisabled)
+	local_superproject?: bool   @go(LocalSuperproject)
+}
+#RawProject: {
+	version?: string
+	// the bare pod/vm/local/k8s/android template maps (loaderkit.ProjectTemplates — a cheap raw-byte
+	// copy, NO ResolveBox); findK8sSpec / local-template resolvers read this.
+	templates?: #ProjectTemplates @go(Templates,optional=nillable)
+	// the folded deploy tree (uf.Bundle verbatim, with stamped Descent traits) — deploy-key→box
+	// resolution, the trait/tree resolvers, and member bring-up read this (the Descent is DATA already
+	// in the fold, clause-D, NOT a live registry query).
+	deploy?: {[string]: #Deploy} @go(Deploy,type=map[string]*Deploy)
+	// the plugin-verb PRIMARY-field D-fact (word→primary input field) for plan resugar (carried here
+	// so a plugin holding this projection resugars WITHOUT dialing the host provider registry).
+	primaries?: {[string]: string} @go(Primaries)
+}

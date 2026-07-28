@@ -7368,6 +7368,40 @@ type BoxFetchResolveReply struct {
 	Path string `yaml:"path,omitempty" json:"path,omitempty"`
 }
 
+// #RawProjectRequest / #RawProject — the CHEAP raw-loader HostBuild seam ("raw-project"), the
+// endgame keystone that lets the loader-coupled deploy files MOVE to their plugins (the ruling:
+// loader-coupling is the work, not a defer reason). It mirrors resolved-project (#ResolvedProject)
+// but SKIPS the expensive ResolveBox-per-box cost: a plugin that only needs the RAW loader reads
+// (kind templates, the folded deploy tree with stamped Descent, the plugin-primaries D-fact) fetches
+// this instead of paying the full box resolution the resolved-project envelope also pays. Kind-blind
+// throughout — templates/deploy carry OPAQUE bytes the consuming plugin decodes itself. Additive:
+// later fields (config defaults, etc.) join as the consumer unit that first needs them lands (the
+// SAME additive pattern #ResolvedProject uses).
+type RawProjectRequest struct {
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+
+	IncludeDisabled bool `yaml:"include_disabled,omitempty" json:"include_disabled,omitempty"`
+
+	LocalSuperproject bool `yaml:"local_superproject,omitempty" json:"local_superproject,omitempty"`
+}
+
+type RawProject struct {
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	// the bare pod/vm/local/k8s/android template maps (loaderkit.ProjectTemplates — a cheap raw-byte
+	// copy, NO ResolveBox); findK8sSpec / local-template resolvers read this.
+	Templates *ProjectTemplates `yaml:"templates,omitempty" json:"templates,omitempty"`
+
+	// the folded deploy tree (uf.Bundle verbatim, with stamped Descent traits) — deploy-key→box
+	// resolution, the trait/tree resolvers, and member bring-up read this (the Descent is DATA already
+	// in the fold, clause-D, NOT a live registry query).
+	Deploy map[string]*Deploy `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+
+	// the plugin-verb PRIMARY-field D-fact (word→primary input field) for plan resugar (carried here
+	// so a plugin holding this projection resugars WITHOUT dialing the host provider registry).
+	Primaries map[string]string `yaml:"primaries,omitempty" json:"primaries,omitempty"`
+}
+
 // #SidecarResolveInput is the input to candy/plugin-sidecar's OpResolve leg
 // (the host-side sidecar de-type): the three sidecar-def layers to merge
 // (embedded template base, project-root templates, per-deploy overrides —
