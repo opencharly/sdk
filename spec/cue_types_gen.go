@@ -6661,33 +6661,6 @@ type PodConfigTunnelResolveReply struct {
 	TunnelJSON RawBody `yaml:"tunnel_json,omitempty" json:"tunnel_json,omitempty"`
 }
 
-// #PodConfigProvisionSecretsRequest / Reply: CollectSecretsFromLabels + CollectCandySecretAccepts
-// + ApplySecretRefresh + ProvisionPodmanSecrets + resolveSecretBackend bundle — the credential-
-// store/podman-secret provisioning family (FINAL/K5-deferred, wrapped verbatim).
-type PodConfigProvisionSecretsRequest struct {
-	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
-
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine"`
-
-	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
-
-	RefreshSecret []string `yaml:"refresh_secret,omitempty" json:"refresh_secret,omitempty"`
-}
-
-type PodConfigProvisionSecretsReply struct {
-	ProvisionedJSON RawBody `yaml:"provisioned_json,omitempty" json:"provisioned_json,omitempty"`
-
-	FallbackEnv []string `yaml:"fallback_env,omitempty" json:"fallback_env,omitempty"`
-
-	ResolutionsJSON RawBody `yaml:"resolutions_json,omitempty" json:"resolutions_json,omitempty"`
-
-	IsKeyring bool `yaml:"is_keyring,omitempty" json:"is_keyring,omitempty"`
-}
-
 // #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
 // — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
 type PodConfigInjectEnvProvidesRequest struct {
@@ -6782,20 +6755,6 @@ type PodConfigCleanDeployEntryRequest struct {
 }
 
 type PodConfigCleanDeployEntryReply struct {
-}
-
-// #PodConfigHookSecretEnvRequest / Reply: resolveHookSecretEnv(box,instance,meta) — the
-// credential-backed env the post_enable hook needs (same FINAL/K5-deferred family).
-type PodConfigHookSecretEnvRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
-}
-
-type PodConfigHookSecretEnvReply struct {
-	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 // #PodConfigContainerTunnelRequest / Reply: reads the RUNNING container's baked image ref

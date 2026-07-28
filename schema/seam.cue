@@ -1318,25 +1318,6 @@
 	tunnel_json?: bytes @go(TunnelJSON, type=RawBody) // marshalled *TunnelConfig; absent ⇒ nil
 }
 
-// #PodConfigProvisionSecretsRequest / Reply: CollectSecretsFromLabels + CollectCandySecretAccepts
-// + ApplySecretRefresh + ProvisionPodmanSecrets + resolveSecretBackend bundle — the credential-
-// store/podman-secret provisioning family (FINAL/K5-deferred, wrapped verbatim).
-#PodConfigProvisionSecretsRequest: {
-	meta_json!:  bytes  @go(MetaJSON, type=RawBody)
-	box!:        string @go(Box)
-	instance?:   string @go(Instance)
-	run_engine!: string @go(RunEngine)
-	auto_gen!:   bool   @go(AutoGen)
-	refresh_secret?: [...string] @go(RefreshSecret)
-}
-#PodConfigProvisionSecretsReply: {
-	provisioned_json?:  bytes @go(ProvisionedJSON, type=RawBody) // []deploykit.ProvisionedSecret
-	fallback_env?: [...string] @go(FallbackEnv)
-	resolutions_json?:  bytes @go(ResolutionsJSON, type=RawBody) // []SecretResolution
-	is_keyring?: bool @go(IsKeyring)
-}
-
-
 // #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
 // — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
 #PodConfigInjectEnvProvidesRequest: {
@@ -1412,17 +1393,6 @@
 	instance?: string @go(Instance)
 }
 #PodConfigCleanDeployEntryReply: {}
-
-// #PodConfigHookSecretEnvRequest / Reply: resolveHookSecretEnv(box,instance,meta) — the
-// credential-backed env the post_enable hook needs (same FINAL/K5-deferred family).
-#PodConfigHookSecretEnvRequest: {
-	box!:       string @go(Box)
-	instance?:  string @go(Instance)
-	meta_json!: bytes  @go(MetaJSON, type=RawBody)
-}
-#PodConfigHookSecretEnvReply: {
-	env?: [...string] @go(Env)
-}
 
 // #PodConfigEncEnsurePlanRequest/Reply and #PodConfigEncUnmountPlanRequest/Reply (the former
 // pod lifecycle's resolvePodEncEnsure/resolvePodEncUnmount seam wire forms) are DELETED (wave γ):
