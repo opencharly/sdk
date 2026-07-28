@@ -5128,7 +5128,7 @@ type PodDisposableReply struct {
 // invocations (an intervening `charly config`), and PrepareVenue-time data is stale by the time
 // OpStart/OpStop/OpShell run much later — this is NOT threaded through the one-shot
 // LifecyclePrepareInput. Class-generic action noun "deploy-overlay" (F11 — never a substrate
-// word); the SAME need config_image.go's eventual move has (R3 — one seam, not two).
+// word).
 type DeployOverlayRequest struct {
 	Context string `yaml:"context,omitempty" json:"context"`
 }
@@ -7262,8 +7262,9 @@ type CliReply struct {
 // carried as base64-over-JSON []byte (NOT RawBody — it is YAML, not JSON). The reply is a
 // spec.LoadedProject marshalled directly (no reply envelope needed). Every OTHER loader leg
 // carries an existing type verbatim over the []byte wire: loader-bootstrap ([]byte→[]byte),
-// loader-threaded (∅→spec.Threaded), loader-materialize (spec.LoadedProject→loaderkit.UnifiedFile),
-// loader-android-validate / loader-preempt-validate (loaderkit.UnifiedFile→error).
+// loader-threaded (∅→spec.Threaded), loader-materialize (spec.LoadedProject→loaderkit.UnifiedFile).
+// The former loader-android-validate / loader-preempt-validate legs dissolved — a plugin-side loader
+// now self-serves those validators over InvokeProvider(kind, OpResolve).
 type LoaderWalkRequest struct {
 	Dir string `yaml:"dir,omitempty" json:"dir"`
 
