@@ -5,11 +5,12 @@ import (
 	"strings"
 )
 
-// container_probe.go — the pure container-runtime host probes (K4: relocated from
+// container_probe.go — the pure container-runtime host probes (K4: relocated from the deleted
 // charly/container.go and charly/shell.go — genuinely pure `<engine>` shell-outs with no
-// project-loader dependency). Consumed directly by candy/plugin-deploy-pod and by charly core's
-// remaining callers (the check harness, android_deploy_cmd.go, volume_cp_tags_cmd.go), which now
-// import kit directly (K3 ZERO-ALIASES — no alias file).
+// project-loader dependency). Consumed directly by candy/plugin-deploy-pod/plugin-pod/plugin-adb
+// and by charly core's remaining caller (commands.go, the check harness), which import kit
+// directly (K3 ZERO-ALIASES — no alias file); android_deploy_cmd.go and volume_cp_tags_cmd.go,
+// former core callers, are both since deleted.
 
 // ContainerRunning reports whether a container is running. Package-level var for testability
 // (tests inject a stub, same pattern as EnsureCharlyNetwork/InspectLabels).
