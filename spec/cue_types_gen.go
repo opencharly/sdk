@@ -3042,6 +3042,25 @@ type BuildEnsureReply struct {
 	Error string `yaml:"error,omitempty" json:"error,omitempty"`
 }
 
+// #BuildPkgRequest / #BuildPkgReply — the build:pkg word's Invoke envelope: `charly box pkg`'s
+// CLI→DRIVE envelope (mirrors #BuildRequest's shape, K3 build-tail move — the former hidden core
+// `__box-pkg` reentry is DELETED, its body now runs plugin-side in candy/plugin-build).
+type BuildPkgRequest struct {
+	Format []string `yaml:"format,omitempty" json:"format,omitempty"`
+
+	Candy string `yaml:"candy,omitempty" json:"candy,omitempty"`
+
+	Out string `yaml:"out,omitempty" json:"out,omitempty"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+}
+
+type BuildPkgReply struct {
+	Written []string `yaml:"written,omitempty" json:"written,omitempty"`
+
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
+}
+
 // #BuildEngineScanRemoteRequest — the `buildengine-scan-remote` host-leg request (K3 build-engine, U6):
 // scan the wanted bare refs out of a downloaded repo cache dir. The plugin's ScanSeams.ScanRemote
 // closure fills it; the host runs requireCandyScanner().ScanRemoteCandy over the cache.

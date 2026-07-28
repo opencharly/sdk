@@ -257,6 +257,21 @@
 	error?: string @go(Error)
 }
 
+// #BuildPkgRequest / #BuildPkgReply — the build:pkg word's Invoke envelope: `charly box pkg`'s
+// CLI→DRIVE envelope (mirrors #BuildRequest's shape, K3 build-tail move — the former hidden core
+// `__box-pkg` reentry is DELETED, its body now runs plugin-side in candy/plugin-build).
+#BuildPkgRequest: {
+	format?: [...string] @go(Format) // requested package formats (empty → every format the candy declares)
+	candy?:  string @go(Candy)       // candy whose localpkg sources to build
+	out?:    string @go(Out)         // output directory for the built package files
+	dir?:    string @go(Dir)         // project dir the host reconstructs config from
+}
+
+#BuildPkgReply: {
+	written?: [...string] @go(Written)
+	error?:   string @go(Error)
+}
+
 // #BuildEngineScanRemoteRequest — the `buildengine-scan-remote` host-leg request (K3 build-engine, U6):
 // scan the wanted bare refs out of a downloaded repo cache dir. The plugin's ScanSeams.ScanRemote
 // closure fills it; the host runs requireCandyScanner().ScanRemoteCandy over the cache.
