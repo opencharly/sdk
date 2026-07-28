@@ -6680,83 +6680,6 @@ type PodConfigTunnelResolveReply struct {
 	TunnelJSON RawBody `yaml:"tunnel_json,omitempty" json:"tunnel_json,omitempty"`
 }
 
-// #PodConfigResolveSidecarsRequest / Reply: the sidecar resolve+secret-provision bundle
-// (embeddedSidecarBodies' go:embed data lives ONLY in the charly binary, not the plugin binary;
-// resolveSidecarsViaPlugin + the sidecar-secret ProvisionPodmanSecrets loop are registry/
-// credential-coupled per the same FINAL/K5 family).
-type PodConfigResolveSidecarsRequest struct {
-	DeploySidecarsJSON RawBody `yaml:"deploy_sidecars_json,omitempty" json:"deploy_sidecars_json,omitempty"`
-
-	ProjectTemplatesJSON RawBody `yaml:"project_templates_json,omitempty" json:"project_templates_json,omitempty"`
-
-	CliEnv []string `yaml:"cli_env,omitempty" json:"cli_env,omitempty"`
-
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine"`
-
-	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
-
-	RefreshSecret []string `yaml:"refresh_secret,omitempty" json:"refresh_secret,omitempty"`
-}
-
-type PodConfigResolveSidecarsReply struct {
-	PersistOverridesJSON RawBody `yaml:"persist_overrides_json,omitempty" json:"persist_overrides_json,omitempty"`
-
-	ResolvedSidecarsJSON RawBody `yaml:"resolved_sidecars_json,omitempty" json:"resolved_sidecars_json,omitempty"`
-
-	AppEnv []string `yaml:"app_env,omitempty" json:"app_env,omitempty"`
-
-	ExtraEnv []string `yaml:"extra_env,omitempty" json:"extra_env,omitempty"`
-}
-
-// #PodConfigProvisionSecretsRequest / Reply: CollectSecretsFromLabels + CollectCandySecretAccepts
-// + ApplySecretRefresh + ProvisionPodmanSecrets + resolveSecretBackend bundle — the credential-
-// store/podman-secret provisioning family (FINAL/K5-deferred, wrapped verbatim).
-type PodConfigProvisionSecretsRequest struct {
-	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
-
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	RunEngine string `yaml:"run_engine,omitempty" json:"run_engine"`
-
-	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
-
-	RefreshSecret []string `yaml:"refresh_secret,omitempty" json:"refresh_secret,omitempty"`
-}
-
-type PodConfigProvisionSecretsReply struct {
-	ProvisionedJSON RawBody `yaml:"provisioned_json,omitempty" json:"provisioned_json,omitempty"`
-
-	FallbackEnv []string `yaml:"fallback_env,omitempty" json:"fallback_env,omitempty"`
-
-	ResolutionsJSON RawBody `yaml:"resolutions_json,omitempty" json:"resolutions_json,omitempty"`
-
-	IsKeyring bool `yaml:"is_keyring,omitempty" json:"is_keyring,omitempty"`
-}
-
-// #PodConfigEncMountsRequest / Reply: ensureEncryptedMounts + (optional) encUnmount — the
-// gocryptfs FUSE mount lifecycle (FINAL/K5-deferred registry-coupled family per the enc.go
-// header: encExecViaPlugin + resolveEncPassphrase* route through the host provider registry +
-// DefaultCredentialStore, neither portable without the InvokeProvider rewrite this family
-// defers). This is the "ONE narrow credential seam" the standing ruling names.
-type PodConfigEncMountsRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	AutoGen bool `yaml:"auto_gen,omitempty" json:"auto_gen"`
-
-	KeepMounted bool `yaml:"keep_mounted,omitempty" json:"keep_mounted"`
-}
-
-type PodConfigEncMountsReply struct {
-}
-
 // #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
 // — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
 type PodConfigInjectEnvProvidesRequest struct {
@@ -6853,20 +6776,6 @@ type PodConfigCleanDeployEntryRequest struct {
 type PodConfigCleanDeployEntryReply struct {
 }
 
-// #PodConfigHookSecretEnvRequest / Reply: resolveHookSecretEnv(box,instance,meta) — the
-// credential-backed env the post_enable hook needs (same FINAL/K5-deferred family).
-type PodConfigHookSecretEnvRequest struct {
-	Box string `yaml:"box,omitempty" json:"box"`
-
-	Instance string `yaml:"instance,omitempty" json:"instance,omitempty"`
-
-	MetaJSON RawBody `yaml:"meta_json,omitempty" json:"meta_json"`
-}
-
-type PodConfigHookSecretEnvReply struct {
-	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
-}
-
 // #PodConfigContainerTunnelRequest / Reply: reads the RUNNING container's baked image ref
 // (containerImage), extracts + merges its metadata, and resolves the tunnel config. Distinct
 // from #PodConfigTunnelResolveRequest (which takes an already-resolved MetaJSON) — this seam
@@ -6920,6 +6829,8 @@ type PodConfigListSidecarsReply struct {
 	Names []string `yaml:"names,omitempty" json:"names,omitempty"`
 
 	Descriptions map[string]string `yaml:"descriptions,omitempty" json:"descriptions,omitempty"`
+
+	BodiesJSON RawBody `yaml:"bodies_json,omitempty" json:"bodies_json,omitempty"`
 }
 
 // #PodUpdateRequest carries the `charly update` command flags (the former UpdateCmd's

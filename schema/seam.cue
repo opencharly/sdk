@@ -1318,58 +1318,6 @@
 	tunnel_json?: bytes @go(TunnelJSON, type=RawBody) // marshalled *TunnelConfig; absent ⇒ nil
 }
 
-// #PodConfigResolveSidecarsRequest / Reply: the sidecar resolve+secret-provision bundle
-// (embeddedSidecarBodies' go:embed data lives ONLY in the charly binary, not the plugin binary;
-// resolveSidecarsViaPlugin + the sidecar-secret ProvisionPodmanSecrets loop are registry/
-// credential-coupled per the same FINAL/K5 family).
-#PodConfigResolveSidecarsRequest: {
-	deploy_sidecars_json?: bytes    @go(DeploySidecarsJSON, type=RawBody) // map[string]json.RawMessage
-	project_templates_json?: bytes  @go(ProjectTemplatesJSON, type=RawBody)
-	cli_env?: [...string] @go(CliEnv)
-	box!:      string @go(Box)
-	instance?: string @go(Instance)
-	run_engine!: string @go(RunEngine)
-	auto_gen!:   bool   @go(AutoGen)
-	refresh_secret?: [...string] @go(RefreshSecret)
-}
-#PodConfigResolveSidecarsReply: {
-	persist_overrides_json?:  bytes @go(PersistOverridesJSON, type=RawBody)
-	resolved_sidecars_json?:  bytes @go(ResolvedSidecarsJSON, type=RawBody)
-	app_env?: [...string] @go(AppEnv)
-	extra_env?: [...string] @go(ExtraEnv) // fallback env from sidecar secret provisioning
-}
-
-// #PodConfigProvisionSecretsRequest / Reply: CollectSecretsFromLabels + CollectCandySecretAccepts
-// + ApplySecretRefresh + ProvisionPodmanSecrets + resolveSecretBackend bundle — the credential-
-// store/podman-secret provisioning family (FINAL/K5-deferred, wrapped verbatim).
-#PodConfigProvisionSecretsRequest: {
-	meta_json!:  bytes  @go(MetaJSON, type=RawBody)
-	box!:        string @go(Box)
-	instance?:   string @go(Instance)
-	run_engine!: string @go(RunEngine)
-	auto_gen!:   bool   @go(AutoGen)
-	refresh_secret?: [...string] @go(RefreshSecret)
-}
-#PodConfigProvisionSecretsReply: {
-	provisioned_json?:  bytes @go(ProvisionedJSON, type=RawBody) // []deploykit.ProvisionedSecret
-	fallback_env?: [...string] @go(FallbackEnv)
-	resolutions_json?:  bytes @go(ResolutionsJSON, type=RawBody) // []SecretResolution
-	is_keyring?: bool @go(IsKeyring)
-}
-
-// #PodConfigEncMountsRequest / Reply: ensureEncryptedMounts + (optional) encUnmount — the
-// gocryptfs FUSE mount lifecycle (FINAL/K5-deferred registry-coupled family per the enc.go
-// header: encExecViaPlugin + resolveEncPassphrase* route through the host provider registry +
-// DefaultCredentialStore, neither portable without the InvokeProvider rewrite this family
-// defers). This is the "ONE narrow credential seam" the standing ruling names.
-#PodConfigEncMountsRequest: {
-	box!:          string @go(Box)
-	instance?:     string @go(Instance)
-	auto_gen!:     bool   @go(AutoGen)
-	keep_mounted!: bool   @go(KeepMounted)
-}
-#PodConfigEncMountsReply: {}
-
 // #PodConfigInjectEnvProvidesRequest / Reply: injectEnvProvides(box,instance,envProvides,portMap)
 // — loader-coupled (LoadDeployConfigForWrite + SaveBundleConfig internally).
 #PodConfigInjectEnvProvidesRequest: {
@@ -1446,17 +1394,6 @@
 }
 #PodConfigCleanDeployEntryReply: {}
 
-// #PodConfigHookSecretEnvRequest / Reply: resolveHookSecretEnv(box,instance,meta) — the
-// credential-backed env the post_enable hook needs (same FINAL/K5-deferred family).
-#PodConfigHookSecretEnvRequest: {
-	box!:       string @go(Box)
-	instance?:  string @go(Instance)
-	meta_json!: bytes  @go(MetaJSON, type=RawBody)
-}
-#PodConfigHookSecretEnvReply: {
-	env?: [...string] @go(Env)
-}
-
 // #PodConfigEncEnsurePlanRequest/Reply and #PodConfigEncUnmountPlanRequest/Reply (the former
 // pod lifecycle's resolvePodEncEnsure/resolvePodEncUnmount seam wire forms) are DELETED (wave γ):
 // candy/plugin-deploy-pod's start/stop plan resolution now builds its own enc-ensure/enc-unmount
@@ -1508,6 +1445,7 @@
 #PodConfigListSidecarsReply: {
 	names?: [...string] @go(Names)
 	descriptions?: {[string]: string} @go(Descriptions)
+	bodies_json?: bytes @go(BodiesJSON, type=RawBody) // map[string]json.RawMessage — the full go:embed sidecar bodies the resolve leg needs (plugin-deploy-pod/sidecar_resolve.go)
 }
 
 // sdk.OpConfigSetup / sdk.OpConfigRemove (the two new Ops the deploy:pod plugin's Invoke
