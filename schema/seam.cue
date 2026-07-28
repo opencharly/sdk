@@ -206,48 +206,6 @@
 	dir!: string @go(Dir) // the resolved project dir (host os.Getwd) the plugin passes to loaderkit.LoadUnified
 }
 
-// #DeployNodeDispatchRequest/#DeployNodeDispatchReply — the per-node `charly bundle add`
-// terminal step (K4 lane A keystone, RDD-spike-proven): resolve+compile+ResolveTarget+Add for
-// ONE tree position, reached once per node from the plugin's own walk instead of core walking
-// in-process. ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain
-// the OLD in-core walk built (deriveChildExecutorForPath is pure Go over spec/kit types and is
-// re-run HOST-side here) — a live DeployExecutor never needs to cross the wire.
-//
-// target/vm_entity (W4 pure-helpers relocation) are PRE-RESOLVED plugin-side (classifyNodeTarget
-// / resolveVmEntity — both pure functions of node+path, now living in candy/plugin-bundle) and
-// carried across the wire so the host-side dispatch no longer recomputes them: the host trusts
-// target/vm_entity as sent (an empty vm_entity is itself a valid resolved value — "no vm entity
-// applies to this node" — never a sentinel meaning "recompute me").
-#DeployNodeDispatchRequest: {
-	path!:  string @go(Path)
-	node?:  #Deploy @go(Node, type=*Deploy)
-	ancestor_paths?: [...string] @go(AncestorPaths)
-	ancestor_nodes?: [...#Deploy] @go(AncestorNodes)
-	ref?:                string @go(Ref)
-	add_candy?: [...string] @go(AddCandy)
-	tag?:                string @go(Tag)
-	dry_run?:            bool   @go(DryRun)
-	// node_only mirrors `charly bundle add --node-only`: threaded onto the resolved
-	// *externalDeployTarget so its Add skips the substrate's PostApply (e.g. a vm's nested
-	// target:pod children) — the walk itself already dispatches only this ONE node either way,
-	// this flag additionally suppresses the SUBSTRATE's own post-apply fan-out.
-	node_only?:          bool   @go(NodeOnly)
-	format?:             string @go(Format)
-	pull?:               bool   @go(Pull)
-	verify?:             bool   @go(Verify)
-	with_services?:      bool   @go(WithServices)
-	allow_repo_changes?: bool   @go(AllowRepoChanges)
-	allow_root_tasks?:   bool   @go(AllowRootTasks)
-	skip_incompatible?:  bool   @go(SkipIncompatible)
-	builder_image?:      string @go(BuilderImage)
-	assume_yes?:         bool   @go(AssumeYes)
-	disposable?:         bool   @go(Disposable)
-	lifecycle?:          string @go(Lifecycle)
-	target?:             string @go(Target)
-	vm_entity?:          string @go(VmEntity)
-}
-#DeployNodeDispatchReply: {}
-
 // #ConstructStepRequest/#ConstructStepReply — the "construct-step" HostBuild seam (K5-A item 1,
 // compile-seam ctx-threading): the ONE genuinely host-only piece of the former compileActOp —
 // resolving a `run:` act op's `plugin:` word against the PROVIDER REGISTRY (a clause-M kernel
