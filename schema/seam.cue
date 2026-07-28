@@ -1762,3 +1762,19 @@
 	venue_json?:   bytes              @go(VenueJSON, type=RawBody)
 }
 #DeployArtifactsRetrieveReply: {}
+
+// #BoxFetchResolveRequest/#BoxFetchResolveReply — the "box-fetch-resolve" HostBuild seam behind
+// candy/plugin-authoring's command:fetch/command:refresh (K3 build-tail tail, coneB-buildremnant):
+// the former hidden core `__box-fetch`/`__box-refresh` reentries (charly/box_fetch_reentry.go,
+// DELETED) are replaced by ONE generic host-builder wrapping the SAME host-coupled repo resolver
+// (ResolveProjectRepo → EnsureRepoDownloaded: CHARLY_REPO_OVERRIDE + the registered refs-backend
+// download dispatch + the command:migrate auto-migration) — none of which an sdk-only plugin can
+// run itself. refresh=true additionally force-removes the spec's cache entry before resolving
+// (the former BoxRefreshCmd body) so a stale cache re-clones.
+#BoxFetchResolveRequest: {
+	spec!:    string @go(Spec)
+	refresh?: bool   @go(Refresh)
+}
+#BoxFetchResolveReply: {
+	path?: string @go(Path)
+}
