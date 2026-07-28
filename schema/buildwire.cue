@@ -28,10 +28,17 @@
 }
 
 // #EmitReply is what a plugin verb/builder returns from an OpEmit Invoke at
-// build time: a verbatim Containerfile FRAGMENT the generator splices into
-// the emitted Containerfile.
+// build time. By default fragment is a verbatim Containerfile FRAGMENT the
+// generator splices into the emitted Containerfile. When act_script is true
+// the fragment is instead a raw state-provision ACT SHELL (the former
+// ProvisionActor.RenderProvisionScript output): the render wraps it in a RUN
+// via the same EmitCmd path a literal command verb uses, rather than splicing
+// it verbatim. This lets a state-provision verb self-declare its build-emit
+// shape over the uniform Invoke(OpEmit), so the render dispatches every verb
+// through InvokeProvider(OpEmit) with no package-main concrete-type assert.
 #EmitReply: {
-	fragment!: string @go(Fragment)
+	fragment!:   string @go(Fragment)
+	act_script?: bool   @go(ActScript)
 }
 
 // #StepEmitRequest is the F-STEP-EMIT HostBuild envelope for a HOST-COUPLED
