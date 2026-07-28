@@ -6131,11 +6131,19 @@ type CheckBedMember struct {
 // returns []InstallPlanView. The host re-materializes []*InstallPlan from the views via
 // deploykit.PlanFromView.
 //
-//   - BOX-VIEW selection (compileCandyOnBoxSelection, the add_candy-on-pod/k8s shape, ctx!=nil —
-//     UNCHANGED): box_view + order are POPULATED host-side (the host projects an
-//     ALREADY-RESOLVED base image via projectResolvedBox — the base image itself came from a
-//     separate host-side ResolveBox call in compileNodePlans, so there is no envelope-only path
-//     to it yet) and the plugin trusts them as sent.
+//   - BOX-VIEW selection (an already-resolved base image, ctx!=nil): box_view + order are
+//     POPULATED host-side (the host projects an ALREADY-RESOLVED base image via
+//     projectResolvedBox) and the plugin trusts them as sent. Retained for any caller that still
+//     resolves the base image host-side; the add_candy-on-pod/k8s path itself now uses the
+//     ADD-CANDY-ON-BOX shape below.
+//   - ADD-CANDY-ON-BOX selection (compileCandyOnBoxSelection, the add_candy-on-pod/k8s shape, K4
+//     box-half completion): candy_ref (the add_candy overlay ref) AND base_box_ref (the primary
+//     pod/k8s base image name) are BOTH set — the plugin reads rp.Boxes[base_box_ref] (the SAME
+//     ResolvedBoxView the primary BOX-REF shape reads, R3) as the COMPILE CONTEXT, resolves the
+//     add_candy's OWN topo order from rp.CandyModels (deploykit.ResolveCandyOrder over
+//     {BareRef(candy_ref)}, widened by extra_candy_refs for a remote overlay), prunes
+//     container-init-for-systemd, and compiles that order against the base image — replacing the
+//     former host-side buildkit.ResolveBox(baseImg) + scanCandiesForRef path.
 //   - CANDY selection (compileStandaloneCandySelection, the target:local/vm standalone-candy
 //     shape, K4 unit B candy-half): candy_ref is set — the plugin resolves the candy key + topo
 //     order itself from its own envelope (deploykit.ResolveCandyOrder over rp.CandyModels,
@@ -6150,7 +6158,8 @@ type CheckBedMember struct {
 //     order itself from img.Candy over rp.CandyModels (deploykit.ResolveCandyOrder, same as the
 //     CANDY shape).
 //
-// Exactly one of box_view, candy_ref, box_ref is set. Neither CANDY nor BOX-REF needs
+// Exactly one of {box_view, box_ref, candy_ref-alone} is set, OR the ADD-CANDY-ON-BOX pair
+// (candy_ref + base_box_ref) together. Neither CANDY nor BOX-REF needs
 // LoadUnified or the provider-CONNECT registry (verified live, K4 unit B: candy/plugin-bundle's
 // own ALREADY-EXISTING preresolveBuilderContexts, called unconditionally for every OpCompile,
 // already S2-lazy-connects any externalized builder the resolved order+img trigger via
@@ -6211,6 +6220,13 @@ type DeployCompileRequest struct {
 	// repo-wide today, so this is a zero-cost future-proofing widening, not a live behavior
 	// change). Absent for the other shapes.
 	BoxRef string `yaml:"box_ref,omitempty" json:"box_ref,omitempty"`
+
+	// base_box_ref selects the ADD-CANDY-ON-BOX shape (K4 box-half completion) WHEN set alongside
+	// candy_ref: the primary pod/k8s base image's own name, read from rp.Boxes[base_box_ref] as the
+	// COMPILE CONTEXT the candy_ref overlay compiles against — replacing the former host-side
+	// buildkit.ResolveBox(baseImg) + scanCandiesForRef. Absent for every other shape (a standalone
+	// candy_ref with NO base_box_ref stays the CANDY shape, synthetic-box compiled).
+	BaseBoxRef string `yaml:"base_box_ref,omitempty" json:"base_box_ref,omitempty"`
 }
 
 // #DeployCompileReply is the OpCompile reply: the compiled plans as marshalled
