@@ -5414,6 +5414,65 @@ type DeployNodeDelDispatchRequest struct {
 type DeployNodeDelDispatchReply struct {
 }
 
+// #DeployResolveTargetAddRequest/#DeployResolveTargetAddReply — the K4-C SHAPE-2 per-node
+// terminal step: ResolveTarget + DeployContext + target.Add for ONE tree position, reached once
+// per node from the plugin's own walk. UNLIKE the retired #DeployNodeDispatchRequest (which had
+// the host RE-COMPILE the plans via an in-proc OpCompile round-trip — the plugin→host→plugin
+// double-bounce), the plugin now COMPILES the InstallPlans IN-PROC (walk.go dispatchOne →
+// compileNodePlans → compilePlansForRequest, no OpCompile hop) and ships the ALREADY-COMPILED
+// plans (with deployID + AddCandies stamped plugin-side, round-tripped through InstallPlanView) as
+// plans_json. The host half does ONLY the genuine floor-M residue a plugin cannot: reconstruct
+// the ancestor executor chain (deriveChildExecutorForPath — registry-coupled), loadConfigForDeploy
+// (LoadUnified), ResolveTarget + DeployContext + utgt.Add.
+//
+// ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain the OLD in-core
+// walk built (deriveChildExecutorForPath is pure Go over spec/kit types, re-run HOST-side) — a
+// live DeployExecutor never crosses the wire. target is the plugin-classified substrate word (a
+// pure ClassifyNodeTarget of node+path), carried so the host synthesizes a Target-only node when
+// node is nil (a ref-based deploy with no charly.yml entry). The gate flags are the FINAL resolved
+// EmitOpts values (node.InstallOpts already applied over the CLI flags plugin-side); dry_run never
+// reaches this seam — a dry-run prints the compiled plans plugin-side and returns without dispatch.
+type DeployResolveTargetAddRequest struct {
+	Path string `yaml:"path,omitempty" json:"path"`
+
+	DeployName string `yaml:"deploy_name,omitempty" json:"deploy_name"`
+
+	Node *Deploy `yaml:"node,omitempty" json:"node,omitempty"`
+
+	Target string `yaml:"target,omitempty" json:"target"`
+
+	Dir string `yaml:"dir,omitempty" json:"dir"`
+
+	// plans_json is the marshalled []spec.InstallPlanView (deployID + AddCandies already stamped
+	// plugin-side); the host re-materializes []*spec.InstallPlan via deploykit.PlanFromView.
+	PlansJSON RawBody `yaml:"plans_json,omitempty" json:"plans_json"`
+
+	AncestorPaths []string `yaml:"ancestor_paths,omitempty" json:"ancestor_paths,omitempty"`
+
+	AncestorNodes []Deploy `yaml:"ancestor_nodes,omitempty" json:"ancestor_nodes,omitempty"`
+
+	NodeOnly bool `yaml:"node_only,omitempty" json:"node_only,omitempty"`
+
+	Pull bool `yaml:"pull,omitempty" json:"pull,omitempty"`
+
+	Verify bool `yaml:"verify,omitempty" json:"verify,omitempty"`
+
+	WithServices bool `yaml:"with_services,omitempty" json:"with_services,omitempty"`
+
+	AllowRepoChanges bool `yaml:"allow_repo_changes,omitempty" json:"allow_repo_changes,omitempty"`
+
+	AllowRootTasks bool `yaml:"allow_root_tasks,omitempty" json:"allow_root_tasks,omitempty"`
+
+	SkipIncompatible bool `yaml:"skip_incompatible,omitempty" json:"skip_incompatible,omitempty"`
+
+	AssumeYes bool `yaml:"assume_yes,omitempty" json:"assume_yes,omitempty"`
+
+	BuilderImage string `yaml:"builder_image,omitempty" json:"builder_image,omitempty"`
+}
+
+type DeployResolveTargetAddReply struct {
+}
+
 // #DeployAddRequest carries the `charly bundle add` command flags (the former
 // BundleAddCmd's authored fields). The command:bundle plugin (P13) owns the CLI
 // GRAMMAR but cannot drive the deploy KERNEL — the loader, the InstallPlan

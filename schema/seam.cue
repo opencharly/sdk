@@ -331,6 +331,47 @@
 }
 #DeployNodeDelDispatchReply: {}
 
+// #DeployResolveTargetAddRequest/#DeployResolveTargetAddReply — the K4-C SHAPE-2 per-node
+// terminal step: ResolveTarget + DeployContext + target.Add for ONE tree position, reached once
+// per node from the plugin's own walk. UNLIKE the retired #DeployNodeDispatchRequest (which had
+// the host RE-COMPILE the plans via an in-proc OpCompile round-trip — the plugin→host→plugin
+// double-bounce), the plugin now COMPILES the InstallPlans IN-PROC (walk.go dispatchOne →
+// compileNodePlans → compilePlansForRequest, no OpCompile hop) and ships the ALREADY-COMPILED
+// plans (with deployID + AddCandies stamped plugin-side, round-tripped through InstallPlanView) as
+// plans_json. The host half does ONLY the genuine floor-M residue a plugin cannot: reconstruct
+// the ancestor executor chain (deriveChildExecutorForPath — registry-coupled), loadConfigForDeploy
+// (LoadUnified), ResolveTarget + DeployContext + utgt.Add.
+//
+// ancestor_paths/ancestor_nodes let the host reconstruct the SAME parentExec chain the OLD in-core
+// walk built (deriveChildExecutorForPath is pure Go over spec/kit types, re-run HOST-side) — a
+// live DeployExecutor never crosses the wire. target is the plugin-classified substrate word (a
+// pure ClassifyNodeTarget of node+path), carried so the host synthesizes a Target-only node when
+// node is nil (a ref-based deploy with no charly.yml entry). The gate flags are the FINAL resolved
+// EmitOpts values (node.InstallOpts already applied over the CLI flags plugin-side); dry_run never
+// reaches this seam — a dry-run prints the compiled plans plugin-side and returns without dispatch.
+#DeployResolveTargetAddRequest: {
+	path!:        string @go(Path)
+	deploy_name!: string @go(DeployName)
+	node?:        #Deploy @go(Node, type=*Deploy)
+	target!:      string @go(Target)
+	dir!:         string @go(Dir)
+	// plans_json is the marshalled []spec.InstallPlanView (deployID + AddCandies already stamped
+	// plugin-side); the host re-materializes []*spec.InstallPlan via deploykit.PlanFromView.
+	plans_json!: bytes @go(PlansJSON, type=RawBody)
+	ancestor_paths?: [...string] @go(AncestorPaths)
+	ancestor_nodes?: [...#Deploy] @go(AncestorNodes)
+	node_only?:          bool   @go(NodeOnly)
+	pull?:               bool   @go(Pull)
+	verify?:             bool   @go(Verify)
+	with_services?:      bool   @go(WithServices)
+	allow_repo_changes?: bool   @go(AllowRepoChanges)
+	allow_root_tasks?:   bool   @go(AllowRootTasks)
+	skip_incompatible?:  bool   @go(SkipIncompatible)
+	assume_yes?:         bool   @go(AssumeYes)
+	builder_image?:      string @go(BuilderImage)
+}
+#DeployResolveTargetAddReply: {}
+
 // #DeployAddRequest carries the `charly bundle add` command flags (the former
 // BundleAddCmd's authored fields). The command:bundle plugin (P13) owns the CLI
 // GRAMMAR but cannot drive the deploy KERNEL — the loader, the InstallPlan
