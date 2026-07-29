@@ -26,18 +26,15 @@ func TestCollectBuilderRuntimeEnv_TriggeredEmitsRuntimeEnv(t *testing.T) {
 			"jupyter": pixiCandy(t, spec.CandyModel{}, spec.CandyView{Name: "jupyter"}),
 		},
 	}
-	img := &buildkit.ResolvedBox{
-		Home: "/home/user",
-		BuilderConfig: &buildkit.BuilderConfig{
-			Builder: map[string]*vmshared.BuilderDef{
-				"pixi": {
-					DetectFiles:       []string{"pixi.toml", "pyproject.toml"},
-					RuntimeEnv:        map[string]string{"PIXI_CACHE_DIR": "~/.cache/pixi"},
-					PathContributions: []string{"~/.pixi/bin", "~/.pixi/envs/default/bin"},
-				},
+	img := &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{Home: "/home/user"}, BuilderConfig: &buildkit.BuilderConfig{
+		Builder: map[string]*vmshared.BuilderDef{
+			"pixi": {
+				DetectFiles:       []string{"pixi.toml", "pyproject.toml"},
+				RuntimeEnv:        map[string]string{"PIXI_CACHE_DIR": "~/.cache/pixi"},
+				PathContributions: []string{"~/.pixi/bin", "~/.pixi/envs/default/bin"},
 			},
 		},
-	}
+	}}
 
 	got := g.CollectBuilderRuntimeEnv([]string{"jupyter"}, img)
 	if len(got) != 1 {
@@ -61,18 +58,15 @@ func TestCollectBuilderRuntimeEnv_NotTriggered(t *testing.T) {
 			"chrome": candyFixture(spec.CandyModel{}, spec.CandyView{Name: "chrome"}), // no pixi.toml, no pyproject.toml
 		},
 	}
-	img := &buildkit.ResolvedBox{
-		Home: "/home/user",
-		BuilderConfig: &buildkit.BuilderConfig{
-			Builder: map[string]*vmshared.BuilderDef{
-				"pixi": {
-					DetectFiles:       []string{"pixi.toml"},
-					RuntimeEnv:        map[string]string{"PIXI_CACHE_DIR": "~/.cache/pixi"},
-					PathContributions: []string{"~/.pixi/envs/default/bin"},
-				},
+	img := &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{Home: "/home/user"}, BuilderConfig: &buildkit.BuilderConfig{
+		Builder: map[string]*vmshared.BuilderDef{
+			"pixi": {
+				DetectFiles:       []string{"pixi.toml"},
+				RuntimeEnv:        map[string]string{"PIXI_CACHE_DIR": "~/.cache/pixi"},
+				PathContributions: []string{"~/.pixi/envs/default/bin"},
 			},
 		},
-	}
+	}}
 
 	got := g.CollectBuilderRuntimeEnv([]string{"chrome"}, img)
 	if got != nil {
@@ -91,17 +85,14 @@ func TestCollectBuilderRuntimeEnv_MultipleCandies(t *testing.T) {
 			"c": pixiCandy(t, spec.CandyModel{}, spec.CandyView{Name: "c"}),
 		},
 	}
-	img := &buildkit.ResolvedBox{
-		Home: "/home/user",
-		BuilderConfig: &buildkit.BuilderConfig{
-			Builder: map[string]*vmshared.BuilderDef{
-				"pixi": {
-					DetectFiles:       []string{"pixi.toml"},
-					PathContributions: []string{"~/.pixi/bin"},
-				},
+	img := &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{Home: "/home/user"}, BuilderConfig: &buildkit.BuilderConfig{
+		Builder: map[string]*vmshared.BuilderDef{
+			"pixi": {
+				DetectFiles:       []string{"pixi.toml"},
+				PathContributions: []string{"~/.pixi/bin"},
 			},
 		},
-	}
+	}}
 	got := g.CollectBuilderRuntimeEnv([]string{"a", "b", "c"}, img)
 	if len(got) != 1 {
 		t.Errorf("got %d EnvConfigs, want 1 (de-duped)", len(got))
@@ -112,7 +103,7 @@ func TestCollectBuilderRuntimeEnv_MultipleCandies(t *testing.T) {
 // build.yml/`inits:` block leaves BuilderConfig nil. Don't panic.
 func TestCollectBuilderRuntimeEnv_NilBuilderConfig(t *testing.T) {
 	g := &Generator{Candies: map[string]CandyModel{"x": pixiCandy(t, spec.CandyModel{}, spec.CandyView{Name: "x"})}}
-	img := &buildkit.ResolvedBox{Home: "/home/user", BuilderConfig: nil}
+	img := &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{Home: "/home/user"}, BuilderConfig: nil}
 	got := g.CollectBuilderRuntimeEnv([]string{"x"}, img)
 	if got != nil {
 		t.Errorf("expected nil when BuilderConfig is nil, got %v", got)

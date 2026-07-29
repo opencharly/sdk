@@ -15,25 +15,15 @@ import (
 // build-vocabulary cache_mount for rpm, from charly/charly.yml) with
 // UID/GID 1000 — no charly.yml load needed, this package is sdk-only.
 func testResolvedBox() *buildkit.ResolvedBox {
-	return &buildkit.ResolvedBox{
-		Name:         "test-img",
-		User:         "user",
-		UID:          1000,
-		GID:          1000,
-		Home:         "/home/user",
-		Pkg:          "rpm",
-		BuildFormats: []string{"rpm"},
-		Tags:         []string{"all", "rpm"},
-		DistroDef: &spec.ResolvedDistro{
-			Format: map[string]*spec.Format{
-				"rpm": {
-					CacheMount: []spec.CacheMount{
-						{Dst: "/var/cache/libdnf5", Sharing: "locked"},
-					},
+	return &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{Name: "test-img", User: "user", UID: 1000, GID: 1000, Home: "/home/user", Pkg: "rpm", BuildFormats: []string{"rpm"}, Tags: []string{"all", "rpm"}}, DistroDef: &spec.ResolvedDistro{
+		Format: map[string]*spec.Format{
+			"rpm": {
+				CacheMount: []spec.CacheMount{
+					{Dst: "/var/cache/libdnf5", Sharing: "locked"},
 				},
 			},
 		},
-	}
+	}}
 }
 
 // --- Variable substitution ---
@@ -108,8 +98,8 @@ func TestResolveUserSpec(t *testing.T) {
 // RunAs wins. This is the ownership pivot for every cache mount — getting it
 // wrong root-ifies a non-root stage's cache (the curl-23 build failure).
 func TestTaskRunsAsRoot(t *testing.T) {
-	userImg := &buildkit.ResolvedBox{User: "user", UID: 1000, GID: 1000, Home: "/home/user"}
-	rootImg := &buildkit.ResolvedBox{User: "root", UID: 0, GID: 0, Home: "/root"}
+	userImg := &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{User: "user", UID: 1000, GID: 1000, Home: "/home/user"}}
+	rootImg := &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{User: "root", UID: 0, GID: 0, Home: "/root"}}
 	cases := []struct {
 		name  string
 		runAs string
@@ -393,7 +383,7 @@ func TestEmitDownload_DownloadsCacheOwnership(t *testing.T) {
 	op := spec.Op{Download: "https://example.com/x.tar.gz", Extract: "none", To: "/usr/local/bin/x"}
 
 	var nonRoot strings.Builder
-	img := &buildkit.ResolvedBox{User: "user", UID: 1000, GID: 1000, Home: "/home/user"}
+	img := &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{User: "user", UID: 1000, GID: 1000, Home: "/home/user"}}
 	if err := EmitDownload(&nonRoot, op, img); err != nil {
 		t.Fatalf("EmitDownload: %v", err)
 	}

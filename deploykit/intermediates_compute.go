@@ -8,6 +8,7 @@ import (
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/spec"
 )
 
 // intermediates_compute.go — the HOST-COUPLED half of the auto-intermediate-image
@@ -437,21 +438,23 @@ func createIntermediate(name, parentName string, uid int, pathCandies []string, 
 	}
 
 	img := &buildkit.ResolvedBox{
-		Name:           name,
-		Base:           parentName,
-		IsExternalBase: isExternalBase,
-		Candy:          ownCandies,
-		Tag:            tag,
-		Registry:       defaults.Registry,
-		Distro:         inheritedDistro,
-		BuildFormats:   inheritedBuilds,
-		Platforms:      platforms,
-		User:           user,
-		UID:            uid,
-		GID:            gid,
-		Merge:          defaults.Merge,
-		Builder:        builderMap,
-		Auto:           true,
+		ResolvedBox: spec.ResolvedBox{
+			Name:           name,
+			Base:           parentName,
+			IsExternalBase: isExternalBase,
+			Candy:          ownCandies,
+			Tag:            tag,
+			Registry:       defaults.Registry,
+			Distro:         inheritedDistro,
+			BuildFormats:   inheritedBuilds,
+			Platforms:      platforms,
+			User:           user,
+			UID:            uid,
+			GID:            gid,
+			Merge:          defaults.Merge,
+			Builder:        builderMap,
+			Auto:           true,
+		},
 	}
 	if len(img.BuildFormats) == 0 {
 		fmt.Fprintf(os.Stderr, "Warning: auto-intermediate %s has no build formats (set build: in defaults)\n", name)

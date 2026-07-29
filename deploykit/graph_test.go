@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/opencharly/sdk/buildkit"
+	"github.com/opencharly/spec/spec"
 )
 
 // The pure topo-sort tests, relocated with topoSort/topoLevels from charly/graph.go
@@ -120,14 +121,7 @@ func TestTopoSortDeterministic(t *testing.T) {
 }
 
 func TestResolveBoxGraphBuilderBackedImageWithoutBase(t *testing.T) {
-	boxes := map[string]*buildkit.ResolvedBox{
-		"bootstrap-builder": {Name: "bootstrap-builder", IsExternalBase: true},
-		"bootstrap-image": {
-			Name:                  "bootstrap-image",
-			From:                  "builder:pacstrap",
-			BootstrapBuilderImage: "bootstrap-builder",
-		},
-	}
+	boxes := map[string]*buildkit.ResolvedBox{"bootstrap-builder": {ResolvedBox: spec.ResolvedBox{Name: "bootstrap-builder", IsExternalBase: true}}, "bootstrap-image": {ResolvedBox: spec.ResolvedBox{Name: "bootstrap-image", From: "builder:pacstrap", BootstrapBuilderImage: "bootstrap-builder"}}}
 
 	deps := BoxDirectDeps("bootstrap-image", boxes["bootstrap-image"], boxes, false)
 	if want := []string{"bootstrap-builder"}; !reflect.DeepEqual(deps, want) {
@@ -152,9 +146,7 @@ func TestResolveBoxGraphBuilderBackedImageWithoutBase(t *testing.T) {
 }
 
 func TestResolveBoxGraphExcludesBaseOutsideProjectedBoxSet(t *testing.T) {
-	boxes := map[string]*buildkit.ResolvedBox{
-		"local-image": {Name: "local-image", Base: "arch.arch"},
-	}
+	boxes := map[string]*buildkit.ResolvedBox{"local-image": {ResolvedBox: spec.ResolvedBox{Name: "local-image", Base: "arch.arch"}}}
 
 	if deps := BoxDirectDeps("local-image", boxes["local-image"], boxes, false); len(deps) != 0 {
 		t.Fatalf("BoxDirectDeps() = %v, want no dependency outside projected box set", deps)
@@ -178,10 +170,7 @@ func TestResolveBoxGraphExcludesBaseOutsideProjectedBoxSet(t *testing.T) {
 }
 
 func TestResolveBoxGraphStillReportsRealCycle(t *testing.T) {
-	boxes := map[string]*buildkit.ResolvedBox{
-		"a": {Name: "a", Base: "b"},
-		"b": {Name: "b", Base: "a"},
-	}
+	boxes := map[string]*buildkit.ResolvedBox{"a": {ResolvedBox: spec.ResolvedBox{Name: "a", Base: "b"}}, "b": {ResolvedBox: spec.ResolvedBox{Name: "b", Base: "a"}}}
 
 	for name, resolve := range map[string]func() error{
 		"order":  func() error { _, err := ResolveBoxOrder(boxes, nil); return err },
