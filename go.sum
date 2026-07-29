@@ -64,8 +64,8 @@ github.com/mitchellh/go-wordwrap v1.0.1 h1:TLuKupo69TCn6TQSyGxwI1EblZZEsQ0vMlAFQ
 github.com/mitchellh/go-wordwrap v1.0.1/go.mod h1:R62XHJLzvMFRBbcrT7m7WgmE1eOyTSsCt+hzestvNj0=
 github.com/oklog/run v1.1.0 h1:GEenZ1cK0+q0+wsJew9qUg/DyD8k3JzYsZAi5gYi2mA=
 github.com/oklog/run v1.1.0/go.mod h1:sVPdnTZT1zYwAJeCMu2Th4T21pA3FPOQRfWjQlk7DVU=
-github.com/opencharly/spec v0.2026210.808 h1:zckleT59TNqQEAHM5L5l1PYmYo9PHpPyQdx/XwvBaP8=
-github.com/opencharly/spec v0.2026210.808/go.mod h1:aZkYcTQ6XX0IFCqNU++kkmf/0oPMab626dRuIZ8F/yk=
+github.com/opencharly/spec v0.2026210.1121 h1:ZYJOTZg6DpJeW/UzMJN29PgnBAcTXzSh6q1/bdFU9K4=
+github.com/opencharly/spec v0.2026210.1121/go.mod h1:kdc3+9NZ/NPte3bfXGw8rpN4uEA/a248BAt8Peilo4g=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
