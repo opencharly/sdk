@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ContainerSnapshot is the cheap, batch-derived view of one charly-* container.

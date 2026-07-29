@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 type MCPProvideEntry = spec.MCPProvideEntry

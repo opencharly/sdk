@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ErrImageNotLocal is returned when a user-supplied image reference cannot be resolved

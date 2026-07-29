@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestNormalizeBoxArgs asserts the `all` sentinel collapses to nil ONLY when it is the sole

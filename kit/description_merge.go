@@ -1,6 +1,6 @@
 package kit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // description_merge.go — P12a follow-up: MergeDeployDescriptions relocated from
 // charly/description_collect.go. Pure over LabelDescriptionSet/LabeledDescription/spec.Step

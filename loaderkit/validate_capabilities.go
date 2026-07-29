@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/deploykit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // validate_capabilities.go — the LOAD-time CAPABILITY validators (the kind:android box⊻adb XOR and

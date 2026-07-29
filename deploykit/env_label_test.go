@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestExtractMetadata_EnvObjectLabel proves the ai.opencharly.env label — baked

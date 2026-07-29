@@ -1,6 +1,6 @@
 package loaderkit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // load_executor.go — the TYPED host-leg contract that makes loaderkit.LoadUnified runnable from a
 // module that does NOT import charly core (the K1-LOADER RELOCATION goal). LoadUnified's kind-blind

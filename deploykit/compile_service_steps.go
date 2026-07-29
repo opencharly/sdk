@@ -28,7 +28,7 @@ import (
 	"fmt"
 
 	"github.com/opencharly/sdk"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // renderServiceSeamKind names the HostBuild seam charly/host_build_render_service.go

@@ -3,7 +3,7 @@ package kit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // VenueFromDescriptor re-materializes a spec.VenueDescriptor into a real DeployExecutor — the

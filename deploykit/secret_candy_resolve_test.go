@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // secret_candy_resolve_test.go — ported from charly/layer_secrets_test.go (#118,

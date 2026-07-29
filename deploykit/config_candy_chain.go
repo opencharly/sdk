@@ -3,7 +3,7 @@ package deploykit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // config_candy_chain.go — the candy-chain walkers relocated from charly/candy_chain.go

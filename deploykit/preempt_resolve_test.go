@@ -3,7 +3,7 @@ package deploykit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // preempt_resolve_test.go — proves the K1-unblock wave-1 helpers reproduce the former

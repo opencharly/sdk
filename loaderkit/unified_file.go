@@ -5,7 +5,7 @@ import (
 
 	"github.com/opencharly/sdk/deploykit"
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // unified_file.go — the sdk-importable home of UnifiedFile (K1 keystone, task #24 unit 1):

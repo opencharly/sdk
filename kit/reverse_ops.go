@@ -18,7 +18,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ReverseExecutor is the interface ReverseOp handlers expect. Allows

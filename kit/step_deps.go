@@ -1,6 +1,6 @@
 package kit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // step_deps.go — the step-level dependency helper the check runner uses to short-circuit a step
 // whose declared deps have not passed. Moved from charly/step_topo.go (CHECK-wave): pure over

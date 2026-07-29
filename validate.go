@@ -12,8 +12,8 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/opencharly/sdk/schema"
-	"github.com/opencharly/sdk/schemaconcat"
+	"github.com/opencharly/spec/schema"
+	"github.com/opencharly/spec/schemaconcat"
 )
 
 // SchemaValidator validates plugin-owned generated values against the same

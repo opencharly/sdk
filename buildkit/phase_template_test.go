@@ -3,7 +3,7 @@ package buildkit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // Tests for the (phase, venue) → template-string lookup on FormatDef / BuilderDef.

@@ -7,7 +7,7 @@ package kit
 // / kit.DocShape* call site (charly's validate.go/unified.go, sdk/loaderkit's
 // discover.go/walk.go) keeps compiling unchanged (R3 — ONE copy, in spec now).
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // DocShape classifies one parsed YAML document's top level.
 type DocShape = spec.DocShape

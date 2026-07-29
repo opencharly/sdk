@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // GraderDefaultTimeout bounds a single grader invocation when neither the

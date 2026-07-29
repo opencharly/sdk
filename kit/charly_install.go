@@ -19,7 +19,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // CharlyInstallStrategy is the resolved charly_install.strategy: "auto" | "scp" | "skip".

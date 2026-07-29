@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ShQuoteArg single-quotes an argument for POSIX shell embedding.

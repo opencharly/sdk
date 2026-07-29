@@ -3,7 +3,7 @@ package loaderkit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestScanInlineCandy_AgentProvideAndTerminalProfiles proves populateFromYAML carries the

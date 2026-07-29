@@ -17,7 +17,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/renameio/v2"
 	sdk "github.com/opencharly/sdk"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 const (

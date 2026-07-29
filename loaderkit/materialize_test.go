@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestMaterialize_NotFoundPolicy exercises every arm of Materialize's not-found dispatch policy —

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // check_endpoint.go — the KIND-BLIND host-endpoint resolver the `charly check` verb dispatch

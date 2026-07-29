@@ -15,8 +15,8 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/opencharly/sdk/kit"
-	pb "github.com/opencharly/sdk/proto"
-	"github.com/opencharly/sdk/spec"
+	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/sdk/testkit"
 )
 

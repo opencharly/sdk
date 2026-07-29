@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // graph_shim_relocated_test.go — relocated from charly/graph_test.go (FLOOR-SLIM

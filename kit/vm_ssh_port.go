@@ -10,7 +10,7 @@ package kit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ResolveVmSshPort resolves the guest SSH host port from the resolved spec:

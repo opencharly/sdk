@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // qcow2RangeServer serves content honoring Range requests (206 + Content-Range),

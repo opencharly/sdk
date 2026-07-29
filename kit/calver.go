@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // CalVer is a parsed YYYY.DDD.HHMM calendar version. The same format that

@@ -1,6 +1,6 @@
 package kit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // refs_downloader.go — the swappable remote-repo FETCH BACKEND seam (P7). The interface itself
 // relocated to sdk/spec (FLOOR-SLIM axis-A mechanical batch, alongside DocParser/ProjectWalker/

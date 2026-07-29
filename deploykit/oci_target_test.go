@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // oci_target_test.go — the deploykit.OCITarget WALKER test. The walker is the kind-blind render

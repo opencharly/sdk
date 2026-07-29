@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // planrun.go — the check-engine plan walk, dissolved out of charly core into sdk/kit so ANY

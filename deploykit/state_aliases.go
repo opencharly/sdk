@@ -4,7 +4,7 @@ package deploykit
 // deploy STATE-MODEL helpers (deploy_state.go) reference.
 
 import (
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/sdk/vmshared"
 )
 

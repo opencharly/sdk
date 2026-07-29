@@ -3,7 +3,7 @@ package deploykit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // description_collect_test.go — sdk-level coverage for CollectDescriptions / BakeableSteps,

@@ -3,7 +3,7 @@ package kit
 import (
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // hostrefs.go — P12a follow-up: CloseHostCleanups, CollectHostRefs, and

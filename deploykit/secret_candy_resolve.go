@@ -4,7 +4,7 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // secret_candy_resolve.go — the candy `secret_requires:`/`secret_accepts:` resolver for

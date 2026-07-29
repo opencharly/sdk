@@ -1,6 +1,6 @@
 package deploykit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // layer_model.go — the pure candy/layer package-config field types the runtime Candy graph
 // carries. CUE-SOURCED in spec now (sdk/schema/candymodel.cue, the S-CM enabler) so #CandyModel

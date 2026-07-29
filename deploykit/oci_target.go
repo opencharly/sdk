@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // oci_target.go — OCITarget, the POD-OVERLAY deploy-mode Containerfile renderer (P11c

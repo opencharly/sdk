@@ -3,7 +3,7 @@ package deploykit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestSpecCandyAdapter_HasInit_PerInitLookup is the W9 mutation-site-inventory finding's

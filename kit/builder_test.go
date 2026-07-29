@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestBuilderCollectContext covers the per-builder deploy-time stage-context derivation that the

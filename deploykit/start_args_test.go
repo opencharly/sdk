@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 func TestBuildStartArgs(t *testing.T) {

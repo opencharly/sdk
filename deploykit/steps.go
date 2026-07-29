@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 type (

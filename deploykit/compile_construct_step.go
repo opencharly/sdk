@@ -20,7 +20,7 @@ import (
 
 	"github.com/opencharly/sdk"
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // constructStepSeamKind names the HostBuild seam charly/host_build_construct_step.go

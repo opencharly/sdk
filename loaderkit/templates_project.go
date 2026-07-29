@@ -3,7 +3,7 @@ package loaderkit
 import (
 	"encoding/json"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // templates_project.go — the uf-COUPLED kind-TEMPLATE projection of the resolved-project envelope

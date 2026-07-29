@@ -3,7 +3,7 @@ package deploykit
 import (
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // resolved_project.go — the PURE box/candy PROJECTION helpers of the resolved-project envelope

@@ -3,7 +3,7 @@ package deploykit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // config_candy_chain_test.go — sdk-level coverage for BoxCandyChain / BoxDirectCandies, relocated

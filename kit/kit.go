@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // RunMode mirrors charly's RunMode: the mode a check runs under.

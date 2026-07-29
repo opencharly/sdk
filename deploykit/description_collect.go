@@ -1,7 +1,7 @@
 package deploykit
 
 import (
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // description_collect.go — collect the baked `plan:` view for the ai.opencharly.description

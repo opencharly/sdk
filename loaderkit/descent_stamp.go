@@ -2,7 +2,7 @@ package loaderkit
 
 import (
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // descent_stamp.go — the DATA-driven venue-hop descent stamp (K1-LOADER RELOCATION). The former

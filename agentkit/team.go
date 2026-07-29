@@ -3,7 +3,7 @@ package agentkit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ValidateTeam enforces graph invariants that CUE cannot express: unique member

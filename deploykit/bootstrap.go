@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // RenderDnfConfWrite renders the dnf download-tuning conf snippet (appended to

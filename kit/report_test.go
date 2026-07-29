@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 func TestStatus_String(t *testing.T) {

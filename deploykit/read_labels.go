@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // read_labels.go — the READ half of the OCI-label emission pair (K3-rem, shared-kit

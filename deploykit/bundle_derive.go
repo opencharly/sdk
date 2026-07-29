@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // bundle_derive.go — BundleConfig methods that DERIVE facts from the deploy state

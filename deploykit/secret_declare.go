@@ -19,7 +19,7 @@ package deploykit
 import (
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // SecretDeclaredOnBox returns the set of env var names an image declares

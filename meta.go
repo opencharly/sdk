@@ -4,7 +4,7 @@ import (
 	"context"
 	"io/fs"
 
-	pb "github.com/opencharly/sdk/proto"
+	pb "github.com/opencharly/spec/proto"
 )
 
 // meta.go carries the ONE shared PluginMetaServer implementation. Before it, every

@@ -3,7 +3,7 @@ package deploykit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // box_build_resolve.go — pure build-side box resolvers relocated from charly core (K3 build-engine,

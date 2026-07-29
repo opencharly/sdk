@@ -2,7 +2,7 @@ package deploykit
 
 import (
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // spec_resolved_box_adapter.go — the BOX analogue of specCandyAdapter (task #67, the

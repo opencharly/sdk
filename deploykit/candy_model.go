@@ -1,6 +1,6 @@
 package deploykit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // candy_model.go — CandyModel is now promoted to spec.CandyReader (W9: the mass-edit interface
 // relocation). spec is the shared contract home an import-clean charly file can reach WITHOUT an

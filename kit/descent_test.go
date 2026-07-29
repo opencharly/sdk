@@ -3,7 +3,7 @@ package kit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // canonicalTraits mirrors the substrate plugin's DECLARED per-word #DeployTraits (the

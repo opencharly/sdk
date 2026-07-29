@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // config_resolve.go — the buildkit-typed half of Config's box-resolution logic (FLOOR-SLIM Unit

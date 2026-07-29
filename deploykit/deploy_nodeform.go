@@ -4,7 +4,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // deploy_nodeform.go — the canonical BundleNode → compact node-form deploy serializer. MarshalBundleNode

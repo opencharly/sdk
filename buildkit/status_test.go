@@ -3,7 +3,7 @@ package buildkit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // status_test.go — coverage for the candy/box maturity-rung helpers relocated from

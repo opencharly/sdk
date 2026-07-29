@@ -20,7 +20,7 @@ import (
 	"sort"
 
 	"github.com/opencharly/sdk/deploykit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // SortedDeployKeys returns a Bundle map's keys in deterministic (name) order. A generic

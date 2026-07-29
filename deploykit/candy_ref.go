@@ -1,6 +1,6 @@
 package deploykit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // candy_ref.go — CandyRef is now promoted to spec.CandyRefEntry (W9: the mass-edit interface
 // relocation, alongside CandyModel → spec.CandyReader). spec.CandyRef already names the DISTINCT

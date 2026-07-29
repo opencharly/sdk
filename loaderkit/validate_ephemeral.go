@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // validate_ephemeral.go — the LOAD-time ephemeral / vm-naming validators (K1-LOADER RELOCATION,

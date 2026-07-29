@@ -1,6 +1,6 @@
 // Package sdk is the importable surface an out-of-tree charly plugin builds
 // against. An external plugin implements the proto Provider + PluginMeta services
-// (github.com/opencharly/sdk/proto) and calls sdk.Serve from
+// (github.com/opencharly/spec/proto) and calls sdk.Serve from
 // its main; charly connects to it through the SAME handshake + dispense key. The
 // handshake/glue live here (NOT in charly's package main) so both charly and an
 // external plugin share ONE definition — no drift, no duplication (R3).
@@ -13,7 +13,7 @@ import (
 	plugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 
-	pb "github.com/opencharly/sdk/proto"
+	pb "github.com/opencharly/spec/proto"
 )
 
 // ProtocolVersion is the go-plugin/proto contract version — a thin secondary gate.

@@ -6,7 +6,7 @@ package kit
 // in spec (union_types.go); these are the wire-keyword constant values. Core +
 // candy each alias them.
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 const (
 	KwRun        spec.StepKeyword = "run"

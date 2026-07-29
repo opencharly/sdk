@@ -7,6 +7,6 @@ package vmshared
 // sdk/kit, the VM/check/preempt/kube/bundle plugins) — and this package's own
 // internal callers — compiling unchanged. ONE home: the definition lives in spec.
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 var VmDomainIdentity = spec.VmDomainIdentity

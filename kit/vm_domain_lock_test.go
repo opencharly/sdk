@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestBedVmDomains proves the per-DEPLOY domain serialization key-gathering (P33): a bed's VM

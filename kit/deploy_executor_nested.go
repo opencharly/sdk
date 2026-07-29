@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // deploy_executor_nested.go — the composable executor that turns the

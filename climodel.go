@@ -10,7 +10,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // BuildCLIModel reflects a Kong command tree into the generated #CLIModel.

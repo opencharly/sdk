@@ -3,7 +3,7 @@ package deploykit
 import (
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // volume_collect.go — the box-VOLUME aggregator (relocated from charly/volumes.go in the

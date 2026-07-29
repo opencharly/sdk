@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // tunnel_metadata.go — the label-only tunnel-config resolution (K4 lane B: relocated from

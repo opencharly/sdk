@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // EnvConfig — resolved candy env (KEY=value vars + PATH-append entries). CUE-SOURCED in spec now

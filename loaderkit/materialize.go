@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // Materialize folds ONE parsed entity node into acc via the registered Materializer plugin's
