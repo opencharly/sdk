@@ -16,7 +16,7 @@ import "github.com/opencharly/spec/spec"
 // LoadUnified cannot do kind-blind: the bootstrap-phase plugin invocation, the registry-coupled
 // import/discover walk, the materialize kind-decode + merge, and the two registry-resolving
 // validators. Because the methods are TYPED, a compiled-in placement pays no envelope tax; only a
-// true out-of-module plugin marshals (the existing spec.LoadedProject / UnifiedFile envelopes).
+// true out-of-module plugin marshals (the existing spec.LoadedProject / spec.UnifiedFile envelopes).
 type LoaderExecutor interface {
 	// LoaderThreaded returns the CURRENT registry-derived snapshot (recognized kinds / deploy
 	// substrates / DeployTraits / ExternalDeploySubstrates / …). Called FRESH at each DATA-seam
@@ -35,14 +35,14 @@ type LoaderExecutor interface {
 	// MERGE over the walk envelope (registry kind-decode via the registered spec.Materializer).
 	// RULING 1: a TRANSITIONAL host leg — the whole embed+parser+registry orchestration stays
 	// host-side until task #48 relocates it into loaderkit.
-	MaterializeLoadedProject(lp *spec.LoadedProject, merged *UnifiedFile, byID map[int64]*UnifiedFile) error
+	MaterializeLoadedProject(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile) error
 	// ValidateAndroidDevices enforces the kind:android box⊻adb XOR — resolves android templates via
 	// the provider registry (host-coupled), so a leg, not a pure loaderkit move.
-	ValidateAndroidDevices(uf *UnifiedFile) error
+	ValidateAndroidDevices(uf *spec.UnifiedFile) error
 	// ValidatePreemptible validates preemptible / requires_exclusive / requires_shared across the
 	// deploy map, including the resource-vocabulary cross-check (resolves the resource plugin kind +
 	// vm/resource entities via the registry) — host-coupled, so a leg.
-	ValidatePreemptible(uf *UnifiedFile) error
+	ValidatePreemptible(uf *spec.UnifiedFile) error
 }
 
 // LoadSeamsFromExecutor builds a LoadSeams from a LoaderExecutor: the PURE, registry-free LOAD-half
@@ -59,9 +59,9 @@ func LoadSeamsFromExecutor(exec LoaderExecutor) LoadSeams {
 		MaterializeLoadedProject: exec.MaterializeLoadedProject,
 		FlattenBundleVenues:      FlattenBundleVenues,
 		FoldMembers:              FoldMembers,
-		StampBundleDescents:      func(uf *UnifiedFile) { StampBundleDescents(uf, exec.LoaderThreaded()) },
-		ValidateEphemeral:        func(uf *UnifiedFile) error { return ValidateEphemeralUnified(uf, exec.LoaderThreaded()) },
-		ValidateCheckBeds:        func(uf *UnifiedFile) error { return ValidateCheckBeds(uf, exec.LoaderThreaded()) },
+		StampBundleDescents:      func(uf *spec.UnifiedFile) { StampBundleDescents(uf, exec.LoaderThreaded()) },
+		ValidateEphemeral:        func(uf *spec.UnifiedFile) error { return ValidateEphemeralUnified(uf, exec.LoaderThreaded()) },
+		ValidateCheckBeds:        func(uf *spec.UnifiedFile) error { return ValidateCheckBeds(uf, exec.LoaderThreaded()) },
 		ValidateAndroidDevices:   exec.ValidateAndroidDevices,
 		ValidateMembers:          ValidateMembers,
 		ValidatePreemptible:      exec.ValidatePreemptible,

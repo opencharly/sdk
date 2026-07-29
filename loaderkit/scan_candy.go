@@ -83,7 +83,7 @@ func ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseDo
 			return nil, fmt.Errorf("remote candy %s not found at %s", bareRef, candyDir)
 		}
 
-		m, v, refs, err := ScanCandyManifest(candyDir, name, kit.UnifiedFileName, parseDoc)
+		m, v, refs, err := ScanCandyManifest(candyDir, name, spec.UnifiedFileName, parseDoc)
 		if err != nil {
 			return nil, fmt.Errorf("scanning remote candy %s: %w", bareRef, err)
 		}

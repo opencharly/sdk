@@ -9,12 +9,12 @@ import (
 )
 
 // resolve_project.go — the RESOLVED-project ENVELOPE ASSEMBLER (K3 build-engine, Unit 2 body). It is
-// the uf-COUPLED orchestration that walks the loaded project (*UnifiedFile: uf.Bundle, uf.Namespaces,
+// the uf-COUPLED orchestration that walks the loaded project (*spec.UnifiedFile: uf.Bundle, uf.Namespaces,
 // uf.PluginKinds) and composes the generic spec.ResolvedProject envelope from the already-plugin-callable
 // resolve primitives — deploykit.ProjectResolvedBox/ProjectBoxAggregates/RawCandyPair/FillBoxPlans/
-// ResolveBoxOrder + loaderkit.ProjectTemplates. Its home is loaderkit (the package that owns UnifiedFile
-// AND can import both deploykit+buildkit), so both charly core (a thin host wrapper) AND candy/plugin-build
-// (running the build-engine RESOLVE plugin-side, U6) call the ONE copy (R3).
+// ResolveBoxOrder + uf.ProjectTemplates() (the spec method). Its home is loaderkit (it can import both
+// deploykit+buildkit), so both charly core (a thin host wrapper) AND candy/plugin-build (running the
+// build-engine RESOLVE plugin-side, U6) call the ONE copy (R3).
 //
 // The GENUINELY-host-coupled legs are INJECTED as ResolveProjectSeams (func fields), NOT baked in: the
 // host wrapper builds closures capturing its ResolveOpts + registry; the plugin (U6) supplies
@@ -33,10 +33,10 @@ type ResolveProjectSeams struct {
 	ResolveBox func(cfg *spec.Config, name, calver, dir string) (*buildkit.ResolvedBox, error)
 	// FillNamespacedBoxes folds each import namespace's boxes (qualified) + their OWN candy sets into rp.
 	// HOST (embeds a per-namespace scan + render-prep); becomes pre-computed inputs at U5.
-	FillNamespacedBoxes func(uf *UnifiedFile, initCfg *buildkit.InitConfig, prefix, calver, dir string, rp *spec.ResolvedProject, visited map[*UnifiedFile]bool)
+	FillNamespacedBoxes func(uf *spec.UnifiedFile, initCfg *buildkit.InitConfig, prefix, calver, dir string, rp *spec.ResolvedProject, visited map[*spec.UnifiedFile]bool)
 	// ResolveResources projects uf's `resource:` kind entities. HOST (per-node registry resolve);
 	// becomes an InvokeProvider(ClassKind,"resource") leg at U5.
-	ResolveResources func(uf *UnifiedFile) map[string]*spec.ResolvedResource
+	ResolveResources func(uf *spec.UnifiedFile) map[string]*spec.ResolvedResource
 	// ShouldIncludeDisabled reports whether a disabled box's `enabled: false` gate is bypassed (host opts).
 	ShouldIncludeDisabled func(name string) bool
 	// ComputeIntermediates adds auto-generated intermediate images (host: lifts cfg.Defaults).
@@ -58,7 +58,7 @@ type ResolveProjectSeams struct {
 // preserved on the ResolvedBoxView. nil (validate/inspect) resolves boxes fresh.
 //
 //nolint:gocyclo // envelope assembler — the box loop (pre-resolved vs fresh vs intermediate) + the candy/deploy/vocab projections; one branch per projection arm.
-func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader, uf *UnifiedFile, distroCfg *buildkit.DistroConfig, builderCfg *buildkit.BuilderConfig, initCfg *buildkit.InitConfig, dir, version, calver string, seams ResolveProjectSeams, diags *spec.Diagnostics, preResolvedBoxes map[string]*buildkit.ResolvedBox) (*spec.ResolvedProject, error) {
+func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader, uf *spec.UnifiedFile, distroCfg *buildkit.DistroConfig, builderCfg *buildkit.BuilderConfig, initCfg *buildkit.InitConfig, dir, version, calver string, seams ResolveProjectSeams, diags *spec.Diagnostics, preResolvedBoxes map[string]*buildkit.ResolvedBox) (*spec.ResolvedProject, error) {
 	rp := &spec.ResolvedProject{Version: version}
 
 	resolvedBoxes := map[string]*buildkit.ResolvedBox{}
@@ -143,7 +143,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 	// rp.Candies/rp.CandyModels. HOST seam (embeds a per-namespace scan + render-prep). Runs AFTER the
 	// root-scope candy fill above; best-effort/additive (a qualified key never collides with a bare name).
 	if uf != nil {
-		seams.FillNamespacedBoxes(uf, initCfg, "", calver, dir, rp, map[*UnifiedFile]bool{})
+		seams.FillNamespacedBoxes(uf, initCfg, "", calver, dir, rp, map[*spec.UnifiedFile]bool{})
 	}
 
 	if uf != nil && len(uf.Bundle) > 0 {
@@ -180,7 +180,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 
 	if uf != nil {
 		// kind TEMPLATES (validate localtemplates + check-include pod/vm arms + status k8s/adb).
-		rp.Templates = ProjectTemplates(uf)
+		rp.Templates = uf.ProjectTemplates()
 		// kind:agent catalog (the harness AI-CLI pick + charly feature list-agent).
 		if agents := uf.PluginKinds["agent"]; len(agents) > 0 {
 			rp.AgentBodies = make(map[string]spec.RawBody, len(agents))

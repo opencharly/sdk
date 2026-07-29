@@ -1,7 +1,7 @@
 // Package loaderkit is the importable form of charly's unified-config PARSE — the parse half of
 // LoadUnified relocated out of charly core (P6). It decomposes one node-form YAML document into
 // the generic, sdk-expressible spec.ParsedProject the host MATERIALIZES into the typed
-// *UnifiedFile. Shared by the loader plugin candy (candy/plugin-loader, its OpLoad) and, during
+// *spec.UnifiedFile. Shared by the loader plugin candy (candy/plugin-loader, its OpLoad) and, during
 // the transition, by charly core — the SAME parse, one copy (R3), the way sdk/kit is the one
 // copy of the check walk.
 //

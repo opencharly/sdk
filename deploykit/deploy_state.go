@@ -532,7 +532,7 @@ func MergeEnvVars(existing, newVars map[string]string) map[string]string {
 // legacy `images:` / `deployments.images.*` nesting is gone — all target
 // kinds (host / vm / pod / k8s) live under the single `deployment:` map.
 type BundleConfig struct {
-	Provides *ProvidesConfig       `yaml:"provides,omitempty" json:"provides,omitempty"`
+	Provides *spec.ProvidesConfig  `yaml:"provides,omitempty" json:"provides,omitempty"`
 	Bundle   map[string]BundleNode `yaml:"deploy" json:"deploy"`
 	// Sidecar carries the project's sidecar-template library as OPAQUE bodies
 	// (the raw PluginKinds["sidecar"] map). candy/plugin-sidecar's OpResolve merges
@@ -606,7 +606,7 @@ func MergeDeployConfigs(configs ...*BundleConfig) *BundleConfig {
 // so they live here unconditionally. The ONE core-coupled op (LoadUnified) reaches deploykit
 // through the seam var in deploy_file.go (DeployStateHost), filled by charly at init.
 
-// Named is the interface for provides entries (shared pipeline logic). EnvProvideEntry and
+// Named is the interface for provides entries (shared pipeline logic). spec.EnvProvideEntry and
 // MCPProvideEntry both satisfy it via their GetName/GetSource methods. Relocated from
 // charly/provides.go so RemoveBySource/RemoveByExactSource (used by CleanDeployEntry) stay in
 // the same package as their caller.

@@ -62,8 +62,8 @@ func (dc *BundleConfig) OccupiedHostPorts(excludeKey string) map[int]bool {
 
 // PodAwareEnvProvides rewrites same-deploy env values to localhost and dedups
 // cross-deploy entries by name (local wins).
-func PodAwareEnvProvides(entries []EnvProvideEntry, consumerKey, ctrName string) []EnvProvideEntry {
-	var result []EnvProvideEntry
+func PodAwareEnvProvides(entries []spec.EnvProvideEntry, consumerKey, ctrName string) []spec.EnvProvideEntry {
+	var result []spec.EnvProvideEntry
 	seen := map[string]bool{}
 	for _, e := range entries {
 		if e.Source == consumerKey {

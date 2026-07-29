@@ -72,9 +72,9 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 	// dep carries its own repo/git-tag. Fix-point until no new (repo, git-tag,
 	// ref) surfaces, so cross-repo transitive closures are fully materialized.
 	type repoVer struct{ repo, ver string }
-	candidates := make(map[string][]CandyCandidate) // bare ref -> all fetched materializations
-	scanned := make(map[repoVer]map[string]bool)    // (repo, git-tag) -> refs already scanned
-	defaultBranches := make(map[string]string)      // repo → resolved default branch
+	candidates := make(map[string][]spec.CandyCandidate) // bare ref -> all fetched materializations
+	scanned := make(map[repoVer]map[string]bool)         // (repo, git-tag) -> refs already scanned
+	defaultBranches := make(map[string]string)           // repo → resolved default branch
 
 	queue := downloads
 	for len(queue) > 0 {
@@ -134,7 +134,7 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 				if sc.Model.Version == "" {
 					return nil, fmt.Errorf("remote candy %q (from %s@%s) declares no version:; its producer repo must declare one", ref, dl.RepoPath, dl.Version)
 				}
-				candidates[ref] = append(candidates[ref], CandyCandidate{
+				candidates[ref] = append(candidates[ref], spec.CandyCandidate{
 					Scanned: sc,
 					Version: sc.Model.Version,
 					GitTag:  dl.Version,

@@ -3,15 +3,17 @@ package loaderkit
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // TestMaterializedWire_PreservesPluginKinds is the regression guard for the R10-bed-caught keystone
-// bug: a plain json.Marshal of a UnifiedFile DROPS PluginKinds (json:"-"), so the plugin-side
+// bug: a plain json.Marshal of a spec.UnifiedFile DROPS PluginKinds (json:"-"), so the plugin-side
 // witness lost every standalone-template / plugin-kind entity and a kind:check bed's `from:
 // <local-template>` false-failed "not defined". MarshalMaterialized/UnmarshalMaterialized must carry
 // PluginKinds across byte-identically.
 func TestMaterializedWire_PreservesPluginKinds(t *testing.T) {
-	src := &UnifiedFile{
+	src := &spec.UnifiedFile{
 		Version: "2026.200.1200",
 		RootDir: "/project",
 		PluginKinds: map[string]map[string]json.RawMessage{
@@ -25,7 +27,7 @@ func TestMaterializedWire_PreservesPluginKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plain marshal: %v", err)
 	}
-	var viaPlain UnifiedFile
+	var viaPlain spec.UnifiedFile
 	if err := json.Unmarshal(plain, &viaPlain); err != nil {
 		t.Fatalf("plain unmarshal: %v", err)
 	}
@@ -38,7 +40,7 @@ func TestMaterializedWire_PreservesPluginKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalMaterialized: %v", err)
 	}
-	var got UnifiedFile
+	var got spec.UnifiedFile
 	if err := UnmarshalMaterialized(data, &got); err != nil {
 		t.Fatalf("UnmarshalMaterialized: %v", err)
 	}
@@ -56,12 +58,12 @@ func TestMaterializedWire_PreservesPluginKinds(t *testing.T) {
 // TestMaterializedWire_PreservesNamespacedPluginKinds proves the recursive capture/restore keeps a
 // MOUNTED-namespace's PluginKinds too (byte-identical at every level, not just the root).
 func TestMaterializedWire_PreservesNamespacedPluginKinds(t *testing.T) {
-	src := &UnifiedFile{
+	src := &spec.UnifiedFile{
 		Version: "2026.200.1200",
 		PluginKinds: map[string]map[string]json.RawMessage{
 			"local": {"root-tpl": json.RawMessage(`{}`)},
 		},
-		Namespaces: map[string]*UnifiedFile{
+		Namespaces: map[string]*spec.UnifiedFile{
 			"cachyos": {
 				RootDir:     "/ns/cachyos",
 				PluginKinds: map[string]map[string]json.RawMessage{"vm": {"ns-vm": json.RawMessage(`{"backend":"libvirt"}`)}},
@@ -72,7 +74,7 @@ func TestMaterializedWire_PreservesNamespacedPluginKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalMaterialized: %v", err)
 	}
-	var got UnifiedFile
+	var got spec.UnifiedFile
 	if err := UnmarshalMaterialized(data, &got); err != nil {
 		t.Fatalf("UnmarshalMaterialized: %v", err)
 	}

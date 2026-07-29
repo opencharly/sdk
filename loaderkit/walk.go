@@ -2,7 +2,7 @@
 // half of LoadUnified (charly/unified.go) relocated out of charly core. Walk drives the import
 // queue + discover + namespaced-import mounts and PARSES every document (via the existing
 // loaderkit.ParseDoc, P6) into a generic spec.LoadedProject envelope — it does NO materialize
-// (registry kind-decode) and NO merge (root-wins field folding) into a typed *UnifiedFile; the host
+// (registry kind-decode) and NO merge (root-wins field folding) into a typed *spec.UnifiedFile; the host
 // replays materialize+merge over the returned spec.LoadedProject to reconstruct that, exactly as it
 // did inline before.
 //
@@ -22,7 +22,7 @@
 //	the per-project "load + discover" body   → (*walker).walkProject
 //	ApplyDiscover/…                          → discover.go
 //
-// The kind-blind document DIRECTIVES (kit.ImportList/kit.DiscoverConfig/kit.ClassifyDoc/
+// The kind-blind document DIRECTIVES (spec.ImportList/spec.DiscoverConfig/kit.ClassifyDoc/
 // kit.FindEntityDirs/…) live in sdk/kit (loader_directives.go/loader_classify.go/
 // loader_discover.go), shared with charly core
 // (R3) — this package keeps only its own walk-scoped namespace-alias validation (directives.go).
@@ -64,7 +64,7 @@ func (w *walker) newID() int64 {
 // pointer) as they are discovered. A namespaced cycle/diamond back-reference is NOT an inline
 // value copy: walkNamespace/walkFile emit it as a symbolic id REFERENCE mount
 // (spec.NamespaceMount.{Ref,RefID} → the target spec.LoadedProject.ID), so the host materialize
-// shares the SAME *UnifiedFile by id (register-before-recurse) and preserves the original
+// shares the SAME *spec.UnifiedFile by id (register-before-recurse) and preserves the original
 // loadNamespaceCached pointer identity across the mutual import (main↔cachyos). discoverSpecs
 // is collected throughout the walk but only ACTED on once, at the end (runDiscover runs after the
 // whole project's imports are processed, exactly like the original's depth==0 ApplyDiscover call).
@@ -72,7 +72,7 @@ func (w *walker) newID() int64 {
 // expressed via a map (merged.Namespaces); Namespaces here is a slice (the wire shape), so the
 // check needs its own companion index.
 type nsAcc struct {
-	discoverSpecs []kit.ScanSpec
+	discoverSpecs []spec.ScanSpec
 	nsByAlias     map[string]*spec.LoadedProject
 }
 
@@ -92,7 +92,7 @@ func Walk(rootDir string, rootData []byte, rootIdentity string, seams spec.WalkS
 		// same as LoadUnified's root registration (ns_identity.go).
 		loadingRepos[rootIdentity] = lp
 	}
-	rootPath := filepath.Join(rootDir, kit.UnifiedFileName)
+	rootPath := filepath.Join(rootDir, spec.UnifiedFileName)
 	if err := w.walkProject(lp, rootPath, rootData, nsCache, loadingRepos); err != nil {
 		return spec.LoadedProject{}, err
 	}
@@ -206,9 +206,9 @@ func (w *walker) walkFile(lp *spec.LoadedProject, path string, dataOverride []by
 		}
 		acc.nsByAlias[imp.Namespace] = sub
 		// A DEFINITION mount (shared=false) carries the fully-walked child inline (sub.ID lets the
-		// host register the *UnifiedFile it materializes). A REFERENCE mount (shared=true — a
+		// host register the *spec.UnifiedFile it materializes). A REFERENCE mount (shared=true — a
 		// repo-identity cycle-break or a diamond re-import) carries NO inline project, only the
-		// target's id: the host resolves it to the SAME *UnifiedFile it already registered, so the
+		// target's id: the host resolves it to the SAME *spec.UnifiedFile it already registered, so the
 		// original loader's pointer identity across the mutual-import cycle (main↔cachyos) is
 		// preserved — NOT a value-copy snapshot.
 		if shared {
@@ -231,7 +231,7 @@ func (w *walker) walkNamespace(ref, baseDir string, nsCache, loadingRepos map[st
 	// repo already being loaded up the stack (the root or an ancestor namespace), resolve to that
 	// in-progress node. This terminates the intentional mutual import (main <-> cachyos) even when
 	// the loop's pins diverge. shared=true → the caller emits a REFERENCE mount (refID = the target's
-	// id), so the host materialize shares the SAME *UnifiedFile (pointer identity preserved).
+	// id), so the host materialize shares the SAME *spec.UnifiedFile (pointer identity preserved).
 	repoID := w.seams.RepoIdentity(ref, baseDir)
 	if repoID != "" {
 		if existing, ok := loadingRepos[repoID]; ok {
@@ -246,7 +246,7 @@ func (w *walker) walkNamespace(ref, baseDir string, nsCache, loadingRepos map[st
 		return existing, true, nil // version-keyed diamond memo (dedup identical refs)
 	}
 	if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
-		path = filepath.Join(path, kit.UnifiedFileName)
+		path = filepath.Join(path, spec.UnifiedFileName)
 	}
 	lp := &spec.LoadedProject{ID: w.newID()}
 	nsCache[key] = lp // version-keyed memo entry (persists across the whole walk)
@@ -275,10 +275,10 @@ func (w *walker) walkNamespace(ref, baseDir string, nsCache, loadingRepos map[st
 // acc.discoverSpecs. srcLabel labels diagnostics; srcDir anchors relative discover paths. Faithful
 // port of charly/unified.go's mergeUnifiedDocs, MINUS materializeProject/mergeUnified (host
 // materialize).
-func (w *walker) parseDocs(lp *spec.LoadedProject, data []byte, srcLabel, srcDir string, acc *nsAcc) (kit.ImportList, error) {
+func (w *walker) parseDocs(lp *spec.LoadedProject, data []byte, srcLabel, srcDir string, acc *nsAcc) (spec.ImportList, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	docIdx := 0
-	var importQueue kit.ImportList
+	var importQueue spec.ImportList
 	for {
 		var node yaml.Node
 		if err := decoder.Decode(&node); err != nil {
@@ -336,14 +336,14 @@ func (w *walker) parseDocs(lp *spec.LoadedProject, data []byte, srcLabel, srcDir
 				}
 				doc.Directives = body
 				if impNode, ok := directives["import"]; ok {
-					var il kit.ImportList
+					var il spec.ImportList
 					if derr := impNode.Decode(&il); derr != nil {
 						return nil, fmt.Errorf("%s: decoding import: %w", label, derr)
 					}
 					importQueue = append(importQueue, il...)
 				}
 				if discNode, ok := directives["discover"]; ok {
-					var dc kit.DiscoverConfig
+					var dc spec.DiscoverConfig
 					if derr := discNode.Decode(&dc); derr != nil {
 						return nil, fmt.Errorf("%s: decoding discover: %w", label, derr)
 					}

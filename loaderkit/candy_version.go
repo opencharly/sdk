@@ -19,14 +19,9 @@ import (
 // The host's charly/layers.go scanCandyFromLocal remote-fetch orchestration
 // (loader+refs front-end, core-private) calls loaderkit.PickCandyVersion.
 
-// CandyCandidate is one fetched materialization of a bare candy ref. The git tag
-// is the fetch coordinate; Version is the candy's own per-entity `version:`.
-type CandyCandidate struct {
-	Scanned spec.ScannedCandy
-	Version string // per-entity version (Scanned.Model.Version) — mandatory, never ""
-	GitTag  string // fetch coordinate (the @github :vTAG)
-	Source  string // "<repo>@<git-tag>" for warning attribution
-}
+// CandyCandidate (the fetched-materialization DATA) moved to spec (loadmodel.go) with the
+// loader-result family; PickCandyVersion — the ARBITER — stays here because it needs kit's
+// semver/CalVer comparison (a mechanism).
 
 // PickCandyVersion arbitrates the candidates of ONE bare ref by per-entity
 // version. Same per-entity version across different git tags => NO warning, the
@@ -34,7 +29,7 @@ type CandyCandidate struct {
 // (naming the winner + a loser) and the newest per-entity version wins. This is
 // the sole candy-version arbiter — direct and transitive refs both flow through
 // it. cands is non-empty.
-func PickCandyVersion(bareRef string, cands []CandyCandidate) CandyCandidate {
+func PickCandyVersion(bareRef string, cands []spec.CandyCandidate) spec.CandyCandidate {
 	best := cands[0]
 	for _, c := range cands[1:] {
 		if kit.CompareCalVer(c.Version, best.Version) > 0 {

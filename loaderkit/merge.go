@@ -9,7 +9,7 @@ import (
 
 // merge.go — the kind-blind document MERGE half of the unified-config loader
 // (K1-proper, relocated from charly/unified.go). These are pure map/struct
-// merges over an already-parsed UnifiedFile: no provider registry, no plugin
+// merges over an already-parsed spec.UnifiedFile: no provider registry, no plugin
 // round-trip, no charly-core helper. The host materialize (charly/materialize.go)
 // replays the walk's documents in order — the root file first, then its flat
 // imports — calling MergeUnified for each, so the root file's values are present
@@ -27,7 +27,7 @@ import (
 // For included files: the same MergeUnified is called but dst already contains
 // the root's values, so those fields stay untouched. src's fields that aren't
 // present in dst get copied over. That's the desired semantics.
-func MergeUnified(dst, src *UnifiedFile, srcDir string) {
+func MergeUnified(dst, src *spec.UnifiedFile, srcDir string) {
 	if src.Version != "" && dst.Version == "" {
 		dst.Version = src.Version
 	}
@@ -90,7 +90,7 @@ func mergeRawTemplateMap(dst *map[string]json.RawMessage, src map[string]json.Ra
 // entry, not two) — the property the agent + sidecar extractions rely on (a project's
 // `sidecar: tailscale` overriding the binary-embedded one, merged in via
 // applyEmbeddedDefaults). Without this,
-// plugin-kind entities decoded into a per-document `sub` UnifiedFile are silently
+// plugin-kind entities decoded into a per-document `sub` spec.UnifiedFile are silently
 // dropped at MergeUnified (every document flows through here).
 func MergePluginKindsMap(dst *map[string]map[string]json.RawMessage, src map[string]map[string]json.RawMessage) {
 	if len(src) == 0 {
@@ -115,7 +115,7 @@ func MergePluginKindsMap(dst *map[string]map[string]json.RawMessage, src map[str
 
 // mergeDeployMaps merges src into dst, dst-wins on name collisions.
 // Field-singular cutover: replaces the legacy mergeDeployments which
-// took *DeploymentsSection wrappers. Provides now lives at UnifiedFile
+// took *DeploymentsSection wrappers. Provides now lives at spec.UnifiedFile
 // root and is merged separately by MergeUnified.
 func mergeDeployMaps(dst *map[string]spec.BundleNode, src map[string]spec.BundleNode) {
 	if len(src) == 0 {

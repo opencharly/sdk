@@ -26,30 +26,30 @@ type MaterializeProjectSeams struct {
 	// spec.Materializer (registry kind-decode + the per-node not-found policy). uf already carries
 	// the document's decoded reserved directives; this adds the Box/Candy/Bundle/PluginKinds
 	// entities, accumulating across the document's node list.
-	MaterializeProject func(pp *spec.ParsedProject, uf *UnifiedFile) error
+	MaterializeProject func(pp *spec.ParsedProject, uf *spec.UnifiedFile) error
 	// FoldDiscoveredManifests folds every discovered manifest's parsed nodes into uf — a LAYER
 	// candy registers a lazy `From:` reference (the bootstrap-critical candyIsImage box⊻layer
 	// routing stays host-side), every other kind materializes via the registered spec.Materializer.
 	// Shared host-side with charly's ApplyDiscover (R3), so it stays one host leaf.
-	FoldDiscoveredManifests func(dms []spec.DiscoveredManifest, uf *UnifiedFile) error
+	FoldDiscoveredManifests func(dms []spec.DiscoveredManifest, uf *spec.UnifiedFile) error
 	// ApplyEmbeddedDefaults merges the binary-embedded build vocabulary + sidecar templates UNDER
 	// uf's own entries (project-wins). Host-resident: the embedded bytes and the host node-form
 	// parser are charly's.
-	ApplyEmbeddedDefaults func(uf *UnifiedFile) error
+	ApplyEmbeddedDefaults func(uf *spec.UnifiedFile) error
 }
 
 // MaterializeLoadedProject replays the per-document/per-namespace MATERIALIZE + root-wins MERGE over
-// a walk envelope, reconstructing the typed *UnifiedFile identically to charly's former inline
+// a walk envelope, reconstructing the typed *spec.UnifiedFile identically to charly's former inline
 // loadUnifiedInto:
 //  1. each document (root file + flat imports, in walk order) — decode its reserved directives into
-//     a fresh sub UnifiedFile, materialize its parsed nodes (registry kind-decode, via the seam),
+//     a fresh sub spec.UnifiedFile, materialize its parsed nodes (registry kind-decode, via the seam),
 //     then root-wins merge the sub into merged (first-seen wins → root wins);
 //  2. the discovered manifests — register a lazy layer-candy `From:` reference OR materialize the
 //     node, explicit-entry-wins (via the seam, the SAME per-node handler ApplyDiscover uses, R3);
 //  3. the binary-embedded default vocabulary (project-wins, via the seam);
 //  4. the mounted namespace subtrees — recurse into merged.Namespaces[alias].
-func MaterializeLoadedProject(lp *spec.LoadedProject, merged *UnifiedFile, byID map[int64]*UnifiedFile, seams MaterializeProjectSeams) error {
-	// Register THIS project's *UnifiedFile under its walk-assigned id BEFORE recursing into its
+func MaterializeLoadedProject(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile, seams MaterializeProjectSeams) error {
+	// Register THIS project's *spec.UnifiedFile under its walk-assigned id BEFORE recursing into its
 	// namespaces, so a namespaced cycle-back / diamond REFERENCE mount nested in this subtree
 	// resolves to this SAME pointer — the pointer identity the former loadNamespaceCached preserved
 	// (the intentional main↔cachyos mutual import). byID persists across the WHOLE materialize.
@@ -65,9 +65,9 @@ func MaterializeLoadedProject(lp *spec.LoadedProject, merged *UnifiedFile, byID 
 	// 1. Documents (root + flat imports) — root-wins merge, in walk order.
 	for i := range lp.Docs {
 		d := &lp.Docs[i]
-		var sub UnifiedFile
+		var sub spec.UnifiedFile
 		if len(d.Directives) > 0 {
-			// Decode the RAW reserved-directive mapping (YAML) into a sub UnifiedFile — the EXACT
+			// Decode the RAW reserved-directive mapping (YAML) into a sub spec.UnifiedFile — the EXACT
 			// decode the former mergeUnifiedDocs did, honoring the custom YAML unmarshalers on
 			// import/discover.
 			if err := yaml.Unmarshal(d.Directives, &sub); err != nil {
@@ -92,8 +92,8 @@ func MaterializeLoadedProject(lp *spec.LoadedProject, merged *UnifiedFile, byID 
 	if err := seams.ApplyEmbeddedDefaults(merged); err != nil {
 		return err
 	}
-	// 4. Mounted namespaces — each an isolated child UnifiedFile. A REFERENCE mount (cycle-break /
-	// diamond) resolves to the SAME *UnifiedFile already registered under its target id (pointer
+	// 4. Mounted namespaces — each an isolated child spec.UnifiedFile. A REFERENCE mount (cycle-break /
+	// diamond) resolves to the SAME *spec.UnifiedFile already registered under its target id (pointer
 	// identity preserved); a DEFINITION mount materializes its inline child fresh.
 	for i := range lp.Namespaces {
 		nm := lp.Namespaces[i]
@@ -101,7 +101,7 @@ func MaterializeLoadedProject(lp *spec.LoadedProject, merged *UnifiedFile, byID 
 			continue
 		}
 		if merged.Namespaces == nil {
-			merged.Namespaces = map[string]*UnifiedFile{}
+			merged.Namespaces = map[string]*spec.UnifiedFile{}
 		}
 		if nm.Ref {
 			shared := byID[nm.RefID]
@@ -111,7 +111,7 @@ func MaterializeLoadedProject(lp *spec.LoadedProject, merged *UnifiedFile, byID 
 			merged.Namespaces[nm.Alias] = shared
 			continue
 		}
-		sub := &UnifiedFile{}
+		sub := &spec.UnifiedFile{}
 		if err := MaterializeLoadedProject(&nm.Project, sub, byID, seams); err != nil {
 			return err
 		}

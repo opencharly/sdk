@@ -3,17 +3,19 @@ package deploykit
 import (
 	"reflect"
 	"testing"
+
+	"github.com/opencharly/spec/spec"
 )
 
 func TestFilterOwnProvidesEnv(t *testing.T) {
-	entries := []EnvProvideEntry{
+	entries := []spec.EnvProvideEntry{
 		{Name: "OLLAMA_HOST", Value: "http://charly-ollama:11434", Source: "ollama"},
 		{Name: "PGHOST", Value: "charly-postgresql", Source: "postgresql"},
 		{Name: "CUSTOM", Value: "val", Source: "myimage"},
 	}
 
 	got := FilterOwnProvides(entries, "ollama")
-	want := []EnvProvideEntry{
+	want := []spec.EnvProvideEntry{
 		{Name: "PGHOST", Value: "charly-postgresql", Source: "postgresql"},
 		{Name: "CUSTOM", Value: "val", Source: "myimage"},
 	}

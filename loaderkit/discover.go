@@ -27,20 +27,20 @@ import (
 // Walk's OWN internal discover call), so a custom loader plugin overriding Walk's discover behavior
 // was never honored by ApplyDiscover before this move either — this preserves that pre-existing
 // scope exactly.
-func RunDiscover(rootDir string, specs []kit.ScanSpec, seams spec.WalkSeams) ([]spec.DiscoveredManifest, error) {
+func RunDiscover(rootDir string, specs []spec.ScanSpec, seams spec.WalkSeams) ([]spec.DiscoveredManifest, error) {
 	w := &walker{seams: seams}
 	return w.runDiscover(rootDir, specs)
 }
 
 // runDiscover walks every flat scan spec on specs and parses every discovered manifest's documents
 // into a spec.DiscoveredManifest — one per discovered directory. Faithful port of
-// UnifiedFile.ApplyDiscover, minus the host-only entity registration (materialize, kept host-side).
-func (w *walker) runDiscover(rootDir string, specs []kit.ScanSpec) ([]spec.DiscoveredManifest, error) {
+// spec.UnifiedFile.ApplyDiscover, minus the host-only entity registration (materialize, kept host-side).
+func (w *walker) runDiscover(rootDir string, specs []spec.ScanSpec) ([]spec.DiscoveredManifest, error) {
 	var out []spec.DiscoveredManifest
 	for _, s := range specs {
 		manifest := s.Manifest
 		if manifest == "" {
-			manifest = kit.UnifiedFileName
+			manifest = spec.UnifiedFileName
 		}
 		scanPath := s.Path
 		if !filepath.IsAbs(scanPath) {
@@ -63,7 +63,7 @@ func (w *walker) runDiscover(rootDir string, specs []kit.ScanSpec) ([]spec.Disco
 
 // parseDiscoveredManifest loads one discovered manifest and PARSES every document it contains
 // (classify → skip empty → gate → parse) into a spec.DiscoveredManifest. Faithful port of
-// UnifiedFile.applyDiscoveredManifest, MINUS the host-only candy-image lazy-ref registration +
+// spec.UnifiedFile.applyDiscoveredManifest, MINUS the host-only candy-image lazy-ref registration +
 // the per-node materialize FOLD (candy/plugin-loader's Materializer, K1 unit 1) — this only
 // accumulates the parsed spec.ParsedProject per document; the host registers/folds each node by
 // shape afterward (materializeDiscoveredNode, charly/materialize.go).

@@ -4,7 +4,7 @@ package loaderkit
 // RELOCATION, moved from charly/node_bundle_venue.go + charly/bundle_members.go). These are
 // the LoadSeams.FlattenBundleVenues / FoldMembers steps plus the two shared sort helpers they
 // (and the DEPLOY-half that STAYS core — bringUpMembers/tearDownMembers) rely on. Every function
-// here operates ONLY on the already-materialized *UnifiedFile / spec.BundleNode maps with zero
+// here operates ONLY on the already-materialized *spec.UnifiedFile / spec.BundleNode maps with zero
 // provider-registry or host coupling (boundary law clause M: a kind-blind mechanism consuming an
 // envelope), so it runs identically host-side OR plugin-side — the property that lets
 // loaderkit.LoadUnified wire these seams directly without a reverse-channel hop. Behaviour is
@@ -70,7 +70,7 @@ func SortedMemberKeys(members map[string]*spec.BundleNode) []string {
 // Idempotent on an already-flattened tree (members/children have empty Plan after the first pass,
 // so re-running hoists nothing). Must run before FoldMembers (which promotes members to top-level,
 // mutating the map) and before validateCheckBeds/validateIterateBed (which count root Plan checks).
-func FlattenBundleVenues(uf *UnifiedFile) error {
+func FlattenBundleVenues(uf *spec.UnifiedFile) error {
 	if uf == nil || len(uf.Bundle) == 0 {
 		return nil
 	}
@@ -137,7 +137,7 @@ func hoistVenueSubtree(root, node *spec.BundleNode, venuePath string) {
 // preflight to SKIP venues whose image the AI builds in-run (they are not pullable).
 // Agent-provisioned members are not folded to top-level, so the lookup walks each bed's in-tree
 // members/children.
-func VenueIsAgentProvisioned(uf *UnifiedFile, venue string) bool {
+func VenueIsAgentProvisioned(uf *spec.UnifiedFile, venue string) bool {
 	if uf == nil || venue == "" {
 		return false
 	}
@@ -188,7 +188,7 @@ func VenueIsAgentProvisioned(uf *UnifiedFile, venue string) bool {
 // members get the same deploy validation); a check bed is itself a `disposable: true` bundle, so a
 // bed's members fold the same way. A member name colliding with any existing deploy/member entry is
 // a hard error.
-func FoldMembers(uf *UnifiedFile) error {
+func FoldMembers(uf *spec.UnifiedFile) error {
 	if uf == nil || len(uf.Bundle) == 0 {
 		return nil
 	}
@@ -250,7 +250,7 @@ func FoldMembers(uf *UnifiedFile) error {
 // the valid-target set is the CUE-derived spec.ResourceKinds (minus the targetless "group") — the
 // SAME derivation the host's deployTargetWords uses (R3) — so a new deploy substrate is a valid
 // member target without a core edit (boundary law clause D).
-func ValidateMembers(uf *UnifiedFile) error {
+func ValidateMembers(uf *spec.UnifiedFile) error {
 	if uf == nil {
 		return nil
 	}

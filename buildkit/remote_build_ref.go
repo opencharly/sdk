@@ -47,7 +47,7 @@ func detectRemoteIncludePassthrough(dir string, boxes []string) (string, bool) {
 		return "", false
 	}
 	boxName := boxes[0]
-	unifiedPath := filepath.Join(dir, kit.UnifiedFileName)
+	unifiedPath := filepath.Join(dir, spec.UnifiedFileName)
 	data, err := os.ReadFile(unifiedPath)
 	if err != nil {
 		return "", false
