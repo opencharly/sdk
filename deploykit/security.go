@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // security.go — the pure security-argv-building helpers (K4 lane B: relocated from

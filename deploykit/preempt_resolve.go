@@ -4,7 +4,7 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // preempt_resolve.go — portable (LoadUnified-free) resource-arbiter deploy-tree helpers,

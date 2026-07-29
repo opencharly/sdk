@@ -3,7 +3,7 @@ package deploykit
 import (
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // hooks_collect.go — the candy-hooks merge logic (W9: MergeCandyHooks) AND — since the core-min

@@ -3,7 +3,7 @@ package deploykit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestCandyCopySource was relocated here from charly/refs_test.go (K3,

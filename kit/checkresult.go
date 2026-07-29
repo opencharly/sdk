@@ -1,7 +1,7 @@
 package kit
 
 import (
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // CheckResult is the engine's record of running a single check: the verb's verdict

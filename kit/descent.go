@@ -1,6 +1,6 @@
 package kit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // descent.go — the venue-hop descent-descriptor stamper (the descent de-type,
 // Cutover H; the trait SOURCE de-branched in P9). This is the SINGLE mechanism that

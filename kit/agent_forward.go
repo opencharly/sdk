@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // agent_forward.go — the SSH/GPG agent-forwarding resolution mechanism (K4 lane B: relocated from

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestStepView_RoundTrip is the F2 step-IR faithfulness gate: every concrete InstallStep

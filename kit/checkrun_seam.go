@@ -1,6 +1,6 @@
 package kit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // checkrun_seam.go — the REPLY half of the "check-run" host↔plugin seam (P12). The
 // REQUEST (spec.CheckRunRequest) is a CUE-sourced wire type. The reply is HAND-WRITTEN here

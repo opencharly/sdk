@@ -6,8 +6,8 @@ package deploykit
 import (
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 var (

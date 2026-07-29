@@ -3,7 +3,7 @@ package buildkit
 import (
 	"sort"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // Local aliases onto the CUE-sourced spec resolved-config types, so the moved

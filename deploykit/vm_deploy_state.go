@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // vm_deploy_state.go — the charly.yml persistence half of the former bundle_add_cmd_vm.go,

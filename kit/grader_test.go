@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // grader_test.go — unit tests for the grader mechanism itself (P12a: relocated from

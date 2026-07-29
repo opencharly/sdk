@@ -3,7 +3,7 @@ package kit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // entrypoint.go — the runtime entrypoint-resolution mechanism (K4 lane B: relocated from

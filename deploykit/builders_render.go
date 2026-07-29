@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // builders_render.go — the build-time BUILDER leg of the render engine (K3-A,

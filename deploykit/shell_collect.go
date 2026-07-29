@@ -1,7 +1,7 @@
 package deploykit
 
 import (
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // shell_collect.go — the box SHELL-INIT aggregator (relocated from charly/shellcollect.go in the

@@ -3,8 +3,8 @@ package sdk
 import (
 	"encoding/json"
 
-	pb "github.com/opencharly/sdk/proto"
-	"github.com/opencharly/sdk/spec"
+	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/spec"
 )
 
 // deploy.go — the out-of-tree DEPLOY-plugin helpers. An external deploy provider

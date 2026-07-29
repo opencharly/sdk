@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	pb "github.com/opencharly/sdk/proto"
+	pb "github.com/opencharly/spec/proto"
 )
 
 func TestSequenceGate(t *testing.T) {

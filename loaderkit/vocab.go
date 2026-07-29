@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // vocab.go — the SHARED build-vocabulary projections (K3 build-engine, Unit 1). A project's

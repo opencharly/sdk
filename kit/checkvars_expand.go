@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // checkvars_expand.go — the ${NAME[:arg]} check-variable expansion grammar, shared with every

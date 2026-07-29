@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // deploy_volume.go — the kind-blind deploy-VOLUME naming + backing resolver folded out

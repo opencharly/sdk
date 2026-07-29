@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ports_collect.go — the box-PORTS aggregator (relocated from charly/ports.go in the

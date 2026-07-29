@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // write_labels.go — the FORMAT half of the render's OCI-label emission (#67, the build_resolve

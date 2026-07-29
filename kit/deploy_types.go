@@ -7,7 +7,7 @@ package kit
 // owns a DISTINCT DeployExecutor — the reverse-channel executor in walk.go — so the
 // host-executor references spell it spec.DeployExecutor explicitly).
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 type (
 	EmitOpts       = spec.EmitOpts

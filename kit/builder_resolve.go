@@ -30,7 +30,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // pixiStageTemplate is the verbatim former builder.pixi.stage_template (cache-mount func →

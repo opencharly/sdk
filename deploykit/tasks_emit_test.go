@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // testResolvedBox returns a ResolvedBox suitable for feeding the task

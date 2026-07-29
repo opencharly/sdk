@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // killedProbeRetries bounds automatic re-attempts of a probe KILLED before it could

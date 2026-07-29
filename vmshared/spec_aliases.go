@@ -16,7 +16,7 @@
 // param — aliased as CandyYAML instead).
 package vmshared
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 type (
 	AliasConfig              = spec.AliasConfig

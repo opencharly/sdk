@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // vm_deploy_addressing.go — the BundleConfig-shaped VM deploy-state helpers (FLOOR-SLIM Unit 3,

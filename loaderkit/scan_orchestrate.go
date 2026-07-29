@@ -6,7 +6,7 @@ import (
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // scan_orchestrate.go — the candy-scan fetch-fixpoint ORCHESTRATION (K3 U4-b), relocated verbatim

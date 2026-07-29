@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // service_render_context.go — BuildServiceRenderContext, promoted from charly/service_render.go

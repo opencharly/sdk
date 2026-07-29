@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ProcessShutdownGrace bounds each stage of the graceful process-group

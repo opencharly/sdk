@@ -3,7 +3,7 @@ package kit
 import (
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // methodspec.go is the method-allowlist + positional-arg contract an EXTERNAL verb

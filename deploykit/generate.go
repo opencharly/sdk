@@ -8,7 +8,7 @@ import (
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // generate.go — the build-mode Containerfile RENDER DRIVE, homed in sdk/deploykit (#67

@@ -11,7 +11,7 @@ import (
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/proclifecycle"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // privileged_runner.go — the shared privileged-container exec primitive for both the

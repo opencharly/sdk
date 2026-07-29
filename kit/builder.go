@@ -19,7 +19,7 @@ package kit
 //     package-remove UninstallCmd later (fillReverseUninstallCmds), so only Kind/Format/Targets/
 //     Scope are named here.
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // BuilderCollectContext returns the builder-specific stage-context keys for `word` given the
 // host-supplied candy descriptor. An unknown word returns nil (a custom candy builder with no

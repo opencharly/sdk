@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // ResolvedSidecarFromSpec adapts one plugin-resolved spec.ResolvedSidecar into

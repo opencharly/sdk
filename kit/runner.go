@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // runner.go — the check-engine driver, relocated from charly core (P12). Runner is the

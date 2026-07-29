@@ -1,6 +1,6 @@
 package buildkit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // phase_template.go — the (phase, venue) → template-string resolvers for the
 // build-vocabulary FormatDef / BuilderDef. Pure over the CUE-sourced spec types

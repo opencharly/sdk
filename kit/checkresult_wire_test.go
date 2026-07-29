@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // checkresult_wire_test.go — the R-FS2 golden parity instrument (FLOOR-SLIM Unit 4, orchestrator

@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // candy_version.go — the per-entity candy-version ARBITER (K1-proper sub-phase A,

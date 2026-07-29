@@ -1,6 +1,6 @@
 package deploykit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // plugin_step_words.go — the shared word vocabulary for the 12 compiler-emitted InstallStep kinds
 // whose pod-overlay build-emit externalized to the compiled-in class:step plugin

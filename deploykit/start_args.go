@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // start_args.go — the detached-service container-run argv builder (K4 lane B: relocated from

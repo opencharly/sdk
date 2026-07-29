@@ -15,7 +15,7 @@ import (
 	"strconv"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // parseHostPorts extracts host-side ports from image port mappings via the

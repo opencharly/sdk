@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestCollectSecretsFromLabels / TestSecretArgs / TestCredServiceForSecret /

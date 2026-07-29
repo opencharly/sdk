@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // A probe KILLED before completing (signal, never produced a result) is re-attempted a

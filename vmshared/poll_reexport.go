@@ -7,7 +7,7 @@ package vmshared
 // plugins) compiling unchanged — the SAME sdk-side re-export pattern as
 // spec_aliases.go. ONE home per symbol: the definitions live in spec.
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 type (
 	PollCondition     = spec.PollCondition

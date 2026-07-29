@@ -3,7 +3,7 @@ package buildkit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // system_packages.go — the PURE build-context (container-venue) render of a

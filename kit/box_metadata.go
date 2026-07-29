@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // box_metadata.go — the OCI-label → BoxMetadata extraction mechanism (K4: relocated from

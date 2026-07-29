@@ -11,7 +11,7 @@ import (
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/proclifecycle"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // venue_builder.go — the VENUE-AGNOSTIC BuilderStep execution path (relocated from

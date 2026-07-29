@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/opencharly/sdk/proclifecycle"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // Tests for the localpkg subsystem relocated from charly core (W3): ResolveLocalPkgDir,

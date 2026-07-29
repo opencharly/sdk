@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/opencharly/sdk"
-	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // resolve_via_executor.go — the plugin-side substrate/resource RESOLVE callbacks the plugin-side loader

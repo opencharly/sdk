@@ -1,37 +1,41 @@
-# opencharly/sdk — the OpenCharly plugin SDK + contract repo
+# opencharly/sdk — the OpenCharly plugin SDK
 
-The single module every OpenCharly plugin imports — and the CONTRACT charly
-core itself consumes. It owns:
+The module every OpenCharly plugin imports — and the mechanism library charly
+core itself consumes. The wire/IR/param TYPES, the gRPC proto contract, and the
+CUE schema source it all derives from live in a SEPARATE contract module,
+**`github.com/opencharly/spec`**; this SDK is a CONSUMER of that module (it does
+NOT own or generate them). What this repo owns:
 
 - **`/` (package `sdk`)** — the go-plugin serve/handshake surface (`Serve`,
   `ServeCheckVerb`, `Main`, `Handshake`, `ProtocolVersion`), the executor
   reverse-channel client (`Executor`), capability building
-  (`BuildCapabilities`, `ProvidedCapability`, `StepContract`), the streaming
-  channel primitives (`RelayChannel`, `SequenceGate`, `ReplayBuffer`), and
-  shared verb/deploy helpers.
-- **`protocol/schema/`** — authoritative CUE model for every protobuf message,
-  field, service, and streaming method (`PluginMeta`, `Provider`,
-  `ExecutorService`, `CheckContextService`). `proto/` is generated output
-  only; regenerate with `task wire:gen`.
-- **`spec/`** — the GENERATED Go param + wire types (`cue exp gengotypes` over
-  `schema/`), plus the hand-written union/alias/method files. Never hand-edit
-  the `*_gen.go` files; run `task cue:gen`.
-- **`schema/`** — the CUE schema source (single source of truth for the
-  `charly.yml` ingress schema) exported as an embedded FS (`schema.FS`).
+  (`BuildCapabilities`, `ProvidedCapability`, `StepContract`), and the streaming
+  channel primitives (`RelayChannel`, `SequenceGate`, `ReplayBuffer`). It
+  consumes the wire types + proto stubs from `github.com/opencharly/spec`
+  (`spec`, `proto`) and the schema-concatenation contract
+  (`spec/schemaconcat`).
 - **`kit/`** — pure helpers for plugin authors (check-verb contract, deploy
   walk, shell/render/calver utilities, the shared process launch/lifecycle
-  helpers). Imports only stdlib (+ `x/sys/unix`) + `spec` + `vmshared` + yaml.
+  helpers). Imports only stdlib (+ `x/sys/unix`) + the `spec` module + `vmshared`
+  + yaml.
+- **`deploykit/`** — the InstallPlan step VOCABULARY: the concrete deploy/render
+  steps (quadlet, volumes, VM addressing, artifact retrieval, candy adapters)
+  plugins compose over the shared IR.
+- **`buildkit/`** — the pure Containerfile render/compute machinery.
+- **`enginekit/`** — the container-engine client mechanism (the single place
+  that talks to podman/docker).
+- **`loaderkit/`** — the importable form of charly's unified-config PARSE (the
+  parse half of `LoadUnified`), kept kind-blind via the threaded
+  kind-recognition snapshot.
 - **`agentkit/`** — the agent control plane: transport-independent workflow
   invariants (`Workflow`) and the daemon-free durable record store (`Store`).
 - **`targetkit/`** — transport-neutral gRPC connections to Charly targets
   (`DialProvider`/`DialProcessProvider` over exec/SSH stdio processes;
   `ServeStdio` on the target side).
-- **`schemaconcat/`** — the ONE schema-concatenation contract shared by the
-  runtime validator, the loader's base++plugin splice, and dev-time codegen.
+- **`proclifecycle/`** — a stdlib-only leaf package for process lifecycle.
+- **`sshx/`** — the in-process SSH client + tunnel helpers.
 - **`testkit/`** — disposable live protocol fixtures shared by SDK tests and
   consumers (e.g. the in-process SSH process server).
-- **`internal/wiregen/`** — the CUE→protobuf generator behind `task wire:gen`
-  (plus the bootstrap importer the model was imported with).
 - **`vmshared/`** — VM rendering + orchestration types shared by charly core
   and the VM-facing plugins (libvirt YAML/XML, qemu argv, cloud-init, OVMF,
   SMBIOS, ssh client/tunnel helpers).
@@ -46,19 +50,20 @@ immutable and add-only; minor (`YYYYDDD`) and patch (minutes-of-day) sort
 chronologically under semver comparison.
 
 The plugin PROTOCOL gates are carried separately: `sdk.ProtocolVersion` (the
-go-plugin handshake) and the schema CalVer (`kit.LatestSchemaVersion()`,
-generated from `schema/version.cue`, advertised in `Capabilities.calver`).
+go-plugin handshake) and the schema CalVer (`kit.LatestSchemaVersion()`, which
+reads the CUE-owned `spec.SchemaVersion` const from the `github.com/opencharly/spec`
+module, advertised in `Capabilities.calver`).
 
-## Regeneration
+## Schema + wire types
 
-- `task cue:gen` — the full CUE-owned regeneration: chains `wire:gen` first,
-  then regenerates `spec/{cue_types_gen,vocab_gen,version_gen}.go` from
-  `schema/*.cue` (self-bootstraps the pinned cue CLI into `./bin/cue`).
-  Reproducibility-gated by `TestGenReproducible`.
-- `task wire:gen` — regenerates `proto/plugin.proto` and the Go stubs from
-  `protocol/schema/*.cue` (self-bootstraps the pinned protoc + Go codegen
-  plugins into `./bin`).
-- `task proto:gen` — compatibility alias for `wire:gen`.
+The CUE schema source (the single source of truth for the `charly.yml` ingress
+schema), the generated Go param + wire types, the gRPC proto contract, and the
+whole `cue exp gengotypes` / proto codegen pipeline live in
+**`github.com/opencharly/spec`** — NOT in this repo. This SDK requires a tagged
+`spec` release and imports its `spec`, `proto`, and `spec/schemaconcat`
+packages. To change the schema or a wire type, edit and regenerate in the
+`opencharly/spec` module, tag it, then bump the `require github.com/opencharly/spec`
+version here.
 
 ## Consumers
 

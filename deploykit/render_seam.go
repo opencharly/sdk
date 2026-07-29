@@ -1,7 +1,7 @@
 package deploykit
 
 import (
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // render_seam.go — the per-method param/result structs for the HostBuild("render-seam")

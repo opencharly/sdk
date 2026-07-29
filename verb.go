@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"strings"
 
-	pb "github.com/opencharly/sdk/proto"
-	"github.com/opencharly/sdk/spec"
+	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/spec"
 )
 
 // verb.go carries the shared helpers every OUT-OF-PROCESS check-verb provider uses: the

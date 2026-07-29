@@ -3,7 +3,7 @@ package kit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // plugin_primary.go — the plugin-verb PRIMARY-input registry (K4: relocated from

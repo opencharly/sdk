@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	pb "github.com/opencharly/sdk/proto"
-	"github.com/opencharly/sdk/spec"
+	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/spec"
 )
 
 // Preview truncates a string to 400 chars (adding an ellipsis) for verdict error messages —

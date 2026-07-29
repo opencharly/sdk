@@ -2,9 +2,10 @@ package kit
 
 // calver.go — the parsed CalVer schema-version type + the HEAD schema version /
 // migration floor, shared by charly core's loader version gate and the in-core
-// `charly migrate` declarative engine. The HEAD value itself is CUE-OWNED
-// (schema/version.cue #SchemaVersion → the generated spec.SchemaVersion
-// const), which this file merely PARSES; there is no hand-maintained HEAD literal.
+// `charly migrate` declarative engine. The HEAD value itself is CUE-OWNED in the
+// `github.com/opencharly/spec` module (its `#SchemaVersion` → the generated
+// `spec.SchemaVersion` const), which this file merely PARSES; there is no
+// hand-maintained HEAD literal.
 // The PARSED CalVer struct lives in kit (NOT spec) because spec already binds
 // `CalVer = string` (the CUE wire scalar for `version:` fields) — a different
 // concept, kept out of spec for that name collision. Core aliases these via
@@ -16,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // CalVer is a parsed YYYY.DDD.HHMM calendar version. The same format that
@@ -110,10 +111,11 @@ func MustCalVer(s string) CalVer {
 }
 
 // latestSchemaVersion is the HEAD schema CalVer, PARSED from the CUE-owned
-// spec.SchemaVersion const (schema/version.cue #SchemaVersion, emitted by
-// `task cue:gen`). Every current-format versioned file is stamped to it and the
-// load-time gate requires it. Bump the schema HEAD by editing #SchemaVersion in
-// version.cue and running `task cue:gen` — never here.
+// `spec.SchemaVersion` const (the `#SchemaVersion` def in the
+// `github.com/opencharly/spec` module, emitted by that module's `task cue:gen`).
+// Every current-format versioned file is stamped to it and the load-time gate
+// requires it. Bump the schema HEAD by editing `#SchemaVersion` and regenerating
+// in the `opencharly/spec` module, then bump the `require` here — never in this file.
 var latestSchemaVersion = MustCalVer(spec.SchemaVersion)
 
 // schemaFloor is the OLDEST schema CalVer `charly migrate` can migrate FROM,

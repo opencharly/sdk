@@ -5,7 +5,7 @@ import (
 	"slices"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // InitConfig represents the `init:` section of the embedded vocabulary (charly/charly.yml).

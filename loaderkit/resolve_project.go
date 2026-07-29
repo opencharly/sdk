@@ -5,7 +5,7 @@ import (
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/deploykit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // resolve_project.go — the RESOLVED-project ENVELOPE ASSEMBLER (K3 build-engine, Unit 2 body). It is

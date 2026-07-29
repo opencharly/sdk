@@ -15,9 +15,9 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/opencharly/sdk/kit"
-	pb "github.com/opencharly/sdk/proto"
-	"github.com/opencharly/sdk/spec"
 	"github.com/opencharly/sdk/testkit"
+	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/spec"
 )
 
 type echoProvider struct{ pb.UnimplementedProviderServer }

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // merge.go — the kind-blind document MERGE half of the unified-config loader

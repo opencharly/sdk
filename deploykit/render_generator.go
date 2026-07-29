@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // Generator is the build-mode RENDER engine, homed in sdk/deploykit (P8).

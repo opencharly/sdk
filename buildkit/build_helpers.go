@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // build_helpers.go — pure build-engine helpers relocated out of charly core (the BUILD-cone

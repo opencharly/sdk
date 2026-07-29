@@ -1,6 +1,6 @@
 package deploykit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // box_engine.go — the two per-deploy engine-resolution functions with NO project-loader
 // dependency (K4: relocated from charly/engine.go). Homed here (not kit) because

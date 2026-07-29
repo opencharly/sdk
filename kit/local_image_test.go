@@ -3,7 +3,7 @@ package kit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // local_image_test.go — P12a: relocated from charly/local_image_test.go.

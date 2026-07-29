@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // fakeExec is a recording kit.DeployExecutor: it captures PutFile placements + RunSystem/

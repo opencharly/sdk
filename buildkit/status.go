@@ -1,6 +1,6 @@
 package buildkit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // status.go — the candy/box maturity-rung helpers relocated from charly/generate.go (the
 // BUILD-cone cutover). Pure over spec.CandyReader; no loader/registry coupling.

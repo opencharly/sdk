@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 func TestSortedEnvPairs(t *testing.T) {

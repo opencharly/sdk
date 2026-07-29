@@ -1,6 +1,6 @@
 package buildkit
 
-import "github.com/opencharly/sdk/spec"
+import "github.com/opencharly/spec/spec"
 
 // candy_reader_fake_test.go — a minimal spec.CandyReader test double shared by every
 // buildkit test that needs to hand a candy to status.go / capabilities.go / init_config.go.

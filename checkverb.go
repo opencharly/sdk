@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/opencharly/sdk/kit"
-	pb "github.com/opencharly/sdk/proto"
-	"github.com/opencharly/sdk/spec"
+	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/spec"
 )
 
 // ServeCheckVerb serves a HOST-COUPLED check verb (kit.CheckVerbProvider) OUT-OF-PROCESS

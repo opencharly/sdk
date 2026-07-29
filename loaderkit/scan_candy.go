@@ -9,7 +9,7 @@ import (
 
 	"github.com/opencharly/sdk/deploykit"
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // scan_candy.go — the candy-scan MECHANISM (W9: the type-Candy + scan-machinery move), ported

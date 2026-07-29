@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // commandProcess is the shared lifecycle implementation for exact-argv

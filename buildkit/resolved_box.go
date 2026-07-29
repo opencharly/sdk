@@ -4,7 +4,7 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // Aliases onto the CUE-sourced spec types ResolvedBox references (DistroDef /

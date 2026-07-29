@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestSplitHostKey / TestCollectHostRefs: relocated from

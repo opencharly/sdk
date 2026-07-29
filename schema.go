@@ -8,9 +8,9 @@ import (
 
 	"cuelang.org/go/cue/cuecontext"
 
-	pb "github.com/opencharly/sdk/proto"
-	"github.com/opencharly/sdk/schemaconcat"
-	"github.com/opencharly/sdk/spec"
+	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/schemaconcat"
+	"github.com/opencharly/spec/spec"
 )
 
 // ProvidedCapability is one capability a plugin serves plus the CUE def that

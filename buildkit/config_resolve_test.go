@@ -3,7 +3,7 @@ package buildkit
 import (
 	"testing"
 
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // config_resolve_test.go — sdk-level coverage for the box-resolution free functions relocated out

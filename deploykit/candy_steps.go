@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/spec"
+	"github.com/opencharly/spec/spec"
 )
 
 // WriteCandySteps writes the RUN steps for a single candy (the per-candy render
