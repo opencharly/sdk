@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
-	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // TaskAutoExports are the auto-exported variable names reserved for the generator;
@@ -275,8 +275,8 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(&envPrefix, " export %s=%s;", k, kit.ShellQuote(t.Env[k]))
-			fmt.Fprintf(&envForSh, " %s=%s", k, kit.ShellQuote(t.Env[k]))
+			fmt.Fprintf(&envPrefix, " export %s=%s;", k, spec.ShellQuote(t.Env[k]))
+			fmt.Fprintf(&envForSh, " %s=%s", k, spec.ShellQuote(t.Env[k]))
 		}
 	}
 
@@ -339,7 +339,7 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		mounts = append(mounts, buildkit.OwnedCacheMount("/tmp/downloads", img.UID, img.GID).String())
 	}
 	mounts = append(mounts, cacheMounts...)
-	b.WriteString("RUN " + strings.Join(mounts, " ") + " bash -c " + kit.ShellQuote(cmd) + "\n")
+	b.WriteString("RUN " + strings.Join(mounts, " ") + " bash -c " + spec.ShellQuote(cmd) + "\n")
 	return nil
 }
 
@@ -376,7 +376,7 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(b, "export %s=%s\n", k, kit.ShellQuote(t.Env[k]))
+			fmt.Fprintf(b, "export %s=%s\n", k, spec.ShellQuote(t.Env[k]))
 		}
 	}
 	b.WriteString("set -e\n")

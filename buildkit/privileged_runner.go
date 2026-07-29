@@ -10,7 +10,7 @@ import (
 	"text/template"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/proclifecycle"
+	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -19,7 +19,7 @@ import (
 // build engine (candy/plugin-vm). Formerly duplicated (charly/privileged_runner.go +
 // candy/plugin-vm/vm_privileged_runner.go, byte-for-byte identical bodies) — unified here
 // per R3, since every dependency (kit.ResolveRuntime/EngineBinary/TransferToRootful,
-// proclifecycle.RegisterTempCleanup/UnregisterTempCleanup, spec.Phase/Venue enums,
+// proc.RegisterTempCleanup/UnregisterTempCleanup, spec.Phase/Venue enums,
 // TemplateFuncs/BuilderPhaseTemplate) is already sdk-importable and neither caller needs
 // anything core-only.
 
@@ -86,8 +86,8 @@ func RunPrivileged(p PrivilegedRun) error {
 		if err != nil {
 			return fmt.Errorf("creating staging dir: %w", err)
 		}
-		proclifecycle.RegisterTempCleanup(hostStaging)
-		defer proclifecycle.UnregisterTempCleanup(hostStaging)
+		proc.RegisterTempCleanup(hostStaging)
+		defer proc.UnregisterTempCleanup(hostStaging)
 		stagingDir = filepath.Dir(p.OutputPath)
 		args = append(args, "-v", fmt.Sprintf("%s:%s", hostStaging, stagingDir))
 	}

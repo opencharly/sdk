@@ -50,7 +50,7 @@ import (
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/proclifecycle"
+	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -235,12 +235,12 @@ func BuildLocalPkgOnHost(ctx context.Context, lp *LocalPkgDef, srcDir string, op
 	if err != nil {
 		return nil, fmt.Errorf("localpkg build output tempdir: %w", err)
 	}
-	proclifecycle.RegisterTempCleanup(pkgDest)
+	proc.RegisterTempCleanup(pkgDest)
 	keepArtifacts := false
 	defer func() {
 		if !keepArtifacts {
 			_ = os.RemoveAll(pkgDest)
-			proclifecycle.UnregisterTempCleanup(pkgDest)
+			proc.UnregisterTempCleanup(pkgDest)
 		}
 	}()
 
@@ -276,10 +276,10 @@ func stageLocalPkgSource(srcDir string) (string, func(), error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("localpkg source tempdir: %w", err)
 	}
-	proclifecycle.RegisterTempCleanup(stageRoot)
+	proc.RegisterTempCleanup(stageRoot)
 	release := func() {
 		_ = os.RemoveAll(stageRoot)
-		proclifecycle.UnregisterTempCleanup(stageRoot)
+		proc.UnregisterTempCleanup(stageRoot)
 	}
 	stageDir := filepath.Join(stageRoot, "source")
 	if err := copyLocalPkgSource(srcDir, stageDir); err != nil {
@@ -485,7 +485,7 @@ func CleanupBuiltPackageFiles(pkgFiles []string) error {
 	for dir := range dirs {
 		info, statErr := os.Lstat(dir)
 		if errors.Is(statErr, os.ErrNotExist) {
-			proclifecycle.UnregisterTempCleanup(dir)
+			proc.UnregisterTempCleanup(dir)
 			continue
 		}
 		if statErr != nil {
@@ -500,7 +500,7 @@ func CleanupBuiltPackageFiles(pkgFiles []string) error {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove package artifact directory %s: %w", dir, removeErr))
 			continue
 		}
-		proclifecycle.UnregisterTempCleanup(dir)
+		proc.UnregisterTempCleanup(dir)
 	}
 	return cleanupErr
 }
@@ -572,12 +572,12 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, bDef *BuilderDef, bu
 	if err != nil {
 		return nil, fmt.Errorf("dependency staging mkdir: %w", err)
 	}
-	proclifecycle.RegisterTempCleanup(hostStage)
+	proc.RegisterTempCleanup(hostStage)
 	keepArtifacts := false
 	defer func() {
 		if !keepArtifacts {
 			_ = os.RemoveAll(hostStage)
-			proclifecycle.UnregisterTempCleanup(hostStage)
+			proc.UnregisterTempCleanup(hostStage)
 		}
 	}()
 
@@ -605,7 +605,7 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, bDef *BuilderDef, bu
 		"# build tree, so the inner script's find may run after the tree is\n" +
 		"# already wiped. Broaden the search if /tmp/aur-pkgs is still empty.\n" +
 		"if [ -z \"$(ls -A /tmp/aur-pkgs 2>/dev/null)\" ]; then\n" +
-		"  find / -name " + kit.ShellQuote(lp.PkgGlob) + " 2>/dev/null -exec cp {} /tmp/aur-pkgs/ \\;\n" +
+		"  find / -name " + spec.ShellQuote(lp.PkgGlob) + " 2>/dev/null -exec cp {} /tmp/aur-pkgs/ \\;\n" +
 		"fi\n" +
 		"# Rootless-podman userns fix: files created by container user\n" +
 		"# 1000 land in the host's subuid range and become unreadable to\n" +

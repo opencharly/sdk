@@ -28,6 +28,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // LibvirtURI is the parsed form of an `charly --uri …` value.
@@ -75,7 +77,7 @@ func ParseLibvirtURI(s string) (LibvirtURI, error) {
 		Port: 22,
 	}
 	if target.User == "" {
-		target.User = currentUsername()
+		target.User = spec.CurrentUsername()
 	}
 	if p := u.Port(); p != "" {
 		n, err := strconv.Atoi(p)

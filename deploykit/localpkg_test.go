@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opencharly/sdk/proclifecycle"
+	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -423,7 +423,7 @@ func TestCleanupBuiltPackageFilesIsScopedAndIdempotent(t *testing.T) {
 	if err := os.WriteFile(file, []byte("fixture"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	proclifecycle.RegisterTempCleanup(dir)
+	proc.RegisterTempCleanup(dir)
 	if err := CleanupBuiltPackageFiles([]string{file}); err != nil {
 		t.Fatal(err)
 	}

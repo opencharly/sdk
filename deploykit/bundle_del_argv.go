@@ -3,7 +3,7 @@ package deploykit
 // BundleDelArgv returns the argv (everything after the charly binary) for a non-interactive
 // `charly bundle del <name>`: the verb, the name, and the ONE valid skip-confirmation flag. Every
 // programmatic teardown builds its command through this single helper — in-process
-// (proclifecycle.RunCharlySubcommand), out-of-process (exec.Command), and the systemd-run TTL
+// (proc.RunCharlySubcommand), out-of-process (exec.Command), and the systemd-run TTL
 // timer — so the flag can never drift across call sites again (R3 hoist: this was byte-identically
 // duplicated in charly core, candy/plugin-bundle, and candy/plugin-substrate).
 //

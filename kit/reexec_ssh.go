@@ -37,6 +37,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // ReexecOverSSH rewrites os.Args by stripping --host and the client-
@@ -206,9 +208,9 @@ func sshCmdArgsWithEndpoint(target, remoteBinary, identityFile string, options, 
 	for _, option := range options {
 		args = append(args, "-o", option)
 	}
-	remote := ShellQuote(remoteBinary)
+	remote := spec.ShellQuote(remoteBinary)
 	for _, arg := range remoteArgv {
-		remote += " " + ShellQuote(arg)
+		remote += " " + spec.ShellQuote(arg)
 	}
 	args = append(args, destination, remote)
 	return args, nil

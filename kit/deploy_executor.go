@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // DeployExecutor abstracts shell execution + file placement for deploy
@@ -294,7 +296,7 @@ func fmtOctal(mode uint32) string {
 // deployShellQuote wraps a string in single-quotes for safe embedding in a
 // bash script. Handles embedded single quotes via the standard
 // 'foo'\”bar' trick.
-// (FU-13: folded onto ShellQuote — the behaviourally identical POSIX single-quoter, proven by
+// (FU-13: folded onto spec.ShellQuote — the behaviourally identical POSIX single-quoter, proven by
 // TestShellSingleQuoters_CanonicalPOSIX, that core already shares with the plugins/check path; the
 // shell-single-quote transform now lives ONCE — R3.)
-var deployShellQuote = ShellQuote
+var deployShellQuote = spec.ShellQuote

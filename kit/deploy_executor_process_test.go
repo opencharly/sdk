@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opencharly/sdk/testkit"
 	"github.com/opencharly/spec/spec"
+	"github.com/opencharly/spec/testkit"
 )
 
 func TestShellExecutorStartProcessPreservesArgvAndPipes(t *testing.T) {

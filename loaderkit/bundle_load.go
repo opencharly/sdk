@@ -12,7 +12,7 @@ package loaderkit
 //
 // The DEPLOY-half — bringUpMembers / tearDownMembers / isPodMember / isVmMember / withMemberTag —
 // STAYS host-resident (charly/bundle_members.go) per the lead's U1 SPLIT ruling: it shells out via
-// proclifecycle.RunCharlySubcommand + reads the live provider registry (nodeTraits), so it is NOT
+// proc.RunCharlySubcommand + reads the live provider registry (nodeTraits), so it is NOT
 // registry-free and does NOT belong here.
 
 import (

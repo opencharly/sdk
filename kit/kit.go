@@ -183,12 +183,10 @@ func Passf(format string, a ...any) Result { return Pass(fmt.Sprintf(format, a..
 func Failf(format string, a ...any) Result { return Fail(fmt.Sprintf(format, a...)) }
 func Skipf(format string, a ...any) Result { return Skip(fmt.Sprintf(format, a...)) }
 
-// ShellQuote wraps s in single quotes for safe interpolation into a shell command
-// (the importable analogue of charly's shellSingleQuote). Embedded single quotes are
-// escaped as '\”.
-func ShellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
+// ShellQuote moved to the fabric slice github.com/opencharly/spec/spec
+// (shellquote.go, #55 step1) — a pure stdlib POSIX single-quoter is a fabric
+// primitive single-sourced in the spec contract module; every former
+// spec.ShellQuote caller now calls spec.ShellQuote.
 
 // TrimPreview truncates s to a 200-char preview (trailing "…") for compact check-output
 // display.

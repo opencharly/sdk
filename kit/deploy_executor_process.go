@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -57,7 +58,7 @@ func (p *commandProcess) Wait() error {
 
 func (p *commandProcess) Close() error {
 	p.close.Do(func() {
-		ShutdownProcessGroup(p.cmd, p.stdin, p.done)
+		proc.ShutdownProcessGroup(p.cmd, p.stdin, p.done)
 	})
 	err := p.Wait()
 	var exit *exec.ExitError
@@ -101,7 +102,7 @@ func (ShellExecutor) StartProcess(ctx context.Context, launch spec.ProcessLaunch
 	}
 	cmd := exec.CommandContext(ctx, launch.Argv[0], launch.Argv[1:]...)
 	cmd.Dir = launch.WorkingDir
-	cmd.Env = append(os.Environ(), SortedEnvPairs(launch.Env)...)
+	cmd.Env = append(os.Environ(), proc.SortedEnvPairs(launch.Env)...)
 	return startCommandProcess(cmd)
 }
 
@@ -113,7 +114,7 @@ func (e *SSHExecutor) StartProcess(ctx context.Context, launch spec.ProcessLaunc
 		return nil, err
 	}
 	args := e.SSHBaseArgs()
-	args = append(args, RemoteLaunchCommand(launch))
+	args = append(args, proc.RemoteLaunchCommand(launch))
 	return startCommandProcess(exec.CommandContext(ctx, "ssh", args...))
 }
 
@@ -138,7 +139,7 @@ func (n *NestedExecutor) StartProcess(ctx context.Context, launch spec.ProcessLa
 		if launch.WorkingDir != "" {
 			outer = append(outer, "--workdir", launch.WorkingDir)
 		}
-		for _, pair := range SortedEnvPairs(launch.Env) {
+		for _, pair := range proc.SortedEnvPairs(launch.Env) {
 			outer = append(outer, "--env", pair)
 		}
 		outer = append(outer, n.Jump.Target)
@@ -147,7 +148,7 @@ func (n *NestedExecutor) StartProcess(ctx context.Context, launch spec.ProcessLa
 		if launch.WorkingDir != "" {
 			outer = append(outer, "--workdir", launch.WorkingDir)
 		}
-		for _, pair := range SortedEnvPairs(launch.Env) {
+		for _, pair := range proc.SortedEnvPairs(launch.Env) {
 			outer = append(outer, "--env", pair)
 		}
 		outer = append(outer, n.Jump.Target)
@@ -155,7 +156,7 @@ func (n *NestedExecutor) StartProcess(ctx context.Context, launch spec.ProcessLa
 		outer = append([]string{"ssh", "-T"}, nestedSSHLogArgs()...)
 		outer = append(outer, n.Jump.ExtraArgs...)
 		outer = append(outer, n.Jump.Target)
-		outer = append(outer, RemoteLaunchCommand(launch))
+		outer = append(outer, proc.RemoteLaunchCommand(launch))
 	case JumpVirshConsole:
 		return nil, fmt.Errorf("NestedExecutor process over virsh console: %w", spec.ErrNotSupported)
 	default:
