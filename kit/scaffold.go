@@ -6,14 +6,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
 
 // scaffold.go — the project/candy/box authoring ENGINE (the `charly box new` machinery), relocated
 // from charly core so BOTH the core CLI (`charly box new`) AND the Wave-2 command:box plugin drive
-// ONE shared authoring library (R3). Pure fs + yaml.v3; the only charly-layout knowledge is the kit
-// layout constants (UnifiedFileName/DefaultCandyDir/DefaultBoxDir) kit already owns. The functions do
-// the filesystem work and return; the CALLER owns user-facing output (so kit stays presentation-free).
+// ONE shared authoring library (R3). Pure fs + yaml.v3; the only charly-layout knowledge is the
+// canonical manifest name spec.UnifiedFileName (moved to spec in #55 Phase B) plus the kit layout
+// constants DefaultCandyDir/DefaultBoxDir. The functions do the filesystem work and return; the
+// CALLER owns user-facing output (so kit stays presentation-free).
 //
 // Wall-clock stays out of kit: ScaffoldCandy takes the candy's `version:` CalVer as a param (the
 // caller passes charly's ComputeCalVer()), mirroring how the migrate helpers avoid reading the clock.
@@ -77,7 +79,7 @@ func ScaffoldCandy(dir, name, calver string) error {
 		return fmt.Errorf("creating candy directory: %w", err)
 	}
 
-	candyYml := filepath.Join(candyDir, UnifiedFileName)
+	candyYml := filepath.Join(candyDir, spec.UnifiedFileName)
 	candyContent := fmt.Sprintf(`# %s candy config
 %s:
     candy:
@@ -90,7 +92,7 @@ func ScaffoldCandy(dir, name, calver string) error {
               file: /etc/os-release
 `, name, name, calver, name, name)
 	if err := os.WriteFile(candyYml, []byte(candyContent), 0644); err != nil {
-		return fmt.Errorf("creating %s: %w", UnifiedFileName, err)
+		return fmt.Errorf("creating %s: %w", spec.UnifiedFileName, err)
 	}
 	return nil
 }
@@ -105,7 +107,7 @@ func ScaffoldProject(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating project directory: %w", err)
 	}
-	charlyPath := filepath.Join(dir, UnifiedFileName)
+	charlyPath := filepath.Join(dir, spec.UnifiedFileName)
 	if _, err := os.Stat(charlyPath); err == nil {
 		return fmt.Errorf("charly.yml already exists at %s; refusing to overwrite", charlyPath)
 	}
@@ -136,7 +138,7 @@ func AddBox(dir, name, base string, layers []string) error {
 	if name == "" {
 		return fmt.Errorf("box name must be specified")
 	}
-	dest := filepath.Join(dir, DefaultBoxDir, name, UnifiedFileName)
+	dest := filepath.Join(dir, DefaultBoxDir, name, spec.UnifiedFileName)
 	if FileExists(dest) {
 		return fmt.Errorf("box %q already exists at %s", name, dest)
 	}

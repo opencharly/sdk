@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
@@ -86,7 +85,7 @@ func RepoIdentity(ref, baseDir string) string {
 // to the `git remote origin` identity of the working tree. Returns "" when neither is available
 // (the loader then behaves exactly as before — version-keyed, no self-identity short-circuit).
 func RootRepoIdentity(dir string) string {
-	if data, err := os.ReadFile(filepath.Join(dir, kit.UnifiedFileName)); err == nil {
+	if data, err := os.ReadFile(filepath.Join(dir, spec.UnifiedFileName)); err == nil {
 		var head struct {
 			Repo string `yaml:"repo" json:"repo"`
 		}

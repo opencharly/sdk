@@ -18,21 +18,10 @@ import (
 
 type MCPProvideEntry = spec.MCPProvideEntry
 
-// EnvProvideEntry is a resolved env_provides entry in charly.yml.
-type EnvProvideEntry struct {
-	Name   string `yaml:"name" json:"name"`
-	Value  string `yaml:"value" json:"value"`
-	Source string `yaml:"source" json:"source"`
-}
-
-func (e EnvProvideEntry) GetName() string   { return e.Name }
-func (e EnvProvideEntry) GetSource() string { return e.Source }
-
-// ProvidesConfig holds all resolved provides entries in charly.yml.
-type ProvidesConfig struct {
-	Env []EnvProvideEntry `yaml:"env,omitempty" json:"env,omitempty"`
-	MCP []MCPProvideEntry `yaml:"mcp,omitempty" json:"mcp,omitempty"`
-}
+// EnvProvideEntry + ProvidesConfig (the resolved provides DATA) moved to spec (loadmodel.go) with the
+// loader-result family in #55 Phase B (UnifiedFile.Provides is *spec.ProvidesConfig now). This package
+// keeps the provides PIPELINE (FilterOwnProvides/PodAwareEnvProvides/ResolveTemplate/…), consuming the
+// spec types.
 
 // FilterOwnProvides removes entries injected by the given image (self-exclusion).
 // Kept for RemoveBySource and other callers that need strict exclusion.

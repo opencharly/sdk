@@ -40,34 +40,34 @@ type LoadSeams struct {
 	// MaterializeLoadedProject replays the host's per-document/per-namespace
 	// MATERIALIZE + root-wins MERGE over the walk envelope, reconstructing merged
 	// (registry kind-decode via the registered spec.Materializer).
-	MaterializeLoadedProject func(lp *spec.LoadedProject, merged *UnifiedFile, byID map[int64]*UnifiedFile) error
+	MaterializeLoadedProject func(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile) error
 	// FlattenBundleVenues stamps every plan step's execution venue from its
 	// bundle-tree position and hoists member/child steps into the root Plan.
-	FlattenBundleVenues func(uf *UnifiedFile) error
+	FlattenBundleVenues func(uf *spec.UnifiedFile) error
 	// FoldMembers copies every deploy node's `peer:` entries into the Bundle map
 	// as top-level addressable entries. Its relocation (if any) is a FINAL/K5
 	// decision (bundle_members.go) — it stays host-resident, reached only via
 	// this seam.
-	FoldMembers func(uf *UnifiedFile) error
+	FoldMembers func(uf *spec.UnifiedFile) error
 	// StampBundleDescents stamps every deploy node's venue-hop descent
 	// descriptor (P9 DeployTraits, resolved from the provider registry).
-	StampBundleDescents func(uf *UnifiedFile)
+	StampBundleDescents func(uf *spec.UnifiedFile)
 	// ValidateEphemeral auto-promotes disposable:true on ephemeral entries and
 	// validates the ephemeral / vm-naming invariants.
-	ValidateEphemeral func(uf *UnifiedFile) error
+	ValidateEphemeral func(uf *spec.UnifiedFile) error
 	// ValidateCheckBeds enforces the kind:check bed invariants (disposable,
 	// cross-ref, external-substrate recognition via the provider registry).
-	ValidateCheckBeds func(uf *UnifiedFile) error
+	ValidateCheckBeds func(uf *spec.UnifiedFile) error
 	// ValidateAndroidDevices enforces the kind:android box⊻adb XOR (resolves
 	// android templates via the plugin-substrate provider).
-	ValidateAndroidDevices func(uf *UnifiedFile) error
+	ValidateAndroidDevices func(uf *spec.UnifiedFile) error
 	// ValidateMembers enforces the member-specific invariants beyond the generic
 	// deploy validation. Paired with FoldMembers under the same FINAL/K5 ruling.
-	ValidateMembers func(uf *UnifiedFile) error
+	ValidateMembers func(uf *spec.UnifiedFile) error
 	// ValidatePreemptible validates preemptible/requires_exclusive/requires_shared
 	// across the deploy map, including the resource-vocabulary cross-check
 	// (resolves the `resource:` plugin kind via the provider registry).
-	ValidatePreemptible func(uf *UnifiedFile) error
+	ValidatePreemptible func(uf *spec.UnifiedFile) error
 }
 
 // GateSchemaVersion enforces the load-time schema-version contract: a config
@@ -96,17 +96,17 @@ func GateSchemaVersion(root, version string) error {
 // Images/ImageSingular and Deploys/DeploySingular fields collapsed into single
 // canonical singular fields with matching yaml tags. Function kept as a no-op so
 // external callers don't break; remove on next refactor pass.
-func NormalizeV4Aliases(u *UnifiedFile) {
+func NormalizeV4Aliases(u *spec.UnifiedFile) {
 	_ = u
 }
 
 // LoadUnified reads <dir>/charly.yml and returns the fully loaded, validated
-// *UnifiedFile — the kind-blind orchestration ported verbatim from charly's
+// *spec.UnifiedFile — the kind-blind orchestration ported verbatim from charly's
 // former inline LoadUnified body. Every registry-coupled or standing-core-
 // resident step is reached through seams; LoadUnified itself never imports or
 // touches the provider registry.
-func LoadUnified(dir string, seams LoadSeams) (*UnifiedFile, bool, error) {
-	root := filepath.Join(dir, kit.UnifiedFileName)
+func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
+	root := filepath.Join(dir, spec.UnifiedFileName)
 	if !kit.FileExists(root) {
 		return nil, false, nil
 	}
@@ -142,9 +142,9 @@ func LoadUnified(dir string, seams LoadSeams) (*UnifiedFile, bool, error) {
 		return nil, true, err
 	}
 	// MATERIALIZE + root-wins MERGE (host, registry kind-decode) → the typed
-	// *UnifiedFile, exactly as the former inline loadUnifiedInto did.
-	merged := &UnifiedFile{}
-	if err := seams.MaterializeLoadedProject(&lp, merged, map[int64]*UnifiedFile{}); err != nil {
+	// *spec.UnifiedFile, exactly as the former inline loadUnifiedInto did.
+	merged := &spec.UnifiedFile{}
+	if err := seams.MaterializeLoadedProject(&lp, merged, map[int64]*spec.UnifiedFile{}); err != nil {
 		return nil, true, err
 	}
 	NormalizeV4Aliases(merged)

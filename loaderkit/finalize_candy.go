@@ -107,7 +107,7 @@ func CompleteCandyRunOps(m *spec.CandyModel, v *spec.CandyView) {
 
 // FinalizeScannedCandies is the SOLE choke point that produces a spec.CandyReader: every
 // construction path (ScanCandy, legacyScanCandiesDirScanned via scanLocalCandies,
-// (*loaderkit.UnifiedFile).projectCandiesScanned via scanLocalCandies, and
+// (*loaderkit.spec.UnifiedFile).projectCandiesScanned via scanLocalCandies, and
 // ScanAllCandyWithConfigOpts over its combined local+remote set) funnels through here, so no
 // path can ever wrap a candy with a term (InitSystems, RunOps) still missing — there is no
 // OTHER way to obtain a spec.CandyReader. Order: InitSystems (initCfg-gated; a nil initCfg is a

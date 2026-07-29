@@ -17,7 +17,7 @@ import (
 
 // StampBundleDescents stamps every deploy node's venue-hop descent descriptor from the DeployTraits
 // DATA snapshot, replacing the former registry-live charly stampBundleDescents. Idempotent.
-func StampBundleDescents(uf *UnifiedFile, t spec.Threaded) {
+func StampBundleDescents(uf *spec.UnifiedFile, t spec.Threaded) {
 	if uf == nil {
 		return
 	}

@@ -79,9 +79,9 @@ func ValidateVmNamingGuard(name string, d *spec.Diagnostics) {
 
 // ValidateEphemeralUnified is the LoadSeams.ValidateEphemeral entry point: it auto-promotes
 // disposable:true on ephemeral entries and validates the ephemeral / vm-naming invariants across the
-// UnifiedFile's Bundle map, reading the DeployTraits DATA snapshot t. Moved verbatim (behaviour-
+// spec.UnifiedFile's Bundle map, reading the DeployTraits DATA snapshot t. Moved verbatim (behaviour-
 // preserving) from charly's validateEphemeralUnified.
-func ValidateEphemeralUnified(uf *UnifiedFile, t spec.Threaded) error {
+func ValidateEphemeralUnified(uf *spec.UnifiedFile, t spec.Threaded) error {
 	if uf == nil {
 		return nil
 	}

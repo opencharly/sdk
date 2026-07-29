@@ -20,7 +20,7 @@ import (
 // rides in as a CALLBACK the caller supplies: charly core passes its in-proc registry invokers
 // (resolveDistroViaPlugin/resolveInitConfigViaPlugin), and plugin-build passes InvokeProvider-backed
 // callbacks over its reverse channel — same wrapper, either placement. The builder bodies decode
-// PURELY (DecodePluginKindMap), so ProjectBuilderConfig needs no callback.
+// PURELY (spec.DecodePluginKindMap), so ProjectBuilderConfig needs no callback.
 //
 // The loaderkit→buildkit import edge is acyclic: buildkit imports only sdk/kit (a pure leaf) — it
 // imports neither loaderkit nor charly (verified).
@@ -28,8 +28,8 @@ import (
 // ProjectDistroConfig reconstructs the *buildkit.DistroConfig (distro: section) from uf, resolving
 // each opaque `distro` body via the caller-supplied resolveDistro callback (the distro plugin's
 // OpResolve leg). Nil when no distros are configured.
-func ProjectDistroConfig(uf *UnifiedFile, resolveDistro func(json.RawMessage) (*spec.ResolvedDistro, error)) *buildkit.DistroConfig {
-	distros := ResolvePluginKindViaPlugin(uf, "distro", resolveDistro)
+func ProjectDistroConfig(uf *spec.UnifiedFile, resolveDistro func(json.RawMessage) (*spec.ResolvedDistro, error)) *buildkit.DistroConfig {
+	distros := spec.ResolvePluginKindViaPlugin(uf, "distro", resolveDistro)
 	if len(distros) == 0 {
 		return nil
 	}
@@ -37,10 +37,10 @@ func ProjectDistroConfig(uf *UnifiedFile, resolveDistro func(json.RawMessage) (*
 }
 
 // ProjectBuilderConfig reconstructs the *buildkit.BuilderConfig (builder: section) from uf. The
-// builder bodies decode purely (DecodePluginKindMap) — no OpResolve callback needed. Nil when no
+// builder bodies decode purely (spec.DecodePluginKindMap) — no OpResolve callback needed. Nil when no
 // builders are configured.
-func ProjectBuilderConfig(uf *UnifiedFile) *buildkit.BuilderConfig {
-	builders := DecodePluginKindMap[buildkit.BuilderDef](uf, "builder")
+func ProjectBuilderConfig(uf *spec.UnifiedFile) *buildkit.BuilderConfig {
+	builders := spec.DecodePluginKindMap[buildkit.BuilderDef](uf, "builder")
 	if len(builders) == 0 {
 		return nil
 	}
@@ -50,8 +50,8 @@ func ProjectBuilderConfig(uf *UnifiedFile) *buildkit.BuilderConfig {
 // ProjectInitConfig reconstructs the *buildkit.InitConfig (init: section) from uf, resolving each
 // opaque `init` body via the caller-supplied resolveInit callback (the init plugin's OpResolve
 // config leg). Nil when no init systems are configured.
-func ProjectInitConfig(uf *UnifiedFile, resolveInit func(json.RawMessage) (*spec.ResolvedInit, error)) *buildkit.InitConfig {
-	inits := ResolvePluginKindViaPlugin(uf, "init", resolveInit)
+func ProjectInitConfig(uf *spec.UnifiedFile, resolveInit func(json.RawMessage) (*spec.ResolvedInit, error)) *buildkit.InitConfig {
+	inits := spec.ResolvePluginKindViaPlugin(uf, "init", resolveInit)
 	if len(inits) == 0 {
 		return nil
 	}

@@ -2,7 +2,7 @@
 // validateNamespaceAlias. The kind-blind document directives (ImportList/ImportEntry,
 // DiscoverConfig/ScanSpec, anchorScanSpecs, docShape/classifyDoc) relocated to sdk/kit
 // (loader_directives.go + loader_classify.go) so charly core AND sdk/loaderkit share ONE copy (R3) —
-// see kit.ImportList / kit.DiscoverConfig / kit.AnchorScanSpecs / kit.ClassifyDoc.
+// see spec.ImportList / spec.DiscoverConfig / kit.AnchorScanSpecs / kit.ClassifyDoc.
 package loaderkit
 
 import (

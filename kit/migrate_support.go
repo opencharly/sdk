@@ -7,11 +7,11 @@ package kit
 // module and its cross-boundary contract were folded away); only these constants — read on
 // the current-format load + ledger paths, not migration — remain here.
 
-// Project path constants shared by core and kit. Core aliases each via `const X = kit.X`.
+// Layout path constants shared by core and kit. (The canonical manifest filename moved to
+// spec.UnifiedFileName in #55 Phase B — it is loader-result DATA the types-only spec module owns.)
 const (
-	UnifiedFileName = "charly.yml" // the ONE box/candy manifest filename
-	DefaultBoxDir   = "box"        // discovered box/<name>/ directory
-	DefaultCandyDir = "candy"      // discovered candy/<name>/ directory
+	DefaultBoxDir   = "box"   // discovered box/<name>/ directory
+	DefaultCandyDir = "candy" // discovered candy/<name>/ directory
 )
 
 // LedgerSchemaVersion is the install-ledger record format version, DECOUPLED from

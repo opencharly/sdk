@@ -1,19 +1,17 @@
 package loaderkit
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/opencharly/sdk/buildkit"
 )
 
-// resolve_opts.go — the loader-config OPTIONS + the loader VALIDATION accumulator, relocated from
-// charly core (config.go's ResolveOpts + validate.go's ValidationError) in the #118 Cluster-A
-// loader-projection keystone. Both are loader types (not charly-core capability), so they live in
-// loaderkit where charly core AND the loader-consuming plugins share ONE definition (R3, ZERO
-// charly-core alias). ResolveOpts is DISTINCT from buildkit.ResolveOpts (the build-resolve options):
-// this is the SCAN/LOAD options the candy scan + project validation consume; the moved buildkit
-// resolvers never read ExtraCandyRefs/InitCfg/RequestedBoxes.
+// resolve_opts.go — the loader-config OPTIONS (ResolveOpts). ValidationError (the loader validation
+// accumulator) moved to spec (loadmodel.go) with the loader-result family in #55 Phase B, but
+// ResolveOpts STAYS here: it embeds *buildkit.{Init,Distro,Builder}Config — buildkit MECHANISM config
+// (ResolveDistro/ExpandPackageInheritance/ResolveInitSystem), which spec (types-only) must never
+// import — so ResolveOpts is correctly-placed loader mechanism, not a wire type. ResolveOpts is
+// DISTINCT from buildkit.ResolveOpts (the build-resolve options): this is the SCAN/LOAD options the
+// candy scan + project validation consume; the moved buildkit resolvers never read
+// ExtraCandyRefs/InitCfg/RequestedBoxes.
 
 // ResolveOpts carries the scan/load options threaded through the candy scan + project resolution.
 type ResolveOpts struct {
@@ -52,27 +50,4 @@ func (opts ResolveOpts) ShouldIncludeDisabled(name string) bool {
 		return true
 	}
 	return opts.IncludeDisabledNames[name]
-}
-
-// ValidationError accumulates project/candy validation error messages (the loader validation
-// accumulator, distinct from the richer spec.Diagnostics — a plain []string collector).
-type ValidationError struct {
-	Errors []string
-}
-
-func (e *ValidationError) Error() string {
-	if len(e.Errors) == 1 {
-		return fmt.Sprintf("validation error: %s", e.Errors[0])
-	}
-	return fmt.Sprintf("%d validation errors:\n\n  %s", len(e.Errors), strings.Join(e.Errors, "\n  "))
-}
-
-// Add adds an error to the collection.
-func (e *ValidationError) Add(format string, args ...any) {
-	e.Errors = append(e.Errors, fmt.Sprintf(format, args...))
-}
-
-// HasErrors returns true if there are any errors.
-func (e *ValidationError) HasErrors() bool {
-	return len(e.Errors) > 0
 }

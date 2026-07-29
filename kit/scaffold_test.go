@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/opencharly/spec/spec"
 )
 
 func TestScaffoldCandy(t *testing.T) {
@@ -18,7 +20,7 @@ func TestScaffoldCandy(t *testing.T) {
 		t.Error("candy directory was not created")
 	}
 
-	candyYml := filepath.Join(candyDir, UnifiedFileName)
+	candyYml := filepath.Join(candyDir, spec.UnifiedFileName)
 	if _, err := os.Stat(candyYml); os.IsNotExist(err) {
 		t.Error("candy manifest was not created")
 	}
@@ -44,7 +46,7 @@ func TestScaffoldProject(t *testing.T) {
 		t.Fatalf("ScaffoldProject: %v", err)
 	}
 	// charly.yml + box/ + candy/ are created.
-	for _, want := range []string{UnifiedFileName, DefaultBoxDir, DefaultCandyDir} {
+	for _, want := range []string{spec.UnifiedFileName, DefaultBoxDir, DefaultCandyDir} {
 		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 			t.Errorf("ScaffoldProject did not create %q: %v", want, err)
 		}
@@ -63,7 +65,7 @@ func TestAddBox(t *testing.T) {
 	if err := AddBox(dir, "hello", "quay.io/fedora/fedora:43", []string{"sshd"}); err != nil {
 		t.Fatalf("AddBox: %v", err)
 	}
-	boxFile := filepath.Join(dir, DefaultBoxDir, "hello", UnifiedFileName)
+	boxFile := filepath.Join(dir, DefaultBoxDir, "hello", spec.UnifiedFileName)
 	if _, err := os.Stat(boxFile); err != nil {
 		t.Errorf("AddBox did not create %s: %v", boxFile, err)
 	}

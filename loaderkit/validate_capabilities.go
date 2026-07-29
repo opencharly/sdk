@@ -15,7 +15,7 @@ import (
 // (unified.go's validateAndroidDevices + validate_preempt.go). Their LOGIC is kind-blind clause-R
 // capability validation; the ONLY host coupling is the per-kind registry RESOLVE (android/resource/vm
 // templates → their resolved envelopes), which the host threads in as a resolve CALLBACK (the same
-// ResolvePluginKindViaPlugin pattern the vocabulary accessors use). So they run identically host-side
+// spec.ResolvePluginKindViaPlugin pattern the vocabulary accessors use). So they run identically host-side
 // (the compiled-in placement passes its in-proc registry callbacks) OR plugin-side (a genuine
 // out-of-module loader passes InvokeProvider-backed callbacks) — the same relocation shape
 // ValidateCheckBeds / ValidateEphemeral already took. Error accumulation reuses the loaderkit
@@ -29,11 +29,11 @@ import (
 // resolves a device (charly bundle add android:, charly check run, charly box validate, …) sees the
 // same friendly error. resolveAndroid projects one opaque android template body into its
 // *spec.ResolvedAndroid via the registry (host-threaded).
-func ValidateAndroidDevices(uf *UnifiedFile, resolveAndroid func(json.RawMessage) (*spec.ResolvedAndroid, error)) error {
+func ValidateAndroidDevices(uf *spec.UnifiedFile, resolveAndroid func(json.RawMessage) (*spec.ResolvedAndroid, error)) error {
 	if uf == nil {
 		return nil
 	}
-	for name, sp := range ResolvePluginKindViaPlugin(uf, "android", resolveAndroid) {
+	for name, sp := range spec.ResolvePluginKindViaPlugin(uf, "android", resolveAndroid) {
 		if sp == nil {
 			continue
 		}
@@ -106,7 +106,7 @@ func ValidatePreemptibleOnNode(name string, node *spec.BundleNode, d *spec.Diagn
 // cross-check, returning the first batch of errors for the LoadUnified hard-fail path. resolveResource
 // / resolveVm project the opaque resource: / vm: plugin-kind bodies into their resolved envelopes via
 // the registry (host-threaded).
-func ValidatePreemptible(uf *UnifiedFile,
+func ValidatePreemptible(uf *spec.UnifiedFile,
 	resolveResource func(json.RawMessage) (*spec.ResolvedResource, error),
 	resolveVm func(json.RawMessage) (*spec.ResolvedVm, error),
 ) error {
@@ -135,12 +135,12 @@ func ValidatePreemptible(uf *UnifiedFile,
 //     would silently fail at create time. Read BY TRAIT (the stamped node.Descent.ExclusiveVenue —
 //     StampBundleDescents runs before this validator in LoadUnified), never by switching on the
 //     substrate kind word (the boundary law).
-func validateResourceDefs(uf *UnifiedFile,
+func validateResourceDefs(uf *spec.UnifiedFile,
 	resolveResource func(json.RawMessage) (*spec.ResolvedResource, error),
 	resolveVm func(json.RawMessage) (*spec.ResolvedVm, error),
 	d *spec.Diagnostics,
 ) {
-	resources := ResolvePluginKindViaPlugin(uf, "resource", resolveResource)
+	resources := spec.ResolvePluginKindViaPlugin(uf, "resource", resolveResource)
 	for name, rdef := range resources {
 		if rdef == nil {
 			continue

@@ -263,7 +263,7 @@ func TestIsSameBaseBox(t *testing.T) {
 }
 
 func TestRemoveBySource(t *testing.T) {
-	entries := []EnvProvideEntry{
+	entries := []spec.EnvProvideEntry{
 		{Name: "A", Source: "web"},
 		{Name: "B", Source: "web/inst"},
 		{Name: "C", Source: "db"},
@@ -293,7 +293,7 @@ func TestRemoveBySource(t *testing.T) {
 }
 
 func TestRemoveByExactSource(t *testing.T) {
-	entries := []EnvProvideEntry{
+	entries := []spec.EnvProvideEntry{
 		{Name: "A", Source: "web"},
 		{Name: "B", Source: "web/inst"},
 		{Name: "C", Source: "db"},
