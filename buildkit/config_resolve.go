@@ -13,8 +13,9 @@ import (
 // 5, relocated from charly/config.go + charly/namespace.go). Every function here is a FREE
 // FUNCTION taking *spec.Config as its first parameter — Go forbids a package outside a type's own
 // package from adding methods to it, and these resolvers' signatures unavoidably touch buildkit's
-// own types (*ResolvedBox, BuilderMap, *DistroConfig, *BuilderConfig), so they cannot be methods
-// on spec.Config (spec is the bottom of the sdk dependency graph and must never import buildkit).
+// own *ResolvedBox (the embedding wrapper — BuilderMap/*DistroConfig/*BuilderConfig are CUE-sourced
+// spec types), so they cannot be methods on spec.Config (spec is the bottom of the sdk dependency
+// graph and must never import buildkit).
 //
 // Charly's own config.go keeps THIN WRAPPER free functions named identically (ResolveBox /
 // ResolveAllBox) that fill the ONE LoadUnified-coupled fallback (loading the project's
