@@ -9,7 +9,7 @@ require (
 	github.com/google/renameio/v2 v2.0.2
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.8.0
-	github.com/opencharly/spec v0.2026210.2052
+	github.com/opencharly/spec v0.2026210.2308
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0
 	google.golang.org/grpc v1.61.0
