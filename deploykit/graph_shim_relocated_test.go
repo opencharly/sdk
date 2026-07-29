@@ -138,28 +138,7 @@ func TestResolveCandyOrderCycle(t *testing.T) {
 
 func TestResolveImageOrder(t *testing.T) {
 	// Create test boxes
-	images := map[string]*buildkit.ResolvedBox{
-		"base": {
-			Name:           "base",
-			Base:           "quay.io/fedora/fedora:43",
-			IsExternalBase: true,
-		},
-		"cuda": {
-			Name:           "cuda",
-			Base:           "quay.io/fedora/fedora:43",
-			IsExternalBase: true,
-		},
-		"ml-cuda": {
-			Name:           "ml-cuda",
-			Base:           "cuda",
-			IsExternalBase: false,
-		},
-		"inference": {
-			Name:           "inference",
-			Base:           "ml-cuda",
-			IsExternalBase: false,
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "cuda": {ResolvedBox: spec.ResolvedBox{Name: "cuda", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "ml-cuda": {ResolvedBox: spec.ResolvedBox{Name: "ml-cuda", Base: "cuda", IsExternalBase: false}}, "inference": {ResolvedBox: spec.ResolvedBox{Name: "inference", Base: "ml-cuda", IsExternalBase: false}}}
 
 	order, err := ResolveBoxOrder(images, nil)
 	if err != nil {
@@ -188,25 +167,7 @@ func TestResolveImageOrder(t *testing.T) {
 }
 
 func TestResolveImageOrderWithBuilder(t *testing.T) {
-	images := map[string]*buildkit.ResolvedBox{
-		"builder": {
-			Name:           "builder",
-			Base:           "quay.io/fedora/fedora:43",
-			IsExternalBase: true,
-		},
-		"fedora": {
-			Name:           "fedora",
-			Base:           "quay.io/fedora/fedora:43",
-			IsExternalBase: true,
-			Builder:        buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"app": {
-			Name:           "app",
-			Base:           "fedora",
-			IsExternalBase: false,
-			Builder:        buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"builder": {ResolvedBox: spec.ResolvedBox{Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "app": {ResolvedBox: spec.ResolvedBox{Name: "app", Base: "fedora", IsExternalBase: false, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}}
 
 	order, err := ResolveBoxOrder(images, nil)
 	if err != nil {
@@ -244,29 +205,7 @@ func TestResolveImageOrderWithBootstrapBuilder(t *testing.T) {
 	// bootstrap-builder edge, the topo-sort would schedule cachyos before
 	// cachyos-pacstrap-builder and runPrivilegedBootstrap would fail at
 	// resolveLocalImageRef (build.go:294).
-	images := map[string]*buildkit.ResolvedBox{
-		"arch": {
-			Name:           "arch",
-			Base:           "docker.io/library/archlinux:latest",
-			IsExternalBase: true,
-		},
-		"cachyos-pacstrap-builder": {
-			Name:           "cachyos-pacstrap-builder",
-			Base:           "arch",
-			IsExternalBase: false,
-		},
-		"cachyos": {
-			Name:                  "cachyos",
-			Base:                  "",
-			IsExternalBase:        true,
-			BootstrapBuilderImage: "cachyos-pacstrap-builder",
-		},
-		"app": {
-			Name:           "app",
-			Base:           "cachyos",
-			IsExternalBase: false,
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"arch": {ResolvedBox: spec.ResolvedBox{Name: "arch", Base: "docker.io/library/archlinux:latest", IsExternalBase: true}}, "cachyos-pacstrap-builder": {ResolvedBox: spec.ResolvedBox{Name: "cachyos-pacstrap-builder", Base: "arch", IsExternalBase: false}}, "cachyos": {ResolvedBox: spec.ResolvedBox{Name: "cachyos", Base: "", IsExternalBase: true, BootstrapBuilderImage: "cachyos-pacstrap-builder"}}, "app": {ResolvedBox: spec.ResolvedBox{Name: "app", Base: "cachyos", IsExternalBase: false}}}
 
 	order, err := ResolveBoxOrder(images, nil)
 	if err != nil {
@@ -312,11 +251,7 @@ func TestResolveImageOrderWithBootstrapBuilder(t *testing.T) {
 
 func TestResolveImageOrderCycle(t *testing.T) {
 	// Create boxes with a cycle
-	images := map[string]*buildkit.ResolvedBox{
-		"a": {Name: "a", Base: "b", IsExternalBase: false},
-		"b": {Name: "b", Base: "c", IsExternalBase: false},
-		"c": {Name: "c", Base: "a", IsExternalBase: false},
-	}
+	images := map[string]*buildkit.ResolvedBox{"a": {ResolvedBox: spec.ResolvedBox{Name: "a", Base: "b", IsExternalBase: false}}, "b": {ResolvedBox: spec.ResolvedBox{Name: "b", Base: "c", IsExternalBase: false}}, "c": {ResolvedBox: spec.ResolvedBox{Name: "c", Base: "a", IsExternalBase: false}}}
 
 	_, err := ResolveBoxOrder(images, nil)
 	if err == nil {
@@ -325,26 +260,7 @@ func TestResolveImageOrderCycle(t *testing.T) {
 }
 
 func TestCandiesProvidedByImage(t *testing.T) {
-	images := map[string]*buildkit.ResolvedBox{
-		"base": {
-			Name:           "base",
-			Base:           "quay.io/fedora/fedora:43",
-			IsExternalBase: true,
-			Candy:          []string{"pixi"},
-		},
-		"cuda": {
-			Name:           "cuda",
-			Base:           "base",
-			IsExternalBase: false,
-			Candy:          []string{"cuda"},
-		},
-		"ml-cuda": {
-			Name:           "ml-cuda",
-			Base:           "cuda",
-			IsExternalBase: false,
-			Candy:          []string{"python", "ml-libs"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{"pixi"}}}, "cuda": {ResolvedBox: spec.ResolvedBox{Name: "cuda", Base: "base", IsExternalBase: false, Candy: []string{"cuda"}}}, "ml-cuda": {ResolvedBox: spec.ResolvedBox{Name: "ml-cuda", Base: "cuda", IsExternalBase: false, Candy: []string{"python", "ml-libs"}}}}
 
 	layers := map[string]spec.CandyReader{} // not used, just for type
 
@@ -422,33 +338,7 @@ func TestDependsOnComposingCandy(t *testing.T) {
 }
 
 func TestResolveImageLevels(t *testing.T) {
-	images := map[string]*buildkit.ResolvedBox{
-		"base": {
-			Name:           "base",
-			Base:           "quay.io/fedora/fedora:43",
-			IsExternalBase: true,
-		},
-		"cuda": {
-			Name:           "cuda",
-			Base:           "quay.io/fedora/fedora:43",
-			IsExternalBase: true,
-		},
-		"app": {
-			Name:           "app",
-			Base:           "base",
-			IsExternalBase: false,
-		},
-		"ml": {
-			Name:           "ml",
-			Base:           "cuda",
-			IsExternalBase: false,
-		},
-		"inference": {
-			Name:           "inference",
-			Base:           "ml",
-			IsExternalBase: false,
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "cuda": {ResolvedBox: spec.ResolvedBox{Name: "cuda", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "app": {ResolvedBox: spec.ResolvedBox{Name: "app", Base: "base", IsExternalBase: false}}, "ml": {ResolvedBox: spec.ResolvedBox{Name: "ml", Base: "cuda", IsExternalBase: false}}, "inference": {ResolvedBox: spec.ResolvedBox{Name: "inference", Base: "ml", IsExternalBase: false}}}
 
 	levels, err := ResolveBoxLevels(images, nil)
 	if err != nil {

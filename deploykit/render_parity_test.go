@@ -28,21 +28,8 @@ var updateRenderGolden = flag.Bool("update-render-golden", false, "regenerate th
 // carrying the build-RENDER caches the deploykit render reads.
 func trivialBox() *buildkit.ResolvedBox {
 	return &buildkit.ResolvedBox{
-		Name:             "demo",
-		EffectiveVersion: "2026.001.0001",
-		Base:             "quay.io/fedora/fedora:43",
-		IsExternalBase:   true,
-		UID:              1000,
-		GID:              1000,
-		User:             "user",
-		Home:             "/home/user",
-		UserAdopted:      true,
-		Distro:           []string{"fedora:43", "fedora"},
-		BuildFormats:     []string{"rpm"},
-		RenderCandyOrder: []string{},
-		ActiveInits:      map[string]*spec.ResolvedInit{},
-		CandyCaps:        &buildkit.AggregatedCandyCaps{},
-		BakedMetadata: &spec.BakedLabelSet{
+		ResolvedBox:      spec.ResolvedBox{Name: "demo", EffectiveVersion: "2026.001.0001", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, UID: 1000, GID: 1000, User: "user", Home: "/home/user", UserAdopted: true, Distro: []string{"fedora:43", "fedora"}, BuildFormats: []string{"rpm"}},
+		RenderCandyOrder: []string{}, ActiveInits: map[string]*spec.ResolvedInit{}, CandyCaps: &buildkit.AggregatedCandyCaps{}, BakedMetadata: &spec.BakedLabelSet{
 			Version:     "2026.001.0001",
 			Box:         "demo",
 			UID:         1000,

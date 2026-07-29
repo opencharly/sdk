@@ -75,15 +75,17 @@ func ResolveBox(cfg *spec.Config, name string, calverTag string, dir string, opt
 	}
 
 	resolved := &ResolvedBox{
-		Name:    name,
-		Version: img.Version,
-		// boxes author no status; the effective rung (worst-of-candy-chain) is computed at
-		// generate time for the ai.opencharly.status label. resolveStatus("") always returned
-		// "testing" (charly's generate.go) — inlined directly since resolveStatus itself stays
-		// charly-core-only (used by other status collection paths this move doesn't touch).
-		Status:     "testing",
-		Info:       firstDescriptionLine(img.Description),
-		CheckLevel: kit.ResolveCheckLevel(img.CheckLevel),
+		ResolvedBox: spec.ResolvedBox{
+			Name:    name,
+			Version: img.Version,
+			// boxes author no status; the effective rung (worst-of-candy-chain) is computed at
+			// generate time for the ai.opencharly.status label. resolveStatus("") always returned
+			// "testing" (charly's generate.go) — inlined directly since resolveStatus itself stays
+			// charly-core-only (used by other status collection paths this move doesn't touch).
+			Status:     "testing",
+			Info:       firstDescriptionLine(img.Description),
+			CheckLevel: kit.ResolveCheckLevel(img.CheckLevel),
+		},
 	}
 
 	if err := resolveBase(cfg, resolved, img, name); err != nil {

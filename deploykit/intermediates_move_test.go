@@ -70,10 +70,7 @@ func TestGlobalCandyOrder_PopularityTieBreaking(t *testing.T) {
 	}
 
 	// pixi is used by 2 images, nodejs by 1
-	images := map[string]*buildkit.ResolvedBox{
-		"a": {Name: "a", Base: "ext:1", IsExternalBase: true, Candy: []string{"pixi", "python", "testapi"}},
-		"b": {Name: "b", Base: "ext:1", IsExternalBase: true, Candy: []string{"pixi", "nodejs"}},
-	}
+	images := map[string]*buildkit.ResolvedBox{"a": {ResolvedBox: spec.ResolvedBox{Name: "a", Base: "ext:1", IsExternalBase: true, Candy: []string{"pixi", "python", "testapi"}}}, "b": {ResolvedBox: spec.ResolvedBox{Name: "b", Base: "ext:1", IsExternalBase: true, Candy: []string{"pixi", "nodejs"}}}}
 
 	order, err := GlobalCandyOrder(images, layers)
 	if err != nil {
@@ -105,9 +102,7 @@ func TestGlobalCandyOrder_RespectsDependencies(t *testing.T) {
 		"python": candyFixture(spec.CandyModel{Name: "python"}, spec.CandyView{Require: []spec.CandyRef{"pixi"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"a": {Name: "a", Base: "ext:1", IsExternalBase: true, Candy: []string{"python"}},
-	}
+	images := map[string]*buildkit.ResolvedBox{"a": {ResolvedBox: spec.ResolvedBox{Name: "a", Base: "ext:1", IsExternalBase: true, Candy: []string{"python"}}}}
 
 	order, err := GlobalCandyOrder(images, layers)
 	if err != nil {
@@ -135,10 +130,7 @@ func TestGlobalCandyOrder_RespectsAuthoredListOrder(t *testing.T) {
 		"build-toolchain": candyFixture(spec.CandyModel{Name: "build-toolchain"}, spec.CandyView{}),
 		"pixi":            candyFixture(spec.CandyModel{Name: "pixi"}, spec.CandyView{}),
 	}
-	images := map[string]*buildkit.ResolvedBox{
-		"fedora-builder": {Name: "fedora-builder", Base: "ext:1", IsExternalBase: true, Candy: []string{"rpmfusion", "build-toolchain"}},
-		"arch-builder":   {Name: "arch-builder", Base: "ext:2", IsExternalBase: true, Candy: []string{"build-toolchain", "pixi"}},
-	}
+	images := map[string]*buildkit.ResolvedBox{"fedora-builder": {ResolvedBox: spec.ResolvedBox{Name: "fedora-builder", Base: "ext:1", IsExternalBase: true, Candy: []string{"rpmfusion", "build-toolchain"}}}, "arch-builder": {ResolvedBox: spec.ResolvedBox{Name: "arch-builder", Base: "ext:2", IsExternalBase: true, Candy: []string{"build-toolchain", "pixi"}}}}
 
 	order, err := GlobalCandyOrder(images, layers)
 	if err != nil {
@@ -166,10 +158,7 @@ func TestGlobalCandyOrder_ConflictingListOrderFallsBack(t *testing.T) {
 		"x": candyFixture(spec.CandyModel{Name: "x"}, spec.CandyView{}),
 		"y": candyFixture(spec.CandyModel{Name: "y"}, spec.CandyView{}),
 	}
-	images := map[string]*buildkit.ResolvedBox{
-		"a": {Name: "a", Base: "ext:1", IsExternalBase: true, Candy: []string{"x", "y"}},
-		"b": {Name: "b", Base: "ext:2", IsExternalBase: true, Candy: []string{"y", "x"}},
-	}
+	images := map[string]*buildkit.ResolvedBox{"a": {ResolvedBox: spec.ResolvedBox{Name: "a", Base: "ext:1", IsExternalBase: true, Candy: []string{"x", "y"}}}, "b": {ResolvedBox: spec.ResolvedBox{Name: "b", Base: "ext:2", IsExternalBase: true, Candy: []string{"y", "x"}}}}
 
 	order, err := GlobalCandyOrder(images, layers)
 	if err != nil {
@@ -188,10 +177,7 @@ func TestAbsoluteCandySequence_WithInternalBase(t *testing.T) {
 		"testapi": candyFixture(spec.CandyModel{Name: "testapi"}, spec.CandyView{Require: []spec.CandyRef{"python"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"base": {Name: "base", Base: "ext:1", IsExternalBase: true, Candy: []string{"pixi"}},
-		"app":  {Name: "app", Base: "base", IsExternalBase: false, Candy: []string{"python", "testapi"}},
-	}
+	images := map[string]*buildkit.ResolvedBox{"base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "ext:1", IsExternalBase: true, Candy: []string{"pixi"}}}, "app": {ResolvedBox: spec.ResolvedBox{Name: "app", Base: "base", IsExternalBase: false, Candy: []string{"python", "testapi"}}}}
 
 	globalOrder := []string{"pixi", "nodejs", "python", "testapi"}
 
@@ -210,13 +196,7 @@ func TestComputeIntermediates_NoBranching(t *testing.T) {
 		"python": candyFixture(spec.CandyModel{Name: "python"}, spec.CandyView{Require: []spec.CandyRef{"pixi"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"app": {
-			Name: "app", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{"python"}, Tag: "v1", Registry: "r",
-			FullTag: "r/app:v1", Pkg: "rpm",
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"app": {ResolvedBox: spec.ResolvedBox{Name: "app", Base: "ext:1", IsExternalBase: true, Candy: []string{"python"}, Tag: "v1", Registry: "r", FullTag: "r/app:v1", Pkg: "rpm"}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}}
 
@@ -245,23 +225,7 @@ func TestComputeIntermediates_SimpleBranch(t *testing.T) {
 		"testapi": candyFixture(spec.CandyModel{Name: "testapi"}, spec.CandyView{Require: []spec.CandyRef{"python"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"fedora": {
-			Name: "fedora", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora:v1", Pkg: "rpm",
-		},
-		"app1": {
-			Name: "app1", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"python", "testapi"}, Tag: "v1", Registry: "r",
-			FullTag: "r/app1:v1", Pkg: "rpm",
-		},
-		"app2": {
-			Name: "app2", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"nodejs"}, Tag: "v1", Registry: "r",
-			FullTag: "r/app2:v1", Pkg: "rpm",
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "ext:1", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm"}}, "app1": {ResolvedBox: spec.ResolvedBox{Name: "app1", Base: "fedora", IsExternalBase: false, Candy: []string{"python", "testapi"}, Tag: "v1", Registry: "r", FullTag: "r/app1:v1", Pkg: "rpm"}}, "app2": {ResolvedBox: spec.ResolvedBox{Name: "app2", Base: "fedora", IsExternalBase: false, Candy: []string{"nodejs"}, Tag: "v1", Registry: "r", FullTag: "r/app2:v1", Pkg: "rpm"}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}}
 
@@ -287,23 +251,7 @@ func TestComputeIntermediates_SharedPrefix(t *testing.T) {
 		"openclaw":    candyFixture(spec.CandyModel{Name: "openclaw"}, spec.CandyView{Require: []spec.CandyRef{"supervisord"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"fedora": {
-			Name: "fedora", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora:v1", Pkg: "rpm",
-		},
-		"fedora-test": {
-			Name: "fedora-test", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"testapi"}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora-test:v1", Pkg: "rpm",
-		},
-		"openclaw": {
-			Name: "openclaw", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"openclaw"}, Tag: "v1", Registry: "r",
-			FullTag: "r/openclaw:v1", Pkg: "rpm",
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "ext:1", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm"}}, "fedora-test": {ResolvedBox: spec.ResolvedBox{Name: "fedora-test", Base: "fedora", IsExternalBase: false, Candy: []string{"testapi"}, Tag: "v1", Registry: "r", FullTag: "r/fedora-test:v1", Pkg: "rpm"}}, "openclaw": {ResolvedBox: spec.ResolvedBox{Name: "openclaw", Base: "fedora", IsExternalBase: false, Candy: []string{"openclaw"}, Tag: "v1", Registry: "r", FullTag: "r/openclaw:v1", Pkg: "rpm"}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}}
 
@@ -347,23 +295,7 @@ func TestComputeIntermediates_ExistingImageReuse(t *testing.T) {
 		"nodejs": candyFixture(spec.CandyModel{Name: "nodejs"}, spec.CandyView{}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"fedora": {
-			Name: "fedora", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora:v1", Pkg: "rpm",
-		},
-		"app1": {
-			Name: "app1", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"pixi"}, Tag: "v1", Registry: "r",
-			FullTag: "r/app1:v1", Pkg: "rpm",
-		},
-		"app2": {
-			Name: "app2", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"nodejs"}, Tag: "v1", Registry: "r",
-			FullTag: "r/app2:v1", Pkg: "rpm",
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "ext:1", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm"}}, "app1": {ResolvedBox: spec.ResolvedBox{Name: "app1", Base: "fedora", IsExternalBase: false, Candy: []string{"pixi"}, Tag: "v1", Registry: "r", FullTag: "r/app1:v1", Pkg: "rpm"}}, "app2": {ResolvedBox: spec.ResolvedBox{Name: "app2", Base: "fedora", IsExternalBase: false, Candy: []string{"nodejs"}, Tag: "v1", Registry: "r", FullTag: "r/app2:v1", Pkg: "rpm"}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}}
 
@@ -399,24 +331,7 @@ func TestImageNeedsBuilder(t *testing.T) {
 		"tooling": candyFixture(spec.CandyModel{Name: "tooling"}, spec.CandyView{}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"builder": {
-			Name: "builder", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{"pixi", "nodejs", "tooling"},
-		},
-		"base": {
-			Name: "base", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{"pixi"},
-		},
-		"app": {
-			Name: "app", Base: "base", IsExternalBase: false,
-			Candy: []string{"python"},
-		},
-		"simple": {
-			Name: "simple", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{"tooling"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"builder": {ResolvedBox: spec.ResolvedBox{Name: "builder", Base: "ext:1", IsExternalBase: true, Candy: []string{"pixi", "nodejs", "tooling"}}}, "base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "ext:1", IsExternalBase: true, Candy: []string{"pixi"}}}, "app": {ResolvedBox: spec.ResolvedBox{Name: "app", Base: "base", IsExternalBase: false, Candy: []string{"python"}}}, "simple": {ResolvedBox: spec.ResolvedBox{Name: "simple", Base: "ext:1", IsExternalBase: true, Candy: []string{"tooling"}}}}
 
 	// pixi has root.yml only (no pixi.toml) → does NOT need builder
 	if BoxNeedsBuilder(images["base"], images, layers) {
@@ -452,28 +367,7 @@ func TestComputeIntermediates_RealisticConfig(t *testing.T) {
 		"openclaw":        candyFixture(spec.CandyModel{Name: "openclaw"}, spec.CandyView{Require: []spec.CandyRef{"supervisord", "nodejs"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"builder": {
-			Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true,
-			Candy: []string{"pixi", "nodejs", "build-toolchain"}, Tag: "v1", Registry: "r",
-			FullTag: "r/builder:v1", Pkg: "rpm",
-		},
-		"fedora": {
-			Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"fedora-test": {
-			Name: "fedora-test", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"traefik", "testapi"}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora-test:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"openclaw": {
-			Name: "openclaw", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"openclaw"}, Tag: "v1", Registry: "r",
-			FullTag: "r/openclaw:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"builder": {ResolvedBox: spec.ResolvedBox{Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{"pixi", "nodejs", "build-toolchain"}, Tag: "v1", Registry: "r", FullTag: "r/builder:v1", Pkg: "rpm"}}, "fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "fedora-test": {ResolvedBox: spec.ResolvedBox{Name: "fedora-test", Base: "fedora", IsExternalBase: false, Candy: []string{"traefik", "testapi"}, Tag: "v1", Registry: "r", FullTag: "r/fedora-test:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "openclaw": {ResolvedBox: spec.ResolvedBox{Name: "openclaw", Base: "fedora", IsExternalBase: false, Candy: []string{"openclaw"}, Tag: "v1", Registry: "r", FullTag: "r/openclaw:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}
 
@@ -543,63 +437,7 @@ func TestComputeIntermediates_NvidiaScenario(t *testing.T) {
 		"github-runner":   candyFixture(spec.CandyModel{Name: "github-runner"}, spec.CandyView{Require: []spec.CandyRef{"supervisord"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"builder": {
-			Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true,
-			Candy: []string{"pixi", "nodejs", "build-toolchain"}, Tag: "v1", Registry: "r",
-			FullTag: "r/builder:v1", Pkg: "rpm",
-		},
-		"fedora": {
-			Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"nvidia": {
-			Name: "nvidia", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"cuda"}, Tag: "v1", Registry: "r",
-			FullTag: "r/nvidia:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"python-ml": {
-			Name: "python-ml", Base: "nvidia", IsExternalBase: false,
-			Candy: []string{"python-ml"}, Tag: "v1", Registry: "r",
-			FullTag: "r/python-ml:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"jupyter": {
-			Name: "jupyter", Base: "python-ml", IsExternalBase: false,
-			Candy: []string{"jupyter"}, Tag: "v1", Registry: "r",
-			FullTag: "r/jupyter:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"comfyui": {
-			Name: "comfyui", Base: "python-ml", IsExternalBase: false,
-			Candy: []string{"comfyui"}, Tag: "v1", Registry: "r",
-			FullTag: "r/comfyui:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"ollama": {
-			Name: "ollama", Base: "nvidia", IsExternalBase: false,
-			Candy: []string{"ollama"}, Tag: "v1", Registry: "r",
-			FullTag: "r/ollama:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"gpu-gateway": {
-			Name: "gpu-gateway", Base: "nvidia", IsExternalBase: false,
-			Candy: []string{"openclaw", "ollama"}, Tag: "v1", Registry: "r",
-			FullTag: "r/gpu-gateway:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"fedora-test": {
-			Name: "fedora-test", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"traefik", "testapi"}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora-test:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"openclaw": {
-			Name: "openclaw", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"openclaw"}, Tag: "v1", Registry: "r",
-			FullTag: "r/openclaw:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"githubrunner": {
-			Name: "githubrunner", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"github-runner"}, Tag: "v1", Registry: "r",
-			FullTag: "r/githubrunner:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"builder": {ResolvedBox: spec.ResolvedBox{Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{"pixi", "nodejs", "build-toolchain"}, Tag: "v1", Registry: "r", FullTag: "r/builder:v1", Pkg: "rpm"}}, "fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "nvidia": {ResolvedBox: spec.ResolvedBox{Name: "nvidia", Base: "fedora", IsExternalBase: false, Candy: []string{"cuda"}, Tag: "v1", Registry: "r", FullTag: "r/nvidia:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "python-ml": {ResolvedBox: spec.ResolvedBox{Name: "python-ml", Base: "nvidia", IsExternalBase: false, Candy: []string{"python-ml"}, Tag: "v1", Registry: "r", FullTag: "r/python-ml:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "jupyter": {ResolvedBox: spec.ResolvedBox{Name: "jupyter", Base: "python-ml", IsExternalBase: false, Candy: []string{"jupyter"}, Tag: "v1", Registry: "r", FullTag: "r/jupyter:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "comfyui": {ResolvedBox: spec.ResolvedBox{Name: "comfyui", Base: "python-ml", IsExternalBase: false, Candy: []string{"comfyui"}, Tag: "v1", Registry: "r", FullTag: "r/comfyui:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "ollama": {ResolvedBox: spec.ResolvedBox{Name: "ollama", Base: "nvidia", IsExternalBase: false, Candy: []string{"ollama"}, Tag: "v1", Registry: "r", FullTag: "r/ollama:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "gpu-gateway": {ResolvedBox: spec.ResolvedBox{Name: "gpu-gateway", Base: "nvidia", IsExternalBase: false, Candy: []string{"openclaw", "ollama"}, Tag: "v1", Registry: "r", FullTag: "r/gpu-gateway:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "fedora-test": {ResolvedBox: spec.ResolvedBox{Name: "fedora-test", Base: "fedora", IsExternalBase: false, Candy: []string{"traefik", "testapi"}, Tag: "v1", Registry: "r", FullTag: "r/fedora-test:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "openclaw": {ResolvedBox: spec.ResolvedBox{Name: "openclaw", Base: "fedora", IsExternalBase: false, Candy: []string{"openclaw"}, Tag: "v1", Registry: "r", FullTag: "r/openclaw:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "githubrunner": {ResolvedBox: spec.ResolvedBox{Name: "githubrunner", Base: "fedora", IsExternalBase: false, Candy: []string{"github-runner"}, Tag: "v1", Registry: "r", FullTag: "r/githubrunner:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}
 
@@ -704,29 +542,8 @@ func TestComputeIntermediates_UserImageAtBranchPoint(t *testing.T) {
 		"webapp":      candyFixture(spec.CandyModel{Name: "webapp"}, spec.CandyView{Require: []spec.CandyRef{"supervisord"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"fedora": {
-			Name: "fedora", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora:v1", Pkg: "rpm",
-		},
-		// "svbase" is a user image with candies=[supervisord] — it sits at the branch point
-		"svbase": {
-			Name: "svbase", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"supervisord"}, Tag: "v1", Registry: "r",
-			FullTag: "r/svbase:v1", Pkg: "rpm",
-		},
-		"app1": {
-			Name: "app1", Base: "svbase", IsExternalBase: false,
-			Candy: []string{"testapi"}, Tag: "v1", Registry: "r",
-			FullTag: "r/app1:v1", Pkg: "rpm",
-		},
-		"app2": {
-			Name: "app2", Base: "svbase", IsExternalBase: false,
-			Candy: []string{"webapp"}, Tag: "v1", Registry: "r",
-			FullTag: "r/app2:v1", Pkg: "rpm",
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "ext:1", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm"}}, // "svbase" is a user image with candies=[supervisord] — it sits at the branch point
+		"svbase": {ResolvedBox: spec.ResolvedBox{Name: "svbase", Base: "fedora", IsExternalBase: false, Candy: []string{"supervisord"}, Tag: "v1", Registry: "r", FullTag: "r/svbase:v1", Pkg: "rpm"}}, "app1": {ResolvedBox: spec.ResolvedBox{Name: "app1", Base: "svbase", IsExternalBase: false, Candy: []string{"testapi"}, Tag: "v1", Registry: "r", FullTag: "r/app1:v1", Pkg: "rpm"}}, "app2": {ResolvedBox: spec.ResolvedBox{Name: "app2", Base: "svbase", IsExternalBase: false, Candy: []string{"webapp"}, Tag: "v1", Registry: "r", FullTag: "r/app2:v1", Pkg: "rpm"}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}}
 
@@ -797,25 +614,8 @@ func TestComputeIntermediates_UserImageAsBranchIntermediate(t *testing.T) {
 		"D": candyFixture(spec.CandyModel{Name: "D"}, spec.CandyView{Require: []spec.CandyRef{"B"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"base": {
-			Name: "base", Base: "ext:1", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/base:v1", Pkg: "rpm",
-		},
-		// mid terminates at [A, B] and has children (app1 needs [A,B,C], app2 needs [A,B,D])
-		"mid": {
-			Name: "mid", Base: "base", IsExternalBase: false,
-			Candy: []string{"B"}, Tag: "v1", Registry: "r", FullTag: "r/mid:v1", Pkg: "rpm",
-		},
-		"app1": {
-			Name: "app1", Base: "base", IsExternalBase: false,
-			Candy: []string{"C"}, Tag: "v1", Registry: "r", FullTag: "r/app1:v1", Pkg: "rpm",
-		},
-		"app2": {
-			Name: "app2", Base: "base", IsExternalBase: false,
-			Candy: []string{"D"}, Tag: "v1", Registry: "r", FullTag: "r/app2:v1", Pkg: "rpm",
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "ext:1", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/base:v1", Pkg: "rpm"}}, // mid terminates at [A, B] and has children (app1 needs [A,B,C], app2 needs [A,B,D])
+		"mid": {ResolvedBox: spec.ResolvedBox{Name: "mid", Base: "base", IsExternalBase: false, Candy: []string{"B"}, Tag: "v1", Registry: "r", FullTag: "r/mid:v1", Pkg: "rpm"}}, "app1": {ResolvedBox: spec.ResolvedBox{Name: "app1", Base: "base", IsExternalBase: false, Candy: []string{"C"}, Tag: "v1", Registry: "r", FullTag: "r/app1:v1", Pkg: "rpm"}}, "app2": {ResolvedBox: spec.ResolvedBox{Name: "app2", Base: "base", IsExternalBase: false, Candy: []string{"D"}, Tag: "v1", Registry: "r", FullTag: "r/app2:v1", Pkg: "rpm"}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}}
 
@@ -883,34 +683,7 @@ func TestComputeIntermediates_PlatformInheritance(t *testing.T) {
 		"appB":        candyFixture(spec.CandyModel{Name: "appB"}, spec.CandyView{Require: []spec.CandyRef{"supervisord"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"fedora": {
-			Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1",
-			Pkg: "rpm", Platforms: []string{"linux/amd64", "linux/arm64"},
-			Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"builder": {
-			Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true,
-			Candy: []string{"pixi"}, Tag: "v1", Registry: "r", FullTag: "r/builder:v1",
-			Pkg: "rpm", Platforms: []string{"linux/amd64", "linux/arm64"},
-		},
-		"nvidia": {
-			Name: "nvidia", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"cuda"}, Tag: "v1", Registry: "r", FullTag: "r/nvidia:v1",
-			Pkg: "rpm", Platforms: []string{"linux/amd64"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"appA": {
-			Name: "appA", Base: "nvidia", IsExternalBase: false,
-			Candy: []string{"appA"}, Tag: "v1", Registry: "r", FullTag: "r/appA:v1",
-			Pkg: "rpm", Platforms: []string{"linux/amd64"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"appB": {
-			Name: "appB", Base: "nvidia", IsExternalBase: false,
-			Candy: []string{"appB"}, Tag: "v1", Registry: "r", FullTag: "r/appB:v1",
-			Pkg: "rpm", Platforms: []string{"linux/amd64"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm", Platforms: []string{"linux/amd64", "linux/arm64"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "builder": {ResolvedBox: spec.ResolvedBox{Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{"pixi"}, Tag: "v1", Registry: "r", FullTag: "r/builder:v1", Pkg: "rpm", Platforms: []string{"linux/amd64", "linux/arm64"}}}, "nvidia": {ResolvedBox: spec.ResolvedBox{Name: "nvidia", Base: "fedora", IsExternalBase: false, Candy: []string{"cuda"}, Tag: "v1", Registry: "r", FullTag: "r/nvidia:v1", Pkg: "rpm", Platforms: []string{"linux/amd64"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "appA": {ResolvedBox: spec.ResolvedBox{Name: "appA", Base: "nvidia", IsExternalBase: false, Candy: []string{"appA"}, Tag: "v1", Registry: "r", FullTag: "r/appA:v1", Pkg: "rpm", Platforms: []string{"linux/amd64"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "appB": {ResolvedBox: spec.ResolvedBox{Name: "appB", Base: "nvidia", IsExternalBase: false, Candy: []string{"appB"}, Tag: "v1", Registry: "r", FullTag: "r/appB:v1", Pkg: "rpm", Platforms: []string{"linux/amd64"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}}
 
 	defaults := IntermediateDefaults{
 		Registry:  "r",
@@ -1041,43 +814,7 @@ func TestComputeIntermediates_PixiBoundNotExtracted(t *testing.T) {
 		"supervisord":      candyFixture(spec.CandyModel{Name: "supervisord"}, spec.CandyView{Require: []spec.CandyRef{"python"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"builder": {
-			Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true,
-			Candy: []string{"pixi"}, Tag: "v1", Registry: "r",
-			FullTag: "r/builder:v1", Pkg: "rpm",
-		},
-		"fedora": {
-			Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora:v1", Pkg: "rpm",
-			Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"nvidia": {
-			Name: "nvidia", Base: "fedora", IsExternalBase: false,
-			Candy: []string{"cuda"}, Tag: "v1", Registry: "r",
-			FullTag: "r/nvidia:v1", Pkg: "rpm",
-			Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"jupyter-ml": {
-			Name: "jupyter-ml", Base: "nvidia", IsExternalBase: false,
-			Candy: []string{"agent-forwarding", "jupyter-ml", "notebook-templates", "dbus", "charly"},
-			Tag:   "v1", Registry: "r", FullTag: "r/jupyter-ml:v1", Pkg: "rpm",
-			Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"jupyter-ml-notebook": {
-			Name: "jupyter-ml-notebook", Base: "nvidia", IsExternalBase: false,
-			Candy: []string{"agent-forwarding", "jupyter-ml", "notebook-templates", "notebook-finetuning", "dbus", "charly"},
-			Tag:   "v1", Registry: "r", FullTag: "r/jupyter-ml-notebook:v1", Pkg: "rpm",
-			Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-		"unsloth-studio": {
-			Name: "unsloth-studio", Base: "nvidia", IsExternalBase: false,
-			Candy: []string{"agent-forwarding", "unsloth-studio", "notebook-finetuning", "dbus", "charly"},
-			Tag:   "v1", Registry: "r", FullTag: "r/unsloth-studio:v1", Pkg: "rpm",
-			Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"builder": {ResolvedBox: spec.ResolvedBox{Name: "builder", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{"pixi"}, Tag: "v1", Registry: "r", FullTag: "r/builder:v1", Pkg: "rpm"}}, "fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "quay.io/fedora/fedora:43", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "nvidia": {ResolvedBox: spec.ResolvedBox{Name: "nvidia", Base: "fedora", IsExternalBase: false, Candy: []string{"cuda"}, Tag: "v1", Registry: "r", FullTag: "r/nvidia:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "jupyter-ml": {ResolvedBox: spec.ResolvedBox{Name: "jupyter-ml", Base: "nvidia", IsExternalBase: false, Candy: []string{"agent-forwarding", "jupyter-ml", "notebook-templates", "dbus", "charly"}, Tag: "v1", Registry: "r", FullTag: "r/jupyter-ml:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "jupyter-ml-notebook": {ResolvedBox: spec.ResolvedBox{Name: "jupyter-ml-notebook", Base: "nvidia", IsExternalBase: false, Candy: []string{"agent-forwarding", "jupyter-ml", "notebook-templates", "notebook-finetuning", "dbus", "charly"}, Tag: "v1", Registry: "r", FullTag: "r/jupyter-ml-notebook:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}, "unsloth-studio": {ResolvedBox: spec.ResolvedBox{Name: "unsloth-studio", Base: "nvidia", IsExternalBase: false, Candy: []string{"agent-forwarding", "unsloth-studio", "notebook-finetuning", "dbus", "charly"}, Tag: "v1", Registry: "r", FullTag: "r/unsloth-studio:v1", Pkg: "rpm", Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}}}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}, Builder: buildkit.BuilderMap{"pixi": "builder", "npm": "builder"}}
 
@@ -1140,34 +877,7 @@ func TestComputeIntermediates_InheritDistroFromParent(t *testing.T) {
 		"c": candyFixture(spec.CandyModel{Name: "c"}, spec.CandyView{}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"fedora": {
-			Name: "fedora", Base: "ext:fedora", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/fedora:v1", Pkg: "rpm",
-			Distro:       []string{"fedora"},
-			BuildFormats: []string{"rpm"},
-		},
-		"arch": {
-			Name: "arch", Base: "ext:arch", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/arch:v1", Pkg: "pac",
-			Distro:       []string{"arch"},
-			BuildFormats: []string{"pac"},
-		},
-		"arch-a-b": {
-			Name: "arch-a-b", Base: "arch", IsExternalBase: false,
-			Candy: []string{"a", "b"}, Tag: "v1", Registry: "r",
-			FullTag: "r/arch-a-b:v1", Pkg: "pac",
-			Distro: []string{"arch"}, BuildFormats: []string{"pac"},
-		},
-		"arch-a-c": {
-			Name: "arch-a-c", Base: "arch", IsExternalBase: false,
-			Candy: []string{"a", "c"}, Tag: "v1", Registry: "r",
-			FullTag: "r/arch-a-c:v1", Pkg: "pac",
-			Distro: []string{"arch"}, BuildFormats: []string{"pac"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "ext:fedora", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm", Distro: []string{"fedora"}, BuildFormats: []string{"rpm"}}}, "arch": {ResolvedBox: spec.ResolvedBox{Name: "arch", Base: "ext:arch", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/arch:v1", Pkg: "pac", Distro: []string{"arch"}, BuildFormats: []string{"pac"}}}, "arch-a-b": {ResolvedBox: spec.ResolvedBox{Name: "arch-a-b", Base: "arch", IsExternalBase: false, Candy: []string{"a", "b"}, Tag: "v1", Registry: "r", FullTag: "r/arch-a-b:v1", Pkg: "pac", Distro: []string{"arch"}, BuildFormats: []string{"pac"}}}, "arch-a-c": {ResolvedBox: spec.ResolvedBox{Name: "arch-a-c", Base: "arch", IsExternalBase: false, Candy: []string{"a", "c"}, Tag: "v1", Registry: "r", FullTag: "r/arch-a-c:v1", Pkg: "pac", Distro: []string{"arch"}, BuildFormats: []string{"pac"}}}}
 
 	// Defaults explicitly use rpm to prove the fix: parent arch must
 	// win over these defaults in the auto-intermediate.
@@ -1229,28 +939,7 @@ func TestComputeIntermediates_UnionChildBuildFormats(t *testing.T) {
 		"c": candyFixture(spec.CandyModel{Name: "c"}, spec.CandyView{}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{
-		"cachyos": {
-			Name: "cachyos", Base: "ext:cachyos", IsExternalBase: true,
-			Candy: []string{}, Tag: "v1", Registry: "r",
-			FullTag: "r/cachyos:v1", Pkg: "pac",
-			Distro:       []string{"cachyos", "arch"},
-			BuildFormats: []string{"pac"},
-			Builder:      buildkit.BuilderMap{"aur": "arch-builder"},
-		},
-		"cachyos-a-b": {
-			Name: "cachyos-a-b", Base: "cachyos", IsExternalBase: false,
-			Candy: []string{"a", "b"}, Tag: "v1", Registry: "r",
-			FullTag: "r/cachyos-a-b:v1", Pkg: "pac",
-			Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac", "aur"},
-		},
-		"cachyos-a-c": {
-			Name: "cachyos-a-c", Base: "cachyos", IsExternalBase: false,
-			Candy: []string{"a", "c"}, Tag: "v1", Registry: "r",
-			FullTag: "r/cachyos-a-c:v1", Pkg: "pac",
-			Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac", "aur"},
-		},
-	}
+	images := map[string]*buildkit.ResolvedBox{"cachyos": {ResolvedBox: spec.ResolvedBox{Name: "cachyos", Base: "ext:cachyos", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/cachyos:v1", Pkg: "pac", Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac"}, Builder: buildkit.BuilderMap{"aur": "arch-builder"}}}, "cachyos-a-b": {ResolvedBox: spec.ResolvedBox{Name: "cachyos-a-b", Base: "cachyos", IsExternalBase: false, Candy: []string{"a", "b"}, Tag: "v1", Registry: "r", FullTag: "r/cachyos-a-b:v1", Pkg: "pac", Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac", "aur"}}}, "cachyos-a-c": {ResolvedBox: spec.ResolvedBox{Name: "cachyos-a-c", Base: "cachyos", IsExternalBase: false, Candy: []string{"a", "c"}, Tag: "v1", Registry: "r", FullTag: "r/cachyos-a-c:v1", Pkg: "pac", Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac", "aur"}}}}
 
 	defaults := IntermediateDefaults{
 		Registry: "r",
@@ -1343,24 +1032,14 @@ func determinismFixture() (map[string]*buildkit.ResolvedBox, map[string]CandyMod
 	}
 
 	mk := func(name, base string, candy []string, builds []string, distro []string) *buildkit.ResolvedBox {
-		return &buildkit.ResolvedBox{
-			Name: name, Base: base, IsExternalBase: true,
-			Candy: candy, Tag: "v1", Registry: "r",
-			FullTag: "r/" + name + ":v1", Pkg: "rpm",
-			BuildFormats: builds, Distro: distro,
-		}
+		return &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{Name: name, Base: base, IsExternalBase: true, Candy: candy, Tag: "v1", Registry: "r", FullTag: "r/" + name + ":v1", Pkg: "rpm", BuildFormats: builds, Distro: distro}}
 	}
 	// Two external bases that SHORTEN to the same name ("img") so their
 	// branch-point auto-intermediates ("img-shared") collide → -2 suffix order
 	// is sibling-group-order sensitive.
-	images := map[string]*buildkit.ResolvedBox{
-		// base A group: shared → {leafA, leafB}, consumers carry different formats
-		"a-one": mk("a-one", "reg-a/img:1", []string{"leafA", "x", "y"}, []string{"pac", "aur"}, []string{"arch"}),
-		"a-two": mk("a-two", "reg-a/img:1", []string{"leafB", "y", "x"}, []string{"pac", "x264"}, []string{"arch", "arch-extra"}),
-		// base B group: same short name "img", same branch shape
-		"b-one": mk("b-one", "reg-b/img:1", []string{"leafA"}, []string{"pac", "aur"}, []string{"arch"}),
-		"b-two": mk("b-two", "reg-b/img:1", []string{"leafB"}, []string{"pac", "x264"}, []string{"arch"}),
-	}
+	images := map[string]*buildkit.ResolvedBox{ // base A group: shared → {leafA, leafB}, consumers carry different formats
+		"a-one": mk("a-one", "reg-a/img:1", []string{"leafA", "x", "y"}, []string{"pac", "aur"}, []string{"arch"}), "a-two": mk("a-two", "reg-a/img:1", []string{"leafB", "y", "x"}, []string{"pac", "x264"}, []string{"arch", "arch-extra"}), // base B group: same short name "img", same branch shape
+		"b-one": mk("b-one", "reg-b/img:1", []string{"leafA"}, []string{"pac", "aur"}, []string{"arch"}), "b-two": mk("b-two", "reg-b/img:1", []string{"leafB"}, []string{"pac", "x264"}, []string{"arch"})}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"pac"}, Distro: []string{"arch"}}
 	return images, layers, defaults
