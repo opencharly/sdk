@@ -8,49 +8,14 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/opencharly/spec/spec"
+	"github.com/opencharly/spec/proc"
 )
 
-func TestSortedEnvPairs(t *testing.T) {
-	got := SortedEnvPairs(map[string]string{"B": "two words", "A": "1", "C": ""})
-	want := []string{"A=1", "B=two words", "C="}
-	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("SortedEnvPairs = %#v, want %#v", got, want)
-	}
-	if out := SortedEnvPairs(nil); len(out) != 0 {
-		t.Fatalf("SortedEnvPairs(nil) = %#v, want empty", out)
-	}
-}
-
-func TestRemoteLaunchCommand(t *testing.T) {
-	tests := []struct {
-		name   string
-		launch spec.ProcessLaunch
-		want   string
-	}{
-		{
-			name:   "argv only",
-			launch: spec.ProcessLaunch{Argv: []string{"charly", "__agent-target", "serve", "--stdio"}},
-			want:   "'charly' '__agent-target' 'serve' '--stdio'",
-		},
-		{
-			name: "working dir and env stay target-side",
-			launch: spec.ProcessLaunch{
-				Argv:       []string{"run", "a b"},
-				WorkingDir: "/work dir",
-				Env:        map[string]string{"TOKEN": "a b'$", "A": "1"},
-			},
-			want: `cd '/work dir' && env 'A=1' 'TOKEN=a b'\''$' 'run' 'a b'`,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := RemoteLaunchCommand(tc.launch); got != tc.want {
-				t.Fatalf("RemoteLaunchCommand = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
+// SortedEnvPairs + RemoteLaunchCommand moved with their subject to
+// github.com/opencharly/spec/proc (launch_test.go). These two tests stay here
+// because they exercise proc.ShutdownProcessGroup through kit's own
+// caller-owned pipe machinery (startProcessPipes) — the exact fixture the
+// sdk/kit process executor uses — keeping that fixture single-sourced (R3).
 
 // startTrapChild launches a Setpgid child through the same caller-owned pipe
 // machinery the executors use and blocks until the child reports its signal
@@ -83,7 +48,7 @@ func TestShutdownProcessGroupTerminatesBeforeKilling(t *testing.T) {
 	// A child stopped by the SIGTERM stage prints from its trap; a child hit by
 	// SIGKILL first could never print.
 	cmd, pipes, reader, done := startTrapChild(t, `trap 'echo caught-term; exit 0' TERM; echo ready; sleep 3600 & wait`)
-	ShutdownProcessGroup(cmd, pipes.stdin, done)
+	proc.ShutdownProcessGroup(cmd, pipes.stdin, done)
 	rest, err := io.ReadAll(reader)
 	if err != nil {
 		t.Fatal(err)
@@ -99,5 +64,5 @@ func TestShutdownProcessGroupEscalatesToKill(t *testing.T) {
 	// proof: without the escalation the call blocks forever on an immortal
 	// child.
 	cmd, pipes, _, done := startTrapChild(t, `trap '' TERM; echo ready; while :; do sleep 60; done`)
-	ShutdownProcessGroup(cmd, pipes.stdin, done)
+	proc.ShutdownProcessGroup(cmd, pipes.stdin, done)
 }

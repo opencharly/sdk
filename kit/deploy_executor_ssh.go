@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // SSHExecutor implements DeployExecutor against an SSH-reachable guest.
@@ -275,9 +277,9 @@ func (e *SSHExecutor) ResolveHome(ctx context.Context, user string) (string, err
 }
 
 // shellSingleQuoteSSH quotes `s` for safe inclusion in a bash -c script passed via ssh. FU-14
-// folded it onto ShellQuote — the shared POSIX single-quoter (behavioural equivalence proven by
+// folded it onto spec.ShellQuote — the shared POSIX single-quoter (behavioural equivalence proven by
 // TestShellSingleQuoters_CanonicalPOSIX) — so the transform lives ONCE (R3).
-var shellSingleQuoteSSH = ShellQuote
+var shellSingleQuoteSSH = spec.ShellQuote
 
 // WaitForSSH polls the guest's sshd until it accepts connections
 // (bounded by maxWaitSeconds). Returns nil on first successful

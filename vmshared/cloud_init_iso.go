@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/opencharly/sdk/proclifecycle"
+	"github.com/opencharly/spec/proc"
 )
 
 // WriteSeedISO builds a NoCloud cidata ISO at outPath. Takes the three
@@ -33,8 +33,8 @@ func WriteSeedISO(outPath, userData, metaData, networkConfig string) error {
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
-	proclifecycle.RegisterTempCleanup(tmpDir)
-	defer func() { _ = os.RemoveAll(tmpDir); proclifecycle.UnregisterTempCleanup(tmpDir) }()
+	proc.RegisterTempCleanup(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir); proc.UnregisterTempCleanup(tmpDir) }()
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "user-data"), []byte(userData), 0o644); err != nil {
 		return fmt.Errorf("writing user-data: %w", err)

@@ -15,7 +15,6 @@ var (
 	ComposePackages          = composePackages
 	ComposeRunCmd            = composeRunCmd
 	ComposeUsers             = composeUsers
-	CurrentUsername          = currentUsername
 	DefaultMachineForArch    = defaultMachineForArch
 	FormatForDistroID        = formatForDistroID
 	LoadRegistry             = loadRegistry

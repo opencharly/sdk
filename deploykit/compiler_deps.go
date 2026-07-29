@@ -12,7 +12,7 @@ import (
 
 var (
 	ExpandPath         = kit.ExpandPath
-	shellQuote         = kit.ShellQuote
+	shellQuote         = spec.ShellQuote
 	KwRun              = kit.KwRun
 	extractStringSlice = ExtractStringSlice
 	toMapSlice         = buildkit.ToMapSlice

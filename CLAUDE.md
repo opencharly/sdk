@@ -5,15 +5,19 @@ You are in the **OpenCharly plugin SDK**
 `sdk`), the plugin-author helpers (`kit/`), the InstallPlan step vocabulary
 (`deploykit/`), the Containerfile render machinery (`buildkit/`), the
 container-engine client (`enginekit/`), the unified-config parse
-(`loaderkit/`), the agent control plane (`agentkit/`), the target dial/serve
-transports (`targetkit/`), the process-lifecycle leaf (`proclifecycle/`), the
-in-process SSH client (`sshx/`), the shared test fixtures (`testkit/`), and the
-shared VM types (`vmshared/`).
+(`loaderkit/`), the agent control plane (`agentkit/`), and the shared VM types
+(`vmshared/`).
 
-The wire/IR/param TYPES, the gRPC proto contract (`proto`), and the CUE schema
-source they derive from are NOT owned here — they live in the separate contract
-module **`github.com/opencharly/spec`**; this SDK is a CONSUMER of tagged `spec`
-releases (importing its `spec`, `proto`, and `spec/schemaconcat` packages).
+The wire/IR/param TYPES, the gRPC proto contract (`proto`), the CUE schema
+source they derive from, AND the standalone FABRIC PRIMITIVES — the target
+dial/serve transports (`transport/`), the in-process SSH client (`sshx/`, the
+sole `golang.org/x/crypto/ssh` boundary), the process-lifecycle + launch leaf
+(`proc/`), and the shared test fixtures (`testkit/`) — are NOT owned here; they
+live in the separate contract module **`github.com/opencharly/spec`** (#55
+step1 moved the four fabric slices out of the sdk kits per the granular-spec
+Rule 2). This SDK is a CONSUMER of tagged `spec` releases (importing its `spec`,
+`proto`, `spec/schemaconcat`, and — where a kit needs a host primitive —
+`spec/proc` packages).
 
 **Load these skills FIRST (R0):**
 

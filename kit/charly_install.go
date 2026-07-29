@@ -102,7 +102,7 @@ func EnsureCharlyInVenue(ctx context.Context, ve DeployExecutor, charlyBin, host
 		},
 		func() (string, error) { return replicatedCharlyPath(charlyBin, hostVer) },
 		func(path string) bool {
-			_, _, exit, err := ve.RunCapture(ctx, ShellQuote(path)+" version >/dev/null 2>&1")
+			_, _, exit, err := ve.RunCapture(ctx, spec.ShellQuote(path)+" version >/dev/null 2>&1")
 			return err == nil && exit == 0
 		},
 		func(remotePath string) error {
@@ -133,7 +133,7 @@ func EnsureCharlyInDeployVenue(ctx context.Context, ve spec.DeployExecutor, char
 		},
 		func() (string, error) { return replicatedCharlyPath(charlyBin, hostVer) },
 		func(path string) bool {
-			_, _, exit, err := ve.RunCapture(ctx, ShellQuote(path)+" version >/dev/null 2>&1")
+			_, _, exit, err := ve.RunCapture(ctx, spec.ShellQuote(path)+" version >/dev/null 2>&1")
 			return err == nil && exit == 0
 		},
 		func(remotePath string) error {
@@ -156,7 +156,7 @@ func EnsureCharlyInGuest(ctx context.Context, ssh SSHArgs, charlyBin, hostVer, s
 				return sshCapture(ctx, ssh, `command -v charly >/dev/null 2>&1 && charly version 2>/dev/null || true`)
 			},
 			func() (string, error) { return replicatedCharlyPath(charlyBin, hostVer) },
-			func(path string) bool { return sshOK(ctx, ssh, ShellQuote(path)+" version >/dev/null 2>&1") },
+			func(path string) bool { return sshOK(ctx, ssh, spec.ShellQuote(path)+" version >/dev/null 2>&1") },
 			func(remotePath string) error { return scpInto(ctx, ssh, charlyBin, remotePath) })
 		if err != nil {
 			return "", err

@@ -7,6 +7,7 @@ import (
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // deploy_chain.go — single source of truth for "given a dotted deployment
@@ -223,7 +224,7 @@ func RootExecutorForDeployNode(node *BundleNode) (DeployExecutor, error) {
 	if hostField == "" || hostField == "local" {
 		return ShellExecutor{}, nil
 	}
-	sshTarget, err := vmshared.ParseSSHTarget(hostField)
+	sshTarget, err := spec.ParseSSHTarget(hostField)
 	if err != nil {
 		return nil, fmt.Errorf("invalid host %q: %w", hostField, err)
 	}
