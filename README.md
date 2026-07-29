@@ -29,13 +29,6 @@ NOT own or generate them). What this repo owns:
   kind-recognition snapshot.
 - **`agentkit/`** — the agent control plane: transport-independent workflow
   invariants (`Workflow`) and the daemon-free durable record store (`Store`).
-- **`targetkit/`** — transport-neutral gRPC connections to Charly targets
-  (`DialProvider`/`DialProcessProvider` over exec/SSH stdio processes;
-  `ServeStdio` on the target side).
-- **`proclifecycle/`** — a stdlib-only leaf package for process lifecycle.
-- **`sshx/`** — the in-process SSH client + tunnel helpers.
-- **`testkit/`** — disposable live protocol fixtures shared by SDK tests and
-  consumers (e.g. the in-process SSH process server).
 - **`vmshared/`** — VM rendering + orchestration types shared by charly core
   and the VM-facing plugins (libvirt YAML/XML, qemu argv, cloud-init, OVMF,
   SMBIOS, ssh client/tunnel helpers).
