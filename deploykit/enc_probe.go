@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // enc_probe.go — the encrypted-volume STATE-PROBE + plan-building functions relocated from

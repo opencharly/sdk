@@ -18,8 +18,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // specCandyAdapter wraps the two envelope views + the source dir into a deploykit.CandyModel.

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // vm_deploy_state_test.go — ported from charly/vm_deploy_state_test.go (F6 vm-lifecycle move,

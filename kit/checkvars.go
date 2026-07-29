@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // ContainerInspection is the subset of `podman inspect` JSON that the test

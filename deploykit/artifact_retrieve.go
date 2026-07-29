@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/spec"
 )
 
 // RetrieveCandyArtifacts walks every artifact declared by every candy
