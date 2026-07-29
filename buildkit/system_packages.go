@@ -11,8 +11,8 @@ import (
 // core's stepEmitSystemPackages (P8b): given the step's format + phase + raw
 // install context and the box-resolved DistroConfig, it resolves the FormatDef,
 // picks the phase.install.container template, and renders it — all over sdk types
-// (FormatDef = spec.Format, Phase = spec enum, DistroConfig/NewInstallContext/
-// RenderTemplate already buildkit). The core stepEmitSystemPackages keeps the
+// (FormatDef = spec.Format, Phase = spec enum, DistroConfig = spec.DistroConfig via
+// the buildkit alias, NewInstallContext/RenderTemplate buildkit). The core stepEmitSystemPackages keeps the
 // wire-view → concrete-step reconstruction (deploykit-coupled) and threads the
 // pure scalars in.
 

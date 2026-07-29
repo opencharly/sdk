@@ -18,12 +18,14 @@ type (
 // wire-clean value fields (Name/Version/Distro/Tags/User/…) moved to spec.ResolvedBox
 // (spec/spec/resolved_box.go) — the shared contract type charly core's render-seam floor
 // + the "resolved-project" envelope projector + candy/plugin-build all read/construct.
-// This type is now an EMBEDDING WRAPPER adding back ONLY the three genuinely
-// buildkit-owned host-render-cache pointers (the kit.CheckResult/DeadlineExceeded
-// pattern — see /charly-internals:go "Generation coverage"): DistroConfig/DistroDef/
-// BuilderConfig are the parsed distro:/builder: build VOCABULARY — capability-owned,
-// buildkit-specific types spec must never import (spec is the bottom of the sdk
-// dependency graph). Every promoted spec.ResolvedBox field (Name, Tags, UID, Merge,
+// This type is now an EMBEDDING WRAPPER adding back ONLY the genuinely
+// buildkit-owned host-render-cache pointer FIELDS (the kit.CheckResult/DeadlineExceeded
+// pattern — see /charly-internals:go "Generation coverage"). Their TYPES —
+// DistroConfig/DistroDef/BuilderConfig — are the parsed distro:/builder: build
+// VOCABULARY, all CUE-sourced spec types (spec.DistroConfig / spec.ResolvedDistro /
+// spec.BuilderConfig), referenced here through the thin buildkit aliases in
+// format_config.go (#55 step 3-III relocated the container types + their
+// vocabulary-resolution methods to spec). Every promoted spec.ResolvedBox field (Name, Tags, UID, Merge,
 // Builder, CandyCaps, BakedMetadata, …) reads/writes unchanged via selector
 // (img.Name, img.UID = x, …); only COMPOSITE-LITERAL construction sites needed
 // restructuring to nest the wire-clean fields under the embedded field name.
