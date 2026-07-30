@@ -429,7 +429,7 @@ func MergeBundleNode(dst, src BundleNode) BundleNode {
 	// MemberOf/Inside/venue), so merge the structural tree fields EXPLICITLY here:
 	// src non-zero wins, else dst passes through (same precedence). Without this a
 	// project's nested/peer tree + target is dropped on the empty→project merge AND
-	// by a nestedless operator overlay (resolveTreeRoot → MergeDeployConfigs).
+	// by a nestedless operator overlay (the merged-tree read → MergeDeployConfigs).
 	if src.Target != "" {
 		dst.Target = src.Target
 	}

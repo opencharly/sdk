@@ -30,7 +30,7 @@ import (
 // nested-pod) work uniformly across deploy, test, and harness.
 
 // ResolveDeployChain walks `dotted` through `roots` (typically the merged
-// deployment tree from resolveTreeRoot) and returns the leaf
+// deployment tree from ResolveMergedTreeViaExecutor) and returns the leaf
 // BundleNode + a composed DeployExecutor chain that reaches it from
 // `root`.
 //

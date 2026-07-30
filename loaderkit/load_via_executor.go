@@ -118,17 +118,19 @@ func LoadUnifiedViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (
 	return LoadUnified(dir, LoadSeamsFromExecutor(&executorLoaderExecutor{ctx: ctx, ex: ex}))
 }
 
-// ResolveMergedTreeViaExecutor is the PLUGIN-SIDE twin of charly-core's resolveTreeRoot
-// (deploy_tree.go): the merged project+operator deploy-node tree, ready for dotted-path traversal.
-// Byte-for-byte resolveTreeRoot's composition — the PROJECT config via LoadUnifiedViaExecutor +
-// deploykit.ProjectBundleConfig, the per-host operator overlay via deploykit.LoadBundleConfigViaSeam
-// (the placement-invariant "pod-config-load-bundle" seam read — a plugin CANNOT call the bare
-// deploykit.LoadBundleConfig, which silently no-ops outside charly-core's own init per the
-// DeployStateHost placement class), merged root-wins via deploykit.MergeDeployConfigs. Returns
-// (nil, nil) on an absent/empty project+overlay, matching resolveTreeRoot. This is the shared
-// resolver the #55 Cone A Unit 3a seams (deploy-del-resolve / pod-config-project-volume / the check
-// venue+gather host helpers) call so their host handlers stop re-loading the tree via the core
-// resolveTreeRoot — the tree-threading that lets deploy_tree.go's resolveTreeRoot ultimately DIE.
+// ResolveMergedTreeViaExecutor is THE executor-driven merged deploy-node tree resolver: the merged
+// project+operator deploy-node tree, ready for dotted-path traversal. It is the SOLE merged-tree read
+// for both a genuine out-of-module plugin (over its reverse channel) AND charly-core's own host check
+// seams (check_cmd.go's resolveMergedDeployTree wraps it over an in-proc executor) — the #55 LOADER
+// cone retired the former host-resident deploy_tree.go merged-tree read that this replaced. Its
+// composition: the PROJECT config via LoadUnifiedViaExecutor + deploykit.ProjectBundleConfig, the
+// per-host operator overlay via deploykit.LoadBundleConfigViaSeam (the placement-invariant
+// "pod-config-load-bundle" seam read — a plugin CANNOT call the bare deploykit.LoadBundleConfig,
+// which silently no-ops outside charly-core's own init per the DeployStateHost placement class),
+// merged root-wins via deploykit.MergeDeployConfigs. Returns (nil, nil) on an absent/empty
+// project+overlay. This is the shared resolver the #55 Cone A Unit 3a seams (deploy-del-resolve /
+// pod-config-project-volume / the check venue+gather host helpers) call so no host handler re-loads
+// the tree with a host-resident deploykit projection+merge.
 func ResolveMergedTreeViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (map[string]spec.BundleNode, error) {
 	if ex == nil {
 		return nil, fmt.Errorf("resolve merged tree via executor: no host reverse channel (command not compiled-in?)")
