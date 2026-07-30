@@ -81,37 +81,11 @@ func mergeRawTemplateMap(dst *map[string]json.RawMessage, src map[string]json.Ra
 	}
 }
 
-// MergePluginKindsMap merges plugin-contributed kind entities (uf.PluginKinds:
-// kind word → entity NAME → canonical entity JSON) across every merged
-// document/file. Root-wins NAME-KEYED OVERRIDE, byte-identical in spirit to the
-// build-vocab map merges (mergeDistroMap et al.): for each kind, an existing dst
-// entry for a given name is PRESERVED and src fills only the names dst does not have.
-// So a project's entity overrides an embedded/imported one of the same name (one
-// entry, not two) — the property the agent + sidecar extractions rely on (a project's
-// `sidecar: tailscale` overriding the binary-embedded one, merged in via
-// applyEmbeddedDefaults). Without this,
-// plugin-kind entities decoded into a per-document `sub` spec.UnifiedFile are silently
-// dropped at MergeUnified (every document flows through here).
-func MergePluginKindsMap(dst *map[string]map[string]json.RawMessage, src map[string]map[string]json.RawMessage) {
-	if len(src) == 0 {
-		return
-	}
-	if *dst == nil {
-		*dst = make(map[string]map[string]json.RawMessage)
-	}
-	for kind, entities := range src {
-		d := (*dst)[kind]
-		if d == nil {
-			d = make(map[string]json.RawMessage)
-			(*dst)[kind] = d
-		}
-		for name, body := range entities {
-			if _, exists := d[name]; !exists {
-				d[name] = body
-			}
-		}
-	}
-}
+// MergePluginKindsMap (plugin-contributed kind entities: kind word → entity NAME → canonical entity
+// JSON, root-wins name-keyed override) is DEFINED in the dedicated spec module
+// (spec/spec/merge_plugin_kinds.go, #55 2b) — a pure map/json.RawMessage merge. This forwarder keeps
+// loaderkit's own merge path + charly's embedded-defaults merge terse.
+var MergePluginKindsMap = spec.MergePluginKindsMap
 
 // mergeDeployMaps merges src into dst, dst-wins on name collisions.
 // Field-singular cutover: replaces the legacy mergeDeployments which
