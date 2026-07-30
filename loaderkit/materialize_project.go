@@ -66,7 +66,7 @@ func MaterializeLoadedProject(lp *spec.LoadedProject, merged *spec.UnifiedFile, 
 		// so the merge never re-processes them (the former mergeUnifiedDocs cleared sub.Import too).
 		sub.Import = nil
 		NormalizeV4Aliases(&sub)
-		MergeUnified(merged, &sub, d.SrcDir)
+		spec.MergeUnified(merged, &sub, d.SrcDir)
 	}
 	// 2. Discovered manifests (explicit-entry-wins), applied after the documents.
 	if err := seams.FoldDiscoveredManifests(lp.Discovered, merged); err != nil {
