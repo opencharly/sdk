@@ -158,7 +158,7 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 				CacheMounts: bDef.CacheMount,
 			}
 			if external {
-				frag, err := g.ResolveInlineBuilder(candyName, bName, bDef, ctx, img)
+				frag, err := g.ResolveInlineBuilder(candyName, bName, bDef, ctx, &img.ResolvedBox)
 				if err != nil {
 					return asUser, err
 				}

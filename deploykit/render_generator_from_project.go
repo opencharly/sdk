@@ -115,7 +115,7 @@ func (c renderSeamCaller) validateEgress(kind, label, mode, data string) error {
 // direct peer-dispatch (K3, RDD-spiked live on the external leg): marshal the render context as
 // params + a spec.BuildEnv descriptor as env, InvokeProvider the builder's OpResolve, decode the
 // reply UNVALIDATED — the caller enforces the emptiness rule appropriate to its path.
-func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolveInput, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error) {
+func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolveInput, img *spec.ResolvedBox) (spec.BuilderResolveReply, error) {
 	var reply spec.BuilderResolveReply
 	env, err := json.Marshal(spec.BuildEnv{Distros: img.Tags, Image: img.Name})
 	if err != nil {
@@ -204,7 +204,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// external — dispatches through the SAME Invoke(OpEmit) envelope. The FULL op rides op.Params
 	// (a state-provision act reads SHARED #Op modifiers — mode/content — beyond plugin_input);
 	// the BuildEnv distros ride op.Env.
-	dg.EmitPluginOp = func(op *spec.Op, img *buildkit.ResolvedBox) (string, bool, error) {
+	dg.EmitPluginOp = func(op *spec.Op, img *spec.ResolvedBox) (string, bool, error) {
 		params, err := json.Marshal(op)
 		if err != nil {
 			return "", false, fmt.Errorf("run: plugin verb %q build-emit: marshal op: %w", op.Plugin, err)
@@ -283,7 +283,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 
 	// ResolveInlineBuilder: still host-side — rides K1 with EnsureBuilders (its embedded connect
 	// is the same loader scan+connect action, usually a no-op but not guaranteed).
-	dg.ResolveInlineBuilder = func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx2 *spec.BuildStageContext, img *buildkit.ResolvedBox) (string, error) {
+	dg.ResolveInlineBuilder = func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx2 *spec.BuildStageContext, img *spec.ResolvedBox) (string, error) {
 		var res InlineBuilderResult
 		if err := c.hostBuild(RenderSeamInlineBuilder, InlineBuilderParams{Dir: dir, BoxName: img.Name, CandyName: candyName, BuilderName: builderName, BDef: bDef, Ctx: ctx2}, &res); err != nil {
 			return "", err
@@ -300,7 +300,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// ResolveDetectionBuilderStage / ResolveExternalBuilderStage: direct peer-dispatch (K3,
 	// RDD-spiked live on the external leg).
 	dg.ResolveDetectionBuilderStage = c.resolveBuilderStage
-	dg.ResolveExternalBuilderStage = func(word, candyName string, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error) {
+	dg.ResolveExternalBuilderStage = func(word, candyName string, img *spec.ResolvedBox) (spec.BuilderResolveReply, error) {
 		reply, err := c.resolveBuilderStage(word, spec.BuilderResolveInput{Candy: candyName}, img)
 		if err != nil {
 			return spec.BuilderResolveReply{}, err

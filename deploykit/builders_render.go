@@ -112,7 +112,7 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 func (g *Generator) resolveDetectionBuilderReply(builderName string, layer CandyModel, builderDef *buildkit.BuilderDef, img *buildkit.ResolvedBox, builderRef string) (spec.BuilderResolveReply, error) {
 	ctx := g.BuildStageContext(layer, builderName, builderDef, img, builderRef)
 	in := BuilderResolveInputFrom(layer.GetName(), builderName, builderDef, ctx)
-	return g.ResolveDetectionBuilderStage(builderName, in, img)
+	return g.ResolveDetectionBuilderStage(builderName, in, &img.ResolvedBox)
 }
 
 // BuilderResolveInputFrom builds the serializable spec.BuilderResolveInput a builder
@@ -167,7 +167,7 @@ func (g *Generator) EmitExternalBuilderStages(b *strings.Builder, img *buildkit.
 		if word == "" {
 			continue
 		}
-		reply, err := g.ResolveExternalBuilderStage(word, candyName, img)
+		reply, err := g.ResolveExternalBuilderStage(word, candyName, &img.ResolvedBox)
 		if err != nil {
 			return err
 		}

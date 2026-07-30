@@ -146,7 +146,7 @@ func (g *Generator) EmitTasks(b *strings.Builder, layer CandyModel, img *buildki
 			// Every OTHER plugin verb dispatches through the core Provider registry
 			// (the EmitPluginOp seam): a ProvisionActor act-shell is emitted via EmitCmd;
 			// any other provider's OpEmit fragment is written verbatim.
-			out, isScript, perr := g.EmitPluginOp(&t, img)
+			out, isScript, perr := g.EmitPluginOp(&t, &img.ResolvedBox)
 			if perr != nil {
 				return runningUser, perr
 			}
