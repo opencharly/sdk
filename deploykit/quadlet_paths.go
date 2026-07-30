@@ -5,16 +5,23 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/spec"
 )
 
-// quadlet_paths.go — the on-disk quadlet/systemd PATH + filename helpers (K4 lane B: relocated
-// from charly/quadlet.go — genuinely pure host-filesystem-path mechanisms, no project-loader
-// dependency). Distinct from this package's OWN quadlet.go (the config-WRITE MECHANISM —
-// GenerateQuadlet + its emitters). Shared between charly core (quadlet.go/start.go/
-// status_collector.go/preempt.go/config_image.go — group 3 + generic, not moving yet) and
-// candy/plugin-deploy-pod (pod_lifecycle_resolve.go's quadlet-mode move) via the
-// deploykit_pod_aliases.go passthrough.
+// quadlet_paths.go — the on-disk quadlet/systemd PATH helpers + host existence probes
+// (QuadletDir / SystemdUserDir / QuadletExists[Instance] — os.UserHomeDir + os.Stat). The pure
+// quadlet/service FILENAME funcs are the single-source spec/spec/quadlet_names.go (#55 value
+// extraction — collapsing the former deploykit copy onto spec, R3); re-exported below so
+// existing deploykit.QuadletFilename / deploykit.ServiceName… call sites are untouched. Distinct
+// from this package's OWN quadlet.go (the config-WRITE MECHANISM — GenerateQuadlet + its
+// emitters). New consumers should reference spec.* directly.
+
+var (
+	QuadletFilename         = spec.QuadletFilename
+	QuadletFilenameInstance = spec.QuadletFilenameInstance
+	ServiceName             = spec.ServiceName
+	ServiceNameInstance     = spec.ServiceNameInstance
+)
 
 // QuadletDir returns the user-level quadlet directory.
 func QuadletDir() (string, error) {
@@ -32,26 +39,6 @@ func SystemdUserDir() (string, error) {
 		return "", fmt.Errorf("determining home directory: %w", err)
 	}
 	return filepath.Join(home, ".config", "systemd", "user"), nil
-}
-
-// QuadletFilename returns the quadlet filename for an image.
-func QuadletFilename(boxName string) string {
-	return kit.ContainerName(boxName) + ".container"
-}
-
-// QuadletFilenameInstance returns the quadlet filename for an image with optional instance.
-func QuadletFilenameInstance(boxName, instance string) string {
-	return kit.ContainerNameInstance(boxName, instance) + ".container"
-}
-
-// ServiceName returns the systemd service name for an image.
-func ServiceName(boxName string) string {
-	return kit.ContainerName(boxName) + ".service"
-}
-
-// ServiceNameInstance returns the systemd service name for an image with optional instance.
-func ServiceNameInstance(boxName, instance string) string {
-	return kit.ContainerNameInstance(boxName, instance) + ".service"
 }
 
 // QuadletExists checks whether a .container file exists for the given image.
