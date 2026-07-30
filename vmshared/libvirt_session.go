@@ -1,53 +1,13 @@
 package vmshared
 
-import "os/exec"
+import "github.com/opencharly/spec/hostenv"
 
-// libvirt_session.go — StartLibvirtUserSession, R3-hoisted (#118 coneB-vmlifecycle): it was
-// byte-identically duplicated in charly core (the deleted charly/vm_backend_lifecycle.go) and
-// candy/plugin-vm (vm_phaseA_shims.go) — a pure host-environment probe with zero registry/loader
-// coupling, so it belongs here once, shared by every caller: charly core (bundle_members.go,
-// host_build_check_bed.go — both pre-warm it before a VM/group-bed probe) and candy/plugin-vm
-// (vm_libvirt.go, vm_backend_resolve.go).
+// libvirt_session.go — re-export FORWARDER for StartLibvirtUserSession, RELOCATED to spec/hostenv
+// (#55 vmshared Bucket C). charly core reaches spec/hostenv.StartLibvirtUserSession directly
+// (import-purity); candy/plugin-vm keeps the vmshared.* name via this forwarder AND stubs THIS var in
+// its test (vm_backend_resolve_test.go) — self-consistent, since plugin-vm both stubs and calls the
+// vmshared forwarder. A pure best-effort host action (systemctl --user / virsh spawn), zero coupling.
 
-// StartLibvirtUserSession ensures the libvirt user-session daemon is
-// running. Modular libvirt's `virtqemud --timeout=120` auto-exits
-// after 120 s of idle, so consecutive `charly check libvirt …` calls
-// spaced wider than that find the socket gone.
-//
-// Three start mechanisms tried in order, all best-effort:
-//
-//  1. `systemctl --user start virtqemud.service` — preferred when the
-//     unit is installed (Debian/Ubuntu mostly).
-//  2. `systemctl --user start libvirtd.service` — legacy monolithic
-//     libvirt.
-//  3. `virsh -c qemu:///session list` — works on Arch and any host
-//     where libvirt installs WITHOUT systemd user units. virsh
-//     dispatches to `virt-ssh-helper` / `virtqemud` directly, which
-//     spawns the daemon and creates `/run/user/$UID/libvirt/
-//     virtqemud-sock` on first connect.
-//
-// The function silently ignores all failures. Two outcomes:
-//   - Daemon now running → caller's subsequent socket dial succeeds.
-//   - Daemon not installable (no libvirt on this host) → caller's
-//     downstream socket dial returns "no such file or directory",
-//     which surfaces the real error.
-//
-// Reason for best-effort: don't block legitimate non-libvirt users.
-//
-// Package-level var (not a plain func) so a caller's test can stub it to a
-// no-op when needed (e.g. candy/plugin-vm's resolveVmBackendPlugin coverage,
-// vm_backend_resolve_test.go's stubNoLibvirtSpawn).
-var StartLibvirtUserSession = func() {
-	// Try systemd user-units first.
-	for _, unit := range []string{"virtqemud.service", "libvirtd.service"} {
-		// Idempotent: systemctl start on an already-active unit is a no-op.
-		_ = exec.Command("systemctl", "--user", "start", unit).Run()
-	}
-	// Fall back to virsh-driven spawn for Arch-class hosts that ship
-	// libvirt WITHOUT systemd user units (the binary is launched on-
-	// demand via D-Bus or virt-ssh-helper). `list` is read-only and
-	// returns 0 even with no domains.
-	if _, err := exec.LookPath("virsh"); err == nil {
-		_ = exec.Command("virsh", "-c", "qemu:///session", "list").Run()
-	}
-}
+// StartLibvirtUserSession re-exports hostenv.StartLibvirtUserSession. Stubbable per-package (a caller
+// that stubs THIS var must also call THIS var — plugin-vm does). See spec/hostenv/libvirt_session.go.
+var StartLibvirtUserSession = hostenv.StartLibvirtUserSession
