@@ -6,7 +6,6 @@ import (
 	"maps"
 	"os"
 	"reflect"
-	"slices"
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
@@ -62,130 +61,6 @@ func BundleWalkPostOrder(n *BundleNode, path string, fn func(path string, node *
 		}
 	}
 	return fn(path, n)
-}
-
-// ResolveNodePath walks roots[path0].Children[path1]...[pathN] and
-// returns the targeted node plus its parent chain (root-first,
-// excluding the target itself). Returns a descriptive error when any
-// path segment is missing so the user sees which segment doesn't
-// exist.
-//
-// An empty path is invalid — callers dispatch to
-// WalkPreOrder/WalkPostOrder against a named root instead of
-// resolving "".
-func ResolveNodePath(roots map[string]BundleNode, path string) (*BundleNode, []*BundleNode, error) {
-	parts := SplitDottedPath(path)
-	if len(parts) == 0 {
-		return nil, nil, fmt.Errorf("empty or malformed deployment path %q", path)
-	}
-	rootName := parts[0]
-	rootEntry, ok := roots[rootName]
-	if !ok {
-		return nil, nil, fmt.Errorf("no deployment named %q", rootName)
-	}
-	current := &rootEntry
-	var ancestors []*BundleNode
-	for i := 1; i < len(parts); i++ {
-		ancestors = append(ancestors, current)
-		next, ok := current.Children[parts[i]]
-		if !ok {
-			prefix := strings.Join(parts[:i], ".")
-			return nil, nil, fmt.Errorf("no child %q under %q", parts[i], prefix)
-		}
-		current = next
-	}
-	return current, ancestors, nil
-}
-
-// SplitDottedPath splits a dotted deployment path into segments. An
-// empty input or a path with any empty segment (leading/trailing/
-// doubled dots) yields nil so callers can flag the error at their
-// layer with the original offending path string.
-func SplitDottedPath(path string) []string {
-	if path == "" {
-		return nil
-	}
-	out := strings.Split(path, ".")
-	if slices.Contains(out, "") {
-		return nil
-	}
-	return out
-}
-
-// PathLeaf returns the last segment of a dotted deployment path.
-// "foo.bar.baz" -> "baz"; "foo" -> "foo"; "" -> "". Unlike
-// SplitDottedPath, a malformed path (leading/trailing/doubled dots)
-// still yields its raw trailing segment rather than nil — callers that
-// only care about the LEAF (e.g. a "host"/"local" literal-name check)
-// want the tolerant form. Shared by the host-side deploy dispatcher and
-// candy/plugin-bundle's node-classification helpers (R3 — one source).
-func PathLeaf(path string) string {
-	if idx := strings.LastIndexByte(path, '.'); idx >= 0 {
-		return path[idx+1:]
-	}
-	return path
-}
-
-// ClassifyNodeTarget picks the target discriminator for a node. Uses
-// node.Target when non-empty (canonical pod|vm|k8s|local|android, set from
-// the node-form kind by the loader's bundleTargetForDisc).
-//
-// For ref-based deploys with no charly.yml entry (e.g. `charly bundle add
-// foo ./box.yml` where foo isn't declared), the deploy name itself is the
-// hint: literal `host` or `local` (as a whole path LEAF) → local target;
-// anything else → pod. A pure function of node+path with no
-// LoadUnified/executor dependency — shared by charly core (deriving the
-// ANCESTOR executor chain in a nested deploy walk) and candy/plugin-bundle
-// (classifying the CURRENT node before dispatch, W4 pure-helpers
-// relocation) — R3, one source for both call sites.
-func ClassifyNodeTarget(node *spec.BundleNode, path string) string {
-	if node != nil && node.Target != "" {
-		return node.Target
-	}
-	if leaf := PathLeaf(path); leaf == "host" || leaf == "local" {
-		return "local"
-	}
-	return "pod"
-}
-
-// deployNodeVenue returns a node's stamped descent VENUE trait (P9) nil-safely — the deploykit
-// analogue of charly's nodeTraits for the SDK-side consult sites, which cannot reach charly's
-// provider registry to resolve traits for an unstamped node. A node with no stamped descent
-// yields "" (the external-in-place default), so a caller that also checks a positive fallback
-// (e.g. `|| e.From != ""`) preserves the former word-switch behaviour.
-func deployNodeVenue(n *BundleNode) string {
-	if n != nil && n.Descent != nil {
-		return n.Descent.Venue
-	}
-	return ""
-}
-
-// SortedNestedKeys returns the keys of a children map in deterministic
-// order so traversal produces stable output across runs.
-// BedCheckLiveRefs returns the ordered `charly check live` targets for a bed: the
-// substrate itself first, then each nested child as a sorted dotted path. This
-// is the pure list `charly check run` walks so a nested pod's BAKED candy/box check
-// (e.g. the selkies candy's encoder + frame checks on a nested selkies-kde pod)
-// is exercised against its real venue through the chain — not just the parent
-// substrate. Without the nested entries, `charly check run` deploys nested children
-// but never evaluates them. Pure + unit-tested.
-func BedCheckLiveRefs(name string, children map[string]*BundleNode) []string {
-	refs := []string{name}
-	for _, k := range SortedNestedKeys(children) {
-		// A nested child gets its own `charly check live <parent>.<child>` hop ONLY
-		// if it is an independently-resolvable venue (a pod/vm/local child with
-		// its own image/host that the chain can reach). A `target: android`
-		// child shares the parent pod's venue and has NO own image — its
-		// app-presence checks are baked into the parent's android-emulator-layer
-		// and already run in the parent ref. `charly check live` has no android
-		// dotted-path branch, so a hop for it would wrongly resolve to a
-		// non-existent `charly-<parent>.device` container. Skip android children.
-		if c := children[k]; c != nil && deployNodeVenue(c) == "parent" { // android (parent venue)
-			continue
-		}
-		refs = append(refs, name+"."+k)
-	}
-	return refs
 }
 
 // EffectiveStop returns the configured stop mechanism with the default.
@@ -398,50 +273,6 @@ func findBundleNodePtr(m map[string]*BundleNode, name string) *BundleNode {
 	return nil
 }
 
-// MergeBundleNode applies non-zero fields from `src` onto `dst` and
-// returns the merged copy. Walks every yaml-tagged field via reflect; the
-// yaml `-` tag (derived/runtime-only fields) is skipped. Same precedence
-// rule as the underlying merge: src non-zero wins, otherwise dst passes
-// through. Per R3 the single helper replaces the hand-rolled per-field
-// merges that previously lived in MergeDeployConfigs (drift-prone — every
-// new struct field needed a remembered append, and 19+ were missed).
-func MergeBundleNode(dst, src BundleNode) BundleNode {
-	dstV := reflect.ValueOf(&dst).Elem()
-	srcV := reflect.ValueOf(src)
-	t := dstV.Type()
-	for i := 0; i < t.NumField(); i++ {
-		ft := t.Field(i)
-		tag := ft.Tag.Get("yaml")
-		// Skip derived fields (yaml:"-") and untagged fields (rare; not
-		// part of the persisted schema, so not merge-relevant).
-		if tag == "-" || tag == "" {
-			continue
-		}
-		sv := srcV.Field(i)
-		if sv.IsZero() {
-			continue
-		}
-		dstV.Field(i).Set(sv)
-	}
-	// Children/Members/Target are loader-DERIVED (yaml:"-" — not authored) yet are
-	// real TREE DATA that must merge across project + per-host overlay. The reflect
-	// loop above skips yaml:"-" fields (intended for the genuinely runtime-only
-	// MemberOf/Inside/venue), so merge the structural tree fields EXPLICITLY here:
-	// src non-zero wins, else dst passes through (same precedence). Without this a
-	// project's nested/peer tree + target is dropped on the empty→project merge AND
-	// by a nestedless operator overlay (the merged-tree read → MergeDeployConfigs).
-	if src.Target != "" {
-		dst.Target = src.Target
-	}
-	if len(src.Children) > 0 {
-		dst.Children = src.Children
-	}
-	if len(src.Members) > 0 {
-		dst.Members = src.Members
-	}
-	return dst
-}
-
 // IsAutoVmDeployEntry reports whether a VM deploy entry carries NOTHING beyond
 // the fields SaveVmDeployState auto-sets — target: vm, vm:, and vm_state. Such
 // an entry is a pure runtime-state record (e.g. a disposable check-bed VM) that
@@ -631,20 +462,6 @@ func RemoveByExactSource[T Named](entries []T, source string) ([]T, bool) {
 		}
 	}
 	return result, removed
-}
-
-// DescriptionInfo returns the human-facing summary: the FIRST line of the plain-string
-// description (multi-line prose lives in the rest of the string). Relocated from
-// charly/generate.go so MergeDeployOntoMetadata (deploy_file.go) reads it without a core dep.
-func DescriptionInfo(d string) string {
-	d = strings.TrimSpace(d)
-	if d == "" {
-		return ""
-	}
-	if before, _, ok := strings.Cut(d, "\n"); ok {
-		return strings.TrimSpace(before)
-	}
-	return d
 }
 
 // ScopeVolumesToDeployKey renames meta's named-volume mounts from the image-derived prefix

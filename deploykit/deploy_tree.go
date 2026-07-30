@@ -1,8 +1,6 @@
 package deploykit
 
 import (
-	"sort"
-
 	"github.com/opencharly/sdk/vmshared"
 )
 
@@ -126,21 +124,4 @@ func ClassifyTarget(node *BundleNode) string {
 		return "pod"
 	}
 	return node.Target
-}
-
-// stampBundleDescents stamps every deploy node's venue-hop descent-descriptor via
-// the shared kit mapping (the descent de-type, Cutover H). Applied uniformly by the
-// loader AFTER all structural kinds have folded into uf.Bundle — so every
-// substrate/group/custom structural kind gets a descriptor without each plugin
-// remembering to stamp — and the kernel's deploy chain (AppendHopForFlatPath)
-// descends by TRANSPORT, never by a kind-word switch. The word→transport MAPPING
-// lives in sdk/kit, never the kernel; StampDescent recurses the nested/peer subtree.
-
-func SortedNestedKeys(children map[string]*BundleNode) []string {
-	out := make([]string, 0, len(children))
-	for k := range children {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

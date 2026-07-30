@@ -116,25 +116,3 @@ func BuildArtifactEnv(secretEnv map[string]string, node *spec.BundleNode) map[st
 	}
 	return env
 }
-
-// CandyArtifactRegisters returns the DISTINCT `register:` hints declared across every
-// candy's artifact list — name-blind (it reads each artifact's own declaration, never a
-// candy name). The declaration-reading half of the k3s-server artifact-declaration-driven
-// dispatch fix (P13-KERNEL); the WORD-KEYED HANDLER TABLE (function pointers into
-// k3sPostProvision and friends) stays PLUGIN-side as the thin dispatch anchor
-// (candy/plugin-bundle/secrets_artifacts.go's artifactRegisterHandlers, Cone A shape 3 —
-// relocated wholesale from the deleted charly/deploy_add_shared.go), never here.
-func CandyArtifactRegisters(layers []spec.CandyReader) map[string]bool {
-	out := map[string]bool{}
-	for _, layer := range layers {
-		if layer == nil {
-			continue
-		}
-		for _, a := range layer.Artifact() {
-			if a.Register != "" {
-				out[a.Register] = true
-			}
-		}
-	}
-	return out
-}

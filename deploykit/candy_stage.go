@@ -9,24 +9,6 @@ import (
 	"github.com/opencharly/sdk/kit"
 )
 
-// CandyMapKey returns the candy's map key: the full @github ref for a remote candy
-// (RepoPath/SubPathPrefix+Name), else the bare Name. Relocated from charly (P8).
-func CandyMapKey(layer CandyModel) string {
-	if layer.GetRemote() {
-		return layer.GetRepoPath() + "/" + layer.GetSubPathPrefix() + layer.GetName()
-	}
-	return layer.GetName()
-}
-
-// CandyStageDirName returns the content-addressed staging dir name for a remote
-// candy's copied tree (name.version). Relocated from charly (P8); byte-identical.
-func CandyStageDirName(layer CandyModel) string {
-	if layer.GetVersion() == "" {
-		return layer.GetName() // defensive; remote candies are mandatorily versioned
-	}
-	return layer.GetName() + "." + layer.GetVersion()
-}
-
 // CandyCopySource returns the build-context path a candy's files are COPYed from:
 // the staged _candy dir for a remote candy, the default candy/<name>/ for a local
 // candy at the default location, else the relative SourceDir. Relocated (P8).

@@ -30,6 +30,12 @@ import (
 // hostRooted reports whether node's stamped descent trait is host-rooted (a local/SSH-shell
 // venue, as opposed to a container/VM venue). Reads the wire-stamped node.Descent directly —
 // see the file header for why this needs no registry access.
+//
+// STAYS in deploykit (with DeployNestedLocalChildren below): hostRooted has a live
+// deploykit-internal caller in this file (the bed-session apply path), and a private helper
+// cannot be re-exported from spec as a forwarder — so relocating the pure
+// DeployNestedLocalChildren pair to spec is blocked until hostRooted is exported or the pair
+// folds under #84. Excluded from the deploykit D2-clean value-helper move (#55).
 func hostRooted(node *BundleNode) bool {
 	return node != nil && node.Descent != nil && node.Descent.HostRooted
 }

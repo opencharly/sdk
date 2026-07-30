@@ -7,6 +7,13 @@
 // kit.ParsePortMapping) — a PURE resolve-to-envelope Mechanism under the
 // kernel/plugin boundary law, no host I/O, no globals. charly core aliases
 // these (tunnel.go) for its remaining pod-config-* seam call sites.
+//
+// STAYS in deploykit pending #84 (value-type consolidation): although
+// TunnelConfigFromMetadata + parseHostPorts + buildPortMapping are otherwise
+// pure value-helpers, they depend on kit.ParsePortMapping — so relocating them
+// to the spec contract module would force spec→sdk/kit (a layering violation).
+// They move to spec only once ParsePortMapping/PortSpec land there (#84);
+// excluded from the deploykit D2-clean value-helper move (#55).
 package deploykit
 
 import (
