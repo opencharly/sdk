@@ -105,7 +105,7 @@ func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace boo
 		Preemptible:       node.Preemptible,
 		RequiresExclusive: node.RequiresExclusive,
 		RequiresShared:    node.RequiresShared,
-	}, marshalNode)
+	}, marshalNode, nil)
 }
 
 // DeployNestedLocalChildren is now spec.DeployNestedLocalChildren (#55 U4 — a pure dotted-path

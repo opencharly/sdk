@@ -494,9 +494,23 @@ func ScopeVolumesToDeployKey(meta *spec.BoxMetadata, deployName, instance string
 // caller supplies (the callback SaveBundleConfig invokes per entry).
 //
 //nolint:gocyclo // field-by-field conditional persist; every branch is a peer (write-when-set)
-func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *BundleNode) (*yaml.Node, error)) {
-	if DeployStateHost == nil {
-		return
+func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *BundleNode) (*yaml.Node, error), read func() (*BundleConfig, error)) {
+	// read is the current-state re-read this load-mutate-save performs. A nil read falls back to
+	// LoadDeployConfigForWrite — the DeployStateHost-backed host read — so an IN-PROCESS host
+	// caller passes nil and behaves exactly as before, INCLUDING the "can't read → don't write"
+	// data-safety guard (a nil-read caller with no DeployStateHost registered is not compiled to
+	// touch the ledger, so the write is skipped rather than clobbering an unreadable file). A
+	// plugin caller (out-of-process command:bundle) injects its OWN loader-backed reader, so
+	// SaveDeployState no longer requires the DeployStateHost package var (#55 K4 config-write
+	// seam-collapse). NAMED EXIT: the nil-read branch is DI serving the still-in-proc host callers
+	// (deploy-config-save-state seam / bed_session / CleanDeployEntry) — NOT a transitional shim;
+	// it dies when the last migrates plugin-side in its own deferred cone.
+	loadBase := read
+	if loadBase == nil {
+		if DeployStateHost == nil {
+			return
+		}
+		loadBase = func() (*BundleConfig, error) { return LoadDeployConfigForWrite("saveDeployState") }
 	}
 	path, pathErr := kit.DefaultDeployConfigPath()
 	if pathErr != nil {
@@ -509,10 +523,16 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 		return
 	}
 	defer func() { _ = unlock() }()
-	dc, err := LoadDeployConfigForWrite("saveDeployState")
+	dc, err := loadBase()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not save to charly.yml: %v\n", err)
 		return
+	}
+	if dc == nil {
+		dc = &BundleConfig{Bundle: make(map[string]BundleNode)}
+	}
+	if dc.Bundle == nil {
+		dc.Bundle = make(map[string]BundleNode)
 	}
 	key := DeployKey(boxName, instance)
 	entry := dc.Bundle[key] // preserve existing fields (tunnel, volumes, etc.)
@@ -598,7 +618,9 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 		return
 	}
 	dc.Bundle[key] = entry
-	if err := SaveBundleConfig(dc, marshalNode); err != nil {
+	// Thread the same reader into the fail-safe re-check so an out-of-process caller's write
+	// path never falls back to the DeployStateHost-backed LoadBundleConfig (nil → host default).
+	if err := SaveBundleConfig(dc, marshalNode, read); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not save to charly.yml: %v\n", err)
 	}
 }
@@ -698,7 +720,7 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 		if path, pathErr := kit.DefaultDeployConfigPath(); pathErr == nil {
 			_ = os.Remove(path)
 		}
-	} else if err := SaveBundleConfig(dc, marshalNode); err != nil {
+	} else if err := SaveBundleConfig(dc, marshalNode, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not clean charly.yml: %v\n", err)
 		return
 	}
