@@ -24,21 +24,14 @@ import (
 // legs) terse.
 type RemoteDownload = spec.RemoteDownload
 
-// ScanSeams carries the host-coupled legs ScanCandyFromLocal reaches for the fetch fix-point. The
-// caller builds these as closures capturing its config/opts + host mechanisms (registry, refs
-// backend); the pure fix-point below never inspects a package-main type.
-type ScanSeams struct {
-	// CollectRemoteRefs runs the reachability-scoped remote-ref walk over the project's boxes +
-	// this local candy set, returning each distinct (repo, git-tag) to fetch. Host closure:
-	// CollectRemoteRefsOpts(cfg, FinalizeScannedCandies(localScanned, nil), withLocalRawRefs(opts, localScanned)).
-	CollectRemoteRefs func(localScanned map[string]spec.ScannedCandy) ([]RemoteDownload, error)
-	// EnsureRepo resolves a (repoPath, version) to a local cache directory, fetching + auto-migrating
-	// on a cache miss (host closure: EnsureRepoDownloaded).
-	EnsureRepo func(repoPath, version string) (string, error)
-	// ScanRemote scans the wanted bare refs out of a downloaded repo cache dir (host closure:
-	// requireCandyScanner().ScanRemoteCandy(cacheDir, repoPath, wantRefs, parseCandyYAML)).
-	ScanRemote func(cacheDir, repoPath string, wantRefs map[string]bool) (map[string]spec.ScannedCandy, error)
-}
+// ScanSeams carries the host-coupled legs ScanCandyFromLocal reaches for the fetch fix-point. DEFINED
+// in the dedicated spec module (spec/spec/scan_seams.go, #55 C3b-ii) so it can type the
+// spec.ProjectLoader.ScanCandyFromLocal seam method charly core reaches instead of importing loaderkit;
+// this forwarder (mirroring the RemoteDownload alias above) keeps loaderkit's own signature +
+// candy/plugin-build's scanSeamsLeg call sites terse. The caller builds these as closures capturing its
+// config/opts + host mechanisms (registry, refs backend); the pure fix-point below never inspects a
+// package-main type.
+type ScanSeams = spec.ScanSeams
 
 // ScanCandyFromLocal is the scan pipeline's step-2-onward body (remote-ref collect, fix-point fetch,
 // per-entity-version arbitration, host-completion + finalize), relocated verbatim from
