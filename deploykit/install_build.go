@@ -36,6 +36,13 @@ import (
 // AUR-specific steps, etc. For the OCI target, the caller passes a
 // zero-value HostContext (the compiler ignores host-only choices when
 // MachineVenue is false).
+//
+// STAYS pending #76 (HostContext rides the deploy-compile mechanism relocation; CUE-source
+// scalars if it lands in spec). It crosses the wire ONLY as the opaque `host_context: bytes`
+// RawBody payload on DeployCompileRequest (the sanctioned VmJSON/PodConfigJSON idiom), and its
+// sole charly caller (bundle_add_cmd.go) constructs it alongside the K4 mechanisms #76 moves —
+// so it is mechanism-coupled, not a pure value, and its disposition (relocate vs leave with the
+// mechanism; CUE-source the crossing scalars if it lands in spec) is #76's to make.
 type HostContext struct {
 	// MachineVenue selects compilation mode (P9): false (zero value) → compile for a
 	// CONTAINER image build (the pod overlay / OCI target); true → compile for a MACHINE

@@ -26,6 +26,10 @@ var (
 	DescriptionInfo = spec.DescriptionInfo
 	// MergeBundleNode overlays src's authored + structural-tree fields onto dst.
 	MergeBundleNode = spec.MergeBundleNode
+	// HostRooted reports whether a node's stamped descent is a host-rooted (local/SSH-shell) venue.
+	HostRooted = spec.HostRooted
+	// DeployNestedLocalChildren applies a parent venue's nested target:local children in place.
+	DeployNestedLocalChildren = spec.DeployNestedLocalChildren
 )
 
 // Pure candy-stage helpers (spec-owned).

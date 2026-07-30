@@ -3,7 +3,6 @@ package deploykit
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os/exec"
 
 	"github.com/opencharly/sdk/kit"
@@ -27,18 +26,10 @@ import (
 // from a LoadUnified'd project, whose loader always stamps Descent (stampBundleDescents), so
 // this is a pure wire-field read, never a registry query.
 
-// hostRooted reports whether node's stamped descent trait is host-rooted (a local/SSH-shell
-// venue, as opposed to a container/VM venue). Reads the wire-stamped node.Descent directly —
-// see the file header for why this needs no registry access.
-//
-// STAYS in deploykit (with DeployNestedLocalChildren below): hostRooted has a live
-// deploykit-internal caller in this file (the bed-session apply path), and a private helper
-// cannot be re-exported from spec as a forwarder — so relocating the pure
-// DeployNestedLocalChildren pair to spec is blocked until hostRooted is exported or the pair
-// folds under #84. Excluded from the deploykit D2-clean value-helper move (#55).
-func hostRooted(node *BundleNode) bool {
-	return node != nil && node.Descent != nil && node.Descent.HostRooted
-}
+// The host-rooted descent predicate is now spec.HostRooted (#55 U4 — a pure #Deploy-tree read
+// over the wire-stamped node.Descent, promoted so DeployNestedLocalChildren and this file's
+// bed-session apply path share ONE predicate over the spec value type). Callers below reference
+// spec.HostRooted directly.
 
 // ResolveBedCheckLevel resolves the acceptance-depth rung for a bed. hasResolvedBox is true
 // iff the bed's root carries an `image:` AND that image resolved to a box config; checkLevel
@@ -91,7 +82,7 @@ func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace boo
 	// every OTHER project (validateCheckBeds: "references local template … which is not
 	// defined"), poisoning concurrent/cross-project bed runs. Local deploys persist via the
 	// install ledger, not this bundle-map path, so skipping is also lossless.
-	if hostRooted(&node) || externalInPlace {
+	if spec.HostRooted(&node) || externalInPlace {
 		return
 	}
 	SaveDeployState(name, "", SaveDeployStateInput{
@@ -117,30 +108,9 @@ func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace boo
 	}, marshalNode)
 }
 
-// DeployNestedLocalChildren deploys a VM's nested target:local children via the dotted-path
-// dispatch, which applies each child's local-deploy candies INSIDE the guest over the
-// NestedExecutor (SSH).
-//
-// plugin-deploy-vm's PostApply brings up nested target:pod children as in-guest quadlets, but
-// it SKIPS target:local children — they carry no image, they apply candies in place. Without
-// this loop a nested local child never deploys, and a deploy-scope check against it either
-// fails or (worse) silently checks nothing.
-//
-// Both sites that own a VM venue call this: the isVM bed ROOT and bringUpMembers' VM-member
-// branch. They differ only in how a child deploy is executed (the root wraps it in a recorded
-// step(); a member shells out directly), so that is the injected apply func.
-func DeployNestedLocalChildren(parent string, children map[string]*BundleNode, apply func(childKey, dotted string) error) error {
-	for _, childKey := range SortedNestedKeys(children) {
-		child := children[childKey]
-		if child == nil || !hostRooted(child) { // local (host-rooted shell venue) only
-			continue // container/vm children handled in-guest by plugin-deploy-vm's PostApply
-		}
-		if err := apply(childKey, parent+"."+childKey); err != nil {
-			return fmt.Errorf("deploy nested local child %s.%s: %w", parent, childKey, err)
-		}
-	}
-	return nil
-}
+// DeployNestedLocalChildren is now spec.DeployNestedLocalChildren (#55 U4 — a pure dotted-path
+// tree walk over the spec value types, promoted with HostRooted). deploykit keeps a re-export
+// forwarder (deploy_bundle_ops_aliases.go) so its charly callers compile unchanged.
 
 // WaitForVmSshReady gates on the VM being SSH-reachable AND cloud-init having settled, using
 // the SAME deterministic SSHExecutor preflight the VM check-live path and the external vm
