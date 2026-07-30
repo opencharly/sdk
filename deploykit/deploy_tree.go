@@ -1,9 +1,5 @@
 package deploykit
 
-import (
-	"github.com/opencharly/sdk/vmshared"
-)
-
 // DeployTreePhase indicates which lifecycle phase the walker is in.
 // Pre-order for add; teardown walks the flat-path chain (deploy_chain.go).
 type DeployTreePhase int
@@ -58,62 +54,13 @@ func WalkDeploymentTree(rootPath string, root *BundleNode, parentExec DeployExec
 }
 
 // Child-executor derivation is trait-based: the flat-path executor chain
-// (AppendHopForFlatPath, deploy_chain.go) reads node.Descent.Transport (the
-// plugin-declared venue), never a switch on the kind word. It serves BOTH
-// deploy (pre-order WalkDeploymentTree above) and teardown (bundle del via
-// resolveDelNode + the flat-path chain). VmChildExecutor below is the one
-// venue-hop helper the flat-path visitor still calls, for a vm venue.
-
-// VmChildExecutor wraps parentExec with an SSH jump into the VM
-// represented by this node. At the root (parentExec == nil or
-// ShellExecutor), the child gets a plain SSHExecutor — no
-// nesting overhead for the common case of a VM on localhost.
-//
-// The SSH alias keys off the per-deploy DOMAIN IDENTITY
-// (charly-<VmDomainIdentity(deployName)>), NOT node.From (the shared kind:vm
-// entity) — `charly vm create <entity> --domain <deploy>` writes the managed
-// stanza under `charly-<deploy>` (P33). Several beds may share one entity via
-// `from:`, so an entity-keyed alias collides them on ONE stanza (the R10 defect
-// where sibling beds both derived `charly-eval-vm`); keying by the deploy makes
-// the alias distinct per bed and matches the stanza vm create actually wrote. A
-// direct create (deploy == entity) resolves to `charly-<entity>` naturally, and
-// VmDomainIdentity flattens a dotted member path consistently with the domain the
-// lifecycle named (bundle_members.go's `vmDomainIdentity(memberKey)`).
-func VmChildExecutor(parentExec DeployExecutor, deployName string) (DeployExecutor, error) {
-	ssh := SSHParamsForVm(vmshared.VmDomainIdentity(deployName))
-	// If parent is localhost-equivalent, use a direct SSHExecutor —
-	// no need to hop through a trivial wrapper.
-	if parentExec == nil {
-		return ssh, nil
-	}
-	if _, isLocal := parentExec.(ShellExecutor); isLocal {
-		return ssh, nil
-	}
-	// Nested VM (inside a container, or inside another VM): compose
-	// using the same alias as the JumpSSH target — ssh-config supplies
-	// User/Port/IdentityFile.
-	return &NestedExecutor{
-		Parent: parentExec,
-		Jump: NestedJump{
-			Kind:   JumpSSH,
-			Target: ssh.Host,
-		},
-	}, nil
-}
-
-// SSHParamsForVm returns an SSHExecutor pointing at the VM's managed
-// ssh-config alias (charly-<domainID>) — the caller passes the per-deploy
-// DOMAIN IDENTITY (VmDomainIdentity of the deploy), NOT the shared kind:vm
-// entity (P33). All connection details — User, Port, IdentityFile, host-key
-// checking — live in the Host stanza that `charly vm create` / `charly bundle
-// add` published into ~/.config/charly/ssh_config; ssh(1) reads them from there.
-// Our SSHExecutor needs only the alias as Host.
-func SSHParamsForVm(domainID string) *SSHExecutor {
-	return &SSHExecutor{
-		Host:           VmSshAlias(domainID),
-		ConnectTimeout: 10,
-	}
-}
+// (specexec.AppendHopForFlatPath, spec/exec/deploy_chain.go) reads
+// node.Descent.Transport (the plugin-declared venue), never a switch on the kind
+// word. It serves BOTH deploy (pre-order WalkDeploymentTree above) and teardown
+// (bundle del via resolveDelNode + the flat-path chain). The vm venue-hop helper
+// the flat-path visitor calls (VmChildExecutor) and its SSHParamsForVm live in
+// spec/exec (the floor primitive home, #55 K4); deploykit re-exports them from
+// deploy_chain.go for its plugin-side callers.
 
 // ClassifyTarget normalizes the Target field for dispatch. Empty Target
 // falls back to "pod" (the default for named deploys); otherwise Target is
