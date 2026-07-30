@@ -10,7 +10,6 @@ package kit
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os/exec"
 	"sort"
@@ -20,11 +19,10 @@ import (
 )
 
 // ErrImageNotLocal is returned when a user-supplied image reference cannot be resolved
-// against local engine storage. Promoted here (from charly/labels.go) because
-// ResolveLocalImageRef is the function that returns it, and charly core's ~12 other
-// callers of the local-image resolution surface now reference kit.ErrImageNotLocal
-// directly (no re-export alias — ZERO-ALIASES).
-var ErrImageNotLocal = errors.New("image not found in local storage")
+// against local engine storage. RELOCATED to spec/spec/image_errors.go (#55 value extraction) —
+// a pure error sentinel over the image E-envelope — and re-exported here so kit's own resolvers
+// and every existing kit.ErrImageNotLocal call site (charly core + plugins) are untouched.
+var ErrImageNotLocal = spec.ErrImageNotLocal
 
 // LooksLikeFullRef returns true if the image ref contains a registry segment
 // (a "/" before any ":") — e.g. "ghcr.io/org/name:tag" — so it can be pulled
