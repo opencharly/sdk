@@ -83,3 +83,28 @@ func LoadBundleConfigViaSeam(ctx context.Context, ex *sdk.Executor, caller strin
 	}
 	return &dc, nil
 }
+
+// ResolveLifecycleDeployNodeViaSeam resolves the per-host deploy overlay entry for a
+// start/stop/shell/cmd/logs/service verb PLUGIN-SIDE, over the shared pod-config-load-bundle seam
+// (LoadBundleConfigViaSeam) — the DATA a command:pod / command:cmd plugin threads into the
+// pod-lifecycle HostBuild requests (spec.PodStartRequest.Node et al.) so the host's
+// dispatchLifecycleTarget operates on the passed *spec.Deploy instead of re-reading the per-host
+// config itself. The config READ is a plugin loading capability, not a host M — #55 K4
+// seam-completion (retires charly/pod_lifecycle_verb.go's resolveLifecycleDeployNode).
+//
+// Byte-identical to that former core resolver: the dc.Bundle[key] lookup keyed by DeployKey, the
+// container/""→pod Target normalization, and the {Target:pod} fallback for a bare image with no
+// deploy entry (the former standalone-podman path). Returns (node, deployKey); node is never nil.
+func ResolveLifecycleDeployNodeViaSeam(ctx context.Context, ex *sdk.Executor, box, instance string) (*spec.Deploy, string) {
+	key := spec.DeployKey(box, instance)
+	if dc, _ := LoadBundleConfigViaSeam(ctx, ex, "charly lifecycle node resolve"); dc != nil {
+		if node, ok := dc.Bundle[key]; ok {
+			n := node
+			if n.Target == "" || n.Target == "container" {
+				n.Target = "pod"
+			}
+			return &n, key
+		}
+	}
+	return &spec.Deploy{Target: "pod"}, key
+}
