@@ -17,31 +17,17 @@ import (
 // place that bridges buildkit's ResolvedBox to a spec consumer (it already owns NewSpecResolvedBox
 // / ProjectResolvedBox); these siblings complete that bridge for the resolve direction.
 //
-// The opts carrier is deploykit-local + spec-typed (NOT loaderkit.ResolveOpts): loaderkit imports
-// deploykit (loaderkit → deploykit), so deploykit importing loaderkit would be an import cycle.
-// charly's resolveVocabOpts fills the fields from its own loaderkit.ResolveOpts before calling.
+// The box-resolve options are the SHARED spec.ResolveOpts (the loader scan/load options, relocated
+// to the dedicated spec module in the #55 loader cascade): deploykit imports spec, so these entry
+// points consume spec.ResolveOpts DIRECTLY — the former deploykit-local SpecResolveOpts twin (kept
+// only because the loader options once lived in loaderkit, which deploykit can't import) is dissolved
+// (#55 2b R3). charly's resolveVocabOpts fills the build vocabulary (DistroCfg/BuilderCfg) on the
+// spec.ResolveOpts before calling; only the box-resolve subset (the 5 fields below) is read here —
+// ExtraCandyRefs/InitCfg are consumed by the candy scan, never the box resolve.
 
-// SpecResolveOpts is the deploykit-local, spec-typed projection of the box-resolve options charly
-// needs to pass in (a loaderkit-free carrier — see the file header for why loaderkit can't be
-// named here). DistroCfg/BuilderCfg are the resolved build vocabulary (spec.DistroConfig /
-// spec.BuilderConfig, alias-equal to buildkit's) the caller (charly's resolveVocabOpts) fills.
-type SpecResolveOpts struct {
-	IncludeDisabled      bool
-	IncludeDisabledNames map[string]bool
-	RequestedBoxes       []string
-	DistroCfg            *spec.DistroConfig
-	BuilderCfg           *spec.BuilderConfig
-}
-
-// shouldIncludeDisabled mirrors loaderkit.ResolveOpts.ShouldIncludeDisabled (IncludeDisabled OR a
-// per-name override) — the enabled-gate relaxation for a specific box.
-func (o SpecResolveOpts) shouldIncludeDisabled(name string) bool {
-	return o.IncludeDisabled || o.IncludeDisabledNames[name]
-}
-
-// toBuildkit projects onto the buildkit.ResolveOpts the pure resolve consumes. Byte-equivalent to
-// charly's former in-core build-vocab resolve-opts tail.
-func (o SpecResolveOpts) toBuildkit() buildkit.ResolveOpts {
+// specToBuildkit projects the box-resolve subset of a spec.ResolveOpts onto the buildkit.ResolveOpts
+// the pure resolve consumes. Byte-equivalent to the former SpecResolveOpts.toBuildkit tail.
+func specToBuildkit(o spec.ResolveOpts) buildkit.ResolveOpts {
 	return buildkit.ResolveOpts{
 		IncludeDisabled:      o.IncludeDisabled,
 		IncludeDisabledNames: o.IncludeDisabledNames,
@@ -53,8 +39,8 @@ func (o SpecResolveOpts) toBuildkit() buildkit.ResolveOpts {
 
 // ResolveSpecBox resolves ONE box and returns its wire-clean *spec.ResolvedBox (the embedded value
 // of the pure buildkit resolve). calver is the CalVer stamp (empty for a bare resolve).
-func ResolveSpecBox(cfg *spec.Config, name, calver, dir string, opts SpecResolveOpts) (*spec.ResolvedBox, error) {
-	resolved, err := buildkit.ResolveBox(cfg, name, calver, dir, opts.toBuildkit())
+func ResolveSpecBox(cfg *spec.Config, name, calver, dir string, opts spec.ResolveOpts) (*spec.ResolvedBox, error) {
+	resolved, err := buildkit.ResolveBox(cfg, name, calver, dir, specToBuildkit(opts))
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +52,8 @@ func ResolveSpecBox(cfg *spec.Config, name, calver, dir string, opts SpecResolve
 
 // ResolveAllSpecBoxes resolves every enabled box and returns their wire-clean *spec.ResolvedBox
 // values — the render-seam-floor Generator's box set (it reads only Name/Tags off them).
-func ResolveAllSpecBoxes(cfg *spec.Config, calver, dir string, opts SpecResolveOpts) (map[string]*spec.ResolvedBox, error) {
-	images, err := buildkit.ResolveAllBox(cfg, calver, dir, opts.toBuildkit())
+func ResolveAllSpecBoxes(cfg *spec.Config, calver, dir string, opts spec.ResolveOpts) (map[string]*spec.ResolvedBox, error) {
+	images, err := buildkit.ResolveAllBox(cfg, calver, dir, specToBuildkit(opts))
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +102,12 @@ func EffectiveBuilderNames(cfg *spec.Config, name string, img spec.BoxConfig) []
 // fill needs — relocated out of charly core (#55 Cluster-B) because it writes buildkit host-render
 // caches. opts must already carry the project build vocabulary (charly's resolveVocabOpts fills it
 // before calling). Byte-equivalent to the former in-core inner block of fillNamespacedBoxes.
-func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReader, initCfg *spec.InitConfig, child, calver, dir string, opts SpecResolveOpts, rp *spec.ResolvedProject) {
-	bkopts := opts.toBuildkit()
+func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReader, initCfg *spec.InitConfig, child, calver, dir string, opts spec.ResolveOpts, rp *spec.ResolvedProject) {
+	bkopts := specToBuildkit(opts)
 	subBoxes := map[string]*buildkit.ResolvedBox{}
 	for _, name := range sub.AllBoxNames() {
 		img, ok := sub.BoxConfig(name)
-		if !ok || (!img.IsEnabled() && !opts.shouldIncludeDisabled(name)) {
+		if !ok || (!img.IsEnabled() && !opts.ShouldIncludeDisabled(name)) {
 			continue
 		}
 		resolved, err := buildkit.ResolveBox(sub, name, calver, dir, bkopts)
