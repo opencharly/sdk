@@ -206,16 +206,9 @@ func ResolveValue(envVal, cfgVal, defaultVal string) string {
 	return defaultVal
 }
 
-// DetectEngine auto-detects the container engine: prefers podman, falls back to docker.
-func DetectEngine() (string, error) {
-	if _, err := exec.LookPath("podman"); err == nil {
-		return "podman", nil
-	}
-	if _, err := exec.LookPath("docker"); err == nil {
-		return "docker", nil
-	}
-	return "", fmt.Errorf("no container engine found (install podman or docker)")
-}
+// DetectEngine (the container-engine auto-detect) RELOCATED to spec/container (#55 fabric-primitive
+// extraction); re-exported as kit.DetectEngine in engine.go, which ResolveRuntime above calls by
+// that name.
 
 func ValidateEngine(value, field string) error {
 	if value != "docker" && value != "podman" {

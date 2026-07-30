@@ -1,28 +1,15 @@
 package kit
 
-// engine.go — pure container-engine helpers (EngineBinary/GPURunArgs) moved to kit
-// in P4. The Config/loader-coupled engine resolvers (ResolveBoxEngine*, ImageRuntime)
-// stay in charly/engine.go.
+import "github.com/opencharly/spec/container"
 
-func EngineBinary(engine string) string {
-	switch engine {
-	case "podman":
-		return "podman"
-	case "auto":
-		if detected, err := DetectEngine(); err == nil {
-			return detected
-		}
-		return "docker"
-	default:
-		return "docker"
-	}
-}
-
-func GPURunArgs(engine string) []string {
-	switch engine {
-	case "podman":
-		return []string{"--device", "nvidia.com/gpu=all"}
-	default:
-		return []string{"--gpus", "all"}
-	}
-}
+// engine.go — re-export of the container-engine helpers, RELOCATED to the spec/container fabric
+// slice (#55 fabric-primitive extraction). EngineBinary/GPURunArgs/DetectEngine are host
+// engine-resolution primitives (DetectEngine shells `LookPath`), homed in spec/container which
+// carries os/exec in its own slice (Rule 2). kit re-exports them here so kit's own callers
+// (container_image.go/container_probe.go/runtime_config.go's ResolveRuntime) and every existing
+// kit.EngineBinary / kit.GPURunArgs / kit.DetectEngine call site are untouched.
+var (
+	EngineBinary = container.EngineBinary
+	GPURunArgs   = container.GPURunArgs
+	DetectEngine = container.DetectEngine
+)
