@@ -137,20 +137,3 @@ func (t *OCITarget) emitStep(step spec.InstallStep, plan *spec.InstallPlan) (str
 	}
 	return t.EmitStepOp(step, plan, t.Distros)
 }
-
-// OCIEmitStepParams is the plain-Go param struct the candy marshals into HostBuild("step-emit",
-// StepEmitRequest{Word:"oci-emit-step", Payload: <OCIEmitStepParams>}).Distros}) — the per-step
-// render seam for the pod-overlay build (P11c). It rides INSIDE the opaque StepEmitRequest.Payload
-// bytes (a deploykit-internal dispatch detail, NOT a boundary-validated wire contract — the CUE
-// wire type is StepEmitRequest itself; this is the SAME convention as the render-seam param structs
-// in render_seam.go). Dir is the project dir — the key the host "oci-emit-step" emitter uses to look
-// up the cached overlay buildEngineContext (the live *Generator/DistroDef/BuilderConfig/Box cannot
-// cross the wire). StepView is the step's wire form (the candy serializes via StepToView); PlanView
-// is the step's plan wire form (WireView) — the host reconstructs both via StepFromView/PlanFromView
-// + calls ociEmitStep (the full provider-registry dispatch: 12 compiler-emitted kinds + ExternalPlugin
-// + authored external), returning the rendered Containerfile fragment.
-type OCIEmitStepParams struct {
-	Dir      string               `json:"dir,omitempty"`
-	StepView spec.InstallStepView `json:"step_view,omitempty"`
-	PlanView spec.InstallPlanView `json:"plan_view,omitempty"`
-}
