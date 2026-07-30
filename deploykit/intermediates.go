@@ -17,9 +17,9 @@ import (
 // createIntermediate / walkTrieScoped / pickAutoName / resolvePlatforms /
 // distroBuilderMap — lives in intermediates_compute.go in this SAME package
 // (W3): it consumes the scalar defaults through IntermediateDefaults instead
-// of reading *Config, so the whole subsystem is now deploykit-resident and
-// charly/intermediates_shim.go is only the thin cfg.Defaults-lifting entry
-// point. Behaviour is byte-identical to the former charly/intermediates.go
+// of reading *Config, so the whole subsystem is now deploykit-resident (the
+// former thin charly-side cfg.Defaults-lifting entry was removed in #55
+// Cluster-B). Behaviour is byte-identical to the former charly/intermediates.go
 // (kit.SortStrings is the SAME lexicographic sort core aliased as sortStrings).
 
 // PixiBoundCandies identifies candies that have install files (user.yml/root.yml)

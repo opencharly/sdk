@@ -1,118 +1,17 @@
 package buildkit
 
-import (
-	"fmt"
-	"sort"
-	"strings"
+import "github.com/opencharly/spec/spec"
 
-	"github.com/opencharly/spec/spec"
-)
+// capabilities.go — the candy `capabilities:` aggregation + required-capability check. #55
+// import-purity: the BODIES relocated DOWN to spec (spec/candy_capabilities.go) so charly core reads
+// them over its spec+proto-only import surface; these thin var-forwarders keep buildkit's build-resolve
+// callers unchanged (R3).
 
-// AggregateCandyCapabilities walks `order` (candy names in topological
-// resolution order) and merges each candy's `capabilities:` contribution.
-// Returns an error if two candies declare conflicting values for the same
-// OCI label key — the conflict surfaces the bug rather than silently
-// picking a winner.
-func AggregateCandyCapabilities(layers map[string]spec.CandyReader, order []string) (*AggregatedCandyCaps, error) {
-	out := &AggregatedCandyCaps{
-		OCILabels: make(map[string]string),
-		Provided:  make(map[string]bool),
-	}
-	type ociSource struct {
-		layer string
-		value string
-	}
-	seen := make(map[string]ociSource)
+// AggregateCandyCapabilities merges each candy's `capabilities:` contribution (see spec).
+var AggregateCandyCapabilities = spec.AggregateCandyCapabilities
 
-	for _, name := range order {
-		layer, ok := layers[name]
-		if !ok || layer == nil {
-			continue
-		}
-		c := layer.Capabilities()
-		if c == nil {
-			continue
-		}
-		if c.PreserveUser {
-			out.PreserveUser = true
-			out.Provided["preserve_user"] = true
-		}
-		if c.NeedsRootAfterInit {
-			out.NeedsRootAfterInit = true
-			out.Provided["needs_root_after_init"] = true
-		}
-		if c.DataOnly {
-			out.DataOnly = true
-			out.Provided["data_only"] = true
-		}
-		if c.InitSystemHint != "" {
-			out.InitSystemHint = c.InitSystemHint
-			out.Provided["init_system:"+c.InitSystemHint] = true
-		}
-		for k, v := range c.OCILabels {
-			if existing, ok := seen[k]; ok && existing.value != v {
-				return nil, fmt.Errorf(
-					"capability oci_labels conflict for key %q: layer %q contributes %q, prior layer %q contributes %q",
-					k, name, v, existing.layer, existing.value,
-				)
-			}
-			seen[k] = ociSource{layer: name, value: v}
-			out.OCILabels[k] = v
-		}
-	}
-	return out, nil
-}
+// CheckRequiredCapabilities returns the sorted missing `requires_capabilities:` names (see spec).
+var CheckRequiredCapabilities = spec.CheckRequiredCapabilities
 
-// CheckRequiredCapabilities returns a sorted list of capability names
-// requested via `requires_capabilities:` on any candy in `order` but not
-// provided by the aggregated capabilities. Empty slice on success.
-func CheckRequiredCapabilities(layers map[string]spec.CandyReader, order []string, agg *AggregatedCandyCaps) []string {
-	if agg == nil {
-		agg = &AggregatedCandyCaps{Provided: map[string]bool{}}
-	}
-	missing := make(map[string]bool)
-	for _, name := range order {
-		layer, ok := layers[name]
-		if !ok || layer == nil {
-			continue
-		}
-		for _, req := range layer.RequiresCapabilities() {
-			if !agg.Provided[req] {
-				missing[req] = true
-			}
-		}
-	}
-	out := make([]string, 0, len(missing))
-	for k := range missing {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// CandyCapabilitiesError formats a missing-capabilities error with a
-// remediation hint pointing at which candies requested what.
-func CandyCapabilitiesError(layers map[string]spec.CandyReader, order []string, missing []string) error {
-	if len(missing) == 0 {
-		return nil
-	}
-	var requesters []string
-	for _, name := range order {
-		layer, ok := layers[name]
-		if !ok || layer == nil {
-			continue
-		}
-		for _, req := range layer.RequiresCapabilities() {
-			for _, m := range missing {
-				if req == m {
-					requesters = append(requesters, fmt.Sprintf("    %s (requires %s)", name, req))
-				}
-			}
-		}
-	}
-	return fmt.Errorf(
-		"image composition is missing required capabilities: %s\n  layers requesting them:\n%s\n  fix: include a layer that contributes the missing capability via `capabilities:` block",
-		strings.Join(missing, ", "),
-		strings.Join(requesters, "\n"),
-	)
-}
+// CandyCapabilitiesError formats a missing-capabilities error (see spec).
+var CandyCapabilitiesError = spec.CandyCapabilitiesError

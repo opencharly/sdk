@@ -19,10 +19,10 @@ import (
 // is now a PURE function over IntermediateDefaults (a plain scalar-field
 // carrier — no *Config, no loader/registry access) plus the
 // buildkit.ResolvedBox / CandyModel maps ComputeIntermediates already threads
-// throughout this package. The charly-side entry point
-// (charly/intermediates_shim.go) lifts cfg.Defaults into an
-// IntermediateDefaults and calls ComputeIntermediates directly — no host
-// callback remains. Behaviour is byte-identical to the former
+// throughout this package. The former charly-side entry point lifted
+// cfg.Defaults into an IntermediateDefaults and called ComputeIntermediates
+// directly (removed in #55 Cluster-B) — no host callback remains. Behaviour
+// is byte-identical to the former
 // charly/intermediates.go (kit.SortStrings is the SAME lexicographic sort core
 // aliased as sortStrings). distroBuilderMap is now a pure function over the
 // SAME `boxes`/`origBoxes` map ComputeIntermediates/createIntermediate already
