@@ -4,8 +4,8 @@ package deploykit
 // fold-in): id generation, naming-pattern rendering, and systemd unit-name sanitization have no
 // registry or loader coupling at all. The REST of that file's functions — the read/write
 // EphemeralRuntime persistence (deploykit.LoadBundleConfig is portable, but the WRITE half needs
-// saveBundleConfigNodeForm's registry-coupled marshalDeployNode callback, the SAME
-// "deploy-config-save" seam family the config-management ops already route through),
+// the registry-coupled marshalDeployNode callback that resugars plan steps from the plugin-primaries
+// registry — the same node-form marshal the deploy-state writes require),
 // registerTransientTimer/cancelTransientTimer (systemd-run / systemctl self-exec), and
 // teardownChildrenRec's nested `charly bundle del` self-exec — are genuinely host-only leaves,
 // registered FINAL/K5 credential/loader-family inventory (the SAME pattern layer_secrets.go's

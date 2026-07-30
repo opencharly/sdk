@@ -503,8 +503,8 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 	// plugin caller (out-of-process command:bundle) injects its OWN loader-backed reader, so
 	// SaveDeployState no longer requires the DeployStateHost package var (#55 K4 config-write
 	// seam-collapse). NAMED EXIT: the nil-read branch is DI serving the still-in-proc host callers
-	// (deploy-config-save-state seam / bed_session / CleanDeployEntry) — NOT a transitional shim;
-	// it dies when the last migrates plugin-side in its own deferred cone.
+	// (bed_session / CleanDeployEntry) — NOT a transitional shim; it dies when the last migrates
+	// plugin-side in its own deferred cone.
 	loadBase := read
 	if loadBase == nil {
 		if DeployStateHost == nil {
