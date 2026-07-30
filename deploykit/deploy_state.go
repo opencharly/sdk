@@ -232,15 +232,6 @@ func InstallOptsApplyTo(o *InstallOptsConfig, opts EmitOpts) EmitOpts {
 	return opts
 }
 
-// DeployKey returns the charly.yml map key for an image, optionally qualified by instance.
-// Base images use just the image name; instances use "image/instance".
-func DeployKey(boxName, instance string) string {
-	if instance == "" {
-		return boxName
-	}
-	return boxName + "/" + instance
-}
-
 // CanonicalizeDeployArg splits Pattern A "<base>/<instance>" CLI positional
 // args into their component (image, instance) pair. Idempotent: if the input
 // is already split (instance != "") or contains no slash, returns as-is.
@@ -301,16 +292,6 @@ func RejectImageRefAsDeployName(box string) error {
 			box, box)
 	}
 	return nil
-}
-
-// ParseDeployKey splits a charly.yml map key back into image name and instance.
-// "selkies-desktop" → ("selkies-desktop", "")
-// "selkies-desktop/foo" → ("selkies-desktop", "foo")
-func ParseDeployKey(key string) (boxName, instance string) {
-	if before, after, ok := strings.Cut(key, "/"); ok {
-		return before, after
-	}
-	return key, ""
 }
 
 // FindVmDeployNode finds the BundleNode for a vm-target deploy. It is
@@ -686,62 +667,6 @@ func ScopeVolumesToDeployKey(meta *spec.BoxMetadata, deployName, instance string
 			meta.Volume[i].VolumeName = newPrefix + rest
 		}
 	}
-}
-
-// SaveDeployStateInput holds the deployment parameters to persist. Relocated from
-// charly/deploy.go (K5-Unit-1). Every field type is a spec/vmshared type the SDK already
-// carries — no core Mechanism dep.
-type SaveDeployStateInput struct {
-	Ports []string
-	// SetPorts gates whether Ports is written to charly.yml at all. This ensures
-	// `charly config <name>` (without --port flags) and `charly update <name>` no
-	// longer silently overwrite operator port overrides with image-label defaults.
-	SetPorts bool
-	Env      map[string]string
-	CleanEnv bool // true = replace env map; false = merge (upsert by key)
-	EnvFile  string
-	Network  string
-	Security *spec.Security
-	Volume   []spec.DeployVolume
-	Sidecar  map[string]json.RawMessage
-	Tunnel   *spec.TunnelYAML
-
-	// SecretNames lists env var names declared as secret_accepts / secret_requires on the
-	// image. saveDeployState uses this list to defensively strip any matching KEY=VAL entries
-	// from both the input Env and the existing persisted entry.Env before writing. Defense in
-	// depth for the §6 / Run() pipeline (MigratePlaintextEnvSecret and scrubSecretCLIEnv are
-	// the primary gates). Populated by the Run() call site from meta.SecretAccept/SecretRequires.
-	SecretNames []string
-
-	// Disposable + Lifecycle — the classification fields (see /charly-internals:disposable).
-	SetDisposable bool
-	Disposable    bool
-	SetLifecycle  bool
-	Lifecycle     string
-
-	// Box + Target — the schema-required fields per the 2026-05-12 require-image cutover.
-	// Written when non-empty AND when the existing entry doesn't already have a value (don't
-	// clobber operator-authored refs on re-config).
-	Box    string
-	Target string
-
-	// ResolvedImage is the concrete overlay image ref produced by a pod deploy's add_candy:
-	// overlay build, persisted by PrepareVenue so config/start deploy EXACTLY that overlay.
-	ResolvedImage string
-
-	// VmState + VmCrossRef — the vm substrate's persisted runtime state (instance-id, ssh_port,
-	// disk path) + the kind:vm cross-ref, shipped by the externalized vm plugin's PrepareVenue
-	// reply as the generic State patch. VmState is written whenever non-nil; VmCrossRef seeds
-	// entry.From only when unset.
-	VmState    *spec.VmDeployState
-	VmCrossRef string
-
-	// Resource-arbitration axis: the holder-side Preemptible block + the claimant-side
-	// RequiresExclusive / RequiresShared token lists. Persisted so a deploy/bed MEMBER
-	// round-trips its arbiter role through the per-host overlay. Written when non-empty.
-	Preemptible       *spec.PreemptibleConfig
-	RequiresExclusive []string
-	RequiresShared    []string
 }
 
 // SaveDeployState persists deployment parameters to charly.yml (best-effort). Merges onto any
