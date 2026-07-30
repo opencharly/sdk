@@ -128,7 +128,7 @@ func sshForwardEndpoint(desc spec.VenueDescriptor, port int) (*CheckEndpoint, er
 	// ConnectTimeout+5s (preserved); the 300ms dial is the per-attempt probe. FATAL fast-fail if ssh
 	// has exited (auth/forward failure) — note cmd.ProcessState is only populated after Wait
 	// (cleanup), so this remains best-effort, as before.
-	cfg := ReadinessProvider().WaitCapped(fmt.Sprintf("ssh-forward %s", dest), spec.PollLocal, time.Duration(timeout+5)*time.Second)
+	cfg := spec.ReadinessProvider().WaitCapped(fmt.Sprintf("ssh-forward %s", dest), spec.PollLocal, time.Duration(timeout+5)*time.Second)
 	perr := spec.PollUntil(context.Background(), cfg, func(context.Context) (bool, float64, error) {
 		if c, derr := net.DialTimeout("tcp", localAddr, 300*time.Millisecond); derr == nil {
 			_ = c.Close()

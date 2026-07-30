@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/opencharly/spec/spec"
@@ -188,15 +187,10 @@ func Skipf(format string, a ...any) Result { return Skip(fmt.Sprintf(format, a..
 // primitive single-sourced in the spec contract module; every former
 // spec.ShellQuote caller now calls spec.ShellQuote.
 
-// TrimPreview truncates s to a 200-char preview (trailing "…") for compact check-output
-// display.
-func TrimPreview(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) > 200 {
-		return s[:200] + "…"
-	}
-	return s
-}
+// TrimPreview truncates s to a 200-char preview — homed in the fabric slice
+// github.com/opencharly/spec/spec (the same fabric-primitive class as ShellQuote),
+// re-exported here so kit.TrimPreview callers compile unchanged (R3, single source).
+var TrimPreview = spec.TrimPreview
 
 // WrapContainerCommand guards an in-container command-check script against stdin-consuming
 // subcommands. The runner delivers in-container scripts to the pod shell over a stdin heredoc
