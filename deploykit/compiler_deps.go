@@ -20,18 +20,15 @@ var (
 
 type ShellSpec = vmshared.ShellSpec
 
-// BuilderPreresolved is one candy×builder's pre-resolved payload. The Candy-coupled
-// functions that BUILD it (FLOOR-SLIM-proper Unit-8: candy/plugin-bundle's own
-// preresolveBuilderContexts, over exec.InvokeProvider — the CONNECT step alone stays
-// charly-core, which owns loadProjectPlugins/ScanAllCandyWithConfigOpts) build it; the
-// compiler only reads it. The externalized-builder WORD SET itself needs no new sharing
-// mechanism — it already rides the wire as spec.ResolvedProject.ExternalizedBuilders (the
-// resolved-project envelope every "resolved-project" HostBuild caller, incl.
-// candy/plugin-bundle's compile.go, already re-hydrates).
-type BuilderPreresolved struct {
-	Context map[string]any
-	Reverse []ReverseOp
-}
+// BuilderPreresolved is the pre-resolved builder-context payload — the TYPE now lives in
+// spec (#55 value-type consolidation; a plain in-process value carrier, not a wire type:
+// candy/plugin-bundle's preresolveBuilderContexts builds it plugin-side over
+// exec.InvokeProvider and the pure compiler only reads it, so it never crosses the process
+// boundary — HostContext.BuilderContext is populated in-proc AFTER the HostContextJSON
+// decode). This forwarder keeps deploykit's callers + candy/plugin-bundle compiling
+// unchanged. The externalized-builder WORD SET itself needs no new sharing mechanism — it
+// rides the wire as spec.ResolvedProject.ExternalizedBuilders.
+type BuilderPreresolved = spec.BuilderPreresolved
 
 // ShellAllowlist enumerates valid per-shell sub-block keys inside `shell:`.
 var ShellAllowlist = map[string]bool{"bash": true, "zsh": true, "fish": true, "sh": true}
