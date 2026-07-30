@@ -19,13 +19,10 @@ import (
 // pure mechanism — the fix-point queue, per-entity-version arbitration (PickCandyVersion), and the
 // finalize choke point — lives here.
 
-// RemoteDownload represents a unique (repo, version) pair to download,
-// along with the specific bare refs needed from it.
-type RemoteDownload struct {
-	RepoPath string
-	Version  string
-	Refs     []string // bare refs to import (e.g. "github.com/org/repo/candy/name")
-}
+// RemoteDownload is DEFINED in the dedicated spec module (spec/spec/remote_download.go, #55 2b
+// Class A); this alias keeps the scan mechanism that produces it (+ candy/plugin-build's resolve
+// legs) terse.
+type RemoteDownload = spec.RemoteDownload
 
 // ScanSeams carries the host-coupled legs ScanCandyFromLocal reaches for the fetch fix-point. The
 // caller builds these as closures capturing its config/opts + host mechanisms (registry, refs
