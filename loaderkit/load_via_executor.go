@@ -18,8 +18,9 @@ import (
 // it ALREADY imports the root sdk package (resolve_via_executor.go's Resolve*ViaExecutor take a
 // *sdk.Executor) and owns the LoaderExecutor interface + LoadSeamsFromExecutor + LoadUnified +
 // UnmarshalMaterialized themselves — so this adds no new import direction (sdk root does NOT import
-// loaderkit; deploykit does NOT import loaderkit). Same R3 consolidation as
-// deploykit.LoadBundleConfigViaSeam (the pod-config-load-bundle seam), blessed by the charly#176
+// loaderkit; deploykit does NOT import loaderkit). Same R3 consolidation pattern as the former
+// deploykit.LoadBundleConfigViaSeam host round-trip (retired by the bundle_config_executor.go
+// helpers in this package), blessed by the charly#176
 // round-1 pr-validator: "an sdk kit is EXACTLY the mechanism this project uses to share code across
 // plugin module boundaries."
 //
@@ -124,9 +125,11 @@ func LoadUnifiedViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (
 // seams (check_cmd.go's resolveMergedDeployTree wraps it over an in-proc executor) — the #55 LOADER
 // cone retired the former host-resident deploy_tree.go merged-tree read that this replaced. Its
 // composition: the PROJECT config via LoadUnifiedViaExecutor + deploykit.ProjectBundleConfig, the
-// per-host operator overlay via deploykit.LoadBundleConfigViaSeam (the placement-invariant
-// "pod-config-load-bundle" seam read — a plugin CANNOT call the bare deploykit.LoadBundleConfig,
-// which silently no-ops outside charly-core's own init per the DeployStateHost placement class),
+// per-host operator overlay via LoadHostBundleConfigViaExecutor (the cycle-free plugin-side read
+// in this package — #55 coneC Unit C2 retired the former deploykit.LoadBundleConfigViaSeam
+// host-handler round-trip; a plugin CANNOT call the bare
+// deploykit.LoadBundleConfig, which silently no-ops outside charly-core's own init per the
+// DeployStateHost placement class),
 // merged root-wins via deploykit.MergeDeployConfigs. Returns (nil, nil) on an absent/empty
 // project+overlay. This is the shared resolver the #55 Cone A Unit 3a seams (deploy-del-resolve /
 // pod-config-project-volume / the check venue+gather host helpers) call so no host handler re-loads
@@ -141,7 +144,7 @@ func ResolveMergedTreeViaExecutor(ctx context.Context, ex *sdk.Executor, dir str
 	} else if ok && uf != nil {
 		projectDC = deploykit.ProjectBundleConfig(uf)
 	}
-	localDC, _ := deploykit.LoadBundleConfigViaSeam(ctx, ex, "resolve merged tree")
+	localDC, _ := LoadHostBundleConfigViaExecutor(ctx, ex)
 	merged := deploykit.MergeDeployConfigs(projectDC, localDC)
 	if merged == nil || merged.Bundle == nil {
 		return nil, nil
