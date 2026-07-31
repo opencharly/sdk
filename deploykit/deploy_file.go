@@ -125,8 +125,8 @@ func LoadBundleConfig() (*BundleConfig, error) {
 // A nil failsafeRead falls back to LoadBundleConfig — the DeployStateHost-backed host read, so
 // an IN-PROCESS host caller passes nil and behaves exactly as before. A plugin caller that is
 // NOT guaranteed to hold the charly-init DeployStateHost registration (an out-of-process
-// command:bundle) passes its OWN loader-backed reader (loaderkit / the pod-config-load-bundle
-// seam), so SaveBundleConfig no longer depends on the DeployStateHost package var to re-check
+// command:bundle) passes its OWN loader-backed reader (loaderkit.LoadHostBundleConfigViaExecutor),
+// so SaveBundleConfig no longer depends on the DeployStateHost package var to re-check
 // the on-disk file. Follows the marshalNode-param precedent: the host-coupled leg is injected,
 // not hard-wired (#55 K4 config-write seam-collapse).
 //

@@ -103,9 +103,9 @@ func EncPlanFor(boxName, instance, volume, scopeDir string) ([]spec.EncVolumePla
 // candy/plugin-pod's command:config is compiled-in-only, but that is a per-BUILD fact, not
 // a guarantee (the exact class of latent bug candy/plugin-pod/remove_orchestration.go's
 // resolveSidecarNames hit and fixed the same way). A caller that might ever run
-// out-of-process loads dc itself via LoadBundleConfigViaSeam (the EXISTING
-// "pod-config-load-bundle" seam — R3, no new seam invented) and calls this instead — see
-// candy/plugin-pod/enc_cmd.go.
+// out-of-process loads dc itself via loaderkit.LoadHostBundleConfigViaExecutor (over the
+// executor reverse channel — the former pod-config-load-bundle host seam was retired) and
+// calls this instead — see candy/plugin-pod/enc_cmd.go.
 func EncPlanForConfig(dc *BundleConfig, boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
 	mounts, storagePath, err := LoadEncryptedVolumeFromConfig(dc, boxName, instance)
 	if err != nil {
