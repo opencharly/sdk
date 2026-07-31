@@ -106,14 +106,6 @@ func SpecBoxes(m map[string]*buildkit.ResolvedBox) map[string]*spec.ResolvedBox 
 	return out
 }
 
-// EffectiveBuilderNames returns the effective builder WORDS for a box (the buildkit resolve of the
-// image→base→defaults builder chain, flattened via BuilderMap.AllBuilder). Pure over spec types;
-// charly's refs.go remote-ref reachability walk calls it to add builder edges without naming
-// buildkit.
-func EffectiveBuilderNames(cfg *spec.Config, name string, img spec.BoxConfig) []string {
-	return buildkit.EffectiveBuilderForBox(cfg, name, img).AllBuilder()
-}
-
 // FillNamespaceBoxViews resolves + render-preps every box in a namespace's own config and merges
 // the resulting namespace-QUALIFIED spec.ResolvedBoxView into rp.Boxes (keyed child+"."+name),
 // SKIPPING a box already present (a demand-pulled entry with correctly-requalified cross-refs —

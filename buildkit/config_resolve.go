@@ -2,7 +2,6 @@ package buildkit
 
 import (
 	"fmt"
-	"maps"
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
@@ -12,10 +11,17 @@ import (
 // config_resolve.go — the buildkit-typed half of Config's box-resolution logic (FLOOR-SLIM Unit
 // 5, relocated from charly/config.go + charly/namespace.go). Every function here is a FREE
 // FUNCTION taking *spec.Config as its first parameter — Go forbids a package outside a type's own
-// package from adding methods to it, and these resolvers' signatures unavoidably touch buildkit's
-// own *ResolvedBox (the embedding wrapper — BuilderMap/*DistroConfig/*BuilderConfig are CUE-sourced
-// spec types), so they cannot be methods on spec.Config (spec is the bottom of the sdk dependency
-// graph and must never import buildkit).
+// package from adding methods to it, and ResolveBox/ResolveAllBox's signatures unavoidably touch
+// buildkit's own *ResolvedBox (the embedding wrapper — BuilderMap/*DistroConfig/*BuilderConfig are
+// CUE-sourced spec types), so they cannot be methods on spec.Config (spec is the bottom of the sdk
+// dependency graph and must never import buildkit).
+//
+// The builder-map VALUE-PRIMITIVE cluster (ResolveEffectiveBuilder/EffectiveBuilderForBox/
+// distroBuilderMap/PickDistroBuilder + the DistroBuilderCandidate type) was ALSO here by proximity
+// to ResolveBox, but it is pure value over spec types + stdlib (maps/slices) with NO *ResolvedBox
+// touch — so it moved to spec/spec (builder_resolve.go) as CONTRACT-layer computation (plan Rule 2
+// + step 3: the resolve-cluster VALUE TYPES move to spec first). ResolveBox/ResolveAllBox below
+// call spec.ResolveEffectiveBuilder for the builder-map leg.
 //
 // Charly's own config.go keeps THIN WRAPPER free functions named identically (ResolveBox /
 // ResolveAllBox) that fill the ONE LoadUnified-coupled fallback (loading the project's
@@ -147,9 +153,8 @@ func ResolveBox(cfg *spec.Config, name string, calverTag string, dir string, opt
 
 	// Builder resolution flows through the ONE canonical function so it can't diverge across
 	// commands (build/generate/inspect via ResolveBox, `charly bundle add`'s synthetic host/VM
-	// image, and the remote-ref fetch walk via EffectiveBuilderForBox all call
-	// ResolveEffectiveBuilder).
-	resolved.Builder = ResolveEffectiveBuilder(cfg, name, resolved.Distro, resolved.Base, resolved.IsExternalBase, img.Builder)
+	// image, and the remote-ref fetch walk all call spec.ResolveEffectiveBuilder).
+	resolved.Builder = spec.ResolveEffectiveBuilder(cfg, name, resolved.Distro, resolved.Base, resolved.IsExternalBase, img.Builder)
 
 	// BuilderCapabilities: image-specific capability declaration, NOT inherited.
 	resolved.BuilderCapabilities = img.Produce
@@ -390,72 +395,6 @@ func resolveIntPtr(value, fallback *int, defaultVal int) int {
 		return *fallback
 	}
 	return defaultVal
-}
-
-// ResolveEffectiveBuilder computes an image's effective builder map via the SINGLE canonical
-// precedence, lowest→highest: defaults.builder → distro-keyed default → direct local base →
-// per-image override — then self-references are filtered. EVERY builder-consuming path calls
-// this so resolution can never drift between commands.
-func ResolveEffectiveBuilder(cfg *spec.Config, name string, distro []string, base string, isExternalBase bool, imgBuilder BuilderMap) BuilderMap {
-	out := make(BuilderMap)
-	maps.Copy(out, cfg.Defaults.Builder)
-	maps.Copy(out, distroBuilderMap(cfg, distro))
-	if !isExternalBase {
-		// DELIBERATELY flat (not ResolveBoxRef): a base's builder map is only inherited when the
-		// base is ROOT-local. A namespace-qualified base intentionally does NOT contribute its
-		// builder map here.
-		if baseImg, ok := cfg.BoxConfig(base); ok {
-			maps.Copy(out, baseImg.Builder)
-		}
-	}
-	maps.Copy(out, imgBuilder)
-	for typ, b := range out {
-		if b == name {
-			delete(out, typ)
-		}
-	}
-	return out
-}
-
-// EffectiveBuilderForBox computes the builder image refs an image will build against, from a RAW
-// BoxConfig — the FETCH-path counterpart to ResolveBox's resolved-value path. Both end at the ONE
-// canonical ResolveEffectiveBuilder.
-func EffectiveBuilderForBox(cfg *spec.Config, name string, img spec.BoxConfig) BuilderMap {
-	base := "scratch"
-	isExternalBase := true
-	if img.From == "" && !img.DataImage {
-		base = img.Base
-		if base == "" {
-			base = cfg.Defaults.Base
-		}
-		if base == "" {
-			base = "quay.io/fedora/fedora:43"
-		}
-		if baseImg, _, isInternal := cfg.ResolveBoxRef(base); isInternal && baseImg.IsEnabled() {
-			isExternalBase = false
-		}
-	}
-	distro := img.Distro
-	if len(distro) == 0 {
-		distro = cfg.WalkBaseChainDistro(base)
-	}
-	if len(distro) == 0 {
-		distro = cfg.Defaults.Distro
-	}
-	return ResolveEffectiveBuilder(cfg, name, distro, base, isExternalBase, img.Builder)
-}
-
-// distroBuilderMap returns the builder map of the root-namespace image that owns the given
-// distro — the distro-keyed builder default. distroTags is the image's resolved distro in
-// priority order; the first tag with a matching root image wins.
-func distroBuilderMap(cfg *spec.Config, distroTags []string) BuilderMap {
-	names := cfg.AllBoxNames()
-	candidates := make([]DistroBuilderCandidate, 0, len(names))
-	for _, name := range names {
-		img, _ := cfg.BoxConfig(name)
-		candidates = append(candidates, DistroBuilderCandidate{Name: name, Distro: img.Distro, Builder: img.Builder})
-	}
-	return PickDistroBuilder(candidates, distroTags)
 }
 
 // resolveNamespacedBases pulls every namespace-qualified base referenced by the already-resolved
