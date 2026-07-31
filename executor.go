@@ -58,18 +58,27 @@ func NewInProcExecutor(client pb.ExecutorServiceClient) *Executor { return &Exec
 
 // executorCtxKey keys the in-proc *Executor carried on the Invoke context (the compiled-in
 // placement's reverse channel — an out-of-process plugin gets its executor via the broker id
-// in the request instead). Private so only ContextWithExecutor / executorFromContext touch it.
+// in the request instead). Private so only ContextWithExecutor / ExecutorFromContext touch it.
 type executorCtxKey struct{}
 
 // ContextWithExecutor returns ctx carrying an in-proc *Executor. The host's in-proc dispatch
 // (inprocProvider.InvokeWithExecutor) calls this before invoking a compiled-in plugin so the
-// plugin's ExecutorForInvoke can reach the reverse channel without a broker.
+// plugin's ExecutorForInvoke can reach the reverse channel without a broker. It is ALSO used by
+// a host typed compiled-in seam call (e.g. spec.ProjectLoader.ResolveMergedDeployTree, #55 coneA
+// Q2(1)) to thread the in-proc executor to a plugin-side impl that retrieves it via
+// ExecutorFromContext — the same in-proc reverse-channel pattern, outside an Invoke.
 func ContextWithExecutor(ctx context.Context, e *Executor) context.Context {
 	return context.WithValue(ctx, executorCtxKey{}, e)
 }
 
-// executorFromContext returns the in-proc *Executor carried on ctx, if any.
-func executorFromContext(ctx context.Context) (*Executor, bool) {
+// ExecutorFromContext returns the in-proc *Executor carried on ctx, if any. The public
+// counterpart to ContextWithExecutor: a typed compiled-in seam impl (e.g. the loader plugin's
+// ResolveMergedDeployTree) retrieves the host-threaded in-proc executor through this accessor
+// instead of receiving it as a parameter — keeping the seam signature spec-typed (the *Executor
+// is an sdk type the spec seam cannot name) while using the SAME in-proc reverse-channel path
+// ExecutorForInvoke already established for Invoke. Returns ok=false when ctx carries no
+// executor (a non-compiled-in placement, or a host caller that forgot ContextWithExecutor).
+func ExecutorFromContext(ctx context.Context) (*Executor, bool) {
 	e, ok := ctx.Value(executorCtxKey{}).(*Executor)
 	return e, ok && e != nil
 }
@@ -79,7 +88,7 @@ func executorFromContext(ctx context.Context) (*Executor, bool) {
 // OUT-OF-PROCESS plugin falls back to the go-plugin broker id in its InvokeRequest. Plugin
 // Invoke code calls this ONE accessor and works in either placement unchanged.
 func ExecutorForInvoke(ctx context.Context, brokerID uint32) (*Executor, error) {
-	if e, ok := executorFromContext(ctx); ok {
+	if e, ok := ExecutorFromContext(ctx); ok {
 		return e, nil
 	}
 	return ExecutorFromInvoke(brokerID)
