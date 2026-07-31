@@ -15,23 +15,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// FileExists reports whether path exists and is a regular (non-dir) file.
-func FileExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return !info.IsDir()
-}
-
-// DirExists reports whether path exists and is a directory.
-func DirExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
-}
+// FileExists / DirExists relocated to sdk/spec (FLOOR-SLIM axis-A, see
+// loader_discover.go) — re-exported here as kit.FileExists / kit.DirExists so
+// existing call sites compile unchanged. The SortStrings helper stays.
 
 // SortStrings sorts s in place (ascending). A small insertion-free bubble sort,
 // kept identical to the original package-main helper.
