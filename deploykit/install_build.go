@@ -30,64 +30,11 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// HostContext carries host-side information the compiler needs to decide
-// (a) which format section to pick for the host target, (b) which
-// builder image to run user-scope builders in, (c) whether to gate
-// AUR-specific steps, etc. For the OCI target, the caller passes a
-// zero-value HostContext (the compiler ignores host-only choices when
-// MachineVenue is false).
-//
-// STAYS pending #76 (HostContext rides the deploy-compile mechanism relocation; CUE-source
-// scalars if it lands in spec). It crosses the wire ONLY as the opaque `host_context: bytes`
-// RawBody payload on DeployCompileRequest (the sanctioned VmJSON/PodConfigJSON idiom), and its
-// sole charly caller (bundle_add_cmd.go) constructs it alongside the K4 mechanisms #76 moves —
-// so it is mechanism-coupled, not a pure value, and its disposition (relocate vs leave with the
-// mechanism; CUE-source the crossing scalars if it lands in spec) is #76's to make.
-type HostContext struct {
-	// MachineVenue selects compilation mode (P9): false (zero value) → compile for a
-	// CONTAINER image build (the pod overlay / OCI target); true → compile for a MACHINE
-	// venue with a system init (a target:local / target:vm deploy — services render as
-	// systemd units, home is deferred via {{.Home}}). detectHostContext sets it true for a
-	// host deploy; the OCI/pod-overlay compile passes the zero value. It replaced the former
-	// string Target ("host"/"vm"/"oci"), whose "vm" arm was dead (a vm deploy compiles with
-	// the host detectHostContext) — the machine-vs-container distinction IS the trait.
-	MachineVenue bool
-
-	// Distro is the resolved host distro tag, e.g. "fedora:43". Used to
-	// pick the right format section when compiling for a host target
-	// whose distro differs from the image's primary distro.
-	Distro string
-
-	// GlibcVersion is the host's glibc major.minor as reported by
-	// `ldd --version`. Used by the host target's preflight check against
-	// the selected builder image. Optional; empty means skip the check.
-	GlibcVersion string
-
-	// BuilderImage overrides the default builder-image selection for
-	// VenueContainerBuilder steps. Populated from --builder-image. ""
-	// means "use the embedded build vocabulary's default".
-	BuilderImage string
-
-	// BuilderContext carries the host-side build PRE-PASS result: each externalized
-	// detection-builder's per-candy stage context + teardown ops, keyed by
-	// BuilderCtxKey(candy, builder). Populated by preresolveBuilderContexts BEFORE
-	// this pure compile (the deploy command path); read by collectBuilderContext +
-	// compileBuilderSteps so the compiler NEVER dials a builder plugin (purity). Nil
-	// when no pre-pass ran (a direct BuildDeployPlan caller / test) or no externalized
-	// builder is triggered → the affected builder gets base-only context, no teardown.
-	BuilderContext map[string]BuilderPreresolved
-
-	// ActiveInitName/ActiveInit carry the MachineVenue's preresolved active init system —
-	// populated ONCE per whole-deploy compile by the deploy-compile seam's by-name,
-	// existence-checked lookup (bundle_compile_seam.go's preresolveActiveInitInto), alongside
-	// the BuilderContext pre-pass. compileServiceSteps reads these instead of re-deriving the
-	// active init per-candy or guessing via a container-oriented auto-detect heuristic (which
-	// cannot disambiguate a machine venue's init from a plain custom-exec service entry — proven
-	// live 2026-07-20). Nil/empty for a direct BuildDeployPlan caller / test that compiles
-	// outside the seam; compileServiceSteps falls back to its own lazy per-call lookup then.
-	ActiveInitName string
-	ActiveInit     *spec.ResolvedInit
-}
+// HostContext (the deploy-compile host-context value carrier) now lives in spec
+// (spec.HostContext, #55 K4 import-purity) — a hand-written spec value type reached here via the
+// `type HostContext = spec.HostContext` forwarder in compiler_deps.go, so this compile mechanism
+// (BuildDeployPlan + the compile helpers) is unchanged. See spec/spec/host_context.go for the
+// shape rationale (4 wire scalars + json:"-" in-process fields; opaque RawBody crossing).
 
 // BuildDeployPlan compiles one Candy into an InstallPlan.
 //

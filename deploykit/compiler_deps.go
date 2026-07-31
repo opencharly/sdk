@@ -30,6 +30,15 @@ type ShellSpec = vmshared.ShellSpec
 // rides the wire as spec.ResolvedProject.ExternalizedBuilders.
 type BuilderPreresolved = spec.BuilderPreresolved
 
+// HostContext is the deploy-compile host-context value carrier — the TYPE now lives in spec
+// (spec.HostContext, #55 K4 import-purity; a hand-written spec value type, NOT a CUE wire type:
+// it crosses ONLY as the opaque `host_context: bytes` RawBody, and its BuilderContext/ActiveInit/
+// ActiveInitName are json:"-" in-process fields the plugin populates after decode — the gengotypes
+// spike cannot express that json:"-" intent, so hand-written is SPIKE-JUSTIFIED). This forwarder
+// keeps the compile mechanism (BuildDeployPlan + the compile helpers) + candy/plugin-bundle
+// compiling unchanged; charly core constructs spec.HostContext directly.
+type HostContext = spec.HostContext
+
 // ShellAllowlist enumerates valid per-shell sub-block keys inside `shell:`.
 var ShellAllowlist = map[string]bool{"bash": true, "zsh": true, "fish": true, "sh": true}
 
