@@ -2,7 +2,6 @@ package kit
 
 import (
 	"maps"
-	"sort"
 	"strings"
 
 	"github.com/opencharly/spec/spec"
@@ -71,19 +70,9 @@ func EnvPairsToMap(pairs []string) map[string]string {
 }
 
 // EnvMapToPairs converts the deploy schema's env map into sorted KEY=VALUE
-// pairs (the OCI-label wire + env-resolution chain form).
-func EnvMapToPairs(env map[string]string) []string {
-	if len(env) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, k+"="+env[k])
-	}
-	return out
-}
+// pairs (the OCI-label wire + env-resolution chain form). RELOCATED to the spec/spec fabric
+// slice (#55 coneB build-render cone, Class A — github.com/opencharly/spec/spec/env_pairs_coneb.go);
+// re-exported here so every existing kit.EnvMapToPairs call site (sdk/deploykit's deploy_file.go
+// + read_labels.go, kit/box_metadata.go) is unchanged. New consumers reference spec.EnvMapToPairs
+// directly.
+var EnvMapToPairs = spec.EnvMapToPairs

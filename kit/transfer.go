@@ -4,26 +4,20 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"github.com/opencharly/spec/container"
 )
 
 // LocalImageExists checks whether an image reference exists in the given engine's local store.
-// Package-level var for testability (same pattern as DetectGPU in gpu.go).
-var LocalImageExists = defaultLocalImageExists
-
-func defaultLocalImageExists(engine, imageRef string) bool {
-	binary := EngineBinary(engine)
-	switch engine {
-	case "podman":
-		cmd := exec.Command(binary, "image", "exists", imageRef)
-		return cmd.Run() == nil
-	default:
-		// Docker has no "image exists" subcommand; use "image inspect"
-		cmd := exec.Command(binary, "image", "inspect", imageRef)
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		return cmd.Run() == nil
-	}
-}
+// Package-level var for testability (same pattern as DetectGPU in gpu.go). RELOCATED to the
+// spec/container fabric slice (#55 coneB build-render cone, Class A — co-located with the
+// ResolveLocalImageRef family that reads it); re-exported here so every existing direct
+// kit.LocalImageExists call site (candy/plugin-build, candy/plugin-box, candy/plugin-deploy-pod,
+// candy/plugin-kube, charly core's host_build_pod_config_seams + ensure_image) is unchanged.
+// Override container.LocalImageExists (the var container.ResolveLocalImageRef reads) to stub the
+// resolution path in tests; this kit re-export var is a value-copy that no longer affects the
+// relocated body.
+var LocalImageExists = container.LocalImageExists
 
 // TransferImage pipes an image from one engine to another via save | load.
 func TransferImage(srcEngine, dstEngine, imageRef string) error {
