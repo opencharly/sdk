@@ -172,7 +172,7 @@ func WriteDeployRecord(paths *LedgerPaths, rec *DeployRecord) error {
 	}
 	rec.SchemaVersion = ledgerSchemaVersion
 	path := filepath.Join(paths.Deploys, rec.DeployID+".json")
-	if err := ValidateRecord("deploy_record", path, rec); err != nil {
+	if err := spec.ValidateRecord("deploy_record", path, rec); err != nil {
 		return err
 	}
 	return writeJSONAtomic(path, rec)
@@ -206,7 +206,7 @@ func WriteCandyRecord(paths *LedgerPaths, rec *CandyRecord) error {
 	}
 	rec.SchemaVersion = ledgerSchemaVersion
 	path := filepath.Join(paths.Candies, rec.Candy+".json")
-	if err := ValidateRecord("candy_record", path, rec); err != nil {
+	if err := spec.ValidateRecord("candy_record", path, rec); err != nil {
 		return err
 	}
 	return writeJSONAtomic(path, rec)
@@ -387,7 +387,7 @@ func AddCandyDeploymentVia(exec spec.DeployExecutor, paths *LedgerPaths, candyNa
 		update(rec)
 	}
 	rec.SchemaVersion = ledgerSchemaVersion
-	if err := ValidateRecord("candy_record", remoteFile, rec); err != nil {
+	if err := spec.ValidateRecord("candy_record", remoteFile, rec); err != nil {
 		return err
 	}
 	encoded, err := json.MarshalIndent(rec, "", "  ")
@@ -416,7 +416,7 @@ func WriteDeployRecordVia(exec spec.DeployExecutor, paths *LedgerPaths, rec *Dep
 	remoteFile := "~/.config/opencharly/installed/deploys/" + rec.DeployID + ".json"
 	remoteDir := "~/.config/opencharly/installed/deploys"
 	rec.SchemaVersion = ledgerSchemaVersion
-	if err := ValidateRecord("deploy_record", remoteFile, rec); err != nil {
+	if err := spec.ValidateRecord("deploy_record", remoteFile, rec); err != nil {
 		return err
 	}
 	encoded, err := json.MarshalIndent(rec, "", "  ")

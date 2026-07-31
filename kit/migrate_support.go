@@ -7,11 +7,16 @@ package kit
 // module and its cross-boundary contract were folded away); only these constants — read on
 // the current-format load + ledger paths, not migration — remain here.
 
-// Layout path constants shared by core and kit. (The canonical manifest filename moved to
-// spec.UnifiedFileName in #55 Phase B — it is loader-result DATA the types-only spec module owns.)
+import "github.com/opencharly/spec/spec"
+
+// Layout path constants shared by core and kit. The canonical values moved to
+// spec (spec.DefaultBoxDir / spec.DefaultCandyDir, #55 import-purity cone-render) —
+// loader-result DATA the types-only spec module owns, mirroring spec.UnifiedFileName;
+// kit re-exports them via const alias so existing kit.DefaultBoxDir / kit.DefaultCandyDir
+// call sites (plugins + sdk) are untouched (R3, one source).
 const (
-	DefaultBoxDir   = "box"   // discovered box/<name>/ directory
-	DefaultCandyDir = "candy" // discovered candy/<name>/ directory
+	DefaultBoxDir   = spec.DefaultBoxDir   // discovered box/<name>/ directory
+	DefaultCandyDir = spec.DefaultCandyDir // discovered candy/<name>/ directory
 )
 
 // LedgerSchemaVersion is the install-ledger record format version, DECOUPLED from

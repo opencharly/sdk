@@ -13,23 +13,10 @@ import (
 // spec (SDD). The helper functions below operate on it unchanged.
 type EnvConfig = spec.EnvConfig
 
-// ExpandPath expands ~, ${HOME} and $HOME in a path string to the given home
-// directory. ${HOME} is replaced before bare $HOME so the braced form is
-// handled (a bare $HOME ReplaceAll would not match "${HOME}").
-func ExpandPath(path string, home string) string {
-	// Expand ~ at the start of the path
-	if strings.HasPrefix(path, "~/") {
-		path = home + path[1:]
-	} else if path == "~" {
-		path = home
-	}
-
-	// Expand ${HOME} then $HOME anywhere in the path
-	path = strings.ReplaceAll(path, "${HOME}", home)
-	path = strings.ReplaceAll(path, "$HOME", home)
-
-	return path
-}
+// ExpandPath (a pure ~/${HOME}/$HOME path expander) now lives in spec
+// (spec.ExpandPath, #55 import-purity cone-render); kit re-exports it via alias so
+// every existing kit.ExpandPath call site (sdk) is untouched (R3, one source).
+var ExpandPath = spec.ExpandPath
 
 // ExpandEnvConfig expands all ~ and $HOME references in an EnvConfig
 func ExpandEnvConfig(cfg *EnvConfig, home string) *EnvConfig {

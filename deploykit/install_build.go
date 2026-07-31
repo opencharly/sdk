@@ -659,7 +659,7 @@ func CompileOpSteps(ctx context.Context, ex *sdk.Executor, layer CandyModel, img
 		op := &step.Op
 		// A run: step scoped runtime-only (and NOT build/deploy) is handled by
 		// the check Runner live; everything else is the install timeline.
-		if OpInContext(op, spec.CtxRuntime) && !OpInContext(op, spec.CtxBuild) && !OpInContext(op, spec.CtxDeploy) {
+		if spec.OpInContext(op, spec.CtxRuntime) && !spec.OpInContext(op, spec.CtxBuild) && !spec.OpInContext(op, spec.CtxDeploy) {
 			continue
 		}
 		s, err := constructOpStep(ctx, ex, op, layer, img)

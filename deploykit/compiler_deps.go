@@ -42,10 +42,10 @@ type HostContext = spec.HostContext
 // ShellAllowlist enumerates valid per-shell sub-block keys inside `shell:`.
 var ShellAllowlist = map[string]bool{"bash": true, "zsh": true, "fish": true, "sh": true}
 
-// OpInContext reports whether an op runs in the given exec context. Its fallback
-// consults the kernel VerbCatalog (charly), so charly injects the impl at init.
-// ExecContext (+ Ctx consts) is spec.ExecContext — a plain shared vocabulary type (K3, #39).
-var OpInContext func(op *Op, ctx spec.ExecContext) bool
+// OpInContext (the op-context DI seam charly injects at init) now lives in spec
+// (spec.OpInContext, #55 import-purity cone-render) so charly injects + the fabric
+// libraries read ONE canonical var without a deploykit import. Consumers reference
+// spec.OpInContext directly.
 
 // BuilderCtxKey keys the per-(candy,builder) pre-resolved builder context.
 func BuilderCtxKey(candy, builder string) string { return candy + "\x00" + builder }

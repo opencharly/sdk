@@ -145,7 +145,7 @@ func (c renderSeamCaller) renderService(entry *spec.ServiceEntry, def *spec.Reso
 	if def == nil || def.ServiceSchema == nil {
 		return nil, fmt.Errorf("RenderService: init system has no service_schema")
 	}
-	ctx = BuildServiceRenderContext(entry, ctx)
+	ctx = spec.BuildServiceRenderContext(entry, ctx)
 	var reply spec.ServiceRenderReply
 	if err := c.invoke("kind", "init", sdk.OpResolve,
 		spec.InitResolveRequest{Render: &spec.ServiceRenderInput{Init: def.Raw, Ctx: ctx}}, &reply); err != nil {
@@ -284,8 +284,8 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// ResolveInlineBuilder: still host-side — rides K1 with EnsureBuilders (its embedded connect
 	// is the same loader scan+connect action, usually a no-op but not guaranteed).
 	dg.ResolveInlineBuilder = func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx2 *spec.BuildStageContext, img *spec.ResolvedBox) (string, error) {
-		var res InlineBuilderResult
-		if err := c.hostBuild(RenderSeamInlineBuilder, InlineBuilderParams{Dir: dir, BoxName: img.Name, CandyName: candyName, BuilderName: builderName, BDef: bDef, Ctx: ctx2}, &res); err != nil {
+		var res spec.InlineBuilderResult
+		if err := c.hostBuild(spec.RenderSeamInlineBuilder, spec.InlineBuilderParams{Dir: dir, BoxName: img.Name, CandyName: candyName, BuilderName: builderName, BDef: bDef, Ctx: ctx2}, &res); err != nil {
 			return "", err
 		}
 		return res.Fragment, nil
@@ -294,7 +294,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// EnsureBuildersConnected: still host-side — a genuine loader action (ScanAllCandyWithConfigOpts
 	// + loadProjectPlugins), not a data lookup. Rides K1 (#40).
 	dg.EnsureBuildersConnected = func(detected []string) error {
-		return c.hostBuild(RenderSeamEnsureBuilders, EnsureBuildersParams{Dir: dir, Words: detected}, nil)
+		return c.hostBuild(spec.RenderSeamEnsureBuilders, spec.EnsureBuildersParams{Dir: dir, Words: detected}, nil)
 	}
 
 	// ResolveDetectionBuilderStage / ResolveExternalBuilderStage: direct peer-dispatch (K3,
