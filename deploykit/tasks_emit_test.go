@@ -497,3 +497,218 @@ func TestEmitVarsEnv_SortedKeys(t *testing.T) {
 		t.Errorf("vars should be emitted in sorted order:\n%s", out)
 	}
 }
+
+// --- EmitTasks orchestrator (relocated from charly/tasks_test.go, #55 cone-render Unit A:
+// these exercise deploykit.Generator.EmitTasks directly — the render engine lives here, so the
+// coverage lives here too; charly's toDeploykit() wrapper was production-dead and deleted). ---
+
+func TestEmitTasks_UserCoalescing(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	ops := []spec.Op{
+		{Mkdir: "/a", RunAs: "root"},
+		{Mkdir: "/b", RunAs: "root"},
+		{Mkdir: "/c", RunAs: "root"}, // all root → single USER 0 header, one RUN
+	}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, dir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	out := b.String()
+	if strings.Contains(out, "USER") {
+		t.Errorf("no USER directive expected when starting user matches task user:\n%s", out)
+	}
+	if strings.Count(out, "RUN") != 1 {
+		t.Errorf("three mkdirs should coalesce to one RUN:\n%s", out)
+	}
+}
+
+// A command: task (authored as plugin:command) must emit a RUN through the EmitTasks verb
+// switch (the plugin:command special case rehydrates to EmitCmd — no EmitPluginOp seam needed).
+func TestEmitTasks_CommandEmitsRun(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	ops := []spec.Op{
+		{Plugin: "command", PluginInput: map[string]any{"command": "echo rpmfusion-enable"}, RunAs: "root"},
+	}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, dir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "RUN") || !strings.Contains(out, "echo rpmfusion-enable") {
+		t.Errorf("command task must emit a RUN in the OCI build, got:\n%s", out)
+	}
+}
+
+func TestEmitTasks_UserSwitches(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	ops := []spec.Op{
+		{Mkdir: "/a", RunAs: "root"},
+		{Mkdir: "/b", RunAs: "${USER}"},
+		{Mkdir: "/c", RunAs: "${USER}"}, // coalesces with previous
+	}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, dir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	out := b.String()
+	if strings.Count(out, "USER ") != 1 {
+		t.Errorf("expected 1 USER switch, got %d:\n%s", strings.Count(out, "USER "), out)
+	}
+	if !strings.Contains(out, "USER 1000") {
+		t.Errorf("should switch to USER 1000 (numeric form from ${USER}):\n%s", out)
+	}
+	if strings.Count(out, "mkdir") != 2 {
+		t.Errorf("expected 2 mkdir (across users):\n%s", out)
+	}
+}
+
+func TestEmitTasks_OrderPreserved(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	ops := []spec.Op{
+		{Mkdir: "/a", RunAs: "root"},
+		{Copy: "f", To: "/a/f", RunAs: "root"},
+		{Mkdir: "/b", RunAs: "root"},
+	}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, dir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	out := b.String()
+	idx1 := strings.Index(out, "mkdir -p /a")
+	idxCopy := strings.Index(out, "COPY")
+	idx2 := strings.Index(out, "mkdir -p /b")
+	if idx1 < 0 || idxCopy < 0 || idx2 < 0 {
+		t.Fatalf("missing directive: mkdir1=%d copy=%d mkdir2=%d\n%s", idx1, idxCopy, idx2, out)
+	}
+	if idx1 >= idxCopy || idxCopy >= idx2 {
+		t.Errorf("order violated: mkdir1=%d copy=%d mkdir2=%d\n%s", idx1, idxCopy, idx2, out)
+	}
+}
+
+func TestEmitTasks_ParentDirAutoInsert(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	ops := []spec.Op{
+		{Copy: "traefik.yml", To: "/etc/traefik/traefik.yml", RunAs: "root"},
+	}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, dir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	out := b.String()
+	idxMkdir := strings.Index(out, "mkdir -p /etc/traefik")
+	idxCopy := strings.Index(out, "COPY")
+	if idxMkdir < 0 {
+		t.Errorf("expected auto-inserted parent mkdir:\n%s", out)
+	}
+	if idxCopy < idxMkdir {
+		t.Errorf("parent mkdir must precede COPY:\n%s", out)
+	}
+}
+
+func TestEmitTasks_ParentDirSuppressedWhenDeclared(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	ops := []spec.Op{
+		{Mkdir: "/etc/foo", RunAs: "root"},
+		{Copy: "bar", To: "/etc/foo/bar", RunAs: "root"},
+	}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, dir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	out := b.String()
+	if strings.Count(out, "mkdir -p /etc/foo") != 1 {
+		t.Errorf("should not auto-insert parent dir already declared by author:\n%s", out)
+	}
+}
+
+func TestEmitTasks_WriteStagesContent(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	ops := []spec.Op{
+		{Write: "/etc/foo.conf", Content: "hello world\n", RunAs: "root"},
+	}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	buildDir := filepath.Join(dir, "test-img")
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, buildDir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "COPY --chmod=0644 .build/test-img/_inline/lyr/") {
+		t.Errorf("expected COPY from staged inline path:\n%s", out)
+	}
+	entries, _ := os.ReadDir(filepath.Join(buildDir, "_inline", "lyr"))
+	if len(entries) != 1 {
+		t.Errorf("expected one staged file, got %d", len(entries))
+	}
+}
+
+// --- EmitTasks plugin-verb DISPATCH via the EmitPluginOp seam (relocated intent from the 4
+// charly MIXED tests, #55 cone-render Unit A). The charly tests wired EmitPluginOp to the
+// (production-dead) core provider registry; the LIVE dispatch behavior — EmitTasks routes a
+// non-command plugin verb to the EmitPluginOp seam and splices the returned fragment (verbatim
+// when ActScript=false, EmitCmd-wrapped when ActScript=true) — lives HERE in deploykit.EmitTasks,
+// and candy/plugin-build wires the real seam (InvokeProvider(OpEmit)). A STUB seam proves the
+// dispatch+splice without any provider registry. The act verbs' fragment CONTENT (package→dnf,
+// unix-group→groupadd) is a SEPARATE per-act-plugin coverage concern (flagged follow-up). ---
+
+func TestEmitTasks_PluginVerb_DispatchesToSeam_Verbatim(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	var gotOp string
+	g.EmitPluginOp = func(op *spec.Op, _ *spec.ResolvedBox) (string, bool, error) {
+		gotOp = op.Plugin
+		return "RUN echo stub-fragment", false, nil // ActScript=false → spliced verbatim
+	}
+	ops := []spec.Op{{Plugin: "unix-group", PluginInput: map[string]any{"group": "docker"}, RunAs: "root"}}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, dir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	if gotOp != "unix-group" {
+		t.Errorf("a non-command plugin verb must dispatch to the EmitPluginOp seam; got op %q", gotOp)
+	}
+	if !strings.Contains(b.String(), "RUN echo stub-fragment") {
+		t.Errorf("EmitPluginOp's non-act fragment must be spliced verbatim:\n%s", b.String())
+	}
+}
+
+func TestEmitTasks_PluginVerb_ActScriptWrappedInRun(t *testing.T) {
+	dir := t.TempDir()
+	g := NewRenderGenerator()
+	g.BuildDir = dir
+	g.EmitPluginOp = func(_ *spec.Op, _ *spec.ResolvedBox) (string, bool, error) {
+		return "groupadd -f docker", true, nil // ActScript=true → EmitCmd-wrapped into a RUN
+	}
+	ops := []spec.Op{{Plugin: "unix-group", PluginInput: map[string]any{"group": "docker"}, RunAs: "root"}}
+	layer := testCandy("lyr", spec.CandyModel{}, spec.CandyView{})
+	var b strings.Builder
+	if _, err := g.EmitTasks(&b, layer, testResolvedBox(), ops, dir, ".build/test-img"); err != nil {
+		t.Fatalf("EmitTasks: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "RUN") || !strings.Contains(out, "groupadd -f docker") {
+		t.Errorf("an ActScript act-shell must be EmitCmd-wrapped into a RUN:\n%s", out)
+	}
+}
