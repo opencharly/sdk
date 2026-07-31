@@ -3,6 +3,8 @@ package kit
 import (
 	"os/exec"
 	"strings"
+
+	"github.com/opencharly/spec/container"
 )
 
 // container_probe.go — the pure container-runtime host probes (K4: relocated from the deleted
@@ -11,6 +13,11 @@ import (
 // and by charly core's remaining caller (commands.go, the check harness), which import kit
 // directly (K3 ZERO-ALIASES — no alias file); android_deploy_cmd.go and volume_cp_tags_cmd.go,
 // former core callers, are both since deleted.
+//
+// IsHostNetworked RELOCATED to the spec fabric slice github.com/opencharly/spec/container
+// (#55 CHECK-ENGINE cone Option A — a podman-inspect probe, the slice's charter), re-exported below
+// so kit.IsHostNetworked call sites are untouched.
+var IsHostNetworked = container.IsHostNetworked
 
 // ContainerRunning reports whether a container is running. Package-level var for testability
 // (tests inject a stub, same pattern as EnsureCharlyNetwork/InspectLabels).
@@ -25,15 +32,4 @@ func defaultContainerRunning(engine, name string) bool {
 		return false
 	}
 	return strings.TrimSpace(string(out)) == "true"
-}
-
-// IsHostNetworked checks if a running container uses --network host.
-func IsHostNetworked(engine, containerName string) bool {
-	cmd := exec.Command(engine, "inspect", "--format",
-		"{{.HostConfig.NetworkMode}}", containerName)
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(output)) == "host"
 }
