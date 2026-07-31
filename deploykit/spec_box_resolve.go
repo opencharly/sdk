@@ -86,6 +86,26 @@ func WrapSpecBoxes(m map[string]*spec.ResolvedBox) map[string]*buildkit.Resolved
 	return out
 }
 
+// SpecBoxes is the forward inverse of WrapSpecBoxes: it projects an already-resolved
+// buildkit box map to the wire-clean *spec.ResolvedBox map (each entry's embedded spec value, by
+// address) — the SAME conversion ResolveAllSpecBoxes performs inline, factored out so a caller
+// that already ran buildkit.ResolveAllBox (candy/plugin-build's resolveBuildEngine) can push its
+// resolved boxes to the host's buildengine-prep leg via #ResolvedProjectRequest.boxes WITHOUT the
+// host re-resolving. #55 coneB2 Class B — sheds the deploykit import from charly/generate.go.
+func SpecBoxes(m map[string]*buildkit.ResolvedBox) map[string]*spec.ResolvedBox {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]*spec.ResolvedBox, len(m))
+	for name, b := range m {
+		if b == nil {
+			continue
+		}
+		out[name] = &b.ResolvedBox
+	}
+	return out
+}
+
 // EffectiveBuilderNames returns the effective builder WORDS for a box (the buildkit resolve of the
 // image→base→defaults builder chain, flattened via BuilderMap.AllBuilder). Pure over spec types;
 // charly's refs.go remote-ref reachability walk calls it to add builder edges without naming
