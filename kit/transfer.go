@@ -19,36 +19,13 @@ import (
 // relocated body.
 var LocalImageExists = container.LocalImageExists
 
-// TransferImage pipes an image from one engine to another via save | load.
-func TransferImage(srcEngine, dstEngine, imageRef string) error {
-	srcBinary := EngineBinary(srcEngine)
-	dstBinary := EngineBinary(dstEngine)
-
-	fmt.Fprintf(os.Stderr, "Transferring %s from %s to %s\n", imageRef, srcEngine, dstEngine)
-
-	save := exec.Command(srcBinary, "save", imageRef)
-	load := exec.Command(dstBinary, "load")
-
-	pipe, err := save.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("creating pipe: %w", err)
-	}
-	load.Stdin = pipe
-	load.Stderr = os.Stderr
-
-	if err := load.Start(); err != nil {
-		return fmt.Errorf("starting %s load: %w", dstBinary, err)
-	}
-	if err := save.Run(); err != nil {
-		return fmt.Errorf("%s save failed: %w", srcBinary, err)
-	}
-	if err := load.Wait(); err != nil {
-		return fmt.Errorf("%s load failed: %w", dstBinary, err)
-	}
-
-	fmt.Fprintf(os.Stderr, "Transferred %s to %s\n", imageRef, dstEngine)
-	return nil
-}
+// TransferImage pipes an image from one engine to another via save | load. RELOCATED to
+// the spec/container fabric slice (#55 coneC — charly/ off sdk/kit, co-located with the
+// EngineBinary + LocalImageExists family this transfer path complements); re-exported here
+// so every existing direct kit.TransferImage call site (candy/plugin-build, candy/plugin-box,
+// candy/plugin-deploy-pod, …) is unchanged. A package-level var (not a func) so tests can
+// override it the same way as LocalImageExists.
+var TransferImage = container.TransferImage
 
 // SudoLocalImageExists checks whether an image reference exists in the rootful
 // (sudo podman) local store. Mirrors LocalImageExists but always queries the
