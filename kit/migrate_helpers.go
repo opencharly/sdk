@@ -150,14 +150,12 @@ func NodeShapedValue(val *yaml.Node) bool {
 }
 
 // FirstYAMLVersionLine extracts the value of the first top-level `version:` line.
-func FirstYAMLVersionLine(data []byte) string {
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if after, ok := strings.CutPrefix(line, "version:"); ok {
-			return strings.TrimSpace(after)
-		}
-	}
-	return ""
-}
+// RE-EXPORT shim: the body was RELOCATED to spec/spec (yaml_version_line.go, #55 coneG
+// import-purity — charly core's refs.go inlines spec.FirstYAMLVersionLine, dropping its
+// sdk/kit import). This var keeps the existing kit.FirstYAMLVersionLine plugin call sites
+// (candy/plugin-migrate/engine.go) unchanged; new charly-core consumers reference spec.*
+// directly. Pure string parsing (strings.SplitSeq + CutPrefix + TrimSpace), no yaml.v3.
+var FirstYAMLVersionLine = spec.FirstYAMLVersionLine
 
 // IsGitSubmoduleDir reports whether p (≠ root) contains a .git entry (a nested
 // submodule/repo boundary).
