@@ -120,6 +120,17 @@ const (
 	// once this lands.
 	OpDeployDispatch = "deploy-dispatch"
 
+	// OpVerifyChecks is the command:check selector for the DEPLOY-VERIFY drive (#55 CHECK-ENGINE
+	// cone, Unit 2): the host threads a live venue executor (flattened to a spec.VenueDescriptor)
+	// over the in-proc reverse channel and asks the COMPILED-IN command:check to run a deploy-scope
+	// check pass PLUGIN-SIDE — the deploy-lifecycle Test path (spec.VerifyChecksRequest.Ops → a raw
+	// kit.Runner.Run pass) and the `target: local` --verify path (spec.VerifyChecksRequest.Plan → a
+	// kit.RunPlan pass, plugin-rebuilt env/host-vars/target-resolver). This is what sheds charly
+	// core's checkrun.go + planrun_adapter.go sdk/kit imports (the in-proc check-runner construction
+	// moved plugin-side). The reply is the sanctioned sdk/kit []StepResult wire. A generic drive
+	// selector, never a provider word (F11).
+	OpVerifyChecks = "verify-checks"
+
 	// EphemeralPanicMarker prefixes an error the command:bundle plugin converts from a
 	// RECOVERED PANIC inside OpEphemeralRegister/OpEphemeralTeardown (RCA #5, FINAL/K5 unit 6a —
 	// a nil-map write panic in persistEphemeralRuntime was previously UNRECOVERED and vanished
