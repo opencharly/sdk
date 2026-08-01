@@ -281,13 +281,13 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 
 	// include: steps were spliced at collect time — a residual one is a no-op.
 	if step.IsInclude() {
-		sr.Result = CheckResult{CheckResult: spec.CheckResult{Status: StatusSkip, Message: "include expanded at collect time"}}
+		sr.Result = spec.CheckResult{Status: StatusSkip, Message: "include expanded at collect time"}
 		return sr
 	}
 
 	// VerifyOnly: skip mutating steps (run:/agent-run:).
 	if pc.VerifyOnly() && step.Mutates() {
-		sr.Result = CheckResult{CheckResult: spec.CheckResult{Status: StatusSkip, Message: "skipped — verify-only mode (mutating step)"}}
+		sr.Result = spec.CheckResult{Status: StatusSkip, Message: "skipped — verify-only mode (mutating step)"}
 		return sr
 	}
 
@@ -295,19 +295,21 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 	// (Mutates but not an agent step). The install ran at image-build; re-executing it against
 	// a built/deployed target is redundant and fails for build-context steps.
 	if pc.SkipDeterministicRun() && step.Mutates() && !step.IsAgent() {
-		sr.Result = CheckResult{CheckResult: spec.CheckResult{Status: StatusSkip, Message: "skipped — run: install-timeline step (feature-run verifies, does not re-install)"}}
+		sr.Result = spec.CheckResult{Status: StatusSkip, Message: "skipped — run: install-timeline step (feature-run verifies, does not re-install)"}
 		return sr
 	}
 
 	// Agent steps route to the grader (read-only for agent-check).
 	if step.IsAgent() {
 		if g := pc.Grader(); g != nil {
+			// g.Grade returns the engine CheckResult (with the DeadlineExceeded flag the retry
+			// loop reads); the StepResult wire field carries the embedded spec.CheckResult only.
 			sr.Result = g.Grade(ctx, GraderRequest{
 				Description: fs.desc,
 				Keyword:     string(KeywordOf(&step)),
 				Text:        step.KeywordText(),
 				ReadOnly:    !step.Mutates(),
-			})
+			}).CheckResult
 			return sr
 		}
 		status := StatusSkip
@@ -316,7 +318,7 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 			status = StatusFail
 			msg = "agent step (no grader bound) — strict mode"
 		}
-		sr.Result = CheckResult{CheckResult: spec.CheckResult{Status: status, Message: msg, Verb: "agent"}}
+		sr.Result = spec.CheckResult{Status: status, Message: msg, Verb: "agent"}
 		return sr
 	}
 
@@ -327,7 +329,9 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 	op.Origin = fs.origin
 	op.IntentDo = string(StepDoMode(&step))
 	stepCtx.CurrentStepID = stepID
-	sr.Result = RunOne(ctx, pc, &op)
+	// RunOne returns the engine CheckResult (with DeadlineExceeded); the StepResult wire field
+	// carries the embedded spec.CheckResult only (DeadlineExceeded is engine-internal, json:"-").
+	sr.Result = RunOne(ctx, pc, &op).CheckResult
 	return sr
 }
 

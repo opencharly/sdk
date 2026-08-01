@@ -43,17 +43,11 @@ type MethodSpec struct {
 // before this.
 // ---------------------------------------------------------------------------
 
-// InputStr reads a string field from the step's desugared plugin input map —
-// the per-verb fields live there since the schema-compaction cutover (the
-// `<word>: <input>` sugar desugars to Plugin/PluginInput; core #Op carries no
-// per-verb fields).
-func InputStr(c *spec.Op, key string) string {
-	if c.PluginInput == nil {
-		return ""
-	}
-	s, _ := c.PluginInput[key].(string)
-	return s
-}
+// InputStr reads a string field from the step's desugared plugin input map — homed in the
+// spec contract module (spec.InputStr, op_input.go, #55 CHECK-ENGINE cone) so charly core reads
+// a step's per-verb input while importing only spec; re-exported here so the kit.InputStr /
+// kit.Pos* call sites compile unchanged.
+var InputStr = spec.InputStr
 
 func PosText(c *spec.Op) []string     { return []string{InputStr(c, "text")} }
 func PosTarget(c *spec.Op) []string   { return []string{c.Target} }

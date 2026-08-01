@@ -89,28 +89,6 @@ func TestResolveBox_NamespaceDelegation(t *testing.T) {
 	}
 }
 
-func TestResolveEffectiveBuilder_Precedence(t *testing.T) {
-	cfg := &spec.Config{
-		Defaults: spec.BoxConfig{Builder: BuilderMap{"pixi": "default-builder"}},
-		Box: boxMapOf(map[string]spec.BoxConfig{
-			"default-builder": {Candy: []string{}},
-			"custom-builder":  {Candy: []string{}},
-		}),
-	}
-	out := ResolveEffectiveBuilder(cfg, "app", nil, "scratch", true, BuilderMap{"npm": "custom-builder"})
-	if out.BuilderFor("pixi") != "default-builder" {
-		t.Errorf("pixi = %q, want default-builder (inherited)", out.BuilderFor("pixi"))
-	}
-	if out.BuilderFor("npm") != "custom-builder" {
-		t.Errorf("npm = %q, want custom-builder (per-image override)", out.BuilderFor("npm"))
-	}
-	// Self-reference filtered.
-	self := ResolveEffectiveBuilder(cfg, "default-builder", nil, "scratch", true, nil)
-	if self.HasBuilder("pixi") {
-		t.Errorf("self-referencing builder should be filtered, got %v", self)
-	}
-}
-
 func TestResolveAllBox_DisabledExcludedAndRequestedNamespacedTarget(t *testing.T) {
 	disabled := false
 	sub := &spec.Config{

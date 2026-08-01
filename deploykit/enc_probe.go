@@ -20,8 +20,9 @@ import (
 // move here rather than staying behind a HostBuild seam. The verb:enc OpExecute dispatch is now
 // fully plugin-owned (candy/plugin-deploy-pod + candy/plugin-pod each drive verb:enc via their own
 // InvokeProvider; the former core encExecViaPlugin shim + the pod-config-enc-mounts seam are
-// RETIRED). What stays in charly-core's enc.go: only coreCredentialAccess (the credential-store
-// adapter secrets.go still binds). candy/plugin-deploy-pod
+// RETIRED). charly/enc.go is now DELETED (#55 coneB-br2): coreCredentialAccess moved plugin-side to
+// candy/plugin-deploy-pod's buildOverlay (deploykit.CredentialAccessViaExecutor, mirroring
+// candy/plugin-bundle/secrets_artifacts.go). candy/plugin-deploy-pod
 // had ALREADY hand-duplicated 3 of these (isEncryptedMountedLocal/cipherPopulatedPlainEmptyLocal/
 // verifyBindMountsLocal in config_setup_helpers.go) because the originals weren't movable as a
 // whole — those duplicates are deleted in the same cutover, now calling this package instead (R3).
@@ -103,9 +104,9 @@ func EncPlanFor(boxName, instance, volume, scopeDir string) ([]spec.EncVolumePla
 // candy/plugin-pod's command:config is compiled-in-only, but that is a per-BUILD fact, not
 // a guarantee (the exact class of latent bug candy/plugin-pod/remove_orchestration.go's
 // resolveSidecarNames hit and fixed the same way). A caller that might ever run
-// out-of-process loads dc itself via LoadBundleConfigViaSeam (the EXISTING
-// "pod-config-load-bundle" seam — R3, no new seam invented) and calls this instead — see
-// candy/plugin-pod/enc_cmd.go.
+// out-of-process loads dc itself via loaderkit.LoadHostBundleConfigViaExecutor (over the
+// executor reverse channel — the former pod-config-load-bundle host seam was retired) and
+// calls this instead — see candy/plugin-pod/enc_cmd.go.
 func EncPlanForConfig(dc *BundleConfig, boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
 	mounts, storagePath, err := LoadEncryptedVolumeFromConfig(dc, boxName, instance)
 	if err != nil {

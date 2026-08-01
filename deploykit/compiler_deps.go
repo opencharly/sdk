@@ -20,26 +20,32 @@ var (
 
 type ShellSpec = vmshared.ShellSpec
 
-// BuilderPreresolved is one candy×builder's pre-resolved payload. The Candy-coupled
-// functions that BUILD it (FLOOR-SLIM-proper Unit-8: candy/plugin-bundle's own
-// preresolveBuilderContexts, over exec.InvokeProvider — the CONNECT step alone stays
-// charly-core, which owns loadProjectPlugins/ScanAllCandyWithConfigOpts) build it; the
-// compiler only reads it. The externalized-builder WORD SET itself needs no new sharing
-// mechanism — it already rides the wire as spec.ResolvedProject.ExternalizedBuilders (the
-// resolved-project envelope every "resolved-project" HostBuild caller, incl.
-// candy/plugin-bundle's compile.go, already re-hydrates).
-type BuilderPreresolved struct {
-	Context map[string]any
-	Reverse []ReverseOp
-}
+// BuilderPreresolved is the pre-resolved builder-context payload — the TYPE now lives in
+// spec (#55 value-type consolidation; a plain in-process value carrier, not a wire type:
+// candy/plugin-bundle's preresolveBuilderContexts builds it plugin-side over
+// exec.InvokeProvider and the pure compiler only reads it, so it never crosses the process
+// boundary — HostContext.BuilderContext is populated in-proc AFTER the HostContextJSON
+// decode). This forwarder keeps deploykit's callers + candy/plugin-bundle compiling
+// unchanged. The externalized-builder WORD SET itself needs no new sharing mechanism — it
+// rides the wire as spec.ResolvedProject.ExternalizedBuilders.
+type BuilderPreresolved = spec.BuilderPreresolved
+
+// HostContext is the deploy-compile host-context value carrier — the TYPE now lives in spec
+// (spec.HostContext, #55 K4 import-purity; a hand-written spec value type, NOT a CUE wire type:
+// it crosses ONLY as the opaque `host_context: bytes` RawBody, and its BuilderContext/ActiveInit/
+// ActiveInitName are json:"-" in-process fields the plugin populates after decode — the gengotypes
+// spike cannot express that json:"-" intent, so hand-written is SPIKE-JUSTIFIED). This forwarder
+// keeps the compile mechanism (BuildDeployPlan + the compile helpers) + candy/plugin-bundle
+// compiling unchanged; charly core constructs spec.HostContext directly.
+type HostContext = spec.HostContext
 
 // ShellAllowlist enumerates valid per-shell sub-block keys inside `shell:`.
 var ShellAllowlist = map[string]bool{"bash": true, "zsh": true, "fish": true, "sh": true}
 
-// OpInContext reports whether an op runs in the given exec context. Its fallback
-// consults the kernel VerbCatalog (charly), so charly injects the impl at init.
-// ExecContext (+ Ctx consts) is spec.ExecContext — a plain shared vocabulary type (K3, #39).
-var OpInContext func(op *Op, ctx spec.ExecContext) bool
+// OpInContext (the op-context DI seam charly injects at init) now lives in spec
+// (spec.OpInContext, #55 import-purity cone-render) so charly injects + the fabric
+// libraries read ONE canonical var without a deploykit import. Consumers reference
+// spec.OpInContext directly.
 
 // BuilderCtxKey keys the per-(candy,builder) pre-resolved builder context.
 func BuilderCtxKey(candy, builder string) string { return candy + "\x00" + builder }

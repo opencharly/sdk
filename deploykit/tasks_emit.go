@@ -13,33 +13,8 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// TaskAutoExports are the auto-exported variable names reserved for the generator;
-// `vars:` entries may not shadow these, and every `${VAR}` reference resolves
-// against (auto-exports ∪ candy.Vars).
-var TaskAutoExports = map[string]bool{
-	"USER":       true,
-	"UID":        true,
-	"GID":        true,
-	"HOME":       true,
-	"ARCH":       true,
-	"BUILD_ARCH": true,
-}
-
 // TaskVarRefPattern matches ${NAME} references in task fields.
 var TaskVarRefPattern = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
-
-// TaskKnownNames returns the ${NAME} references that resolve cleanly for this
-// candy: auto-exports ∪ candy.Vars keys.
-func TaskKnownNames(vars map[string]string) map[string]bool {
-	known := make(map[string]bool, len(TaskAutoExports)+len(vars))
-	for k := range TaskAutoExports {
-		known[k] = true
-	}
-	for k := range vars {
-		known[k] = true
-	}
-	return known
-}
 
 // TaskUnresolvedRefs returns the names of ${VAR} references in s not in known.
 func TaskUnresolvedRefs(s string, known map[string]bool) []string {
@@ -353,7 +328,7 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 
 	if userIsRoot && img != nil && img.DistroDef != nil {
 		if formatDef, ok := img.DistroDef.Format[img.Pkg]; ok {
-			if cm := buildkit.RenderCacheMounts(formatDef.CacheMount, -1, 0, " ", false); cm != "" {
+			if cm := spec.RenderCacheMounts(formatDef.CacheMount, -1, 0, " ", false); cm != "" {
 				mounts = append(mounts, cm)
 			}
 		}

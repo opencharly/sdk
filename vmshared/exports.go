@@ -1,5 +1,7 @@
 package vmshared
 
+import "github.com/opencharly/spec/hostenv"
+
 // exports.go — the exported surface of this package for its two consumers
 // (the charly core in charly/, and the out-of-process VM plugin in
 // candy/plugin-vm/). Each entry re-exports an internal helper under an
@@ -16,18 +18,18 @@ var (
 	ComposeRunCmd            = composeRunCmd
 	ComposeUsers             = composeUsers
 	DefaultMachineForArch    = defaultMachineForArch
-	FormatForDistroID        = formatForDistroID
+	FormatForDistroID        = hostenv.FormatForDistroID
 	LoadRegistry             = loadRegistry
 	OpenOutputPath           = openOutputPath
 	OvmfCandidatesForDistro  = ovmfCandidatesForDistro
-	ParseGlibcVersion        = parseGlibcVersion
+	ParseGlibcVersion        = hostenv.ParseGlibcVersion
 	RegistryPath             = registryPath
 	ResolveCloudInitSSHUser  = resolveCloudInitSSHUser
 	ResolveCPUDefaults       = resolveCPUDefaults
 	SaveRegistry             = saveRegistry
 	SnapshotExternalDiskPath = snapshotExternalDiskPath
 	SnapshotsDir             = snapshotsDir
-	SplitOsReleaseLine       = splitOsReleaseLine
+	SplitOsReleaseLine       = hostenv.SplitOsReleaseLine
 	SplitPortForward         = splitPortForward
 	VmDiskPath               = vmDiskPath
 	WriterForPath            = writerForPath

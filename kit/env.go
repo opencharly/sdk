@@ -2,7 +2,6 @@ package kit
 
 import (
 	"maps"
-	"sort"
 	"strings"
 
 	"github.com/opencharly/spec/spec"
@@ -13,23 +12,10 @@ import (
 // spec (SDD). The helper functions below operate on it unchanged.
 type EnvConfig = spec.EnvConfig
 
-// ExpandPath expands ~, ${HOME} and $HOME in a path string to the given home
-// directory. ${HOME} is replaced before bare $HOME so the braced form is
-// handled (a bare $HOME ReplaceAll would not match "${HOME}").
-func ExpandPath(path string, home string) string {
-	// Expand ~ at the start of the path
-	if strings.HasPrefix(path, "~/") {
-		path = home + path[1:]
-	} else if path == "~" {
-		path = home
-	}
-
-	// Expand ${HOME} then $HOME anywhere in the path
-	path = strings.ReplaceAll(path, "${HOME}", home)
-	path = strings.ReplaceAll(path, "$HOME", home)
-
-	return path
-}
+// ExpandPath (a pure ~/${HOME}/$HOME path expander) now lives in spec
+// (spec.ExpandPath, #55 import-purity cone-render); kit re-exports it via alias so
+// every existing kit.ExpandPath call site (sdk) is untouched (R3, one source).
+var ExpandPath = spec.ExpandPath
 
 // ExpandEnvConfig expands all ~ and $HOME references in an EnvConfig
 func ExpandEnvConfig(cfg *EnvConfig, home string) *EnvConfig {
@@ -84,19 +70,9 @@ func EnvPairsToMap(pairs []string) map[string]string {
 }
 
 // EnvMapToPairs converts the deploy schema's env map into sorted KEY=VALUE
-// pairs (the OCI-label wire + env-resolution chain form).
-func EnvMapToPairs(env map[string]string) []string {
-	if len(env) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, k+"="+env[k])
-	}
-	return out
-}
+// pairs (the OCI-label wire + env-resolution chain form). RELOCATED to the spec/spec fabric
+// slice (#55 coneB build-render cone, Class A — github.com/opencharly/spec/spec/env_pairs_coneb.go);
+// re-exported here so every existing kit.EnvMapToPairs call site (sdk/deploykit's deploy_file.go
+// + read_labels.go, kit/box_metadata.go) is unchanged. New consumers reference spec.EnvMapToPairs
+// directly.
+var EnvMapToPairs = spec.EnvMapToPairs

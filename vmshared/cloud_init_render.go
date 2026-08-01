@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/opencharly/spec/hostenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -145,7 +146,7 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 
 	distro := effectiveDistro(spec)
 	packages := composePackages(ci.Package, distro)
-	pacmanFamily := formatForDistroID(distro) == "pac"
+	pacmanFamily := hostenv.FormatForDistroID(distro) == "pac"
 	if len(packages) > 0 && !pacmanFamily {
 		userMap["packages"] = packages
 	}
@@ -338,7 +339,7 @@ func applySSHDefaults(entry map[string]any, rt CloudInitRuntimeParams) {
 // distro switch already defaulted an empty/unrecognized distro to the
 // Arch/Fedora {openssh, sshd} shape, so this inference can never change what
 // a caller already effectively got — it only makes the SAME assumption
-// explicit enough for formatForDistroID to positively match "pac". Any
+// explicit enough for hostenv.FormatForDistroID to positively match "pac". Any
 // other empty-distro image (a different or absent base_user) returns "" and
 // stays on the safe, unchanged non-pacman path.
 func effectiveDistro(spec *VmSpec) string {

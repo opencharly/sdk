@@ -43,8 +43,8 @@ const (
 	ReverseOpPluginScript   = spec.ReverseOpPluginScript
 )
 
-// ValidateRecord is the egress-validation seam for ledger writes. The ledger
-// (install_ledger.go) validates each record against its egress schema before
-// writing; charly injects its ValidateEgressValue here at init (see
-// charly/install_ledger_egress.go). Defaults to a no-op for standalone kit use.
-var ValidateRecord = func(kind, label string, v any) error { return nil }
+// The ValidateRecord egress-validation seam (for install-ledger writes) now lives in
+// spec (spec.ValidateRecord, #55 import-purity cone-render) so charly injects + the
+// ledger reads ONE canonical var. install_ledger.go calls spec.ValidateRecord directly
+// — a seam var cannot be a kit-side alias (an alias copies the no-op default at init,
+// so charly's later injection would never reach the ledger).

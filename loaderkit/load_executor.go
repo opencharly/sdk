@@ -10,40 +10,16 @@ import "github.com/opencharly/spec/spec"
 // the COMPILED-IN host (charly.LoadUnified) with its typed host funcs directly (zero marshal, U3),
 // and a genuine PLUGIN (the candy/plugin-bundle witness) over sdk.Executor's reverse channel. This
 // is the loader analogue of the DocParser / ProjectWalker / Materializer typed seams already in
-// sdk/spec (loader_seam.go).
+// spec (loader_seam.go).
 
 // LoaderExecutor is the typed host-leg contract for the registry-/host-coupled loader steps
-// LoadUnified cannot do kind-blind: the bootstrap-phase plugin invocation, the registry-coupled
-// import/discover walk, the materialize kind-decode + merge, and the two registry-resolving
-// validators. Because the methods are TYPED, a compiled-in placement pays no envelope tax; only a
-// true out-of-module plugin marshals (the existing spec.LoadedProject / spec.UnifiedFile envelopes).
-type LoaderExecutor interface {
-	// LoaderThreaded returns the CURRENT registry-derived snapshot (recognized kinds / deploy
-	// substrates / DeployTraits / ExternalDeploySubstrates / …). Called FRESH at each DATA-seam
-	// invocation — NEVER cached at seam-build time — because the walk's connect-declared-kind pass
-	// mutates the registry BETWEEN seam construction and the post-walk validators, so a build-time
-	// snapshot would be stale (matches charly's former per-seam loaderThreaded() calls exactly).
-	LoaderThreaded() spec.Threaded
-	// RunBootstrapPhase invokes every registered bootstrap-phase plugin on the raw root bytes,
-	// returning the (possibly transformed) bytes.
-	RunBootstrapPhase(data []byte) []byte
-	// WalkProject runs the kind-blind import/discover/namespace walk (the registered
-	// spec.ProjectWalker, reached via the host's spec.WalkSeams) → the generic spec.LoadedProject
-	// envelope. The host #NodeDoc CUE gate (WalkSeams.GateDoc) runs INSIDE this walk.
-	WalkProject(dir string, rootData []byte) (spec.LoadedProject, error)
-	// MaterializeLoadedProject replays the host's per-document/per-namespace MATERIALIZE + root-wins
-	// MERGE over the walk envelope (registry kind-decode via the registered spec.Materializer).
-	// RULING 1: a TRANSITIONAL host leg — the whole embed+parser+registry orchestration stays
-	// host-side until task #48 relocates it into loaderkit.
-	MaterializeLoadedProject(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile) error
-	// ValidateAndroidDevices enforces the kind:android box⊻adb XOR — resolves android templates via
-	// the provider registry (host-coupled), so a leg, not a pure loaderkit move.
-	ValidateAndroidDevices(uf *spec.UnifiedFile) error
-	// ValidatePreemptible validates preemptible / requires_exclusive / requires_shared across the
-	// deploy map, including the resource-vocabulary cross-check (resolves the resource plugin kind +
-	// vm/resource entities via the registry) — host-coupled, so a leg.
-	ValidatePreemptible(uf *spec.UnifiedFile) error
-}
+// LoadUnified cannot do kind-blind. It is DEFINED in the dedicated spec module (spec.LoaderExecutor,
+// #55 loader-keystone) so charly core can hold the host implementation while importing ONLY spec;
+// this package-local ALIAS keeps loaderkit's own references (LoadSeamsFromExecutor,
+// LoadUnifiedViaExecutor) terse. Every witness (charly's hostLoaderExecutor, the plugin
+// buildLoaderExecutor / vmLoaderExecutor / execLoaderExecutor / executorLoaderExecutor) satisfies it
+// structurally.
+type LoaderExecutor = spec.LoaderExecutor
 
 // LoadSeamsFromExecutor builds a LoadSeams from a LoaderExecutor: the PURE, registry-free LOAD-half
 // seams (relocated into loaderkit, K1-LOADER RELOCATION) are wired DIRECTLY; the registry-/host-

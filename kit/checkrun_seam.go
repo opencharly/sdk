@@ -1,65 +1,31 @@
 package kit
 
+// checkrun_seam.go — re-export of the check-run REPLY wire types, RELOCATED to the spec
+// contract module (#55 CHECK-ENGINE cone Option A). Both the request (spec.CheckRunRequest) AND
+// the reply envelope (CheckRunReply / StepResult / StepPass) are CUE-sourced in
+// spec/schema/checkresult.cue (#CheckRunReply / #StepResult / #StepPass), generated into
+// spec/spec/cue_types_gen.go — a live `cue exp gengotypes` spike proves the generated structs are
+// byte-identical to the former hand-written wire types (the `optional=nillable` marker emits the
+// Passthrough / Score pointers). The SDD wire-mandate exception is narrowed to EXACTLY
+// kit.CheckResult's engine-internal `DeadlineExceeded bool json:"-"` (gengotypes cannot emit
+// json:"-"), the one field with no gengotypes equivalent: the reply wire form carries the
+// spec.CheckResult fields only and the DeadlineExceeded flag lives on the kit-internal engine
+// CheckResult, dropped at the StepResult boundary exactly as it was on the wire before —
+// byte-identical output, R3.
+// charly core's check-run seam (host_build_check_run.go) references spec.CheckRunReply importing
+// only spec; kit re-exports each here so every existing kit.CheckRunReply / kit.StepPass call
+// site (charly core + the candies) is untouched. The reply carries []StepResult VERBATIM so the
+// plugin reuses the kit formatters (FormatStepResults*) with byte-parity across every --format.
+// command:check (candy/plugin-check) forwards a run to HostBuild("check-run"); the host builds
+// the venue + runs the Runner and returns this reply, which the plugin formats + tallies into an
+// exit code.
+
 import "github.com/opencharly/spec/spec"
 
-// checkrun_seam.go — the REPLY half of the "check-run" host↔plugin seam (P12). The
-// REQUEST (spec.CheckRunRequest) is a CUE-sourced wire type. The reply is HAND-WRITTEN here
-// (CheckRunReply/StepPass) — a wire-mandate exception the mandate's LEGAL path authorizes:
-// a live `cue exp gengotypes` spike (throwaway #CheckResult/#StepResult defs, P12) PROVED CUE
-// cannot faithfully express kit.CheckResult AS A WHOLE, because its engine-internal
-// `DeadlineExceeded bool json:"-"` field has NO gengotypes equivalent (gengotypes emits
-// `json:"deadline_exceeded,omitempty"`, never json:"-"). The spike ALSO confirmed gengotypes
-// CAN express the REST faithfully (the *spec.Op reference, time.Duration via @go override, the
-// required-field-no-omitempty Op/Verb/Status/Message/Elapsed) — FLOOR-SLIM Unit 4 acted on that
-// half of the finding: #CheckResult (sdk/schema/checkresult.cue) is now the CUE-sourced base
-// (→ spec.CheckResult, generated), and kit.CheckResult (checkresult.go) is `struct {
-// spec.CheckResult; DeadlineExceeded bool json:"-" }` — an EMBEDDING wrapper that keeps
-// DeadlineExceeded engine-internal-only without re-litigating the P12 spike's actual finding.
-// This file's OWN CheckRunReply/StepPass stay hand-written (they are a different exception:
-// StepPass's Stdout/Stderr/ExitCode is a verbatim guest-passthrough shape with no CUE need, and
-// CheckRunReply composes []StepResult, which now flattens the embedded spec.CheckResult
-// transparently on marshal — byte-identical output, R3, no duplicate result model). The reply
-// carries []StepResult VERBATIM so the plugin reuses the kit formatters (FormatStepResults*)
-// with byte-parity across every --format. command:check (candy/plugin-check) forwards a run to
-// HostBuild("check-run"); the host builds the venue + runs the Runner and returns this reply,
-// which the plugin formats + tallies into an exit code.
+// CheckRunReply is the host-resolved result of a check-run. Aliased to spec.CheckRunReply (the
+// body lives there).
+type CheckRunReply = spec.CheckRunReply
 
-// CheckRunReply is the host-resolved result of a check-run. Steps is the per-step verdict
-// list the plugin formats (FormatStepResults*) and tallies into an exit code. Image is the
-// resolved image ref for the "Image: <ref>" header line. NoSteps signals the image declared no
-// plan (the plugin prints "No plan steps defined for this image." and exits 0) — distinct from
-// an empty Steps that ran zero scored steps. The host signals an infra error (bad image, engine
-// failure) via the builder's error return, surfaced to the plugin.
-type CheckRunReply struct {
-	Steps   []StepResult `json:"steps,omitempty"`
-	Image   string       `json:"image,omitempty"`
-	NoSteps bool         `json:"no_steps,omitempty"`
-	// Header is the pre-formatted, kind-specific banner line the host builds ("Image: X
-	// (container: Y)" for pod, "VM: <name> (ssh …)", "Local deploy: …", "Group bed: …") from
-	// data only the host holds (container name, ssh user/host/port, member count), so the
-	// plugin stays kind-blind: it prints Header, then the formatted Steps.
-	Header string `json:"header,omitempty"`
-	// Passthrough carries the one non-plan-run live path — a nested pod-in-VM leaf whose check
-	// the host delegates to the guest over SSH (`charly check live <pod>` run INSIDE the guest),
-	// whose stdout/stderr + exit code the plugin forwards verbatim. Nil for every plan-run mode.
-	Passthrough *StepPass `json:"passthrough,omitempty"`
-	// Score is the "score"-mode reply (originally P12 Wave-2; the mode dispatches directly
-	// plugin-side since K1-unblock wave arm 3): the AI-harness SCORING result — the plugin's own
-	// pluginRunCheckLive's per-step verdicts (the substituted, nonce-carrying scoring plan walked
-	// plugin-side) the plugin scorer consumes (summary, StepByID, Classify). Nil for the
-	// box/live/feature plan-run modes, which carry their verdicts in Steps. CUE-sourced
-	// (spec.CheckRunResults) so this same definition still serves the wire shape uniformly
-	// (SDD; no alias) even though both producer and consumer are now plugin-side.
-	Score *spec.CheckRunResults `json:"score,omitempty"`
-}
-
-// StepPass is the verbatim stdout/stderr/exit-code of a host-delegated guest sub-invocation
-// (the nested pod-in-VM check-live delegation, runVm's guestNestedCheckCmd path). The plugin
-// writes Stdout/Stderr and returns ExitCode unchanged, so a guest-run check reports
-// byte-identically to a direct one. Hand-written (not CUE): it is part of the kit reply model,
-// which the wire mandate's spike keeps hand-written alongside CheckRunReply.
-type StepPass struct {
-	Stdout   string `json:"stdout,omitempty"`
-	Stderr   string `json:"stderr,omitempty"`
-	ExitCode int    `json:"exit_code,omitempty"`
-}
+// StepPass is the verbatim stdout/stderr/exit-code of a host-delegated guest sub-invocation.
+// Aliased to spec.StepPass (the body lives there).
+type StepPass = spec.StepPass

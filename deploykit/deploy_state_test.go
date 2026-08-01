@@ -164,7 +164,7 @@ func TestSaveBundleConfig_RoundTrip(t *testing.T) {
 		return content, nil
 	}
 
-	if err := SaveBundleConfig(dc, stubMarshalNode); err != nil {
+	if err := SaveBundleConfig(dc, stubMarshalNode, nil); err != nil {
 		t.Fatalf("SaveBundleConfig: %v", err)
 	}
 
@@ -197,7 +197,7 @@ func TestSaveBundleConfig_ErrorsWhenCallbackNil(t *testing.T) {
 	DeployStateHost = nil // no fail-safe re-check dep when the seam is nil
 	t.Cleanup(func() { DeployStateHost = prev })
 
-	err := SaveBundleConfig(&BundleConfig{Bundle: map[string]BundleNode{"x": {Image: "x"}}}, nil)
+	err := SaveBundleConfig(&BundleConfig{Bundle: map[string]BundleNode{"x": {Image: "x"}}}, nil, nil)
 	if err == nil {
 		t.Fatal("SaveBundleConfig with nil callback returned nil; want an error")
 	}
@@ -468,5 +468,44 @@ func TestClassifyNodeTarget(t *testing.T) {
 				t.Errorf("ClassifyNodeTarget(%+v, %q) = %q, want %q", tc.node, tc.path, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestSaveDeployState_PluginSideReader pins the #55 K4 config-write seam-collapse: a NON-NIL
+// injected reader makes SaveDeployState persist deploy-state even when DeployStateHost is nil —
+// the OUT-OF-PROCESS command:bundle case, where the write now runs plugin-side (deploykit.SaveDeployState
+// with the plugin's own loader-backed reader + loader-threaded Primaries) instead of over the deleted
+// "deploy-config-save-state" host seam. Without the reader param, SaveDeployState returns early at
+// `if DeployStateHost == nil` and writes NOTHING, so this test FAILS on the pre-refactor code
+// (check-coverage gate).
+func TestSaveDeployState_PluginSideReader(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "charly.yml")
+	t.Setenv(kit.DeployConfigEnv, dest)
+	prev := DeployStateHost
+	DeployStateHost = nil // simulate out-of-process: no charly-init host registration
+	t.Cleanup(func() { DeployStateHost = prev })
+
+	// The plugin's own loader-backed reader — a fresh, non-nil overlay (nothing on disk yet).
+	reader := func() (*BundleConfig, error) {
+		return &BundleConfig{Bundle: map[string]BundleNode{}}, nil
+	}
+	marshalNode := func(_ string, _ *BundleNode) (*yaml.Node, error) {
+		content := &yaml.Node{Kind: yaml.MappingNode}
+		content.Content = append(content.Content, kit.ScalarNode("pod"), &yaml.Node{Kind: yaml.MappingNode})
+		return content, nil
+	}
+
+	SaveDeployState("web", "", SaveDeployStateInput{Box: "web", Target: "pod"}, marshalNode, reader)
+
+	if !kit.FileExists(dest) {
+		t.Fatalf("SaveDeployState with a non-nil reader wrote nothing at %s (DeployStateHost==nil); the injected reader must bypass the host-only guard", dest)
+	}
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("reading written overlay: %v", err)
+	}
+	if !strings.Contains(string(data), "web:") {
+		t.Errorf("written overlay missing the deploy entry:\n%s", string(data))
 	}
 }

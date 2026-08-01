@@ -4,57 +4,28 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	"github.com/opencharly/spec/container"
 )
 
 // LocalImageExists checks whether an image reference exists in the given engine's local store.
-// Package-level var for testability (same pattern as DetectGPU in gpu.go).
-var LocalImageExists = defaultLocalImageExists
+// Package-level var for testability (same pattern as DetectGPU in gpu.go). RELOCATED to the
+// spec/container fabric slice (#55 coneB build-render cone, Class A — co-located with the
+// ResolveLocalImageRef family that reads it); re-exported here so every existing direct
+// kit.LocalImageExists call site (candy/plugin-build, candy/plugin-box, candy/plugin-deploy-pod,
+// candy/plugin-kube, charly core's host_build_pod_config_seams + ensure_image) is unchanged.
+// Override container.LocalImageExists (the var container.ResolveLocalImageRef reads) to stub the
+// resolution path in tests; this kit re-export var is a value-copy that no longer affects the
+// relocated body.
+var LocalImageExists = container.LocalImageExists
 
-func defaultLocalImageExists(engine, imageRef string) bool {
-	binary := EngineBinary(engine)
-	switch engine {
-	case "podman":
-		cmd := exec.Command(binary, "image", "exists", imageRef)
-		return cmd.Run() == nil
-	default:
-		// Docker has no "image exists" subcommand; use "image inspect"
-		cmd := exec.Command(binary, "image", "inspect", imageRef)
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		return cmd.Run() == nil
-	}
-}
-
-// TransferImage pipes an image from one engine to another via save | load.
-func TransferImage(srcEngine, dstEngine, imageRef string) error {
-	srcBinary := EngineBinary(srcEngine)
-	dstBinary := EngineBinary(dstEngine)
-
-	fmt.Fprintf(os.Stderr, "Transferring %s from %s to %s\n", imageRef, srcEngine, dstEngine)
-
-	save := exec.Command(srcBinary, "save", imageRef)
-	load := exec.Command(dstBinary, "load")
-
-	pipe, err := save.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("creating pipe: %w", err)
-	}
-	load.Stdin = pipe
-	load.Stderr = os.Stderr
-
-	if err := load.Start(); err != nil {
-		return fmt.Errorf("starting %s load: %w", dstBinary, err)
-	}
-	if err := save.Run(); err != nil {
-		return fmt.Errorf("%s save failed: %w", srcBinary, err)
-	}
-	if err := load.Wait(); err != nil {
-		return fmt.Errorf("%s load failed: %w", dstBinary, err)
-	}
-
-	fmt.Fprintf(os.Stderr, "Transferred %s to %s\n", imageRef, dstEngine)
-	return nil
-}
+// TransferImage pipes an image from one engine to another via save | load. RELOCATED to
+// the spec/container fabric slice (#55 coneC — charly/ off sdk/kit, co-located with the
+// EngineBinary + LocalImageExists family this transfer path complements); re-exported here
+// so every existing direct kit.TransferImage call site (candy/plugin-build, candy/plugin-box,
+// candy/plugin-deploy-pod, …) is unchanged. A package-level var (not a func) so tests can
+// override it the same way as LocalImageExists.
+var TransferImage = container.TransferImage
 
 // SudoLocalImageExists checks whether an image reference exists in the rootful
 // (sudo podman) local store. Mirrors LocalImageExists but always queries the

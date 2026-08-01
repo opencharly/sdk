@@ -44,77 +44,26 @@ func OwnedCacheMount(dst string, uid, gid int) CacheMount {
 }
 
 // String renders the CacheMount as a Containerfile `--mount=type=cache,...`
-// flag. The `id=` field is derived from Dst (and UID for owned caches), keeping
-// the cache stable across layer-hash changes during iterative builds.
+// flag, delegating to spec.FormatCacheMount — the single-source formatter (#55
+// coneK3tasks relocated the slice renderers + the per-mount formatter to spec/spec so
+// charly core can render cache mounts without an sdk/buildkit import). The `id=` field
+// is derived from Dst (and UID for owned caches), keeping the cache stable across
+// layer-hash changes during iterative builds.
 func (m CacheMount) String() string {
-	safe := strings.ReplaceAll(strings.TrimPrefix(m.Dst, "/"), "/", "-")
-	id := "charly-" + safe
-	if m.UID >= 0 {
-		return fmt.Sprintf("--mount=type=cache,id=%s-uid%d,dst=%s,uid=%d,gid=%d", id, m.UID, m.Dst, m.UID, m.GID)
-	}
-	return fmt.Sprintf("--mount=type=cache,id=%s,dst=%s,sharing=%s", id, m.Dst, m.Sharing)
+	return spec.FormatCacheMount(m.Dst, m.Sharing, m.UID, m.GID)
 }
 
-// RenderCacheMounts joins a slice of spec.CacheMount into one Containerfile
-// flag string. uid<0 → shared form (sharing-locked); uid>=0 → owned form.
-// `trailing` appends the separator after the last entry — needed by
-// `cacheMountsOwned` which feeds directly into a multi-line RUN body.
-//
-// Single source of truth for the slice-rendering pattern that previously
-// lived inline at four call sites (two template helpers + generate.go +
-// tasks.go cmd-emitter). Every multi-mount site now flows through here,
-// every single-mount site flows through CacheMount.String() directly.
-func RenderCacheMounts(mounts []spec.CacheMount, uid, gid int, sep string, trailing bool) string {
-	if len(mounts) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(mounts))
-	for _, m := range mounts {
-		if uid >= 0 {
-			parts = append(parts, OwnedCacheMount(m.Dst, uid, gid).String())
-		} else {
-			parts = append(parts, SharedCacheMount(m.Dst, m.Sharing).String())
-		}
-	}
-	out := strings.Join(parts, sep)
-	if trailing {
-		out += sep
-	}
-	return out
-}
-
-// RenderCacheMountsAuto renders a MIXED list where each entry is owned
-// (uid/gid) or shared per its own `owned:` flag — letting one builder declare
-// both root system caches (pacman → shared/locked) and user build caches
-// (makepkg SRCDEST, yay AUR clones → uid/gid-owned) in a single cache_mount
-// list. uid/gid apply only to the entries flagged owned.
-func RenderCacheMountsAuto(mounts []spec.CacheMount, uid, gid int, sep string, trailing bool) string {
-	if len(mounts) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(mounts))
-	for _, m := range mounts {
-		if m.Owned {
-			parts = append(parts, OwnedCacheMount(m.Dst, uid, gid).String())
-		} else {
-			parts = append(parts, SharedCacheMount(m.Dst, m.Sharing).String())
-		}
-	}
-	out := strings.Join(parts, sep)
-	if trailing {
-		out += sep
-	}
-	return out
-}
-
-// TemplateFuncs provides helper functions for format/builder templates.
+// TemplateFuncs provides helper functions for format/builder templates. The cache-mount
+// funcs delegate to spec.RenderCacheMounts/RenderCacheMountsAuto (relocated to spec/spec,
+// #55 coneK3tasks) — buildkit imports spec, so the shared spec primitives are the single
+// source (R3) for every render site.
 var TemplateFuncs = template.FuncMap{
-	"cacheMounts": func(m []spec.CacheMount) string { return RenderCacheMounts(m, -1, 0, " \\\n    ", false) },
+	"cacheMounts": func(m []spec.CacheMount) string { return spec.RenderCacheMounts(m, -1, 0, " \\\n    ", false) },
 	"cacheMountsOwned": func(m []spec.CacheMount, uid, gid int) string {
-		return RenderCacheMounts(m, uid, gid, " \\\n    ", true)
+		return spec.RenderCacheMounts(m, uid, gid, " \\\n    ", true)
 	},
 	"cacheMountsAuto": func(m []spec.CacheMount, uid, gid int) string {
-		return RenderCacheMountsAuto(m, uid, gid, " \\\n    ", false)
+		return spec.RenderCacheMountsAuto(m, uid, gid, " \\\n    ", false)
 	},
 
 	// quote returns a shell-safe quoted string.

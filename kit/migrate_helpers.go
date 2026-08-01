@@ -15,23 +15,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// FileExists reports whether path exists and is a regular (non-dir) file.
-func FileExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return !info.IsDir()
-}
-
-// DirExists reports whether path exists and is a directory.
-func DirExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
-}
+// FileExists / DirExists relocated to sdk/spec (FLOOR-SLIM axis-A, see
+// loader_discover.go) — re-exported here as kit.FileExists / kit.DirExists so
+// existing call sites compile unchanged. The SortStrings helper stays.
 
 // SortStrings sorts s in place (ascending). A small insertion-free bubble sort,
 // kept identical to the original package-main helper.
@@ -164,14 +150,12 @@ func NodeShapedValue(val *yaml.Node) bool {
 }
 
 // FirstYAMLVersionLine extracts the value of the first top-level `version:` line.
-func FirstYAMLVersionLine(data []byte) string {
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if after, ok := strings.CutPrefix(line, "version:"); ok {
-			return strings.TrimSpace(after)
-		}
-	}
-	return ""
-}
+// RE-EXPORT shim: the body was RELOCATED to spec/spec (yaml_version_line.go, #55 coneG
+// import-purity — charly core's refs.go inlines spec.FirstYAMLVersionLine, dropping its
+// sdk/kit import). This var keeps the existing kit.FirstYAMLVersionLine plugin call sites
+// (candy/plugin-migrate/engine.go) unchanged; new charly-core consumers reference spec.*
+// directly. Pure string parsing (strings.SplitSeq + CutPrefix + TrimSpace), no yaml.v3.
+var FirstYAMLVersionLine = spec.FirstYAMLVersionLine
 
 // IsGitSubmoduleDir reports whether p (≠ root) contains a .git entry (a nested
 // submodule/repo boundary).

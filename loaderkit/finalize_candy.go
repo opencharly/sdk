@@ -15,8 +15,8 @@ import (
 // without the host. scanFromParsed (scan_candy.go) computes every term derivable from ONE candy
 // alone; the two cross-cutting terms it defers — RunOps (needs the op-context classifier, task #39)
 // and InitSystems (needs the project's init vocabulary) — are completed HERE. The op-context
-// classifier is reached via the EXISTING deploykit.OpInContext DI hook (charly injects it at init:
-// deploykit.OpInContext = opInContext, layers.go; candy/plugin-build injects an InvokeProvider-backed
+// classifier is reached via the EXISTING spec.OpInContext DI hook (charly injects it at init:
+// spec.OpInContext = opInContext, layers.go; candy/plugin-build injects an InvokeProvider-backed
 // callback in U6) — so this cluster is now plugin-callable and #39's "the host still owns" deferral
 // is CLOSED: loaderkit owns the completion, the op-context data rides the hook.
 
@@ -74,7 +74,7 @@ func PopulateCandyInitSystem(scanned map[string]spec.ScannedCandy, initCfg *buil
 
 // CompleteCandyRunOps finishes the ONE host-completed predicate scanFromParsed's own doc comment
 // flags as not scan-computable standalone: RunOps needs the op-context classifier (registry-adjacent
-// D-data, reached via deploykit.OpInContext — task #39), so a single candy's scan can't derive it —
+// D-data, reached via spec.OpInContext — task #39), so a single candy's scan can't derive it —
 // this runs the SAME live-compute the pre-move *Candy.runOps() did (a `run:` step passes unless it is
 // PURELY runtime-context), then OR-completes HasInstallFiles/HasContent with it (+ the already-known
 // InitSystems term, when PopulateCandyInitSystem has run for this candy) — the associative-OR
@@ -89,7 +89,7 @@ func CompleteCandyRunOps(m *spec.CandyModel, v *spec.CandyView) {
 			continue
 		}
 		op := step.Op
-		if deploykit.OpInContext(&op, spec.CtxRuntime) && !deploykit.OpInContext(&op, spec.CtxBuild) && !deploykit.OpInContext(&op, spec.CtxDeploy) {
+		if spec.OpInContext(&op, spec.CtxRuntime) && !spec.OpInContext(&op, spec.CtxBuild) && !spec.OpInContext(&op, spec.CtxDeploy) {
 			continue
 		}
 		m.RunOps = append(m.RunOps, op)

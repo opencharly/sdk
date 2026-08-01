@@ -64,7 +64,7 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			name := fmt.Sprintf("vm:e%02d", i)
-			errs[i] = SaveVmDeployState(name, "", &spec.VmDeployState{SshPort: 3000 + i, Backend: "auto"}, acquireLock, save)
+			errs[i] = SaveVmDeployState(name, "", &spec.VmDeployState{SshPort: 3000 + i, Backend: "auto"}, acquireLock, save, nil)
 		}(i)
 	}
 	wg.Wait()
@@ -100,12 +100,12 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 func TestSaveVmDeployState_LockReleasedBetweenCalls(t *testing.T) {
 	acquireLock, save := newFakeVmDeployStateHost(t)
 
-	if err := SaveVmDeployState("vm:one", "", &spec.VmDeployState{SshPort: 2201}, acquireLock, save); err != nil {
+	if err := SaveVmDeployState("vm:one", "", &spec.VmDeployState{SshPort: 2201}, acquireLock, save, nil); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
 	// If the first call leaked the lock, this blocking acquire inside the second call would hang
 	// the test (a self-deadlock surfaces as a timeout, never a silent pass).
-	if err := SaveVmDeployState("vm:two", "", &spec.VmDeployState{SshPort: 2202}, acquireLock, save); err != nil {
+	if err := SaveVmDeployState("vm:two", "", &spec.VmDeployState{SshPort: 2202}, acquireLock, save, nil); err != nil {
 		t.Fatalf("second write (lock not released?): %v", err)
 	}
 	dc, err := LoadBundleConfig()
@@ -131,11 +131,11 @@ func TestRemoveVmDeployEntry_RemovesBundleKeyedBedEntry(t *testing.T) {
 
 	// Seed through the REAL write path under the bundle/bed key (dctx.Name) with the resolved VM
 	// entity — exactly how the vm lifecycle hook PrepareVenue persists it.
-	if err := SaveVmDeployState("check-k3s-vm", "k3s-vm", &spec.VmDeployState{SshPort: 40161, Backend: "auto"}, acquireLock, save); err != nil {
+	if err := SaveVmDeployState("check-k3s-vm", "k3s-vm", &spec.VmDeployState{SshPort: 40161, Backend: "auto"}, acquireLock, save, nil); err != nil {
 		t.Fatalf("seed write: %v", err)
 	}
 	// An UNRELATED VM bundle that must survive the k3s-vm teardown (no over-match).
-	if err := SaveVmDeployState("check-other-vm", "other-vm", &spec.VmDeployState{SshPort: 40162, Backend: "auto"}, acquireLock, save); err != nil {
+	if err := SaveVmDeployState("check-other-vm", "other-vm", &spec.VmDeployState{SshPort: 40162, Backend: "auto"}, acquireLock, save, nil); err != nil {
 		t.Fatalf("seed unrelated: %v", err)
 	}
 
@@ -153,7 +153,7 @@ func TestRemoveVmDeployEntry_RemovesBundleKeyedBedEntry(t *testing.T) {
 
 	// The DIRECT `charly vm destroy k3s-vm` path reaches RemoveVmDeployEntry with the prefixed
 	// ENTITY form — NOT the bundle key the entry was written under. The From-scan bridges the gap.
-	if err := RemoveVmDeployEntry("vm:k3s-vm", acquireLock, save); err != nil {
+	if err := RemoveVmDeployEntry("vm:k3s-vm", acquireLock, save, nil); err != nil {
 		t.Fatalf("RemoveVmDeployEntry: %v", err)
 	}
 
@@ -186,7 +186,7 @@ func TestSaveVmDeployState_SelfHealsStaleDottedTwin(t *testing.T) {
 	}
 
 	// The canonical write — matches candy/plugin-vm's hostConfigPersist("vm:"+domainID, ...) call shape.
-	if err := SaveVmDeployState("vm:check-sidecar-pod-check-sidecar-pod-ephvm", "eval-vm", &spec.VmDeployState{SshPort: 33799}, acquireLock, save); err != nil {
+	if err := SaveVmDeployState("vm:check-sidecar-pod-check-sidecar-pod-ephvm", "eval-vm", &spec.VmDeployState{SshPort: 33799}, acquireLock, save, nil); err != nil {
 		t.Fatalf("canonical write: %v", err)
 	}
 
@@ -231,7 +231,7 @@ func TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite(t *testing.T) {
 
 	// Step 2: `charly vm create`'s own state write — the SAME key, a state that knows NOTHING
 	// about the ephemeral block (this is the exact shape vm_create_orchestrate.go constructs).
-	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SshPort: 41897, Backend: "auto"}, acquireLock, save); err != nil {
+	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SshPort: 41897, Backend: "auto"}, acquireLock, save, nil); err != nil {
 		t.Fatalf("vm-create state write: %v", err)
 	}
 
@@ -268,13 +268,13 @@ func TestSaveVmDeployState_ReverseOrderingRoundTrips(t *testing.T) {
 	const key = "vm:reverse-order-vm"
 
 	// vm-create writes FIRST — no ephemeral knowledge yet.
-	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SshPort: 50001}, acquireLock, save); err != nil {
+	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SshPort: 50001}, acquireLock, save, nil); err != nil {
 		t.Fatalf("vm-create state write: %v", err)
 	}
 	// A SECOND SaveVmDeployState call carrying an Ephemeral block (mirrors what
 	// persistEphemeralRuntime effectively produces when it runs after vm-create: it reads the
 	// EXISTING entry, so the passed-in state already contains the merged prior fields).
-	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SshPort: 50001, Ephemeral: &spec.EphemeralRuntime{ID: "xyz789", Status: "active"}}, acquireLock, save); err != nil {
+	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SshPort: 50001, Ephemeral: &spec.EphemeralRuntime{ID: "xyz789", Status: "active"}}, acquireLock, save, nil); err != nil {
 		t.Fatalf("ephemeral-carrying write: %v", err)
 	}
 

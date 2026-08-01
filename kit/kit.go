@@ -14,139 +14,50 @@
 package kit
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/opencharly/spec/spec"
 )
 
-// RunMode mirrors charly's RunMode: the mode a check runs under.
-type RunMode int
+// RunMode mirrors charly's RunMode: the mode a check runs under. The type (+ its consts
+// + String()) is homed in the spec contract module (spec.CheckRunMode, checkcontext.go)
+// with the rest of the check-verb contract cluster, so charly core references the contract
+// while importing only spec; aliased here (with the const re-exports) so candy call sites
+// compile UNCHANGED.
+type RunMode = spec.CheckRunMode
 
 const (
 	// ModeLive — `charly check live`, against a running container/VM (in-container probes).
-	ModeLive RunMode = iota
+	ModeLive = spec.CheckModeLive
 	// ModeBox — `charly check box`, against a disposable build container.
-	ModeBox
+	ModeBox = spec.CheckModeBox
 )
 
-// String renders the mode as "box" / "live" (mirrors charly's runModeName).
-func (m RunMode) String() string {
-	if m == ModeBox {
-		return "box"
-	}
-	return "live"
-}
-
-// Executor is the subset of charly's DeployExecutor a check verb needs: run one
-// command/script on the venue and capture stdout/stderr/exit separately. charly's
-// DeployExecutor satisfies this structurally (RunCapture + Kind have identical
-// signatures), so *Runner.Exec is passed straight through.
-type Executor interface {
-	// RunCapture runs a shell command/script on the venue, returning stdout,
-	// stderr, the exit code, and any execution error (NOT a non-zero exit — that
-	// is reported via the exit code). No root escalation; callers add sudo.
-	RunCapture(ctx context.Context, script string) (stdout, stderr string, exit int, err error)
-	// Kind classifies the venue: "host" | "container" | "image" | "vm".
-	Kind() string
-}
+// Executor is the subset of charly's DeployExecutor a check verb needs (spec.CheckExecutor,
+// checkcontext.go): run one command/script on the venue and capture stdout/stderr/exit
+// separately. charly's DeployExecutor satisfies it structurally, so *Runner.Exec is passed
+// straight through. Aliased here so candy call sites compile unchanged.
+type Executor = spec.CheckExecutor
 
 // GraphicsEndpoint is the resolved, dialable VM graphics endpoint a vnc/spice verb gets from
-// CheckContext.ResolveGraphicsEndpoint. Exactly one of Addr / Socket is set (the host bridges
-// a UNIX socket to TCP for a TCP-only client, or forwards a remote listener, before returning).
-// Password is the resolved ticket ("" = no auth). Skip=true (with SkipMessage) means the
-// deployment declares no graphics device of that kind — an N/A skip, not a failure.
-type GraphicsEndpoint struct {
-	Addr        string
-	Socket      string
-	Password    string
-	Skip        bool
-	SkipMessage string
-}
+// CheckContext.ResolveGraphicsEndpoint — homed in the spec contract module
+// (spec.CheckGraphicsEndpoint, checkcontext.go), aliased here for unchanged candy call sites.
+type GraphicsEndpoint = spec.CheckGraphicsEndpoint
 
-// CheckContext is the live check-engine surface a host-coupled verb's RunVerb
-// consumes. charly's *Runner implements it; a candy reaches the running deployment
-// through it without importing charly's package main.
-type CheckContext interface {
-	// Exec runs commands on the venue (in-container under ModeLive, in a disposable
-	// container under ModeBox, or host-side depending on the executor).
-	Exec() Executor
-	// Mode is the run mode (Live vs Box).
-	Mode() RunMode
-	// HTTPDo issues an HTTP request from the CHARLY HOST's network namespace, applying
-	// the per-request TLS / redirect / CA policy in req, and returns the status, body, and
-	// response headers. It REPLACES the former HTTPClient() *http.Client leg: an
-	// *http.Client cannot cross a process boundary, so out-of-process the REQUEST crosses
-	// (CheckContextService.HTTPDo) and the host dials; in-process the host builds the client
-	// and dials directly. The transport-level error is returned as err (a non-2xx is NOT an
-	// error — the caller matches resp.Status).
-	HTTPDo(ctx context.Context, req HTTPRequest) (HTTPResponse, error)
-	// ResolveEndpoint resolves the check target's venue (container / VM / ssh / local) and
-	// returns a host-reachable "host:port" address for an in-venue TCP port, opening (and
-	// host-side tracking, for teardown after this verb's Invoke) any ssh -L forward a VM/ssh
-	// venue needs. An endpoint verb (cdp/vnc/spice/…) declares its in-venue port and dials
-	// the returned addr — REPLACING the per-verb host preresolvers: the host owns the
-	// venue/podman/go-libvirt machinery the out-of-process plugin lacks. Empty addr with a
-	// nil error means "no live venue" (box-mode / no-box) — the verb's own no-endpoint skip
-	// then fires; a resolution failure is returned as err.
-	ResolveEndpoint(ctx context.Context, port int) (addr string, err error)
-	// ResolveGraphicsEndpoint resolves a VM's <graphics type='<kind>'> listener (kind =
-	// "vnc" | "spice") to a dialable endpoint, opening (and host-side tracking, for teardown
-	// after this verb's Invoke) any ssh -L forward + socket->TCP bridge the venue needs. A
-	// graphics verb (vnc/spice) calls it instead of the removed per-verb host preresolver;
-	// the host owns the go-libvirt resolution, tunnel, bridge, and credential-store password.
-	// GraphicsEndpoint.Skip=true means the deployment declares no graphics device of that kind
-	// (an N/A skip). A zero GraphicsEndpoint with a nil error means no live VM context.
-	ResolveGraphicsEndpoint(ctx context.Context, kind string) (GraphicsEndpoint, error)
-	// ResolveImageLabel reads one OCI label value off the deployment-under-test's image — the
-	// host owns the podman engine + container→image resolution the out-of-process plugin cannot
-	// reach. A verb declares the label it needs (mcp reads ai.opencharly.mcp_provide) and parses
-	// the returned value; an empty string means the label is absent on the image.
-	ResolveImageLabel(ctx context.Context, label string) (value string, err error)
-	// DialTimeout is the per-dial ceiling for host-side TCP reachability probes.
-	DialTimeout() time.Duration
-	// Box / Instance are the deployment's image + instance names (empty under ModeBox).
-	Box() string
-	Instance() string
-	// Distros is the image's distro tag list (e.g. ["fedora:43","fedora"]) for
-	// distro-specific package-name resolution.
-	Distros() []string
-	// AddBackground registers a host-side background process PID with the active plan run
-	// so plan teardown reaps it (SIGTERM). A no-op when the engine has no scenario context
-	// (a bare-Op run) or pid<=0. Used by a verb that fire-and-forgets a host process
-	// (the `command` verb's background path).
-	AddBackground(pid int)
-}
+// CheckContext is the live check-engine surface a host-coupled verb's RunVerb consumes —
+// homed in the spec contract module (spec.CheckContext, checkcontext.go) so charly core's
+// reverse-channel dispatch references it while importing only spec; charly's *Runner
+// implements it, and this alias keeps candy RunVerb signatures compiling unchanged.
+type CheckContext = spec.CheckContext
 
-// HTTPRequest is the host-vantage HTTP request a check verb hands cc.HTTPDo. It carries
-// the FULL request plus the per-request policy the host needs to build the client: Timeout
-// is a Go duration string ("" = the engine's base timeout); CAPEM is the resolved CA PEM
-// bytes (a candy reads its authored ca_file host-side and ships the bytes, so the host
-// server needs no filesystem access). Both placements (in-proc + the CheckContextService
-// RPC) consume the SAME struct.
-type HTTPRequest struct {
-	Method            string
-	URL               string
-	Body              []byte
-	Headers           map[string]string
-	Timeout           string
-	AllowInsecure     bool
-	NoFollowRedirects bool
-	CAPEM             []byte
-}
+// HTTPRequest is the host-vantage HTTP request a check verb hands cc.HTTPDo — homed in the
+// spec contract module (spec.CheckHTTPRequest, checkcontext.go), aliased here unchanged.
+type HTTPRequest = spec.CheckHTTPRequest
 
-// HTTPResponse is the result of cc.HTTPDo: the status code, the response body, and the
-// response headers as a pre-formatted "Key: value\n" blob (the host formats once — R3 —
-// preserving multi-value headers the matcher pipeline consumes directly). A transport-level
-// failure is returned as the HTTPDo error, not here.
-type HTTPResponse struct {
-	Status     int
-	Body       []byte
-	HeaderBlob string
-}
+// HTTPResponse is the result of cc.HTTPDo — homed in the spec contract module
+// (spec.CheckHTTPResponse, checkcontext.go), aliased here unchanged.
+type HTTPResponse = spec.CheckHTTPResponse
 
 // Status is a check verdict. It is the ONE pass/fail/skip enum for the check engine and
 // every plugin candy — charly's CheckStatus is a type alias of it. FLOOR-SLIM Unit 4: Status
@@ -165,13 +76,11 @@ const (
 	StatusSkip = spec.StatusSkip
 )
 
-// Result is a host-coupled verb's verdict. charly converts it to its internal
+// Result is a host-coupled verb's verdict — homed in the spec contract module
+// (spec.CheckVerbResult, checkcontext.go), aliased here so the Pass/Fail/Skip constructors
+// and every candy call site compile unchanged. charly converts it to its internal
 // CheckResult (stamping the Op/Verb/timing) at the dispatch boundary.
-type Result struct {
-	Status        Status
-	Message       string
-	CapturedValue string // value stashed under `capture:` (recorded only on PASS)
-}
+type Result = spec.CheckVerbResult
 
 // Pass / Fail / Skip are the verdict constructors a verb returns; the *f variants
 // take a printf format (mirror charly's passf/failf/skipf).
@@ -188,27 +97,18 @@ func Skipf(format string, a ...any) Result { return Skip(fmt.Sprintf(format, a..
 // primitive single-sourced in the spec contract module; every former
 // spec.ShellQuote caller now calls spec.ShellQuote.
 
-// TrimPreview truncates s to a 200-char preview (trailing "…") for compact check-output
-// display.
-func TrimPreview(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) > 200 {
-		return s[:200] + "…"
-	}
-	return s
-}
+// TrimPreview truncates s to a 200-char preview — homed in the fabric slice
+// github.com/opencharly/spec/spec (the same fabric-primitive class as ShellQuote),
+// re-exported here so kit.TrimPreview callers compile unchanged (R3, single source).
+var TrimPreview = spec.TrimPreview
 
 // WrapContainerCommand guards an in-container command-check script against stdin-consuming
-// subcommands. The runner delivers in-container scripts to the pod shell over a stdin heredoc
-// ("stdin-attached exec"); without this guard the FIRST subcommand that reads stdin — adb shell,
-// ssh, read, cat — consumes the REST of the heredoc (the not-yet-executed script lines), silently
-// truncating the check to its first command. Wrapping the whole script in a brace group with stdin
-// redirected from /dev/null fixes it generically: the shell reads the entire group before executing
-// it (so the heredoc is fully drained by parse time), then runs every subcommand with stdin tied to
-// /dev/null. The host path (a plain `sh -c` argv) is unaffected.
-func WrapContainerCommand(script string) string {
-	return "{ " + script + "\n} </dev/null"
-}
+// subcommands. RELOCATED to the spec contract module (spec.WrapContainerCommand, wrap_container.go,
+// #55 CHECK-ENGINE cone Option A — a pure stdlib string guard charly core's check-op dispatch
+// reaches importing zero kit); re-exported here so every existing kit.WrapContainerCommand call
+// site (charly core + the candies + sdk) is untouched. New consumers should call
+// spec.WrapContainerCommand directly.
+var WrapContainerCommand = spec.WrapContainerCommand
 
 // DecodeInput decodes an Op's plugin_input (map[string]any) into a candy's
 // CUE-generated typed params struct via a JSON round-trip. A nil/empty input leaves
@@ -225,95 +125,14 @@ func DecodeInput(in map[string]any, out any) {
 }
 
 // CheckVerbProvider is the typed in-process contract a host-coupled check-verb candy
-// implements. Reserved() is the verb word; RunVerb runs the probe against the live
-// CheckContext and returns a Result. The authored plugin_input rides op.PluginInput
-// (decode it into the candy's CUE-generated params struct).
-type CheckVerbProvider interface {
-	Reserved() string
-	RunVerb(ctx context.Context, cc CheckContext, op *spec.Op) Result
-}
+// implements — homed in the spec contract module (spec.CheckVerbProvider, checkcontext.go)
+// so charly core's registry references it while importing only spec; aliased here so every
+// candy implementing it (RunVerb signature) compiles unchanged.
+type CheckVerbProvider = spec.CheckVerbProvider
 
-// StepKindName names the TYPED install-plan step a step-providing verb lowers into. The
-// host maps it to its internal StepKind enum; kept a string so the kit need not import
-// charly's package main.
-type StepKindName string
-
-const (
-	// StepKindServicePackaged — the `service` verb (enable a packaged unit; load-bearing reversals).
-	StepKindServicePackaged StepKindName = "service-packaged"
-	// StepKindSystemPackages — the `package` verb (install system packages).
-	StepKindSystemPackages StepKindName = "system-packages"
-)
-
-// ServicePackagedDesc is the candy-decodable construction input for a service-packaged
-// step: the host materializer adds the op-resolved scope + candy name and keeps the
-// load-bearing Reverse() (disable / restore-enabled / remove-dropin) in package main.
-type ServicePackagedDesc struct {
-	Unit   string
-	Enable bool
-}
-
-// SystemPackagesDesc is the candy-decodable construction input for a system-packages step
-// (the `package` verb): the authored package name + per-distro map. The host materializer
-// resolves the cross-distro name (ResolvePackageName against the image's tags), sets the
-// image format + PhaseInstall, and builds the SystemPackagesStep.
-type SystemPackagesDesc struct {
-	Package    string
-	PackageMap map[string]string
-}
-
-// ResolvePackageName picks the correct package name for the running image's distro: if
-// packageMap has a key matching any of the image's distro tags (first match wins — tags
-// are authored most-specific-first, "fedora:43" before "fedora"), that mapping is used;
-// otherwise the bare pkg name. The single cross-distro name resolver shared by the
-// `package` candy's check + act AND the host's step materializer (R3).
-func ResolvePackageName(pkg string, packageMap map[string]string, distros []string) string {
-	if len(packageMap) == 0 {
-		return pkg
-	}
-	for _, tag := range distros {
-		if name, ok := packageMap[tag]; ok && name != "" {
-			return name
-		}
-	}
-	return pkg
-}
-
-// StepDescriptor is the candy-decodable construction input for a TYPED install-plan step
-// (the build/deploy install timeline). Exactly one variant is non-nil; the host
-// materializer rebuilds the real package-main InstallStep from it (computing the
-// package-main-only inputs — scope from op.RunAs+img, candy name — and keeping the
-// load-bearing Reverse() in package main, so the candy never imports an IR type).
-type StepDescriptor struct {
-	ServicePackaged *ServicePackagedDesc
-	SystemPackages  *SystemPackagesDesc
-}
-
-// StepProvider is the OPTIONAL third role of a host-coupled verb candy: a verb whose
-// build/deploy ACT lowers into a TYPED install-plan step (service → service-packaged,
-// package → system-packages) rather than a shell (ProvisionActor) or a generic OpStep.
-// StepKind names the target step (static); ConstructStepDescriptor returns the
-// candy-decodable construction inputs for one op. The host wraps a candy implementing
-// this in an adapter that satisfies package-main's TypedStepProvider, materializing the
-// descriptor into the real IR step.
-type StepProvider interface {
-	StepKind() StepKindName
-	ConstructStepDescriptor(op *spec.Op) StepDescriptor
-}
-
-// ProvisionActor is the OPTIONAL second role of a host-coupled verb candy: the do:act
-// renderer for a state-provision verb (kernel_param/mount/user/unix_group/file/command/
-// service/package), rendering the shell that ENACTS the op under the live init / package
-// manager. It is reached at install COMPILE+EMIT (a `run: {plugin: <verb>}` step → the
-// build-act RUN in emitTasks, and the local/vm deploy act) AND at runtime act. A candy
-// whose verb type implements this ALONGSIDE CheckVerbProvider is registered as a
-// multi-role provider (the host adapter then also satisfies the package-main
-// ProvisionActor). op is the spec.Op (the verb's plugin_input rides op.PluginInput);
-// distros is the image's distro tag list for package-name resolution. Returns
-// (script, ok); ok=false means "no act form for this op" (the host skips/errors per its
-// act path). This is the SHELL-string act role — a verb that instead lowers into a typed
-// InstallPlan step (service/package) additionally needs the kit step contract.
-type ProvisionActor interface {
-	Reserved() string
-	RenderProvisionScript(op *spec.Op, distros []string) (script string, ok bool)
-}
+// The TYPED-STEP state-provision contract cluster — StepKindName / StepKindServicePackaged /
+// StepKindSystemPackages / ServicePackagedDesc / SystemPackagesDesc / ResolvePackageName /
+// StepDescriptor / StepProvider / ProvisionActor — RELOCATED to the spec contract module
+// (spec/spec/check_step.go, #55 CHECK-ENGINE cone Option A) and re-exported from
+// sdk/kit/check_step_descriptors.go so charly core's in-proc kitVerbAdapter references them
+// importing only spec while every candy call site compiles UNCHANGED. See that file.

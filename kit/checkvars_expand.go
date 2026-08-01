@@ -89,10 +89,10 @@ var RuntimeOnlyVarPrefixes = []string{
 	// k8s check can address its own cluster generically via cluster: "${DEPLOY_NAME}". Resolved
 	// only against a live deployment.
 	"DEPLOY_NAME",
-	// Cross-member address var (check_members.go): the unified ${HOST:<member>} (+ optional
-	// :port) lets a driven probe (a check with `on:`, or a sibling bundle member) reach a
-	// SEPARATE member. Resolved only against running deployments, so a build-scope check must
-	// not reference it.
+	// Cross-member address var (resolved in candy/plugin-check/members.go): the unified
+	// ${HOST:<member>} (+ optional :port) lets a driven probe (a check with `on:`, or a sibling
+	// bundle member) reach a SEPARATE member. Resolved only against running deployments, so a
+	// build-scope check must not reference it.
 	"HOST",
 }
 

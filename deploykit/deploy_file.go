@@ -119,9 +119,22 @@ func LoadBundleConfig() (*BundleConfig, error) {
 // transform) is the caller's responsibility — supplied via marshalNode, which returns the
 // MIGRATED node-form body for one BundleNode (the value placed under the entry's name key).
 // This keeps SaveBundleConfig kind-blind: no per-kind map, no target-vocabulary switch, no
-// deploy-kind-specific struct knowledge. Relocated from charly/deploy.go (K5-Unit-1); the
-// LoadUnified hop (the fail-safe re-check) reaches core through DeployStateHost.
-func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *BundleNode) (*yaml.Node, error)) error {
+// deploy-kind-specific struct knowledge. Relocated from charly/deploy.go (K5-Unit-1).
+//
+// failsafeRead is the config re-read the write path performs for its data-safety guard (below).
+// A nil failsafeRead falls back to LoadBundleConfig — the DeployStateHost-backed host read, so
+// an IN-PROCESS host caller passes nil and behaves exactly as before. A plugin caller that is
+// NOT guaranteed to hold the charly-init DeployStateHost registration (an out-of-process
+// command:bundle) passes its OWN loader-backed reader (loaderkit.LoadHostBundleConfigViaExecutor),
+// so SaveBundleConfig no longer depends on the DeployStateHost package var to re-check
+// the on-disk file. Follows the marshalNode-param precedent: the host-coupled leg is injected,
+// not hard-wired (#55 K4 config-write seam-collapse).
+//
+// NAMED EXIT for the nil-failsafeRead branch: it is DI serving the still-in-proc host callers
+// (enc_probe / status_flat / vm state, RemoveVmDeployEntry), NOT a transitional shim — the
+// migrated caller (command:bundle) already never passes nil. The nil path dies when the LAST of
+// those host callers migrates plugin-side in its own deferred cone (enc floor / check-cone).
+func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *BundleNode) (*yaml.Node, error), failsafeRead func() (*BundleConfig, error)) error {
 	path, err := kit.DefaultDeployConfigPath()
 	if err != nil {
 		return fmt.Errorf("determining deploy config path: %w", err)
@@ -132,7 +145,11 @@ func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *Bund
 	// writing that degraded config would TRUNCATE the user's recoverable deploy state. Re-check
 	// the on-disk file here and abort with a `charly migrate` hint instead — the bytes stay on
 	// disk for the migration to recover.
-	if _, lerr := LoadBundleConfig(); lerr != nil {
+	recheck := failsafeRead
+	if recheck == nil {
+		recheck = LoadBundleConfig
+	}
+	if _, lerr := recheck(); lerr != nil {
 		return fmt.Errorf("refusing to overwrite %s — the existing per-host config fails to load (%w); fix it (or remove it to regenerate) first", path, lerr)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {

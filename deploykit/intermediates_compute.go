@@ -19,10 +19,10 @@ import (
 // is now a PURE function over IntermediateDefaults (a plain scalar-field
 // carrier — no *Config, no loader/registry access) plus the
 // buildkit.ResolvedBox / CandyModel maps ComputeIntermediates already threads
-// throughout this package. The charly-side entry point
-// (charly/intermediates_shim.go) lifts cfg.Defaults into an
-// IntermediateDefaults and calls ComputeIntermediates directly — no host
-// callback remains. Behaviour is byte-identical to the former
+// throughout this package. The former charly-side entry point lifted
+// cfg.Defaults into an IntermediateDefaults and called ComputeIntermediates
+// directly (removed in #55 Cluster-B) — no host callback remains. Behaviour
+// is byte-identical to the former
 // charly/intermediates.go (kit.SortStrings is the SAME lexicographic sort core
 // aliased as sortStrings). distroBuilderMap is now a pure function over the
 // SAME `boxes`/`origBoxes` map ComputeIntermediates/createIntermediate already
@@ -520,11 +520,13 @@ func resolvePlatforms(defaults IntermediateDefaults) []string {
 // sibling-group grouping in ComputeIntermediates already applies, matching
 // this function's own "must NOT be copied across a namespace boundary" rule.
 //
-// The lookup itself is the shared buildkit.PickDistroBuilder (R3): charly's
-// OWN Config.distroBuilderMap (still serving resolveEffectiveBuilder, which
-// runs BEFORE any ResolvedBox exists — see buildkit.DistroBuilderCandidate's
-// doc comment) adapts the SAME algorithm over its unresolved-config data
-// source instead of this function being reimplemented a second time.
+// The lookup itself is the shared spec.PickDistroBuilder (R3): spec's OWN
+// distroBuilderMap (still serving spec.ResolveEffectiveBuilder, which runs BEFORE
+// any ResolvedBox exists — see spec.DistroBuilderCandidate's doc comment) adapts
+// the SAME algorithm over its unresolved-config data source instead of this
+// function being reimplemented a second time. The candidate type + PickDistroBuilder
+// moved to spec/spec (builder_resolve.go) as pure-value CONTRACT computation; this
+// deploykit half adapts its already-resolved boxes map into spec.DistroBuilderCandidate.
 func distroBuilderMap(boxes map[string]*buildkit.ResolvedBox, distroTags []string) buildkit.BuilderMap {
 	names := make([]string, 0, len(boxes))
 	for name := range boxes {
@@ -534,10 +536,10 @@ func distroBuilderMap(boxes map[string]*buildkit.ResolvedBox, distroTags []strin
 		names = append(names, name)
 	}
 	kit.SortStrings(names)
-	candidates := make([]buildkit.DistroBuilderCandidate, 0, len(names))
+	candidates := make([]spec.DistroBuilderCandidate, 0, len(names))
 	for _, name := range names {
 		img := boxes[name]
-		candidates = append(candidates, buildkit.DistroBuilderCandidate{Name: name, Distro: img.Distro, Builder: img.Builder})
+		candidates = append(candidates, spec.DistroBuilderCandidate{Name: name, Distro: img.Distro, Builder: img.Builder})
 	}
-	return buildkit.PickDistroBuilder(candidates, distroTags)
+	return spec.PickDistroBuilder(candidates, distroTags)
 }

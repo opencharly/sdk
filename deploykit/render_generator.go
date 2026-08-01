@@ -73,7 +73,7 @@ type Generator struct {
 	// emitTasks writes it verbatim. The Provider registry + OpEmit dispatch (and its
 	// error strings) STAY CORE; charly's toDeploykit() wires this closure. Op =
 	// vmshared.Op = spec.Op.
-	EmitPluginOp func(op *spec.Op, img *buildkit.ResolvedBox) (out string, isScript bool, err error)
+	EmitPluginOp func(op *spec.Op, img *spec.ResolvedBox) (out string, isScript bool, err error)
 
 	// CollectBoxPorts returns an image's aggregated exposed ports. The host wires this
 	// seam to deploykit.CollectBoxPorts(cfg, layers, boxName) (ports_collect.go — the
@@ -126,7 +126,7 @@ type Generator struct {
 	// cluster (ensureBuildersConnected + registry ResolveBuilder + resolveBuilderStage;
 	// registry-coupled, stays core), preserving its per-failure error strings. Used by
 	// WriteCandySteps.
-	ResolveInlineBuilder func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx *spec.BuildStageContext, img *buildkit.ResolvedBox) (inlineFragment string, err error)
+	ResolveInlineBuilder func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx *spec.BuildStageContext, img *spec.ResolvedBox) (inlineFragment string, err error)
 
 	// EnsureBuildersConnected connects the EXTERNALIZED detection-builder plugins an
 	// image triggers (on-demand, scoped — the SAME machinery the deploy build PRE-PASS
@@ -141,20 +141,21 @@ type Generator struct {
 	// builderResolveInputFrom) and passes the serializable input; the seam does the
 	// registry ResolveBuilder + OpResolve Invoke (its "not connected" error preserved
 	// byte-exact). Wraps core resolveDetectionBuilder's registry half. Used by EmitBuilderStages.
-	ResolveDetectionBuilderStage func(builderName string, in spec.BuilderResolveInput, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error)
+	ResolveDetectionBuilderStage func(builderName string, in spec.BuilderResolveInput, img *spec.ResolvedBox) (spec.BuilderResolveReply, error)
 
 	// ResolveExternalBuilderStage resolves + Invokes an `external_builder:`-selected
 	// out-of-tree builder provider's OpResolve, returning the reply (non-empty Stage
 	// required). The seam does registry ResolveBuilder + the *grpcProvider assertion +
 	// the minimal-input Invoke (all its error strings preserved byte-exact). Wraps core
 	// resolveExternalBuilder + its provider resolution. Used by EmitExternalBuilderStages.
-	ResolveExternalBuilderStage func(word, candyName string, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error)
+	ResolveExternalBuilderStage func(word, candyName string, img *spec.ResolvedBox) (spec.BuilderResolveReply, error)
 
 	// EmitBakedPlugins bakes each composing candy's `bake_plugin:` out-of-tree plugin
 	// binaries into the FINAL image at /usr/lib/charly/plugins/. The deploykit render
 	// calls this seam post-main-FROM (after EmitExternalBuilderArtifacts). The host
-	// (live path) wires the charly emitBakedPlugins closure; plugin-build wires it via
-	// HostBuild("bake-plugins"). Used by generateContainerfile (#67 render-DRIVE move).
+	// (live path) wires the charly emitBakedPlugins closure; plugin-build calls
+	// deploykit.EmitBakedPlugins directly (the former HostBuild("bake-plugins") is DELETED).
+	// Used by generateContainerfile (#67 render-DRIVE move).
 	EmitBakedPlugins func(b *strings.Builder, boxName string, candyOrder []string) error
 
 	// CollectBoxVolume returns an image's aggregated volume mounts. Wraps the core

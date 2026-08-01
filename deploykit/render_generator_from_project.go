@@ -31,7 +31,8 @@ import (
 // the function now runs directly, in-package, on the step it's given. The 3 REMAINING seams
 // (EmitPluginOp, inline-builder, ensure-builders) + EmitBakedPlugins have a genuine host-only
 // dependency (the live loader's scan+connect machinery, or a Go-level type-assertion against a
-// BUILTIN provider's concrete type) and still call back via HostBuild("render-seam"/"bake-plugins").
+// BUILTIN provider's concrete type) and still call back via HostBuild("render-seam")
+// (EmitBakedPlugins is now a direct deploykit call — the former HostBuild("bake-plugins") is DELETED).
 
 // renderSeamCaller holds the two dispatch primitives every wired seam needs (the venue executor
 // + its context) so NewRenderGeneratorFromProject's own body stays a flat field-assignment list
@@ -115,7 +116,7 @@ func (c renderSeamCaller) validateEgress(kind, label, mode, data string) error {
 // direct peer-dispatch (K3, RDD-spiked live on the external leg): marshal the render context as
 // params + a spec.BuildEnv descriptor as env, InvokeProvider the builder's OpResolve, decode the
 // reply UNVALIDATED — the caller enforces the emptiness rule appropriate to its path.
-func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolveInput, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error) {
+func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolveInput, img *spec.ResolvedBox) (spec.BuilderResolveReply, error) {
 	var reply spec.BuilderResolveReply
 	env, err := json.Marshal(spec.BuildEnv{Distros: img.Tags, Image: img.Name})
 	if err != nil {
@@ -145,7 +146,7 @@ func (c renderSeamCaller) renderService(entry *spec.ServiceEntry, def *spec.Reso
 	if def == nil || def.ServiceSchema == nil {
 		return nil, fmt.Errorf("RenderService: init system has no service_schema")
 	}
-	ctx = BuildServiceRenderContext(entry, ctx)
+	ctx = spec.BuildServiceRenderContext(entry, ctx)
 	var reply spec.ServiceRenderReply
 	if err := c.invoke("kind", "init", sdk.OpResolve,
 		spec.InitResolveRequest{Render: &spec.ServiceRenderInput{Init: def.Raw, Ctx: ctx}}, &reply); err != nil {
@@ -204,7 +205,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// external — dispatches through the SAME Invoke(OpEmit) envelope. The FULL op rides op.Params
 	// (a state-provision act reads SHARED #Op modifiers — mode/content — beyond plugin_input);
 	// the BuildEnv distros ride op.Env.
-	dg.EmitPluginOp = func(op *spec.Op, img *buildkit.ResolvedBox) (string, bool, error) {
+	dg.EmitPluginOp = func(op *spec.Op, img *spec.ResolvedBox) (string, bool, error) {
 		params, err := json.Marshal(op)
 		if err != nil {
 			return "", false, fmt.Errorf("run: plugin verb %q build-emit: marshal op: %w", op.Plugin, err)
@@ -283,9 +284,9 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 
 	// ResolveInlineBuilder: still host-side — rides K1 with EnsureBuilders (its embedded connect
 	// is the same loader scan+connect action, usually a no-op but not guaranteed).
-	dg.ResolveInlineBuilder = func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx2 *spec.BuildStageContext, img *buildkit.ResolvedBox) (string, error) {
-		var res InlineBuilderResult
-		if err := c.hostBuild(RenderSeamInlineBuilder, InlineBuilderParams{Dir: dir, BoxName: img.Name, CandyName: candyName, BuilderName: builderName, BDef: bDef, Ctx: ctx2}, &res); err != nil {
+	dg.ResolveInlineBuilder = func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx2 *spec.BuildStageContext, img *spec.ResolvedBox) (string, error) {
+		var res spec.InlineBuilderResult
+		if err := c.hostBuild(spec.RenderSeamInlineBuilder, spec.InlineBuilderParams{Dir: dir, BoxName: img.Name, CandyName: candyName, BuilderName: builderName, BDef: bDef, Ctx: ctx2}, &res); err != nil {
 			return "", err
 		}
 		return res.Fragment, nil
@@ -294,13 +295,13 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// EnsureBuildersConnected: still host-side — a genuine loader action (ScanAllCandyWithConfigOpts
 	// + loadProjectPlugins), not a data lookup. Rides K1 (#40).
 	dg.EnsureBuildersConnected = func(detected []string) error {
-		return c.hostBuild(RenderSeamEnsureBuilders, EnsureBuildersParams{Dir: dir, Words: detected}, nil)
+		return c.hostBuild(spec.RenderSeamEnsureBuilders, spec.EnsureBuildersParams{Dir: dir, Words: detected}, nil)
 	}
 
 	// ResolveDetectionBuilderStage / ResolveExternalBuilderStage: direct peer-dispatch (K3,
 	// RDD-spiked live on the external leg).
 	dg.ResolveDetectionBuilderStage = c.resolveBuilderStage
-	dg.ResolveExternalBuilderStage = func(word, candyName string, img *buildkit.ResolvedBox) (spec.BuilderResolveReply, error) {
+	dg.ResolveExternalBuilderStage = func(word, candyName string, img *spec.ResolvedBox) (spec.BuilderResolveReply, error) {
 		reply, err := c.resolveBuilderStage(word, spec.BuilderResolveInput{Candy: candyName}, img)
 		if err != nil {
 			return spec.BuilderResolveReply{}, err

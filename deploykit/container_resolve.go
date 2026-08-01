@@ -13,9 +13,9 @@ import (
 // bare core duplicates of ResolveContainer/ResolveSidecarContainer still called by
 // check_members.go/cmd.go/etc.) is DONE: both charly/container.go and charly/volume_cp_tags_cmd.go
 // are deleted, no bare `func resolveContainer`/`func resolveSidecarContainer` remains anywhere in
-// charly core, and every caller (charly's check_members.go/check_endpoint_resolve.go/
-// check_venue_resolve.go + candy/plugin-check/plugin-cmd/plugin-pod/plugin-adb/plugin-deploy-pod)
-// imports THESE functions directly. This is the ONE shared implementation.
+// charly core, and every caller (charly's check_endpoint_resolve.go/check_venue_resolve.go +
+// candy/plugin-check [the ${HOST:} member resolution, members.go]/plugin-cmd/plugin-pod/plugin-adb/
+// plugin-deploy-pod) imports THESE functions directly. This is the ONE shared implementation.
 
 // ResolveContainer resolves engine + container name, verifying the container is running.
 // Use "." as image name for local mode (returns empty engine and name).

@@ -4,33 +4,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/opencharly/spec/spec"
 )
 
-// sidecar_naming.go — the pure sidecar/pod container-naming helpers (K4: relocated from
-// charly/sidecar.go — genuinely pure string composition over ContainerName/ContainerNameInstance,
-// no project-loader dependency). Consumed directly by candy/plugin-deploy-pod and by charly core's
-// remaining callers (config_image.go, quadlet.go), which now import kit directly (K3 ZERO-ALIASES
-// — no alias file).
+// sidecar_naming.go — the host-FS sidecar helper (SidecarConfigDir) STAYS here; the pure
+// sidecar/pod container-NAMING funcs relocated to spec/spec/sidecar_naming.go (#55 value
+// extraction) and are re-exported below so existing kit.PodName / kit.SidecarContainerName…
+// call sites (candy/plugin-deploy-pod, charly core config_image.go / quadlet_paths.go) are
+// untouched. New consumers should reference spec.* directly.
 
-// PodName returns the container name for a pod's primary container.
-func PodName(boxName string) string {
-	return ContainerName(boxName)
-}
-
-// PodNameInstance returns the container name for a pod's primary container, instance-aware.
-func PodNameInstance(boxName, instance string) string {
-	return ContainerNameInstance(boxName, instance)
-}
-
-// SidecarContainerName returns the container name for a named sidecar.
-func SidecarContainerName(boxName, sidecarName string) string {
-	return ContainerName(boxName) + "-" + sidecarName
-}
-
-// SidecarContainerNameInstance returns the container name for a named sidecar, instance-aware.
-func SidecarContainerNameInstance(boxName, instance, sidecarName string) string {
-	return ContainerNameInstance(boxName, instance) + "-" + sidecarName
-}
+var (
+	PodName                      = spec.PodName
+	PodNameInstance              = spec.PodNameInstance
+	SidecarContainerName         = spec.SidecarContainerName
+	SidecarContainerNameInstance = spec.SidecarContainerNameInstance
+)
 
 // SidecarConfigDir returns the per-user directory where sidecar companion
 // config files live (e.g. charly-foo-tailscale-serve.json), used by the

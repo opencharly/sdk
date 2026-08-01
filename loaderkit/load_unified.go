@@ -92,14 +92,6 @@ func GateSchemaVersion(root, version string) error {
 	return nil
 }
 
-// NormalizeV4Aliases — RETIRED by the field-singular cutover (2026-05). Dual
-// Images/ImageSingular and Deploys/DeploySingular fields collapsed into single
-// canonical singular fields with matching yaml tags. Function kept as a no-op so
-// external callers don't break; remove on next refactor pass.
-func NormalizeV4Aliases(u *spec.UnifiedFile) {
-	_ = u
-}
-
 // LoadUnified reads <dir>/charly.yml and returns the fully loaded, validated
 // *spec.UnifiedFile — the kind-blind orchestration ported verbatim from charly's
 // former inline LoadUnified body. Every registry-coupled or standing-core-
@@ -147,7 +139,6 @@ func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 	if err := seams.MaterializeLoadedProject(&lp, merged, map[int64]*spec.UnifiedFile{}); err != nil {
 		return nil, true, err
 	}
-	NormalizeV4Aliases(merged)
 	if err := GateSchemaVersion(root, merged.Version); err != nil {
 		return nil, true, err
 	}

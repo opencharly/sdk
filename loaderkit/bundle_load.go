@@ -17,36 +17,20 @@ package loaderkit
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/opencharly/sdk/deploykit"
 	"github.com/opencharly/spec/spec"
 )
 
-// SortedDeployKeys returns a Bundle map's keys in deterministic (name) order. A generic
-// Bundle-map helper with no kind-specific logic, shared by FoldMembers / FlattenBundleVenues /
-// VenueIsAgentProvisioned here and by charly's DEPLOY-half owner-walk (R3, one shared abstraction).
-func SortedDeployKeys(m map[string]spec.BundleNode) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// SortedMemberKeys returns the member keys of a node in deterministic order.
-func SortedMemberKeys(members map[string]*spec.BundleNode) []string {
-	if len(members) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(members))
-	for k := range members {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
+// SortedDeployKeys / SortedMemberKeys / VenueIsAgentProvisioned are DEFINED in the dedicated spec
+// module (spec/spec/bundle_keys.go, #55 2b Class A) — pure bundle-map helpers with no kind-specific
+// logic. These forwarders keep loaderkit's own callers (FoldMembers / FlattenBundleVenues here) +
+// charly's DEPLOY-half owner-walk terse (R3, one shared abstraction).
+var (
+	SortedDeployKeys        = spec.SortedDeployKeys
+	SortedMemberKeys        = spec.SortedMemberKeys
+	VenueIsAgentProvisioned = spec.VenueIsAgentProvisioned
+)
 
 // -----------------------------------------------------------------------------
 // venue-from-position for bundle plan steps.
@@ -130,47 +114,6 @@ func hoistVenueSubtree(root, node *spec.BundleNode, venuePath string) {
 	for _, mName := range SortedMemberKeys(node.Members) {
 		hoistVenueSubtree(root, node.Members[mName], mName)
 	}
-}
-
-// VenueIsAgentProvisioned reports whether the bare top-level venue name resolves to an
-// agent-provisioned member/child anywhere in uf's bundle trees. Used by the host-target image
-// preflight to SKIP venues whose image the AI builds in-run (they are not pullable).
-// Agent-provisioned members are not folded to top-level, so the lookup walks each bed's in-tree
-// members/children.
-func VenueIsAgentProvisioned(uf *spec.UnifiedFile, venue string) bool {
-	if uf == nil || venue == "" {
-		return false
-	}
-	var walk func(n *spec.BundleNode) bool
-	walk = func(n *spec.BundleNode) bool {
-		if n == nil {
-			return false
-		}
-		for k, child := range n.Children {
-			if k == venue && child.AgentProvisioned {
-				return true
-			}
-			if walk(child) {
-				return true
-			}
-		}
-		for k, member := range n.Members {
-			if k == venue && member.AgentProvisioned {
-				return true
-			}
-			if walk(member) {
-				return true
-			}
-		}
-		return false
-	}
-	for _, name := range SortedDeployKeys(uf.Bundle) {
-		node := uf.Bundle[name]
-		if walk(&node) {
-			return true
-		}
-	}
-	return false
 }
 
 // -----------------------------------------------------------------------------

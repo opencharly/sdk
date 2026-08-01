@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // VmSshStanza captures the fields to render one ssh-config Host stanza for a VM.
@@ -126,9 +128,11 @@ func ListVmSshAliases(home string) ([]string, error) { //nolint:unparam // error
 }
 
 // VmSshAlias returns the canonical alias for a VM deployment name ("charly-" namespaced).
-func VmSshAlias(vmName string) string {
-	return "charly-" + vmName
-}
+// The pure naming leaf now lives in package spec (a peer of VmDomainIdentity — the always-floor-
+// legal wire/vocabulary home, #55 K4); kit re-exports it so the host-coupled ssh-config-fragment
+// writers here (renderStanza/VmSshStanza/SshFragmentPath, which STAY in kit — they write
+// ~/.config/charly/ssh_config) reference `kit.VmSshAlias` unchanged.
+var VmSshAlias = spec.VmSshAlias
 
 func renderStanza(s VmSshStanza) string {
 	var sb strings.Builder

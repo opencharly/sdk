@@ -6,6 +6,9 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/opencharly/spec/container"
+	"github.com/opencharly/spec/spec"
 )
 
 // CollectBoxPorts returns the published container ports a box exposes, inherited
@@ -25,103 +28,19 @@ type PortConflict struct {
 	OwnerType string // "charly-container", "container", "host-process"
 }
 
-// StripPortSuffix removes /tcp or /udp protocol suffix from a port string.
-// "47998/udp" -> "47998", "udp"; "8000" -> "8000", ""
-func StripPortSuffix(s string) (string, string) {
-	if idx := strings.LastIndex(s, "/"); idx != -1 {
-		return s[:idx], s[idx+1:]
-	}
-	return s, ""
-}
+// The pure podman port-mapping PARSE/FORMAT value-vocabulary — the ParsedPortMapping value
+// type + ParsePortMapping / FormatPortMapping / StripPortSuffix — now lives in spec (#55
+// value-type consolidation; stdlib-only, no mechanism dependency, in-process only, so it is
+// a plain spec Go value, not a wire type). These forwarders keep kit's own host-coupled port
+// helpers (ParseHostPort / CheckPortAvailability / ApplyPortOverrides / AllocateAutoPorts / …)
+// + the deploy candies compiling against kit.* unchanged.
+type ParsedPortMapping = spec.ParsedPortMapping
 
-// ParsedPortMapping describes the four possible shapes podman accepts:
-//
-//	"P"               -> {Host: P, Container: P}
-//	"H:C"             -> {Host: H, Container: C}
-//	"IP:H:C"          -> {Host: H, Container: C, BindAddr: "IP"}
-//	"[v6]:H:C"        -> {Host: H, Container: C, BindAddr: "[v6]"}
-//
-// Any of those forms may carry a /tcp or /udp suffix on the trailing port.
-type ParsedPortMapping struct {
-	BindAddr  string // explicit bind prefix if present (e.g. "127.0.0.1" or "[::1]"); empty otherwise
-	Host      int
-	Container int
-	Protocol  string // "udp" / "tcp" / "" — extracted from /udp or /tcp suffix
-}
-
-// ParsePortMapping is the canonical port-mapping parser.
-//
-// Returns ok=false on unparseable input. Callers that want a loud failure
-// (warning logged, port skipped) should branch on ok.
-//
-// All in-tree port handling routes through this — ParseHostPort,
-// ParseContainerPort, parseHostPorts (tunnel.go), buildPortMapping (tunnel.go),
-// and localizePort (shell.go) — so a single fix here covers every site that
-// would otherwise mis-handle the IP:H:C form.
-func ParsePortMapping(mapping string) (ParsedPortMapping, bool) {
-	clean, proto := StripPortSuffix(mapping)
-	parts := splitMappingParts(clean)
-	var bindAddr, hostStr, contStr string
-	switch len(parts) {
-	case 1: // "P"
-		hostStr = parts[0]
-		contStr = parts[0]
-	case 2: // "H:C"
-		hostStr = parts[0]
-		contStr = parts[1]
-	case 3: // "IP:H:C"
-		bindAddr = parts[0]
-		hostStr = parts[1]
-		contStr = parts[2]
-	default:
-		return ParsedPortMapping{}, false
-	}
-	host, err1 := strconv.Atoi(hostStr)
-	cont, err2 := strconv.Atoi(contStr)
-	if err1 != nil || err2 != nil {
-		return ParsedPortMapping{}, false
-	}
-	if host <= 0 || host > 65535 || cont <= 0 || cont > 65535 {
-		return ParsedPortMapping{}, false
-	}
-	return ParsedPortMapping{
-		BindAddr:  bindAddr,
-		Host:      host,
-		Container: cont,
-		Protocol:  proto,
-	}, true
-}
-
-// splitMappingParts splits a port mapping while honoring an IPv6 bracket
-// prefix as a single token (so "[::1]:8080:80" -> ["[::1]", "8080", "80"]).
-func splitMappingParts(s string) []string {
-	if strings.HasPrefix(s, "[") {
-		if i := strings.Index(s, "]"); i > 0 {
-			head := s[:i+1]
-			tail := strings.TrimPrefix(s[i+1:], ":")
-			if tail == "" {
-				return []string{head}
-			}
-			return append([]string{head}, strings.Split(tail, ":")...)
-		}
-	}
-	return strings.Split(s, ":")
-}
-
-// FormatPortMapping is the inverse of ParsePortMapping. Empty bindAddr / proto
-// are omitted; trailing-zero / equal ports collapse to canonical short forms
-// that podman accepts.
-func FormatPortMapping(p ParsedPortMapping) string {
-	suffix := ""
-	if p.Protocol != "" {
-		suffix = "/" + p.Protocol
-	}
-	core := fmt.Sprintf("%d:%d", p.Host, p.Container)
-	if p.BindAddr != "" {
-		return p.BindAddr + ":" + core + suffix
-	}
-	return core + suffix
-}
+var (
+	StripPortSuffix   = spec.StripPortSuffix
+	ParsePortMapping  = spec.ParsePortMapping
+	FormatPortMapping = spec.FormatPortMapping
+)
 
 // ParseHostPort extracts the host port from a mapping. Accepts every form
 // ParsePortMapping does, including the IP:H:C bind-address form.
@@ -454,19 +373,7 @@ func ResolveDeployPorts(containerPorts []int, pins, prior []string, occupied map
 	return out, nil
 }
 
-// ParsePublishedPort extracts a `podman port <container> <N>` command's output (one
-// "host:port" line, or "0.0.0.0:port" / "[::]:port" forms) into a dialable
-// 127.0.0.1-normalized host:port string. P12a: relocated from charly/check_venue.go
-// (a pure string-parsing helper with no host state; its sole caller stays core).
-func ParsePublishedPort(output string, port int) (string, error) {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
-		return "", fmt.Errorf("no port mapping found for %d", port)
-	}
-	hostPort := strings.TrimSpace(lines[0])
-	hostPort = strings.Replace(hostPort, "0.0.0.0", "127.0.0.1", 1)
-	if after, ok := strings.CutPrefix(hostPort, "[::]:"); ok {
-		hostPort = "127.0.0.1:" + after
-	}
-	return hostPort, nil
-}
+// ParsePublishedPort RELOCATED to the spec fabric slice github.com/opencharly/spec/container
+// (#55 CHECK-ENGINE cone Option A — a pure `podman port` output parser, the slice's charter),
+// re-exported here so kit.ParsePublishedPort call sites are untouched.
+var ParsePublishedPort = container.ParsePublishedPort

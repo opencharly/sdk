@@ -1,21 +1,14 @@
 package kit
 
-import "strings"
+import "github.com/opencharly/spec/spec"
 
-// container_name.go — the deterministic container-naming mechanism (kind-blind
-// string formatting) moved to kit in P4. A deploy key `<base>/<instance>` maps to
-// `charly-<key-with-slash-replaced-by-dash>`; see /charly-core:deploy.
+// container_name.go — re-export of the deterministic container-naming mechanism, RELOCATED to
+// spec (#55 value extraction, spec/spec/container_name.go — pure kind-blind string formatting).
+// kit re-exports so every existing kit.ContainerName / kit.ContainerNameInstance call site
+// (charly core, sdk/deploykit, the candies) is untouched. New consumers should reference spec.*
+// directly. See /charly-core:deploy.
 
-// ContainerName returns the deterministic container name for an image or a
-// `<base>/<instance>` deploy key (the `/` is canonicalized to `-`).
-func ContainerName(boxName string) string {
-	return "charly-" + strings.ReplaceAll(boxName, "/", "-")
-}
-
-// ContainerNameInstance returns the container name with an optional instance suffix.
-func ContainerNameInstance(boxName, instance string) string {
-	if instance == "" {
-		return ContainerName(boxName)
-	}
-	return "charly-" + strings.ReplaceAll(boxName, "/", "-") + "-" + instance
-}
+var (
+	ContainerName         = spec.ContainerName
+	ContainerNameInstance = spec.ContainerNameInstance
+)
