@@ -153,8 +153,9 @@ type Generator struct {
 	// EmitBakedPlugins bakes each composing candy's `bake_plugin:` out-of-tree plugin
 	// binaries into the FINAL image at /usr/lib/charly/plugins/. The deploykit render
 	// calls this seam post-main-FROM (after EmitExternalBuilderArtifacts). The host
-	// (live path) wires the charly emitBakedPlugins closure; plugin-build wires it via
-	// HostBuild("bake-plugins"). Used by generateContainerfile (#67 render-DRIVE move).
+	// (live path) wires the charly emitBakedPlugins closure; plugin-build calls
+	// deploykit.EmitBakedPlugins directly (the former HostBuild("bake-plugins") is DELETED).
+	// Used by generateContainerfile (#67 render-DRIVE move).
 	EmitBakedPlugins func(b *strings.Builder, boxName string, candyOrder []string) error
 
 	// CollectBoxVolume returns an image's aggregated volume mounts. Wraps the core

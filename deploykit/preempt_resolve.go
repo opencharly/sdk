@@ -12,7 +12,8 @@ import (
 // preempt_resolve.go — portable (LoadUnified-free) resource-arbiter deploy-tree helpers,
 // servable off a plain map[string]spec.BundleNode: the shape both a freshly-loaded uf.Bundle
 // (host-side) and a resolved-project envelope's rp.Deploy (plugin-side, via
-// Executor.HostBuild("resolved-project")) already carry — spec.BundleNode is a type alias for
+// Executor.InvokeProvider("build","project", OpResolve) — the former HostBuild("resolved-project")
+// seam is DELETED) already carry — spec.BundleNode is a type alias for
 // spec.Deploy (charly_names.go). K1-UNBLOCK wave 1: extracted from charly/preempt.go so the
 // resource-arbiter plugin (candy/plugin-preempt) and any still-core caller needing the same
 // projection (e.g. a kind:vm exclusive-claimant lookup) share ONE implementation (R3) instead of

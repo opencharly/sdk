@@ -31,7 +31,8 @@ import (
 // the function now runs directly, in-package, on the step it's given. The 3 REMAINING seams
 // (EmitPluginOp, inline-builder, ensure-builders) + EmitBakedPlugins have a genuine host-only
 // dependency (the live loader's scan+connect machinery, or a Go-level type-assertion against a
-// BUILTIN provider's concrete type) and still call back via HostBuild("render-seam"/"bake-plugins").
+// BUILTIN provider's concrete type) and still call back via HostBuild("render-seam")
+// (EmitBakedPlugins is now a direct deploykit call — the former HostBuild("bake-plugins") is DELETED).
 
 // renderSeamCaller holds the two dispatch primitives every wired seam needs (the venue executor
 // + its context) so NewRenderGeneratorFromProject's own body stays a flat field-assignment list

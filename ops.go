@@ -17,7 +17,8 @@ const (
 	// OpCompile is the K4-B deploy-COMPILE selector (command:bundle): the host's
 	// deployAddCmd.compileNodePlans computes the per-node selection and Invokes the
 	// command:bundle plugin's OpCompile with a spec.DeployCompileRequest; the plugin
-	// re-hydrates the resolved-project envelope (HostBuild("resolved-project")) +
+	// re-hydrates the resolved-project envelope (InvokeProvider("build","project", OpResolve) —
+	// the former HostBuild("resolved-project") seam is DELETED) +
 	// loops deploykit.BuildDeployPlan, returning []spec.InstallPlanView the host
 	// re-materializes. A generic action selector (never a provider word — F11).
 	OpCompile = "compile"
