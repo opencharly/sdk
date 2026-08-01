@@ -58,7 +58,14 @@ func ResolveBedCheckLevel(hasResolvedBox bool, checkLevel string) string {
 //
 // externalInPlace is the caller-computed isExternalDeploySubstrate(node.Target) result — this
 // package cannot query the live provider registry itself (see file header).
-func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace bool, marshalNode func(name string, node *BundleNode) (*yaml.Node, error)) {
+//
+// read is the current-state re-read this load-mutate-save performs. A nil read falls back to
+// SaveDeployState's own DeployStateHost-backed read (the in-proc host path). A plugin caller
+// (out-of-process command:check / command:bundle) injects its OWN loader-backed reader
+// (loaderkit.LoadHostBundleConfigViaExecutor), so PersistBedDeployOverrides no longer requires the
+// DeployStateHost package var (#55 coneC-dsh — mirrors the SaveBundleConfig/SaveDeployState
+// reader-callback precedent).
+func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace bool, marshalNode func(name string, node *BundleNode) (*yaml.Node, error), read func() (*BundleConfig, error)) {
 	// A GROUP bed (boxless root + sibling Members — the §3 cross-deployment shape) has NO
 	// root deployment to seed: its members each carry their own port/volume/env overrides
 	// (bringUpMembers persists every member), and the boxless root is never `charly config`'d.
@@ -100,7 +107,7 @@ func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace boo
 		Preemptible:       node.Preemptible,
 		RequiresExclusive: node.RequiresExclusive,
 		RequiresShared:    node.RequiresShared,
-	}, marshalNode, nil)
+	}, marshalNode, read)
 }
 
 // DeployNestedLocalChildren is now spec.DeployNestedLocalChildren (#55 U4 — a pure dotted-path

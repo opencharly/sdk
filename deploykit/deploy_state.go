@@ -630,9 +630,28 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 // deleted. Relocated from charly/deploy.go (K5-Unit-1); the flock is a kind-blind kit primitive
 // (kit.AcquireFileLock) and the loader reaches core through the DeployStateHost seam. marshalNode
 // is the deploy-kind-specific node-form serializer the caller supplies.
-func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *BundleNode) (*yaml.Node, error)) {
-	if DeployStateHost == nil {
-		return
+// CleanDeployEntry removes an image's entry from charly.yml (best-effort). Also removes global
+// service env vars injected by this image. If charly.yml becomes empty after removal, the file is
+// deleted. Relocated from charly/deploy.go (K5-Unit-1); the flock is a kind-blind kit primitive
+// (kit.AcquireFileLock) and the loader reaches core through the DeployStateHost seam. marshalNode
+// is the deploy-kind-specific node-form serializer the caller supplies.
+//
+// read is the current-state re-read this load-mutate-save performs. A nil read falls back to the
+// DeployStateHost-backed LoadBundleConfig — the in-proc host read — INCLUDING the
+// "DeployStateHost==nil → skip" guard (a nil-read caller with no DeployStateHost registered is not
+// compiled to touch the ledger, so the clean is skipped rather than clobbering an unreadable
+// file). A plugin caller (out-of-process command:pod) injects its OWN loader-backed reader
+// (loaderkit.LoadHostBundleConfigViaExecutor), so CleanDeployEntry no longer requires the
+// DeployStateHost package var (#55 coneC-dsh — mirrors the SaveBundleConfig/SaveDeployState
+// reader-callback precedent). The reader is ALSO threaded as SaveBundleConfig's failsafeRead so the
+// data-safety re-check uses the same loader-backed read, not the DeployStateHost-backed one.
+func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *BundleNode) (*yaml.Node, error), read func() (*BundleConfig, error)) {
+	loadBase := read
+	if loadBase == nil {
+		if DeployStateHost == nil {
+			return
+		}
+		loadBase = LoadBundleConfig
 	}
 	path, pathErr := kit.DefaultDeployConfigPath()
 	if pathErr != nil {
@@ -645,7 +664,7 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 		return
 	}
 	defer func() { _ = unlock() }()
-	dc, err := LoadBundleConfig()
+	dc, err := loadBase()
 	if err != nil || dc == nil {
 		return
 	}
@@ -720,7 +739,7 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 		if path, pathErr := kit.DefaultDeployConfigPath(); pathErr == nil {
 			_ = os.Remove(path)
 		}
-	} else if err := SaveBundleConfig(dc, marshalNode, nil); err != nil {
+	} else if err := SaveBundleConfig(dc, marshalNode, read); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not clean charly.yml: %v\n", err)
 		return
 	}

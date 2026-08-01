@@ -39,15 +39,27 @@ import (
 // `charly vm create` persist-auto-port writers (or a vm-create racing a `charly bundle add
 // vm:<name>`) load → modify → save the shared ~/.config/charly/charly.yml and silently drop each
 // other's entry.
-func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, acquireLock func() (func() error, error), save func(*BundleConfig) error) error {
+//
+// read is the current-state re-read this load-mutate-save performs. A nil read falls back to
+// LoadBundleConfig — the DeployStateHost-backed host read — so an IN-PROCESS host caller passes nil
+// and behaves exactly as before. A plugin caller (out-of-process command:vm) injects its OWN
+// loader-backed reader (loaderkit.LoadHostBundleConfigViaExecutor), so SaveVmDeployState no longer
+// requires the DeployStateHost package var (#55 coneC-dsh config-write seam-collapse — mirrors the
+// SaveBundleConfig/SaveDeployState reader-callback precedent).
+func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, acquireLock func() (func() error, error), save func(*BundleConfig) error, read func() (*BundleConfig, error)) error {
 	unlock, lockErr := acquireLock()
 	if lockErr != nil {
 		return fmt.Errorf("locking charly.yml for vm-state write: %w", lockErr)
 	}
 	defer func() { _ = unlock() }()
 
-	// Load existing charly.yml (or start fresh).
-	dc, err := LoadBundleConfig()
+	// Load existing charly.yml (or start fresh). A nil read falls back to the DeployStateHost-backed
+	// LoadBundleConfig (in-proc host caller); a plugin caller injects its own loader-backed reader.
+	loadBase := read
+	if loadBase == nil {
+		loadBase = LoadBundleConfig
+	}
+	dc, err := loadBase()
 	if err != nil {
 		return fmt.Errorf("loading charly.yml: %w", err)
 	}
@@ -110,15 +122,21 @@ func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, a
 }
 
 // RemoveVmDeployEntry strips deploy.<deployName> from charly.yml. acquireLock/save are the SAME
-// injected host-resident primitives SaveVmDeployState takes — see this file's header.
-func RemoveVmDeployEntry(deployName string, acquireLock func() (func() error, error), save func(*BundleConfig) error) error {
+// injected host-resident primitives SaveVmDeployState takes — see this file's header. read is the
+// SAME reader-callback SaveVmDeployState takes (nil → DeployStateHost-backed LoadBundleConfig; a
+// plugin caller injects its own loader-backed reader).
+func RemoveVmDeployEntry(deployName string, acquireLock func() (func() error, error), save func(*BundleConfig) error, read func() (*BundleConfig, error)) error {
 	unlock, lockErr := acquireLock()
 	if lockErr != nil {
 		return fmt.Errorf("locking charly.yml for vm-entry removal: %w", lockErr)
 	}
 	defer func() { _ = unlock() }()
 
-	dc, err := LoadBundleConfig()
+	loadBase := read
+	if loadBase == nil {
+		loadBase = LoadBundleConfig
+	}
+	dc, err := loadBase()
 	if err != nil {
 		return err
 	}
