@@ -11,7 +11,10 @@ import (
 // (cfg, layers, resolved-box) — no registry, loader, filesystem, or package-main type — so both
 // charly core AND candy/plugin-build (running the build-engine RESOLVE plugin-side) call the ONE
 // copy (R3). The uf-COUPLED assembler + template projection stay in loaderkit (they read
-// *spec.UnifiedFile); the host-coupled legs (resolveResources / fillNamespacedBoxes) stay host.
+// *spec.UnifiedFile); the host-coupled leg (resolveResources) stays host, while the namespaced-box
+// resolve (the former host namespaced-box fill, now deleted) is a plugin-side fold over the host's
+// flat NamespaceScanReply (buildengine-namespaced) — see candy/plugin-build/resolve_legs.go's
+// foldNamespaceScanEntries + FillNamespaceBoxViews (spec_box_resolve.go).
 
 // ProjectResolvedBox projects a resolved box (buildkit.ResolvedBox) into the wire-safe
 // spec.ResolvedBoxView: EXACTLY the non-json:"-" fields `charly box inspect` already serializes

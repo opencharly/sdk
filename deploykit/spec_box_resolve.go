@@ -113,7 +113,7 @@ func SpecBoxes(m map[string]*buildkit.ResolvedBox) map[string]*spec.ResolvedBox 
 // render-prep DRIVE (buildkit.ResolveBox + RenderPrepBox + ProjectResolvedBox) the namespaced-box
 // fill needs — relocated out of charly core (#55 Cluster-B) because it writes buildkit host-render
 // caches. opts must already carry the project build vocabulary (charly's resolveVocabOpts fills it
-// before calling). Byte-equivalent to the former in-core inner block of fillNamespacedBoxes.
+// before calling). Byte-equivalent to the former in-core inner block of the deleted host namespaced-box fill.
 func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReader, initCfg *spec.InitConfig, child, calver, dir string, opts spec.ResolveOpts, rp *spec.ResolvedProject) {
 	bkopts := specToBuildkit(opts)
 	subBoxes := map[string]*buildkit.ResolvedBox{}
