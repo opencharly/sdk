@@ -48,7 +48,7 @@ func (g *Generator) WriteBootstrap(b *strings.Builder, img *buildkit.ResolvedBox
 			cacheMounts = formatDef.CacheMount
 		}
 	}
-	b.WriteString(buildkit.RenderCacheMounts(cacheMounts, -1, 0, " \\\n    ", true))
+	b.WriteString(spec.RenderCacheMounts(cacheMounts, -1, 0, " \\\n    ", true))
 
 	if distroDef != nil {
 		b.WriteString(RenderDnfConfWrite(distroDef.Dnf))

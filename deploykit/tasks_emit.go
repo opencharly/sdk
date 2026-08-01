@@ -328,7 +328,7 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 
 	if userIsRoot && img != nil && img.DistroDef != nil {
 		if formatDef, ok := img.DistroDef.Format[img.Pkg]; ok {
-			if cm := buildkit.RenderCacheMounts(formatDef.CacheMount, -1, 0, " ", false); cm != "" {
+			if cm := spec.RenderCacheMounts(formatDef.CacheMount, -1, 0, " ", false); cm != "" {
 				mounts = append(mounts, cm)
 			}
 		}

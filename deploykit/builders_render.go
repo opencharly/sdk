@@ -115,39 +115,18 @@ func (g *Generator) resolveDetectionBuilderReply(builderName string, layer Candy
 	return g.ResolveDetectionBuilderStage(builderName, in, &img.ResolvedBox)
 }
 
-// BuilderResolveInputFrom builds the serializable spec.BuilderResolveInput a builder
-// plugin's OpResolve leg needs, from the host-computed BuildStageContext. Cache mounts
-// are PRE-RENDERED to flag strings here (buildkit.RenderCacheMounts) with the SAME
-// separator/trailing the former cacheMountsOwned/cacheMountsAuto template funcs used, so
-// the plugin's rendered stage is byte-identical to the former embedded-vocabulary render.
-// Shared by the box-build path (resolveDetectionBuilderReply) AND the pod-overlay
-// build-emit (charly stepEmitBuilder) + the inline-builder seam (charly
-// resolveInlineBuilderSeam), R3 — hence exported.
-func BuilderResolveInputFrom(candyName, builderName string, builderDef *buildkit.BuilderDef, ctx *spec.BuildStageContext) spec.BuilderResolveInput {
-	return spec.BuilderResolveInput{
-		Candy:            candyName,
-		Builder:          builderName,
-		BuilderRef:       ctx.BuilderRef,
-		StageName:        ctx.StageName,
-		LayerStage:       ctx.LayerStage,
-		CopySrc:          ctx.CopySrc,
-		UID:              ctx.UID,
-		GID:              ctx.GID,
-		Home:             ctx.Home,
-		User:             ctx.User,
-		Manifest:         ctx.Manifest,
-		HasLockFile:      ctx.HasLockFile,
-		InstallCmd:       ctx.InstallCmd,
-		ManylinuxFix:     ctx.ManylinuxFix,
-		HasBuildScript:   ctx.HasBuildScript,
-		BuildScript:      ctx.BuildScript,
-		Packages:         ctx.Packages,
-		Options:          ctx.Options,
-		CacheMountsOwned: buildkit.RenderCacheMounts(ctx.CacheMounts, ctx.UID, ctx.GID, " \\\n    ", true),
-		CacheMountsAuto:  buildkit.RenderCacheMountsAuto(ctx.CacheMounts, ctx.UID, ctx.GID, " \\\n    ", false),
-		Inline:           builderDef.Inline,
-	}
-}
+// BuilderResolveInputFrom builds the serializable spec.BuilderResolveInput a builder plugin's
+// OpResolve leg needs, from the host-computed BuildStageContext. RELOCATED to spec/spec
+// (buildwire_render.go, #55 coneK3tasks) so charly core can call it without an sdk/deploykit
+// import — charly/tasks.go's inline-builder seam now calls spec.BuilderResolveInputFrom
+// directly, shedding the LAST sdk-kit import. This deploykit re-export keeps the candy/plugin-
+// installstep callers (stepEmitBuilder) byte-stable (R3: ONE source in spec/spec, re-exported
+// here) — buildkit.BuilderDef is spec.Builder (alias), so the spec func's *spec.BuilderDef
+// param typechecks against the *buildkit.BuilderDef the callers pass. Shared by the box-build
+// path (resolveDetectionBuilderReply above) AND the pod-overlay build-emit
+// (candy/plugin-installstep stepEmitBuilder) + the inline-builder seam (charly
+// resolveInlineBuilderSeam), R3 — hence the re-export.
+var BuilderResolveInputFrom = spec.BuilderResolveInputFrom
 
 // EmitExternalBuilderStages emits the pre-main-FROM multi-stage block for every
 // candy that selects an `external_builder:` — the build-time BUILDER leg, the
