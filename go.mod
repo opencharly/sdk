@@ -9,8 +9,7 @@ require (
 	github.com/google/renameio/v2 v2.0.2
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.8.0
-	github.com/opencharly/spec v0.2026211.754
-	golang.org/x/sys v0.42.0
+	github.com/opencharly/spec v0.2026213.1726
 	golang.org/x/term v0.41.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
@@ -34,8 +33,8 @@ require (
 	github.com/protocolbuffers/txtpbfmt v0.0.0-20260217160748-a481f6a22f94 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect
 )

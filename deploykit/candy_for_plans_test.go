@@ -26,7 +26,7 @@ func TestSelectCandiesForPlans(t *testing.T) {
 
 	got := SelectCandiesForPlans(plans, candies)
 
-	var names []string
+	names := make([]string, 0, len(got))
 	for _, c := range got {
 		names = append(names, c.GetName())
 	}

@@ -47,6 +47,17 @@ func candyFixture(m spec.CandyModel, v spec.CandyView) CandyModel {
 	return NewSpecCandyModel(m, v)
 }
 
+// boxFixt builds a *buildkit.ResolvedBox test fixture with the shared field
+// shape the branch-point scenarios repeat (Name/Base/IsExternalBase/Candy plus
+// the constant Tag/Registry/FullTag/Pkg) — the test-fixture shorthand shared by
+// the user-image-at-branch-point tests, deduped per R3.
+func boxFixt(name, base string, ext bool, candy []string) *buildkit.ResolvedBox {
+	return &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{
+		Name: name, Base: base, IsExternalBase: ext, Candy: candy,
+		Tag: "v1", Registry: "r", FullTag: "r/" + name + ":v1", Pkg: "rpm",
+	}}
+}
+
 // pixiCandy builds a CandyModel fixture that owns a REAL pixi.toml at a fresh
 // t.TempDir(), so the specCandyAdapter's live fs-probe PixiManifest() reports
 // it — mirroring the production *Candy.PixiManifest() semantics the old
@@ -542,8 +553,13 @@ func TestComputeIntermediates_UserImageAtBranchPoint(t *testing.T) {
 		"webapp":      candyFixture(spec.CandyModel{Name: "webapp"}, spec.CandyView{Require: []spec.CandyRef{"supervisord"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{"fedora": {ResolvedBox: spec.ResolvedBox{Name: "fedora", Base: "ext:1", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/fedora:v1", Pkg: "rpm"}}, // "svbase" is a user image with candies=[supervisord] — it sits at the branch point
-		"svbase": {ResolvedBox: spec.ResolvedBox{Name: "svbase", Base: "fedora", IsExternalBase: false, Candy: []string{"supervisord"}, Tag: "v1", Registry: "r", FullTag: "r/svbase:v1", Pkg: "rpm"}}, "app1": {ResolvedBox: spec.ResolvedBox{Name: "app1", Base: "svbase", IsExternalBase: false, Candy: []string{"testapi"}, Tag: "v1", Registry: "r", FullTag: "r/app1:v1", Pkg: "rpm"}}, "app2": {ResolvedBox: spec.ResolvedBox{Name: "app2", Base: "svbase", IsExternalBase: false, Candy: []string{"webapp"}, Tag: "v1", Registry: "r", FullTag: "r/app2:v1", Pkg: "rpm"}}}
+	// "svbase" is a user image with candies=[supervisord] — it sits at the branch point
+	images := map[string]*buildkit.ResolvedBox{
+		"fedora": boxFixt("fedora", "ext:1", true, []string{}),
+		"svbase": boxFixt("svbase", "fedora", false, []string{"supervisord"}),
+		"app1":   boxFixt("app1", "svbase", false, []string{"testapi"}),
+		"app2":   boxFixt("app2", "svbase", false, []string{"webapp"}),
+	}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}}
 
@@ -614,8 +630,13 @@ func TestComputeIntermediates_UserImageAsBranchIntermediate(t *testing.T) {
 		"D": candyFixture(spec.CandyModel{Name: "D"}, spec.CandyView{Require: []spec.CandyRef{"B"}}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{"base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "ext:1", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/base:v1", Pkg: "rpm"}}, // mid terminates at [A, B] and has children (app1 needs [A,B,C], app2 needs [A,B,D])
-		"mid": {ResolvedBox: spec.ResolvedBox{Name: "mid", Base: "base", IsExternalBase: false, Candy: []string{"B"}, Tag: "v1", Registry: "r", FullTag: "r/mid:v1", Pkg: "rpm"}}, "app1": {ResolvedBox: spec.ResolvedBox{Name: "app1", Base: "base", IsExternalBase: false, Candy: []string{"C"}, Tag: "v1", Registry: "r", FullTag: "r/app1:v1", Pkg: "rpm"}}, "app2": {ResolvedBox: spec.ResolvedBox{Name: "app2", Base: "base", IsExternalBase: false, Candy: []string{"D"}, Tag: "v1", Registry: "r", FullTag: "r/app2:v1", Pkg: "rpm"}}}
+	// mid terminates at [A, B] and has children (app1 needs [A,B,C], app2 needs [A,B,D])
+	images := map[string]*buildkit.ResolvedBox{
+		"base": boxFixt("base", "ext:1", true, []string{}),
+		"mid":  boxFixt("mid", "base", false, []string{"B"}),
+		"app1": boxFixt("app1", "base", false, []string{"C"}),
+		"app2": boxFixt("app2", "base", false, []string{"D"}),
+	}
 
 	defaults := IntermediateDefaults{Registry: "r", Build: []string{"rpm"}}
 

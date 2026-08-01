@@ -45,8 +45,9 @@ type CheckResult struct {
 
 // StepResult is one plan step's outcome — the step's identity (keyword/text/origin/id) plus
 // the CheckResult of running it. The result reporters consume a []StepResult. RELOCATED to the
-// spec contract module (spec.StepResult, checkresult_wire.go, #55 CHECK-ENGINE cone Option A)
-// so charly core's check-run seam + deploy-verify path reference it importing only spec; aliased
+// spec contract module (spec.StepResult, CUE-sourced in spec/schema/checkresult.cue, #55
+// CHECK-ENGINE cone Option A) so charly core's check-run seam + deploy-verify path reference it
+// importing only spec; aliased
 // here (kit.StepResult = spec.StepResult) so every candy call site compiles UNCHANGED. The wire
 // shape is byte-identical: kit.CheckResult embeds spec.CheckResult + the engine-internal
 // DeadlineExceeded (json:"-"), so on the wire only spec.CheckResult fields ever crossed —
