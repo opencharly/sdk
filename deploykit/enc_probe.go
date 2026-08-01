@@ -20,8 +20,9 @@ import (
 // move here rather than staying behind a HostBuild seam. The verb:enc OpExecute dispatch is now
 // fully plugin-owned (candy/plugin-deploy-pod + candy/plugin-pod each drive verb:enc via their own
 // InvokeProvider; the former core encExecViaPlugin shim + the pod-config-enc-mounts seam are
-// RETIRED). What stays in charly-core's enc.go: only coreCredentialAccess (the credential-store
-// adapter secrets.go still binds). candy/plugin-deploy-pod
+// RETIRED). charly/enc.go is now DELETED (#55 coneB-br2): coreCredentialAccess moved plugin-side to
+// candy/plugin-deploy-pod's buildOverlay (deploykit.CredentialAccessViaExecutor, mirroring
+// candy/plugin-bundle/secrets_artifacts.go). candy/plugin-deploy-pod
 // had ALREADY hand-duplicated 3 of these (isEncryptedMountedLocal/cipherPopulatedPlainEmptyLocal/
 // verifyBindMountsLocal in config_setup_helpers.go) because the originals weren't movable as a
 // whole — those duplicates are deleted in the same cutover, now calling this package instead (R3).

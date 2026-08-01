@@ -54,9 +54,11 @@ func EnvVarNameToPodmanSecretSlug(envVarName string) string {
 // Used by:
 //   - ProvisionPodmanSecrets — config-time CollectedSecret provisioning when
 //     --password=auto is in effect.
-//   - charly-core's ensureCandySecret (layer_secrets.go) — deploy-time secret_requires
-//     resolution on host/VM/SSH targets when the value is missing (calls this directly,
-//     supplying its own CredentialAccess).
+//   - the plugin-side secret resolver (candy/plugin-deploy-pod's buildOverlay →
+//     ResolveSecretForCandy → ResolveCandySecret → EnsureCandySecret — the former charly-core
+//     ensureCandySecret in layer_secrets.go; #55 coneB-br2 relocated it plugin-side and DELETED
+//     layer_secrets.go) — deploy-time secret_requires resolution on host/VM/SSH targets when
+//     the value is missing (calls this directly, supplying its own CredentialAccess).
 func GenerateAndStoreSecret(service, key string, cred CredentialAccess) (val, source string) {
 	val = GenerateRandomSecretToken(32)
 	if err := cred.Write(service, key, val); err != nil {

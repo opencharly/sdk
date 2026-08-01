@@ -23,7 +23,9 @@ import (
 // does NOT move (charly/secrets.go, STILL core): ProvisionPodmanSecrets/
 // CollectCandySecretAccepts/resolveHookSecretEnv/generateAndStoreSecret — each calls
 // ResolveCredential/DefaultCredentialStore directly or transitively (the core provider registry),
-// registered FINAL/K5 inventory alongside enc.go's credential family. Those core functions now
+// registered FINAL/K5 inventory (enc.go's former credential family left core in #55 coneB-br2 —
+// coreCredentialAccess moved plugin-side to candy/plugin-deploy-pod; these charly/secrets.go
+// functions are the remaining core resident). Those core functions now
 // call this package's leaves (deploykit.PodmanSecretExists, deploykit.PromptPassword, etc.)
 // instead of their own former in-file copies — verified: zero occurrences of the old
 // unexported names remain in charly/secrets.go (R5 grep self-test). (charly/secrets.go's

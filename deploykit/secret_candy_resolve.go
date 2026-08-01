@@ -9,9 +9,10 @@ import (
 
 // secret_candy_resolve.go — the candy `secret_requires:`/`secret_accepts:` resolver for
 // host/vm/ssh install-plan deploy targets (relocated from charly/layer_secrets.go, #118
-// coneB-p8bremainder): the ONE genuinely core-coupled part of that file, CandyForPlan (needs
-// ScanAllCandyWithConfig + *Config, both core-only), stays behind — layer_secrets.go shrinks to
-// just that. EnsureCandySecret/ResolveCandySecret/ResolveSecretForCandy had NO core-only
+// coneB-p8bremainder; charly/layer_secrets.go is now DELETED #55 coneB-br2): the plugin-side path
+// (candy/plugin-deploy-pod's buildOverlay) uses deploykit.SelectCandiesForPlans over the
+// resolved-project envelope's candy map (dg.Candies) instead of CandyForPlan's core scan, so the
+// former core-only dependency is gone. EnsureCandySecret/ResolveCandySecret/ResolveSecretForCandy had NO core-only
 // dependency beyond the credential-store access GenerateAndStoreSecret (above, in
 // secret_provision.go) already takes as an INJECTED CredentialAccess — so this move is the SAME
 // R3 pattern that file's own doc comment names ensureCandySecret as anticipating ("calls this

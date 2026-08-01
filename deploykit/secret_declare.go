@@ -9,12 +9,14 @@ package deploykit
 // saveBundleConfigNodeForm (loader-seam-coupled) — inseparable from
 // charly-core today, pending the config_image.go OpConfig seam.
 //
-// InjectSecretsIntoPlans (P13-KERNEL fold-in) is relocated from
-// charly/layer_secrets.go — the ONE genuinely pure function in that file (the
-// rest — ensureCandySecret/ResolveCandySecret/ResolveSecretForCandy/
-// CandyForPlan — route through DefaultCredentialStore/ResolveCredential
-// (provider-registry-coupled) and ScanAllCandyWithConfig (loader-coupled), so
-// they stay charly-core, registered FINAL/K5 credential-family inventory).
+// InjectSecretsIntoPlans (P13-KERNEL fold-in) was relocated from charly/layer_secrets.go — it was
+// the ONE genuinely pure function in that file. Its siblings (ensureCandySecret/
+// ResolveCandySecret/ResolveSecretForCandy — formerly routing through DefaultCredentialStore/
+// ResolveCredential + ScanAllCandyWithConfig) were relocated to this package's
+// secret_candy_resolve.go (#118 coneB-p8bremainder) and are now driven plugin-side by
+// candy/plugin-deploy-pod's buildOverlay over the resolved-project envelope (dg.Candies) instead
+// of a host loader scan. charly/layer_secrets.go is now DELETED (#55 coneB-br2); none of these
+// stay charly-core.
 
 import (
 	"strings"
