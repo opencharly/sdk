@@ -14,7 +14,9 @@ package loaderkit
 // Placement-invariant: works identically compiled-in or out-of-process (LoadUnifiedViaExecutor
 // drives the registry-coupled LoadSeams over the reverse channel when out-of-process, in-proc when
 // compiled-in). Byte-equivalent to the former LoadBundleConfigViaSeam: same per-host overlay read,
-// same (nil, nil)-on-absent contract, same ProjectBundleConfig projection the host handler used.
+// same non-nil &BundleConfig{}-on-absent/empty contract (inherited from
+// deploykit.LoadBundleConfig's line-112 wrap), same ProjectBundleConfig projection the host
+// handler used.
 
 import (
 	"context"
@@ -30,8 +32,12 @@ import (
 // LoadBundleConfigViaExecutor loads <dir>/charly.yml through the unified loader PLUGIN-SIDE (over
 // the reverse channel when out-of-process) and projects it to a *deploykit.BundleConfig — the
 // cycle-free, placement-invariant overlay/project read. dir is the config directory (the per-host
-// overlay dir for a deploy read; a project dir for a project read). Returns (nil, nil) when the
-// file is absent (matching LoadBundleConfigViaSeam's nil-on-empty contract).
+// overlay dir for a deploy read; a project dir for a project read). An ABSENT or EMPTY overlay
+// returns a NON-NIL &deploykit.BundleConfig{} — matching deploykit.LoadBundleConfig's contract
+// (deploy_file.go line 112: a present-but-empty config returns &BundleConfig{} so callers that
+// range/index dc.Deploy without a nil guard keep working after an overlay's last entry is
+// removed); the former LoadBundleConfigViaSeam round-tripped to LoadBundleConfig and inherited
+// the same non-nil-empty wrap..
 func LoadBundleConfigViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (*deploykit.BundleConfig, error) {
 	if ex == nil {
 		return nil, fmt.Errorf("load bundle config via executor: no host reverse channel (command not compiled-in?)")
@@ -41,7 +47,13 @@ func LoadBundleConfigViaExecutor(ctx context.Context, ex *sdk.Executor, dir stri
 		return nil, fmt.Errorf("load bundle config via executor: %w", err)
 	}
 	if !ok || uf == nil {
-		return nil, nil
+		// Absent/empty overlay → non-nil &BundleConfig{}, matching deploykit.LoadBundleConfig's
+		// line-112 wrap (deploy_file.go: a present-but-empty config returns &BundleConfig{} so
+		// callers that range/index dc.Deploy without a nil guard keep working). The K5 rewiring
+		// returned nil here, dropping the wrap — R1 RCA: that short-circuited reap-orphans' orphan
+		// scan in a bed's XDG_CONFIG_HOME-isolated empty overlay ("no charly.yml; nothing to
+		// reap" instead of the expected "no orphaned ephemerals"); restored.
+		return &deploykit.BundleConfig{}, nil
 	}
 	return deploykit.ProjectBundleConfig(uf), nil
 }
@@ -49,7 +61,8 @@ func LoadBundleConfigViaExecutor(ctx context.Context, ex *sdk.Executor, dir stri
 // hostBundleConfigDir returns the per-host deploy-overlay config directory
 // (filepath.Dir(kit.DefaultDeployConfigPath)) — the dir LoadBundleConfigViaSeam reached
 // indirectly through the host handler's deploykit.LoadBundleConfig. Empty string when the path
-// can't be resolved (the read then degrades to (nil, nil), matching the old nil-on-absent contract).
+// can't be resolved (the read then degrades to a non-nil &BundleConfig{}, matching
+// deploykit.LoadBundleConfig's absent/empty contract).
 func hostBundleConfigDir() string {
 	path, err := kit.DefaultDeployConfigPath()
 	if err != nil {
@@ -63,7 +76,9 @@ func hostBundleConfigDir() string {
 // (~/.config/charly/charly.yml) plugin-side via LoadBundleConfigViaExecutor + the derived per-host
 // config dir. The former `caller` label was host-side diagnostics only (threaded into the wire
 // request); this path does not round-trip to a host handler, so no caller label is carried.
-// Returns (nil, nil) on an absent/empty overlay.
+// Returns a NON-NIL &BundleConfig{} on an absent/empty overlay (matching
+// deploykit.LoadBundleConfig's absent-file contract); (nil, nil) only when the config path
+// itself can't be resolved (the dir=="" guard, matching LoadBundleConfig's path-error nil).
 func LoadHostBundleConfigViaExecutor(ctx context.Context, ex *sdk.Executor) (*deploykit.BundleConfig, error) {
 	dir := hostBundleConfigDir()
 	if dir == "" {
