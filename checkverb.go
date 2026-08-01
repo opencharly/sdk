@@ -10,6 +10,7 @@ import (
 	"github.com/opencharly/sdk/kit"
 	pb "github.com/opencharly/spec/proto"
 	"github.com/opencharly/spec/spec"
+	"github.com/opencharly/spec/transport"
 )
 
 // ServeCheckVerb serves a HOST-COUPLED check verb (kit.CheckVerbProvider) OUT-OF-PROCESS
@@ -77,18 +78,18 @@ func (s *checkVerbServer) InvokeStream(req *pb.InvokeRequest, stream pb.Provider
 // pairs ONE Dial with ONE AcceptAndServe per id — a second Dial would hang ("timeout waiting
 // for connection info"). gRPC multiplexes both service clients on the single conn.
 func newSDKCheckContext(brokerID uint32, env spec.CheckEnv) (kit.CheckContext, error) {
-	if servedBroker == nil {
+	if transport.ServedBroker == nil {
 		return nil, errors.New("sdk: no go-plugin broker (plugin not served over go-plugin)")
 	}
 	if brokerID == 0 {
 		return nil, errors.New("sdk: no host reverse channel attached (executor_broker_id=0)")
 	}
-	conn, err := servedBroker.Dial(brokerID)
+	conn, err := transport.ServedBroker.Dial(brokerID)
 	if err != nil {
 		return nil, err
 	}
 	return &sdkCheckContext{
-		exec: &Executor{client: pb.NewExecutorServiceClient(conn)},
+		exec: NewInProcExecutor(pb.NewExecutorServiceClient(conn)),
 		cc:   pb.NewCheckContextServiceClient(conn),
 		env:  env,
 	}, nil

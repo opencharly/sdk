@@ -8,6 +8,7 @@ import (
 
 	"cuelang.org/go/cue/cuecontext"
 
+	"github.com/opencharly/spec/climodel"
 	pb "github.com/opencharly/spec/proto"
 	"github.com/opencharly/spec/schemaconcat"
 	"github.com/opencharly/spec/spec"
@@ -77,11 +78,9 @@ type ProvidedCapability struct {
 }
 
 // CLISubcommand is one DECLARED child of a class="command" capability's own CLI word — see
-// ProvidedCapability.Subcommands.
-type CLISubcommand struct {
-	Name string
-	Help string
-}
+// ProvidedCapability.Subcommands. Relocated to spec/climodel (#55 import-purity); re-exported
+// here so candy call sites compile UNCHANGED.
+type CLISubcommand = climodel.CLISubcommand
 
 // StepContract is the SDK-facing form of the proto StepContract — a class="step" plugin's
 // declared install-step Scope/Venue/Gate. Reverse is NOT declared (an external step's
