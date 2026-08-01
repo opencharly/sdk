@@ -1,7 +1,9 @@
 package deploykit
 
 import (
+	"fmt"
 	"maps"
+	"os"
 	"sort"
 
 	"github.com/opencharly/spec/spec"
@@ -20,12 +22,30 @@ import (
 // overlay (~/.config/charly/charly.yml) — exactly the merge the resource arbiter's holder/claimant
 // gather has always performed (former charly/preempt.go gatherDeployNodes): per-host entries win
 // per-field via MergeBundleNode. project may be nil/empty (no project loaded, e.g. a project-less
-// `charly vm` invocation); the per-host overlay always loads independently. context is a short
-// label threaded to LoadDeployConfigForRead's stderr warning so the caller is identifiable.
-func MergedDeployTree(project map[string]spec.BundleNode, context string) map[string]spec.BundleNode {
+// `charly vm` invocation); the per-host overlay loads via read. context is a short label threaded to
+// the reader's stderr warning so the caller is identifiable.
+//
+// read is the per-host-overlay loader (placement-invariant: a plugin caller injects
+// loaderkit.LoadHostBundleConfigViaExecutor; a host in-proc caller may pass a LoadBundleConfig
+// wrapper). #55 coneC-dsh β2+δ seam-death: MergedDeployTree no longer hard-wires
+// LoadDeployConfigForRead (the DeployStateHost-backed read that silently degraded to project-only
+// when DeployStateHost was nil — a placement-dependent correctness regression for the compiled-in
+// arbiter); the reader is injected so the compiled-in candy/plugin-preempt arbiter and the
+// plugin-vm config-resolve Claimant computation load the per-host overlay placement-invariantly.
+// A nil read → no merge (project passes through unchanged) — the semantics the
+// TestMergedDeployTree_ProjectOnlyWhenNoLocalConfig corpus pins.
+func MergedDeployTree(project map[string]spec.BundleNode, context string, read func() (*BundleConfig, error)) map[string]spec.BundleNode {
 	out := make(map[string]spec.BundleNode, len(project))
 	maps.Copy(out, project)
-	if dc := LoadDeployConfigForRead(context); dc != nil {
+	if read == nil {
+		return out
+	}
+	dc, err := read()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %s: per-host deploy overlay unavailable for read: %v\n", context, err)
+		return out
+	}
+	if dc != nil {
 		for name, node := range dc.Bundle {
 			out[name] = MergeBundleNode(out[name], node)
 		}

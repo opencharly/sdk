@@ -126,12 +126,12 @@ func TestGpuVendorTokens(t *testing.T) {
 }
 
 func TestMergedDeployTree_ProjectOnlyWhenNoLocalConfig(t *testing.T) {
-	// No ~/.config/charly/charly.yml in the test env — LoadDeployConfigForRead degrades to an
-	// empty BundleConfig (never nil, never panics), so the project tree passes through unchanged.
+	// A nil reader → no per-host overlay merge → the project tree passes through unchanged
+	// (#55 coneC-dsh β2+δ: MergedDeployTree now takes a reader; nil is the project-only semantics).
 	project := map[string]spec.BundleNode{
 		"a": {Target: "pod"},
 	}
-	merged := MergedDeployTree(project, "test")
+	merged := MergedDeployTree(project, "test", nil)
 	if len(merged) != 1 || merged["a"].Target != "pod" {
 		t.Errorf("merged = %+v, want the project tree passed through", merged)
 	}
