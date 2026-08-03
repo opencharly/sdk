@@ -30,3 +30,19 @@ func TestScanInlineCandy_AgentProvideAndTerminalProfiles(t *testing.T) {
 		t.Errorf("CandyView.TerminalProfiles[\"claude-code\"] = %+v, ok=%v, want {Entrypoint: [claude]}, true", tp, ok)
 	}
 }
+
+// TestPopulateCandyApk (relocated from charly/apk_format_test.go, #55 K3 Cone 4) verifies the
+// candy manifest `apk:` field flows through the scan pipeline onto the resulting
+// spec.CandyReader.
+func TestPopulateCandyApk(t *testing.T) {
+	ly := &spec.CandyYAML{
+		Apk: []spec.ApkPackageSpec{
+			{Package: "org.fdroid.fdroid", Source: "apk-pure", Arch: "x86_64"},
+		},
+	}
+	m, v, _ := ScanInlineCandy("test-apps", "", ly)
+	l := newLoaderTestCandy("test-apps", m, v)
+	if len(l.Apk()) != 1 || l.Apk()[0].Package != "org.fdroid.fdroid" {
+		t.Errorf("Apk() = %+v", l.Apk())
+	}
+}
