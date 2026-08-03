@@ -1,7 +1,6 @@
 package deploykit
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -338,52 +337,13 @@ func MergeEnvVars(existing, newVars map[string]string) map[string]string {
 
 // --- BundleConfig state container (moved from charly/deploy.go, P4) ---
 // BundleConfig represents per-machine deployment overrides (~/.config/charly/charly.yml).
-// Only runtime/deployment fields are supported — build-time fields are structurally excluded.
-//
-// Schema v4: the top-level map key is `deployment:` (singular, flat). The
-// legacy `images:` / `deployments.images.*` nesting is gone — all target
-// kinds (host / vm / pod / k8s) live under the single `deployment:` map.
-type BundleConfig struct {
-	Provides *spec.ProvidesConfig  `yaml:"provides,omitempty" json:"provides,omitempty"`
-	Bundle   map[string]BundleNode `yaml:"deploy" json:"deploy"`
-	// Sidecar carries the project's sidecar-template library as OPAQUE bodies
-	// (the raw PluginKinds["sidecar"] map). candy/plugin-sidecar's OpResolve merges
-	// these UNDER each deploy node's own overrides; the kernel reads no fields
-	// (the sidecar de-type, Cutover D).
-	Sidecar map[string]json.RawMessage `yaml:"sidecar,omitempty" json:"sidecar,omitempty"`
-}
-
-// OccupiedHostPorts returns the set of host ports already published by
-// any deployment in dc except the named one (`excludeKey` is typically
-// the deploy key for the entry currently being expanded — we want to
-// allow it to keep its old allocations, not avoid them). Used by
-// ResolveDeployPorts to keep auto-allocations from colliding across deploys.
-
-// Lookup returns the BundleNode for (deployName, instance), or
-// (zero, false) when the entry is absent. Safe to call on a nil
-// *BundleConfig — lets callers chain
-// `loadDeployConfigForRead(...).Lookup(deployName, instance)` without a
-// separate nil check. deployName is the charly.yml key base the caller is
-// operating on (typically c.Image), NOT the baked image short-name — for a
-// kind:check bed or Pattern-B deploy the two differ. Pass the deploy key, never
-// a value derived from an image label (see MergeDeployOntoMetadata).
-func (dc *BundleConfig) Lookup(deployName, instance string) (BundleNode, bool) {
-	if dc == nil {
-		return BundleNode{}, false
-	}
-	entry, ok := dc.Bundle[DeployKey(deployName, instance)]
-	return entry, ok
-}
-
-// LookupKey looks up a deploy entry by its full charly.yml key (e.g.
-// "foo", "foo/instance", "vm:name"). Safe on nil receiver.
-func (dc *BundleConfig) LookupKey(key string) (BundleNode, bool) {
-	if dc == nil {
-		return BundleNode{}, false
-	}
-	entry, ok := dc.Bundle[key]
-	return entry, ok
-}
+// SPIKE (value-type relocation, #55 cluster 2): relocated to spec.BundleConfig
+// (spec/spec/bundle_config.go) — every field already resolved to a spec.* type, so
+// the type carried zero deploykit-only content. This is now a zero-churn alias;
+// the two pure methods (Lookup/LookupKey) moved with it. The three methods that
+// reach sdk/kit (DeployedContainerNames/OccupiedHostPorts/GlobalEnvForImage) stay
+// below as free functions (bundle_derive.go) — spec can never import sdk/kit.
+type BundleConfig = spec.BundleConfig
 
 // MergeDeployConfigs merges multiple DeployConfigs left-to-right. Later
 // configs take precedence (field-level replace per image). The merge walks
