@@ -4,9 +4,10 @@ package loaderkit
 // 4, relocated from charly/refs.go): EnsureRepoDownloaded (local-override short-circuit, cache-hit
 // check, cache-miss dispatch through the RefsDownloader backend, post-fetch schema auto-migration)
 // and CollectRemoteRefsOpts (the depth-first base/builder/candy-ref graph walk over a
-// *spec.Config). Both operate on spec.Config/spec.CandyReader/spec.ResolveOpts directly — charly
-// core's local `Config` name is `type Config = spec.Config` (config.go), so this relocation adds no
-// new dependency, just repoints through the ALREADY spec-legal underlying type.
+// *spec.Config). Both operate on spec.Config/spec.CandyReader/spec.ResolveOpts directly — the
+// former in-core `Config = spec.Config` alias (charly/config.go) is gone (W0 dissolved it), and
+// charly/refs.go's thin wrapper functions now take `*spec.Config` directly, so this relocation adds
+// no new dependency, just repoints through the ALREADY spec-legal underlying type.
 //
 // sdk/kit/refs_downloader.go's own doc comment ("the host keeps the fetch ORCHESTRATION... the
 // boundary is the backend that turns a (repoPath, version) into a populated local cache tree") is
