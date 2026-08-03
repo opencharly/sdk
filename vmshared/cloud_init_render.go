@@ -145,7 +145,13 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 		// transaction (observed live: go-2:1.26.4 rotated out → rsync/go/git all failed to
 		// install on a fresh eval-host-vm disk). Bare -Sy (refresh without upgrade) is the
 		// documented Arch partial-upgrade hazard, so the refresh is the full -Syu.
-		pacmanCmd := "pacman -Syu --needed --noconfirm " + strings.Join(packages, " ")
+		// --ignore linux*: the -Syu refresh must NOT replace the RUNNING kernel — a kernel
+		// upgrade deletes /lib/modules/<running>/ without a reboot, after which modprobe
+		// fails for EVERY module (observed live: k3s's containerd could not mount overlayfs
+		// on a mid-provision guest whose kernel had been upgraded underneath it). A
+		// cloud-init guest is provisioned on the kernel it booted; it never needs a newer
+		// one mid-provision.
+		pacmanCmd := "pacman -Syu --needed --noconfirm --ignore linux --ignore linux-lts --ignore linux-zen --ignore linux-hardened " + strings.Join(packages, " ")
 		// try-restart sshd right after the -Syu: the full upgrade replaces openssh's binaries,
 		// and a live sshd then execs a NEWER sshd-session than the parent that spawned it —
 		// openssh 10.4 added a 4th default host key, so the mismatch is "internal error:
