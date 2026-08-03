@@ -337,7 +337,7 @@ func TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded(t *testing.T) {
 			if len(rc) != 6 {
 				t.Fatalf("runcmd = %v, want 6 entries [pacman, sshd-resync, hardening-dropin, unmask, sshd-enable, user-cmd]", rc)
 			}
-			wantPacman := "pacman -Syu --needed --noconfirm --ignore linux --ignore linux-lts --ignore linux-zen --ignore linux-hardened openssh curl tar htop"
+			wantPacman := "pacman -Sy --needed --noconfirm openssh curl tar htop"
 			if rc[0] != wantPacman {
 				t.Errorf("runcmd[0] = %q, want %q (must be FIRST — before sshd is ever enabled)", rc[0], wantPacman)
 			}
@@ -460,7 +460,7 @@ func TestRenderCloudInit_InferredArch_RunsPacmanNeeded(t *testing.T) {
 		t.Errorf("inferred-arch render must OMIT the packages: key, got %v", um["packages"])
 	}
 	rc, _ := um["runcmd"].([]any)
-	wantPacman := "pacman -Syu --needed --noconfirm --ignore linux --ignore linux-lts --ignore linux-zen --ignore linux-hardened openssh curl tar htop"
+	wantPacman := "pacman -Sy --needed --noconfirm openssh curl tar htop"
 	if len(rc) != 6 || rc[0] != wantPacman {
 		t.Fatalf("runcmd = %v, want [%q, sshd-resync, hardening-dropin, unmask, sshd-enable, echo user-cmd] (empty distro + base_user=arch must infer pacman-family)", rc, wantPacman)
 	}

@@ -28,7 +28,7 @@ type CloudInitRuntimeParams = spec.CloudInitRuntimeParams
 //  2. Minimum packages: {openssh, curl, tar} unioned with user's Packages —
 //     delivered via the `packages:` cloud-config key on every distro EXCEPT
 //     pacman-family (arch/cachyos/manjaro/endeavouros), where it is instead
-//     PREPENDED to runcmd as `pacman -Syu --needed --noconfirm <union>` (-Syu: fresh-image dbs are stale, mirrors rotate — a bare -S 404s; -Sy alone is the partial-upgrade hazard) and the
+//     PREPENDED to runcmd as `pacman -Sy --needed --noconfirm <union>` (db refresh + install-only; a bare -S 404s on rotated mirrors, and a full -Syu destabilizes the live guest — see the runcmd comment) and the
 //     `packages:` key is omitted entirely (R10 bed finding: cloud-init's own
 //     package-install module invokes `pacman -S` without `--needed`, so on an
 //     image that already ships the minimum set — e.g. every Arch cloud image —
@@ -140,25 +140,24 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 
 	runcmd := composeRunCmd(spec, ci)
 	if pacmanFamily && len(packages) > 0 {
-		// -Syu, not bare -S: a fresh cloud image's baked pacman database is weeks stale and
-		// the Arch mirrors rotate package files, so an un-refreshed install 404s the whole
-		// transaction (observed live: go-2:1.26.4 rotated out → rsync/go/git all failed to
-		// install on a fresh eval-host-vm disk). Bare -Sy (refresh without upgrade) is the
-		// documented Arch partial-upgrade hazard, so the refresh is the full -Syu.
-		// --ignore linux*: the -Syu refresh must NOT replace the RUNNING kernel — a kernel
-		// upgrade deletes /lib/modules/<running>/ without a reboot, after which modprobe
-		// fails for EVERY module (observed live: k3s's containerd could not mount overlayfs
-		// on a mid-provision guest whose kernel had been upgraded underneath it). A
-		// cloud-init guest is provisioned on the kernel it booted; it never needs a newer
-		// one mid-provision.
-		pacmanCmd := "pacman -Syu --needed --noconfirm --ignore linux --ignore linux-lts --ignore linux-zen --ignore linux-hardened " + strings.Join(packages, " ")
-		// try-restart sshd right after the -Syu: the full upgrade replaces openssh's binaries,
-		// and a live sshd then execs a NEWER sshd-session than the parent that spawned it —
-		// openssh 10.4 added a 4th default host key, so the mismatch is "internal error:
-		// hostkeys confused (config 4 recvd 3)" and EVERY connection resets against an
-		// otherwise-healthy guest (observed live on eval-host-vm; the classic Arch
-		// restart-sshd-after-openssh-upgrade rule). try-restart is a no-op when sshd isn't
-		// running yet (the common path: composeRunCmd enables it later, post-upgrade).
+		// -Sy --needed (refresh + install-only), deliberately NOT -Syu: the fresh cloud
+		// image's baked pacman db is weeks stale and the Arch mirrors rotate package files,
+		// so an un-refreshed install 404s the whole transaction (observed live: go-2:1.26.4
+		// rotated out → rsync/go/git all failed on a fresh eval-host-vm disk). A FULL -Syu
+		// on the live, mid-provision guest proved worse than the disease across three R10
+		// layers: it replaced the running kernel (modprobe overlay FATAL → k3s containerd
+		// dead), replaced openssh under a live sshd ("hostkeys confused", every connection
+		// reset), and generally upgrades systemd/glibc beneath the services the deploy is
+		// actively using. The documented -Sy partial-upgrade hazard is ACCEPTED here by
+		// design: the guest is a disposable, minutes-lived provisioning target, pacman
+		// resolves the named packages' OWN dep upgrades, and nothing long-lived survives
+		// on the pre-upgrade library set.
+		pacmanCmd := "pacman -Sy --needed --noconfirm " + strings.Join(packages, " ")
+		// try-restart sshd right after the install: IF openssh rode along in the dep
+		// closure, a live sshd would exec a NEWER sshd-session than the parent that
+		// spawned it ("internal error: hostkeys confused" — the classic Arch
+		// restart-sshd-after-openssh-upgrade rule). A no-op when sshd isn't running yet
+		// (the common path: composeRunCmd enables it later) or wasn't upgraded.
 		sshdResync := `sh -c 'systemctl try-restart sshd.service ssh.socket sshd.socket 2>/dev/null || true'`
 		runcmd = append([]any{pacmanCmd, sshdResync}, runcmd...)
 	}
