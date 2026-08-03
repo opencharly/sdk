@@ -23,7 +23,9 @@ func (g *Generator) CandyCopySource(candyRef string) string {
 	if layer.GetSourceDir() == "" || layer.GetSourceDir() == defaultDir {
 		return kit.DefaultCandyDir + "/" + candyRef
 	}
-	// `directory:` override — resolve SourceDir relative to the build root.
+	// SourceDir differs from the default candy dir — a remote (@github) or submodule-vendored
+	// candy — so resolve it relative to the build root. (This is NOT a `directory:` redirect:
+	// that field was removed and is now a hard load error, charly/layers.go.)
 	rel, err := filepath.Rel(g.Dir, layer.GetSourceDir())
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return kit.DefaultCandyDir + "/" + candyRef
