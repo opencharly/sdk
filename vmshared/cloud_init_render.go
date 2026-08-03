@@ -146,7 +146,15 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 		// install on a fresh eval-host-vm disk). Bare -Sy (refresh without upgrade) is the
 		// documented Arch partial-upgrade hazard, so the refresh is the full -Syu.
 		pacmanCmd := "pacman -Syu --needed --noconfirm " + strings.Join(packages, " ")
-		runcmd = append([]any{pacmanCmd}, runcmd...)
+		// try-restart sshd right after the -Syu: the full upgrade replaces openssh's binaries,
+		// and a live sshd then execs a NEWER sshd-session than the parent that spawned it —
+		// openssh 10.4 added a 4th default host key, so the mismatch is "internal error:
+		// hostkeys confused (config 4 recvd 3)" and EVERY connection resets against an
+		// otherwise-healthy guest (observed live on eval-host-vm; the classic Arch
+		// restart-sshd-after-openssh-upgrade rule). try-restart is a no-op when sshd isn't
+		// running yet (the common path: composeRunCmd enables it later, post-upgrade).
+		sshdResync := `sh -c 'systemctl try-restart sshd.service ssh.socket sshd.socket 2>/dev/null || true'`
+		runcmd = append([]any{pacmanCmd, sshdResync}, runcmd...)
 	}
 	if len(runcmd) > 0 {
 		userMap["runcmd"] = runcmd
