@@ -8,16 +8,20 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// fakeVerbResolver returns a canned result for every verb, recording the last op it saw.
+// fakeVerbResolver returns a canned result for every verb, recording the last op it saw
+// (both the resolved verb word and the full *spec.Op, e.g. for asserting Origin-stamping or
+// post-expansion PluginInput values).
 type fakeVerbResolver struct {
 	result   spec.CheckResult
 	known    bool
 	actKnown bool
 	lastVerb string
+	lastOp   *spec.Op
 }
 
 func (f *fakeVerbResolver) RunVerb(_ context.Context, op *spec.Op) (spec.CheckResult, bool) {
 	f.lastVerb, _ = op.Kind()
+	f.lastOp = op
 	return f.result, f.known
 }
 func (f *fakeVerbResolver) RunProvisionAct(_ context.Context, _ *spec.Op, verb string) (spec.CheckResult, bool) {
