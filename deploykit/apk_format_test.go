@@ -13,7 +13,7 @@ import (
 // fixtures, no charly loader machinery needed.
 
 func TestCompileApkStep(t *testing.T) {
-	none := newTestCandy("no-apk", spec.CandyModel{}, spec.CandyView{})
+	none := newTestCandy("no-apk", spec.CandyModel{})
 	if step := CompileApkStep(none); step != nil {
 		t.Errorf("candy with no apk: should compile to nil step, got %T", step)
 	}
@@ -24,7 +24,7 @@ func TestCompileApkStep(t *testing.T) {
 			{Package: "org.fdroid.fdroid", Source: "apk-pure", Arch: "x86_64"},
 			{Apk: "tests/data/x.apk"},
 		},
-	}, spec.CandyView{})
+	})
 	step := CompileApkStep(l)
 	if step == nil {
 		t.Fatal("CompileApkStep returned nil for a candy with apk: entries")

@@ -14,18 +14,18 @@ import (
 // (no build-timestamp fallback). Pure deploykit + literal spec fixtures, no charly
 // loader machinery needed.
 
-// newTestCandy wraps a CandyModel + CandyView into a spec.CandyReader fixture, stamping
-// name onto both views (mirrors charly's own candy_test_helpers_test.go:testCandy).
-func newTestCandy(name string, m spec.CandyModel, v spec.CandyView) spec.CandyReader {
+// newTestCandy wraps a CandyModel into a spec.CandyReader fixture, stamping name onto
+// both views (mirrors charly's own candy_test_helpers_test.go:testCandy). Every current
+// caller needs only the model side; the view is a bare named CandyView (unparam).
+func newTestCandy(name string, m spec.CandyModel) spec.CandyReader {
 	m.Name = name
-	v.Name = name
-	return NewSpecCandyModel(m, v)
+	return NewSpecCandyModel(m, spec.CandyView{Name: name})
 }
 
 func TestComputeEffectiveVersions(t *testing.T) {
 	layers := map[string]CandyModel{
-		"a": newTestCandy("a", spec.CandyModel{Version: "2026.100.0000"}, spec.CandyView{}),
-		"b": newTestCandy("b", spec.CandyModel{Version: "2026.200.0000"}, spec.CandyView{}), // newest candy
+		"a": newTestCandy("a", spec.CandyModel{Version: "2026.100.0000"}),
+		"b": newTestCandy("b", spec.CandyModel{Version: "2026.200.0000"}), // newest candy
 	}
 	images := map[string]*ResolvedBox{ // dedicated version wins over the (newer) candy versions.
 		"dedicated":   {ResolvedBox: spec.ResolvedBox{Name: "dedicated", Version: "2026.050.0000", Candy: []string{"a", "b"}, IsExternalBase: true, Base: "quay.io/x:1"}}, // no dedicated version -> highest candy version (b = 2026.200.0000).
@@ -49,7 +49,7 @@ func TestComputeEffectiveVersions(t *testing.T) {
 	}
 
 	// A candy bump propagates to a deriving image's identity.
-	layers["b"] = newTestCandy("b", spec.CandyModel{Version: "2026.400.0000"}, spec.CandyView{})
+	layers["b"] = newTestCandy("b", spec.CandyModel{Version: "2026.400.0000"})
 	derived := map[string]*ResolvedBox{"derived": {ResolvedBox: spec.ResolvedBox{Name: "derived", Candy: []string{"a", "b"}, IsExternalBase: true, Base: "quay.io/x:1"}}}
 	if err := ComputeEffectiveVersions(derived, layers); err != nil {
 		t.Fatal(err)
