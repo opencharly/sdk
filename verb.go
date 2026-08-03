@@ -1,36 +1,24 @@
 package sdk
 
+// verb.go carries the shared helpers every OUT-OF-PROCESS check-verb provider uses: the
+// {status,message} reply builder (ResultJSON, relocated to spec/ops) and the
+// required-modifier check (kept here — a verb-specific reflection helper). The
+// boilerplate the EXEC-based verb plugins (dbus/record/wl) formerly each carried,
+// hoisted so the transport-invisible verb-serving surface has ONE home (R3).
+
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 
-	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/ops"
 	"github.com/opencharly/spec/spec"
 )
 
-// verb.go carries the shared helpers every OUT-OF-PROCESS check-verb provider uses: the
-// {status,message} reply builder and the required-modifier check. They are the byte-identical
-// boilerplate the EXEC-based verb plugins (dbus/record/wl) formerly each carried, hoisted here
-// so the transport-invisible verb-serving surface has ONE home (R3).
-
-// resultWire is the {status,message} wire form every out-of-process check verb returns (the
-// host's pluginCheckResult). status ∈ "pass" | "fail" | "skip".
-type resultWire struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
-
 // ResultJSON builds the InvokeReply an out-of-process check verb's Invoke returns — the SAME
-// {status,message} shape every verb plugin (and ServeCheckVerb) emits (R3).
-func ResultJSON(status, msg string) (*pb.InvokeReply, error) {
-	j, err := json.Marshal(resultWire{Status: status, Message: msg})
-	if err != nil {
-		return nil, err
-	}
-	return &pb.InvokeReply{ResultJson: j}, nil
-}
+// {status,message} shape every verb plugin (and ServeCheckVerb) emits (R3). Relocated to
+// spec/ops; re-exported here so candy call sites compile UNCHANGED.
+var ResultJSON = ops.ResultJSON
 
 // OpModifierZero reports whether the modifier named `name` is absent (zero) on
 // the step. Since the schema-compaction cutover a verb's per-method fields live
