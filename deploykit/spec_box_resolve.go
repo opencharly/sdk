@@ -131,6 +131,15 @@ func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReade
 	if len(subBoxes) == 0 {
 		return
 	}
+	// The init `depends_candy:` injection, for the NAMESPACED box set. This is the THIRD box-
+	// composition path (beside candy/plugin-build's resolveBuildEngine and
+	// loaderkit.ProjectResolvedProject's fresh-box loop) and it needs the pass just as much: an
+	// import namespace's boxes are resolved from the namespace's OWN config here, so they never
+	// pass through either of the other two seams. Without it a namespaced box composing service
+	// candies would get ai.opencharly.init baked by the RenderPrepBox below — the init RESOLVED —
+	// while its init candy was never added, which is exactly the defect this pass exists to close.
+	// MUST run before the render-prep loop so RenderCandyOrder/BakedMetadata see the injected candy.
+	InjectInitDependsCandy(subBoxes, nsLayers, initCfg)
 	tempGen := NewRenderGenerator()
 	tempGen.Config = sub
 	tempGen.Candies = nsLayers
