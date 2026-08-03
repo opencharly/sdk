@@ -38,7 +38,14 @@ import (
 
 // InjectInitDependsCandy appends each box's ACTIVE init system's `depends_candy` to that box's candy
 // list, when the composition actually triggers that init and the dependency candy is not already in
-// its resolved chain. Mutates the boxes in place; a nil initCfg is a no-op.
+// THIS BOX'S OWN resolved candy order. Mutates the boxes in place; a nil initCfg is a no-op.
+//
+// The scope of that check is deliberately the box's own order, NOT its base chain: ResolveCandyOrder
+// is called with a nil parentCandies, so a child whose BASE already installs the init candy still has
+// it prepended to the child's list. That is harmless for the artifact — GlobalOrderForBox filters a
+// base-provided candy back out at render, so the emitted image is unchanged — but it does mean
+// rp.Boxes[child].Candy can name a candy the child itself does not install. Anything reading that
+// field as "what this box installs" rather than "what this box requested" must account for it.
 //
 // The injected candy is PREPENDED, matching how boxes that list the init explicitly already author it
 // (the init candy first, the service candies after) — the topological sort only constrains `require:`
