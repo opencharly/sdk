@@ -68,6 +68,22 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 	rp := &spec.ResolvedProject{Version: version}
 
 	resolvedBoxes := map[string]*buildkit.ResolvedBox{}
+	// The fresh-resolve arm is projected in a SECOND pass: the init `depends_candy:` injection
+	// (deploykit.InjectInitDependsCandy) is a whole-box-set pass that rewrites img.Candy, and
+	// deploykit.ProjectResolvedBox copies that list into the view — so every fresh box must be
+	// resolved BEFORE any of them is projected, or the view would carry the pre-injection list.
+	// The pre-resolved arm needs no such pass: the build path (candy/plugin-build's
+	// resolveBuildEngine) already injected before render-prep filled these boxes' caches.
+	var freshOrder []string
+	freshBoxes := map[string]*buildkit.ResolvedBox{}
+	projectBox := func(name string, resolved *buildkit.ResolvedBox) {
+		view := deploykit.ProjectResolvedBox(resolved)
+		deploykit.ProjectBoxAggregates(cfg, layers, name, resolved, &view)
+		if rp.Boxes == nil {
+			rp.Boxes = make(map[string]spec.ResolvedBoxView, len(cfg.Box))
+		}
+		rp.Boxes[name] = view
+	}
 	for _, name := range cfg.AllBoxNames() {
 		img, ok := cfg.BoxConfig(name)
 		if !ok {
@@ -84,12 +100,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 				continue
 			}
 			resolvedBoxes[name] = resolved
-			view := deploykit.ProjectResolvedBox(resolved)
-			deploykit.ProjectBoxAggregates(cfg, layers, name, resolved, &view)
-			if rp.Boxes == nil {
-				rp.Boxes = make(map[string]spec.ResolvedBoxView, len(cfg.Box))
-			}
-			rp.Boxes[name] = view
+			projectBox(name, resolved)
 			continue
 		}
 		resolved, err := seams.ResolveBox(cfg, name, calver, dir)
@@ -100,12 +111,12 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 			continue
 		}
 		resolvedBoxes[name] = resolved
-		view := deploykit.ProjectResolvedBox(resolved)
-		deploykit.ProjectBoxAggregates(cfg, layers, name, resolved, &view)
-		if rp.Boxes == nil {
-			rp.Boxes = make(map[string]spec.ResolvedBoxView, len(cfg.Box))
-		}
-		rp.Boxes[name] = view
+		freshBoxes[name] = resolved
+		freshOrder = append(freshOrder, name)
+	}
+	deploykit.InjectInitDependsCandy(freshBoxes, layers, initCfg)
+	for _, name := range freshOrder {
+		projectBox(name, freshBoxes[name])
 	}
 
 	// Auto-intermediates (#67): preResolvedBoxes (gen.Boxes) carries the auto-generated
