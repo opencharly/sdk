@@ -1,18 +1,20 @@
 package sdk
 
+// validate.go — the SchemaValidator (kept in the sdk root — a plugin-side unit not
+// relocated by the spec leg) + re-exports of ValidateGenerated / DecodeGeneratedJSON
+// (relocated to github.com/opencharly/spec/climodel, #55 import-purity). The CUE
+// validation primitives (ValidateCUEValue / ValidateCUEInput) are the R3-shared
+// single source in spec/climodel; SchemaValidator.Validate / ValidateJSON delegate
+// to them so the sdk root holds NO duplicate validation path.
+
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"sync"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 
-	"github.com/opencharly/spec/schema"
+	"github.com/opencharly/spec/climodel"
 	"github.com/opencharly/spec/schemaconcat"
 )
 
@@ -39,7 +41,7 @@ func NewSchemaValidator(schemaFS fs.FS, dir string) (*SchemaValidator, error) {
 
 // Validate checks a value against a named definition in the compiled schema.
 func (v *SchemaValidator) Validate(definition string, value any) error {
-	return validateCUEValue(v.ctx, v.value, definition, value)
+	return climodel.ValidateCUEValue(v.ctx, v.value, definition, value)
 }
 
 // ValidateJSON validates the original JSON bytes without first decoding JSON
@@ -49,80 +51,20 @@ func (v *SchemaValidator) ValidateJSON(definition string, payload []byte) error 
 	if err := input.Err(); err != nil {
 		return fmt.Errorf("decode JSON for %s: %w", definition, err)
 	}
-	return validateCUEInput(v.value, definition, input)
-}
-
-var generatedSchema struct {
-	sync.Once
-	ctx   *cue.Context
-	value cue.Value
-	err   error
+	return climodel.ValidateCUEInput(v.value, definition, input)
 }
 
 // ValidateGenerated validates a generated SDK value against its authoritative
 // CUE definition. Command plugins use the same embedded schema as core, so
 // moving command ownership never creates a hand-maintained validation copy.
-func ValidateGenerated(definition string, value any) error {
-	if err := loadGeneratedSchema(); err != nil {
-		return err
-	}
-	return validateCUEValue(generatedSchema.ctx, generatedSchema.value, definition, value)
-}
+// Relocated to spec/climodel; re-exported here so candy call sites compile UNCHANGED.
+var ValidateGenerated = climodel.ValidateGenerated
 
 // DecodeGeneratedJSON strictly decodes one persisted or received JSON value
 // into its generated Go type, then validates that typed value against the
 // authoritative CUE definition. Typed decoding is required for fields such as
 // []byte, whose standard JSON representation is base64 text but whose CUE value
 // is bytes. Unknown fields and trailing JSON values are rejected before CUE
-// validation so decoding cannot silently discard persisted input.
-func DecodeGeneratedJSON(definition string, payload []byte, dst any) error {
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(dst); err != nil {
-		return fmt.Errorf("decode JSON for %s: %w", definition, err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return fmt.Errorf("decode JSON for %s: trailing JSON value", definition)
-		}
-		return fmt.Errorf("decode JSON for %s: trailing data: %w", definition, err)
-	}
-	return ValidateGenerated(definition, dst)
-}
-
-func loadGeneratedSchema() error {
-	generatedSchema.Do(func() {
-		generatedSchema.ctx = cuecontext.New()
-		body, _, err := schemaconcat.ConcatSchema(schema.FS, ".", nil)
-		if err != nil {
-			generatedSchema.err = err
-			return
-		}
-		generatedSchema.value = generatedSchema.ctx.CompileString(body)
-		generatedSchema.err = generatedSchema.value.Err()
-	})
-	if generatedSchema.err != nil {
-		return fmt.Errorf("compile SDK CUE schema: %w", generatedSchema.err)
-	}
-	return nil
-}
-
-func validateCUEValue(ctx *cue.Context, schemaValue cue.Value, definition string, value any) error {
-	input := ctx.Encode(value)
-	if input.Err() != nil {
-		return input.Err()
-	}
-	return validateCUEInput(schemaValue, definition, input)
-}
-
-func validateCUEInput(schemaValue cue.Value, definition string, input cue.Value) error {
-	def := schemaValue.LookupPath(cue.ParsePath(definition))
-	if !def.Exists() {
-		return fmt.Errorf("CUE definition %s does not exist", definition)
-	}
-	if err := input.Unify(def).Validate(cue.Concrete(true)); err != nil {
-		return fmt.Errorf("%s: %w", definition, err)
-	}
-	return nil
-}
+// validation so decoding cannot silently discard persisted input. Relocated to
+// spec/climodel; re-exported here so candy call sites compile UNCHANGED.
+var DecodeGeneratedJSON = climodel.DecodeGeneratedJSON

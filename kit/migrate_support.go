@@ -23,4 +23,5 @@ const (
 // the project schema HEAD so a non-ledger cutover never invalidates a migrated
 // ledger. Read by core's ledger path (ReadDeployRecord/ReadCandyRecord, which
 // hard-reject a record lacking this stamp). Core aliases via `const … = kit.LedgerSchemaVersion`.
-const LedgerSchemaVersion = "2026.161.1649"
+// SPIKE (value-type relocation, #55 cluster 4): relocated to spec.LedgerSchemaVersion.
+const LedgerSchemaVersion = spec.LedgerSchemaVersion

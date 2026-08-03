@@ -5,32 +5,14 @@ import (
 	"strings"
 
 	"github.com/opencharly/spec/hostenv"
+	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
 
-// CloudInitRuntimeParams carries the runtime-resolved state needed to
-// render cloud-init user-data: the SSH public key to inject, the
-// instance-id (stable UUIDv4 persisted in VmDeployState), the hostname,
-// and whether cloud-init should inject the SSH key at all (computed
-// from D13 auto-defaults + explicit VmKeyInjection overrides).
-type CloudInitRuntimeParams struct {
-	// SSHPublicKey is the OpenSSH authorized_keys-format public key
-	// line (e.g. "ssh-ed25519 AAAA..."). Empty when key injection is
-	// disabled or when VmSSH.KeySource == "none".
-	SSHPublicKey string
-
-	// InstanceID is the stable UUIDv4 cloud-init instance-id.
-	// Pinned at first VM create and persisted in VmDeployState.
-	InstanceID string
-
-	// Hostname for the guest. Defaults to the VM name when empty.
-	Hostname string
-
-	// InjectKeyViaCloudInit is the resolved D13 key_injection.cloud_init
-	// channel state. When false the renderer emits no
-	// ssh_authorized_keys entries even if SSHPublicKey is populated.
-	InjectKeyViaCloudInit bool
-}
+// CloudInitRuntimeParams — SPIKE (value-type relocation, #55 cluster 4):
+// relocated to spec.CloudInitRuntimeParams (spec/spec/cloud_init_runtime_params.go).
+// Zero-churn alias; RenderCloudInit (behavior) is unaffected.
+type CloudInitRuntimeParams = spec.CloudInitRuntimeParams
 
 // RenderCloudInit produces the three NoCloud seed ISO payloads from a
 // VmSpec plus runtime parameters. Pure function — no filesystem or
@@ -46,7 +28,7 @@ type CloudInitRuntimeParams struct {
 //  2. Minimum packages: {openssh, curl, tar} unioned with user's Packages —
 //     delivered via the `packages:` cloud-config key on every distro EXCEPT
 //     pacman-family (arch/cachyos/manjaro/endeavouros), where it is instead
-//     PREPENDED to runcmd as `pacman -S --needed --noconfirm <union>` and the
+//     PREPENDED to runcmd as `pacman -Sy --needed --noconfirm <union>` (db refresh + install-only; a bare -S 404s on rotated mirrors, and a full -Syu destabilizes the live guest — see the runcmd comment) and the
 //     `packages:` key is omitted entirely (R10 bed finding: cloud-init's own
 //     package-install module invokes `pacman -S` without `--needed`, so on an
 //     image that already ships the minimum set — e.g. every Arch cloud image —
@@ -158,8 +140,26 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 
 	runcmd := composeRunCmd(spec, ci)
 	if pacmanFamily && len(packages) > 0 {
-		pacmanCmd := "pacman -S --needed --noconfirm " + strings.Join(packages, " ")
-		runcmd = append([]any{pacmanCmd}, runcmd...)
+		// -Sy --needed (refresh + install-only), deliberately NOT -Syu: the fresh cloud
+		// image's baked pacman db is weeks stale and the Arch mirrors rotate package files,
+		// so an un-refreshed install 404s the whole transaction (observed live: go-2:1.26.4
+		// rotated out → rsync/go/git all failed on a fresh eval-host-vm disk). A FULL -Syu
+		// on the live, mid-provision guest proved worse than the disease across three R10
+		// layers: it replaced the running kernel (modprobe overlay FATAL → k3s containerd
+		// dead), replaced openssh under a live sshd ("hostkeys confused", every connection
+		// reset), and generally upgrades systemd/glibc beneath the services the deploy is
+		// actively using. The documented -Sy partial-upgrade hazard is ACCEPTED here by
+		// design: the guest is a disposable, minutes-lived provisioning target, pacman
+		// resolves the named packages' OWN dep upgrades, and nothing long-lived survives
+		// on the pre-upgrade library set.
+		pacmanCmd := "pacman -Sy --needed --noconfirm " + strings.Join(packages, " ")
+		// try-restart sshd right after the install: IF openssh rode along in the dep
+		// closure, a live sshd would exec a NEWER sshd-session than the parent that
+		// spawned it ("internal error: hostkeys confused" — the classic Arch
+		// restart-sshd-after-openssh-upgrade rule). A no-op when sshd isn't running yet
+		// (the common path: composeRunCmd enables it later) or wasn't upgraded.
+		sshdResync := `sh -c 'systemctl try-restart sshd.service ssh.socket sshd.socket 2>/dev/null || true'`
+		runcmd = append([]any{pacmanCmd, sshdResync}, runcmd...)
 	}
 	if len(runcmd) > 0 {
 		userMap["runcmd"] = runcmd

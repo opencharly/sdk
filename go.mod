@@ -8,8 +8,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/renameio/v2 v2.0.2
 	github.com/google/uuid v1.6.0
-	github.com/hashicorp/go-plugin v1.8.0
-	github.com/opencharly/spec v0.2026213.1726
+	github.com/opencharly/spec v0.2026215.1748
 	golang.org/x/term v0.41.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
@@ -23,6 +22,7 @@ require (
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
+	github.com/hashicorp/go-plugin v1.8.0 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect

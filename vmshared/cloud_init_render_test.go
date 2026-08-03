@@ -333,25 +333,28 @@ func TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded(t *testing.T) {
 			rc, _ := um["runcmd"].([]any)
 			// D18 (bed-robustness batch item 3): the sshd hardening drop-in write+validate and the
 			// ssh.socket unmask now sit BETWEEN the pacman install and the sshd-enable step —
-			// [pacman, hardening-dropin, unmask, sshd-enable, user-cmd].
-			if len(rc) != 5 {
-				t.Fatalf("runcmd = %v, want 5 entries [pacman, hardening-dropin, unmask, sshd-enable, user-cmd]", rc)
+			// [pacman, sshd-resync, hardening-dropin, unmask, sshd-enable, user-cmd].
+			if len(rc) != 6 {
+				t.Fatalf("runcmd = %v, want 6 entries [pacman, sshd-resync, hardening-dropin, unmask, sshd-enable, user-cmd]", rc)
 			}
-			wantPacman := "pacman -S --needed --noconfirm openssh curl tar htop"
+			wantPacman := "pacman -Sy --needed --noconfirm openssh curl tar htop"
 			if rc[0] != wantPacman {
 				t.Errorf("runcmd[0] = %q, want %q (must be FIRST — before sshd is ever enabled)", rc[0], wantPacman)
 			}
-			if rc[1] != sshHardeningDropInCmd {
-				t.Errorf("runcmd[1] = %v, want the sshd hardening drop-in command", rc[1])
+			if s, _ := rc[1].(string); !strings.Contains(s, "try-restart sshd") {
+				t.Errorf("runcmd[1] = %v, want the sshd try-restart resync (a live sshd must re-exec post-upgrade binaries — hostkeys-confused guard)", rc[1])
 			}
-			if rc[2] != "systemctl unmask ssh.socket || true" {
-				t.Errorf("runcmd[2] = %q, want the ssh.socket unmask", rc[2])
+			if rc[2] != sshHardeningDropInCmd {
+				t.Errorf("runcmd[2] = %v, want the sshd hardening drop-in command", rc[2])
 			}
-			if rc[3] != "systemctl enable --now sshd" {
-				t.Errorf("runcmd[3] = %q, want the sshd-enable command", rc[3])
+			if rc[3] != "systemctl unmask ssh.socket || true" {
+				t.Errorf("runcmd[3] = %q, want the ssh.socket unmask", rc[3])
 			}
-			if rc[4] != "echo user-cmd" {
-				t.Errorf("runcmd[4] = %q, want the user's own runcmd entry, order preserved", rc[4])
+			if rc[4] != "systemctl enable --now sshd" {
+				t.Errorf("runcmd[4] = %q, want the sshd-enable command", rc[4])
+			}
+			if rc[5] != "echo user-cmd" {
+				t.Errorf("runcmd[5] = %q, want the user's own runcmd entry, order preserved", rc[5])
 			}
 		})
 	}
@@ -457,9 +460,9 @@ func TestRenderCloudInit_InferredArch_RunsPacmanNeeded(t *testing.T) {
 		t.Errorf("inferred-arch render must OMIT the packages: key, got %v", um["packages"])
 	}
 	rc, _ := um["runcmd"].([]any)
-	wantPacman := "pacman -S --needed --noconfirm openssh curl tar htop"
-	if len(rc) != 5 || rc[0] != wantPacman {
-		t.Fatalf("runcmd = %v, want [%q, hardening-dropin, unmask, sshd-enable, echo user-cmd] (empty distro + base_user=arch must infer pacman-family)", rc, wantPacman)
+	wantPacman := "pacman -Sy --needed --noconfirm openssh curl tar htop"
+	if len(rc) != 6 || rc[0] != wantPacman {
+		t.Fatalf("runcmd = %v, want [%q, sshd-resync, hardening-dropin, unmask, sshd-enable, echo user-cmd] (empty distro + base_user=arch must infer pacman-family)", rc, wantPacman)
 	}
 }
 
