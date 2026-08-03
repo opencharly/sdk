@@ -59,7 +59,7 @@ func PopulateCandyInitSystem(scanned map[string]spec.ScannedCandy, initCfg *buil
 					}
 				}
 			}
-			// Check candy_file (anchored at SourceDir — honors `directory:`)
+			// Check candy_file (anchored at the candy's scanned SourceDir)
 			// for init systems like systemd that use the file_copy model.
 			for _, pattern := range def.CandyFiles {
 				matches, _ := filepath.Glob(filepath.Join(sc.Model.SourceDir, pattern))
