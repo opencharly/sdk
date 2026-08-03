@@ -54,6 +54,10 @@ func TestIsRuntimeOnlyVar(t *testing.T) {
 		{"ENV_ANYTHING", true},
 		{"DEPLOY_NAME", true},
 		{"HOST:driver", true},
+		// The cross-member ${HOST:member:port} host-reachable-endpoint compound key
+		// (relocated from charly/check_members_test.go's TestIsRuntimeOnlyVar_Host,
+		// #55 decoupling cone) — same "HOST:" prefix classification, extra port segment.
+		{"HOST:web:8080", true},
 	}
 	for _, tc := range cases {
 		if got := IsRuntimeOnlyVar(tc.key); got != tc.want {
