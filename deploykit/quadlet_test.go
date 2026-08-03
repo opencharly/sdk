@@ -701,3 +701,119 @@ func TestLocalizePort(t *testing.T) {
 		})
 	}
 }
+
+// TestQuadletWithBindMounts / TestQuadletWithEncryptedBindMountsKeyring /
+// TestQuadletWithEncryptedBindMountsNonKeyring / TestQuadletWithoutEncryptedMounts relocated
+// from charly/enc_test.go (#55 K4 cone3): pure GenerateQuadlet/QuadletConfig/ResolvedBindMount
+// coverage with zero charly dependency — the encrypted-BindMounts (vs the plain-Volumes
+// TestGenerateQuadletWithVolumes above) crypto-service/keyring-backend paths had no existing
+// sdk-side coverage.
+
+func TestQuadletWithBindMounts(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "ghcr.io/test/myapp:latest",
+		Home:        "/home/user/project",
+		BindAddress: "127.0.0.1",
+		BindMounts: []ResolvedBindMount{
+			{Name: "data", HostPath: "/home/user/data", ContPath: "/home/user/.myapp", Encrypted: false},
+		},
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	if !strings.Contains(got, "Volume=/home/user/data:/home/user/.myapp") {
+		t.Errorf("expected Volume for bind mount, got:\n%s", got)
+	}
+	// Should not have crypto service dependency
+	if strings.Contains(got, "crypto.service") {
+		t.Errorf("should not have crypto service for plain mounts, got:\n%s", got)
+	}
+}
+
+func TestQuadletWithEncryptedBindMountsKeyring(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "ghcr.io/test/myapp:latest",
+		Home:        "/home/user/project",
+		BindAddress: "127.0.0.1",
+		BindMounts: []ResolvedBindMount{
+			{Name: "secrets", HostPath: "/data/enc/charly-myapp-secrets/plain", ContPath: "/home/user/.secrets", Encrypted: true},
+		},
+		CharlyBin:       "/usr/local/bin/charly",
+		EncryptedMounts: true,
+		KeyringBackend:  true,
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	// ExecStartPre mounts encrypted volumes before container starts
+	if !strings.Contains(got, "ExecStartPre=/usr/local/bin/charly config mount myapp") {
+		t.Errorf("expected ExecStartPre for encrypted mounts, got:\n%s", got)
+	}
+	// Keyring backend: wait indefinitely for keyring unlock
+	if !strings.Contains(got, "TimeoutStartSec=0") {
+		t.Errorf("expected TimeoutStartSec=0 for keyring backend, got:\n%s", got)
+	}
+	// Keyring backend: auto-start at boot (waits for keyring)
+	if !strings.Contains(got, "WantedBy=default.target") {
+		t.Errorf("expected WantedBy=default.target for keyring backend, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Volume=/data/enc/charly-myapp-secrets/plain:/home/user/.secrets") {
+		t.Errorf("expected Volume for encrypted bind mount, got:\n%s", got)
+	}
+}
+
+func TestQuadletWithEncryptedBindMountsNonKeyring(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "ghcr.io/test/myapp:latest",
+		Home:        "/home/user/project",
+		BindAddress: "127.0.0.1",
+		BindMounts: []ResolvedBindMount{
+			{Name: "secrets", HostPath: "/data/enc/charly-myapp-secrets/plain", ContPath: "/home/user/.secrets", Encrypted: true},
+		},
+		CharlyBin:       "/usr/local/bin/charly",
+		EncryptedMounts: true,
+		KeyringBackend:  false, // config (non-keyring) backend
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	// ExecStartPre still present as safety guard
+	if !strings.Contains(got, "ExecStartPre=/usr/local/bin/charly config mount myapp") {
+		t.Errorf("expected ExecStartPre for encrypted mounts, got:\n%s", got)
+	}
+	// Non-keyring: default timeout (not 0)
+	if strings.Contains(got, "TimeoutStartSec=0") {
+		t.Errorf("should NOT have TimeoutStartSec=0 for non-keyring backend, got:\n%s", got)
+	}
+	// Non-keyring: NO auto-start at boot (requires charly start)
+	if strings.Contains(got, "WantedBy=default.target") {
+		t.Errorf("should NOT have WantedBy for non-keyring encrypted service, got:\n%s", got)
+	}
+}
+
+func TestQuadletWithoutEncryptedMounts(t *testing.T) {
+	cfg := QuadletConfig{
+		BoxName:     "myapp",
+		ImageRef:    "ghcr.io/test/myapp:latest",
+		Home:        "/home/user/project",
+		BindAddress: "127.0.0.1",
+	}
+
+	got := GenerateQuadlet(cfg)
+
+	// No encrypted mounts: no ExecStartPre
+	if strings.Contains(got, "ExecStartPre=") {
+		t.Errorf("should NOT have ExecStartPre without encrypted mounts, got:\n%s", got)
+	}
+	// Normal auto-start
+	if !strings.Contains(got, "WantedBy=default.target") {
+		t.Errorf("expected WantedBy=default.target for non-encrypted service, got:\n%s", got)
+	}
+	// Default timeout
+	if !strings.Contains(got, "TimeoutStartSec=900") {
+		t.Errorf("expected default TimeoutStartSec=900, got:\n%s", got)
+	}
+}

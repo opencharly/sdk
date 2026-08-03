@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/vmshared"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -480,4 +481,75 @@ func TestEncStatusFromConfig(t *testing.T) {
 			t.Errorf("output %q missing the expected formatted row (initialized=no, mounted=yes)", out)
 		}
 	})
+}
+
+// TestCryptoPasswdRequiresUnmount / TestCryptoPasswdPasswordMismatch relocated from
+// charly/enc_test.go (#55 K4 cone3): pure IsEncryptedMounted/AskPassword/EncryptedPlainDir
+// mock-driven coverage with zero charly dependency (charly's own encPasswd() needs deploy.yml,
+// so these simulate its logic against the deploykit primitives directly).
+
+func TestCryptoPasswdRequiresUnmount(t *testing.T) {
+	// Mock IsEncryptedMounted to return true (volume is mounted)
+	origMounted := IsEncryptedMounted
+	IsEncryptedMounted = func(plainDir string) bool { return true }
+	defer func() { IsEncryptedMounted = origMounted }()
+
+	boxName := "myapp"
+	// We can't call encPasswd() directly because loadEncryptedVolume needs deploy.yml,
+	// so test the logic by simulating what encPasswd() does.
+	mounts := []vmshared.DeployVolumeConfig{
+		{Name: "secrets", Type: "encrypted"},
+	}
+	storagePath := "/data/enc"
+
+	for _, m := range mounts {
+		plainDir := EncryptedPlainDir(storagePath, boxName, m.Name)
+		if IsEncryptedMounted(plainDir) {
+			err := fmt.Errorf("encrypted volume %q is still mounted; run 'charly config unmount %s' first", m.Name, boxName)
+			if !strings.Contains(err.Error(), "still mounted") {
+				t.Errorf("expected 'still mounted' in error, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "charly config unmount") {
+				t.Errorf("expected 'charly config unmount' hint in error, got: %v", err)
+			}
+			return
+		}
+	}
+	t.Fatal("expected mounted volume to trigger error")
+}
+
+func TestCryptoPasswdPasswordMismatch(t *testing.T) {
+	// Mock AskPassword to return controlled values
+	origAsk := AskPassword
+	callCount := 0
+	AskPassword = func(id, prompt string) (string, error) {
+		callCount++
+		switch callCount {
+		case 1:
+			return "oldpass", nil // current
+		case 2:
+			return "newpass", nil // new
+		case 3:
+			return "different", nil // confirm (mismatch)
+		}
+		return "", fmt.Errorf("unexpected call")
+	}
+	defer func() { AskPassword = origAsk }()
+
+	// Mock IsEncryptedMounted to return false (all unmounted)
+	origMounted := IsEncryptedMounted
+	IsEncryptedMounted = func(plainDir string) bool { return false }
+	defer func() { IsEncryptedMounted = origMounted }()
+
+	// Simulate the password check logic from Run()
+	oldPass, _ := AskPassword("test-old", "Current passphrase:")
+	newPass, _ := AskPassword("test-new", "New passphrase:")
+	confirmPass, _ := AskPassword("test-confirm", "Confirm new passphrase:")
+
+	_ = oldPass
+	if newPass != confirmPass {
+		// This is the expected path
+		return
+	}
+	t.Fatal("expected password mismatch to be detected")
 }
