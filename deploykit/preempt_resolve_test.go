@@ -136,3 +136,37 @@ func TestMergedDeployTree_ProjectOnlyWhenNoLocalConfig(t *testing.T) {
 		t.Errorf("merged = %+v, want the project tree passed through", merged)
 	}
 }
+
+// TestMergedDeployTree_PerHostWinsOverCommittedNode proves the preempt arbiter's node view lets a
+// PER-HOST preemptible (a local deploy property) override the committed project profile that
+// lacks it — so `requires_exclusive` beds can preempt the operator's workstation only where the
+// operator opted in, without committing the flag. Relocated from
+// charly/deploy_preserve_test.go's TestGatherDeployNodesPerHostWins (#55 final-tail
+// split-by-assertion round, team-lead directive 2026-08-03): that test exercised this SAME merge
+// claim through two REAL LoadUnified reads (a project dir + a per-host XDG_CONFIG_HOME overlay);
+// the merge itself is a pure function of two already-materialized trees, with no loader
+// dependency at all, so this is a literal-fixture unit test — the charly-loader half (does
+// LoadUnified correctly parse a project's committed `vm: {from: ...}` node and a per-host
+// overlay's `preemptible:` override) is already covered generically by charly's own
+// node_loader_test.go + the wider VM test suite.
+func TestMergedDeployTree_PerHostWinsOverCommittedNode(t *testing.T) {
+	project := map[string]spec.BundleNode{
+		"cachyos-gpu": {Target: "vm", From: "cachyos-gpu"},
+	}
+	read := func() (*BundleConfig, error) {
+		return &BundleConfig{Bundle: map[string]spec.BundleNode{
+			"cachyos-gpu": {Preemptible: &spec.PreemptibleConfig{Holds: []string{"nvidia-gpu"}}},
+		}}, nil
+	}
+	merged := MergedDeployTree(project, "test", read)
+	node, ok := merged["cachyos-gpu"]
+	if !ok {
+		t.Fatal("cachyos-gpu not gathered")
+	}
+	if node.Preemptible == nil || len(node.Preemptible.Holds) != 1 || node.Preemptible.Holds[0] != "nvidia-gpu" {
+		t.Errorf("per-host preemptible did not win over committed project node: got %+v", node.Preemptible)
+	}
+	if node.From != "cachyos-gpu" { // committed field still present after the merge
+		t.Errorf("committed vm field lost in merge: got %q", node.From)
+	}
+}

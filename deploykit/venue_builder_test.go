@@ -4,15 +4,23 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // venue_builder_test.go — ported from charly/builder_venue_test.go and
 // charly/vm_builder_xhost_test.go (#118, coneB-p8bremainder): venueBuilderTarName,
 // BuilderStepImage, and RunVenueBuilderStep's unknown-builder routing moved here with the rest
-// of the venue-builder orchestration, so their coverage moves with it. The ONE sibling test that
-// stayed in charly (TestRunVenueBuilderStepRoutesHomeBuilders) needs a REAL project-loaded
-// BuilderDef fixture (LoadBuildConfigForBox) — a genuine core (project-loader) dependency this
-// package cannot replicate — so it exercises deploykit.RunVenueBuilderStep from charly instead.
+// of the venue-builder orchestration, so their coverage moves with it. charly's sibling test
+// (TestRunVenueBuilderStepRoutesHomeBuilders, vm_builder_xhost_test.go) still loads its
+// BuilderDef fixtures from the REAL committed build.yml via LoadBuildConfigForBox — a genuine
+// core (project-loader) dependency this package cannot replicate — but the ROUTING decision
+// itself (LocalPkg nil + a non-empty phase.install.host cell → the home-artifact builder path,
+// by OUTPUT SHAPE, never a hardcoded builder-name list) depends on nothing charly-specific: a
+// literal *Builder with the SAME shape routes identically regardless of who produced it (#55
+// final-tail split-by-assertion round, team-lead directive 2026-08-03 — see
+// TestRunVenueBuilderStepRoutesHomeBuilders_LiteralFixture below, which proves that decision
+// directly).
 
 // noopImageSeams are the resolveImage/ensureImage closures for a test that never reaches the
 // aur/LocalPkg branch (a pre-branch error, here).
@@ -49,6 +57,31 @@ func TestRunVenueBuilderStepUnknown(t *testing.T) {
 	err := RunVenueBuilderStep(context.Background(), &localPkgRecExec{}, "", resolveImage, ensureImage, s, EmitOpts{})
 	if err == nil || !strings.Contains(err.Error(), "phase.install.host") {
 		t.Errorf("unknown builder without skip should error pointing at the missing host cell, got %v", err)
+	}
+}
+
+// TestRunVenueBuilderStepRoutesHomeBuilders_LiteralFixture proves the D3 routing decision
+// (npm/pixi/cargo-shaped builders — LocalPkg nil + a phase.install.host cell — route to the
+// cross-host home-artifact builder, by OUTPUT SHAPE, never a hardcoded builder-name list) using
+// LITERAL BuilderDef fixtures instead of the real committed build.yml (charly's sibling
+// TestRunVenueBuilderStepRoutesHomeBuilders exercises the SAME routing against the real
+// config-driven host cells — the two are complementary, not duplicates: this one isolates the
+// routing decision itself). Verified via the dry-run path so no podman is spawned.
+func TestRunVenueBuilderStepRoutesHomeBuilders_LiteralFixture(t *testing.T) {
+	resolveImage, ensureImage := noopImageSeams()
+	for _, name := range []string{"npm", "pixi", "cargo"} {
+		s := &BuilderStep{
+			Builder:      name,
+			CandyName:    "x",
+			CandyDir:     "/tmp/x",
+			BuilderImage: "test-builder:latest",
+			BuilderDef: &spec.Builder{
+				Phases: &spec.PhaseSet{Install: &spec.PhaseTemplates{Host: "echo building " + name}},
+			},
+		}
+		if err := RunVenueBuilderStep(context.Background(), &localPkgRecExec{}, "", resolveImage, ensureImage, s, EmitOpts{DryRun: true}); err != nil {
+			t.Errorf("RunVenueBuilderStep(%s) dry-run routed to home-artifact builder errored: %v", name, err)
+		}
 	}
 }
 
