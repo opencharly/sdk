@@ -3,6 +3,8 @@ package kit
 import (
 	"reflect"
 	"testing"
+
+	"github.com/opencharly/spec/spec"
 )
 
 func TestExpandTestVars(t *testing.T) {
@@ -54,6 +56,10 @@ func TestIsRuntimeOnlyVar(t *testing.T) {
 		{"ENV_ANYTHING", true},
 		{"DEPLOY_NAME", true},
 		{"HOST:driver", true},
+		// The cross-member ${HOST:member:port} host-reachable-endpoint compound key
+		// (relocated from charly/check_members_test.go's TestIsRuntimeOnlyVar_Host,
+		// #55 decoupling cone) — same "HOST:" prefix classification, extra port segment.
+		{"HOST:web:8080", true},
 	}
 	for _, tc := range cases {
 		if got := IsRuntimeOnlyVar(tc.key); got != tc.want {
@@ -90,6 +96,39 @@ func TestExpandAnyVars_Nested(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("MISSING should be reported unresolved, got %v", missing)
+	}
+}
+
+// TestExpandOpVars (relocated from charly/checkspec_test.go's TestCheck_ExpandVars,
+// #55 K3 Cone 4): full-Op in-place expansion across all string-bearing fields.
+// PluginInput walks via ExpandAnyVars; Command is a plain #Op modifier field.
+func TestExpandOpVars(t *testing.T) {
+	c := spec.Op{
+		Plugin: "file",
+		PluginInput: map[string]any{
+			"file":  "${HOME}/.redis",
+			"owner": "${MISSING}",
+		},
+		Command: "redis-cli -p ${HOST_PORT:6379}",
+	}
+	env := map[string]string{
+		"HOME":           "/home/user",
+		"HOST_PORT:6379": "16379",
+	}
+	missing := ExpandOpVars(&c, env)
+
+	if got := c.PluginInput["file"]; got != "/home/user/.redis" {
+		t.Errorf("plugin_input.file = %q", got)
+	}
+	if c.Command != "redis-cli -p 16379" {
+		t.Errorf("Command = %q", c.Command)
+	}
+	if got := c.PluginInput["owner"]; got != "${MISSING}" {
+		t.Errorf("plugin_input.owner should remain unresolved: %q", got)
+	}
+	wantMissing := []string{"MISSING"}
+	if !reflect.DeepEqual(missing, wantMissing) {
+		t.Errorf("missing = %v, want %v", missing, wantMissing)
 	}
 }
 

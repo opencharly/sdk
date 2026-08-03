@@ -9,13 +9,17 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// bundle_derive.go — BundleConfig methods that DERIVE facts from the deploy state
-// (container names, occupied ports). They live with BundleConfig (P4 deploy state
-// model), reaching the naming + port mechanisms in sdk/kit.
+// bundle_derive.go — BundleConfig-derived facts (container names, occupied ports).
+// SPIKE (value-type relocation, #55 cluster 2): these were BundleConfig METHODS
+// before BundleConfig relocated to spec.BundleConfig — demoted to free functions
+// here (receiver → first parameter) because each reaches sdk/kit
+// (ContainerNameInstance/IsAutoPort/ParseHostPort), which spec can never import
+// (the method-set cycle the spike flagged). Call sites change from
+// `dc.DeployedContainerNames()` to `deploykit.DeployedContainerNames(dc)`.
 
 // DeployedContainerNames returns the sorted, de-duplicated container names for
 // every bundle entry.
-func (dc *BundleConfig) DeployedContainerNames() []string {
+func DeployedContainerNames(dc *BundleConfig) []string {
 	if dc == nil {
 		return nil
 	}
@@ -35,7 +39,7 @@ func (dc *BundleConfig) DeployedContainerNames() []string {
 
 // OccupiedHostPorts returns the set of host ports already claimed by bundle
 // entries other than excludeKey (resolved pins preferred over authored).
-func (dc *BundleConfig) OccupiedHostPorts(excludeKey string) map[int]bool {
+func OccupiedHostPorts(dc *BundleConfig, excludeKey string) map[int]bool {
 	out := map[int]bool{}
 	if dc == nil {
 		return out
@@ -83,7 +87,7 @@ func PodAwareEnvProvides(entries []spec.EnvProvideEntry, consumerKey, ctrName st
 
 // GlobalEnvForImage builds the env-var injection list for a consumer container
 // from the deploy state's env + MCP provides, filtered by the consumer's accepts.
-func (dc *BundleConfig) GlobalEnvForImage(consumerKey, ctrName string, acceptedEnv map[string]bool) []string {
+func GlobalEnvForImage(dc *BundleConfig, consumerKey, ctrName string, acceptedEnv map[string]bool) []string {
 	if dc == nil || dc.Provides == nil {
 		return nil
 	}
