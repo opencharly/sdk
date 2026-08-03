@@ -28,7 +28,7 @@ type CloudInitRuntimeParams = spec.CloudInitRuntimeParams
 //  2. Minimum packages: {openssh, curl, tar} unioned with user's Packages —
 //     delivered via the `packages:` cloud-config key on every distro EXCEPT
 //     pacman-family (arch/cachyos/manjaro/endeavouros), where it is instead
-//     PREPENDED to runcmd as `pacman -S --needed --noconfirm <union>` and the
+//     PREPENDED to runcmd as `pacman -Syu --needed --noconfirm <union>` (-Syu: fresh-image dbs are stale, mirrors rotate — a bare -S 404s; -Sy alone is the partial-upgrade hazard) and the
 //     `packages:` key is omitted entirely (R10 bed finding: cloud-init's own
 //     package-install module invokes `pacman -S` without `--needed`, so on an
 //     image that already ships the minimum set — e.g. every Arch cloud image —
@@ -140,7 +140,12 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 
 	runcmd := composeRunCmd(spec, ci)
 	if pacmanFamily && len(packages) > 0 {
-		pacmanCmd := "pacman -S --needed --noconfirm " + strings.Join(packages, " ")
+		// -Syu, not bare -S: a fresh cloud image's baked pacman database is weeks stale and
+		// the Arch mirrors rotate package files, so an un-refreshed install 404s the whole
+		// transaction (observed live: go-2:1.26.4 rotated out → rsync/go/git all failed to
+		// install on a fresh eval-host-vm disk). Bare -Sy (refresh without upgrade) is the
+		// documented Arch partial-upgrade hazard, so the refresh is the full -Syu.
+		pacmanCmd := "pacman -Syu --needed --noconfirm " + strings.Join(packages, " ")
 		runcmd = append([]any{pacmanCmd}, runcmd...)
 	}
 	if len(runcmd) > 0 {
