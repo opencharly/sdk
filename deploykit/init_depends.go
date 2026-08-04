@@ -84,15 +84,10 @@ func InjectInitDependsCandy(cfg *spec.Config, layers map[string]CandyModel, init
 		if !ok {
 			continue
 		}
-		// The AUTHORED list carries rich refs (`@github.com/…/supervisord:2026.1.1`); the candy map is
-		// keyed bare. ResolveBox normalizes with BareCandyRef on its way to resolved.Candy, so this
-		// pass — which reads the authored list directly — must normalize identically or a remote-ref
-		// composition would resolve to nothing and silently skip injection.
-		bare := make([]string, len(img.Candy))
-		for i, ref := range img.Candy {
-			bare[i] = spec.BareCandyRef(ref)
-		}
-		order, err := ResolveCandyOrder(bare, layers, nil)
+		// The AUTHORED list carries rich refs (`@github.com/…/supervisord:2026.1.1`) while the candy
+		// map is keyed bare; no normalization is needed here because ResolveCandyOrder already does
+		// it at its own chokepoint (ExpandCandy BareRef-normalizes every ref before lookup).
+		order, err := ResolveCandyOrder(img.Candy, layers, nil)
 		if err != nil {
 			continue
 		}

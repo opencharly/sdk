@@ -203,9 +203,9 @@ func TestInjectInitDependsCandy_TransitiveRequireSatisfies(t *testing.T) {
 // that resolves to nothing, which is exactly how the first cut of this pass silently no-opped on
 // box/fedora while every unit test stayed green.
 //
-// The AUTHORED list here carries the rich `@…:version` form the map keys never do, which is the
-// second half of the same trap: reading cfg without BareCandyRef-normalizing first would resolve the
-// composition to nothing and skip injection outright.
+// The AUTHORED list here also carries the rich `@…:version` form the map keys never do. That side
+// needs no handling in this pass: ResolveCandyOrder normalizes at its own chokepoint (ExpandCandy
+// BareRef-normalizes every ref before lookup), so the raw authored list resolves correctly.
 func TestInjectInitDependsCandy_RemoteKeyedInitCandy(t *testing.T) {
 	const remoteKey = "github.com/opencharly/charly/candy/supervisord"
 	layers := map[string]CandyModel{
