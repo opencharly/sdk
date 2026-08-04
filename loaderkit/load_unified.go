@@ -31,8 +31,9 @@ import (
 type LoadSeams struct {
 	// RunBootstrapPhase invokes every registered bootstrap-phase plugin
 	// (sdk.PhaseBootstrap) on the raw root config bytes, returning the
-	// (possibly transformed) bytes. A no-op seam returns data unchanged.
-	RunBootstrapPhase func(data []byte) []byte
+	// (possibly transformed) bytes. A leg failure is a hard error — never a
+	// silent fallback to the raw, un-bootstrapped bytes.
+	RunBootstrapPhase func(data []byte) ([]byte, error)
 	// WalkProject runs the kind-blind import/discover/namespace walk (the
 	// registered spec.ProjectWalker, reached via the host's spec.WalkSeams) and
 	// returns the generic spec.LoadedProject envelope — no materialize, no merge.
@@ -110,7 +111,11 @@ func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 	// root from disk (no bootstrap / early gate), exactly as before.
 	var rootData []byte
 	if data, rerr := os.ReadFile(root); rerr == nil {
-		data = seams.RunBootstrapPhase(data)
+		bootstrapped, berr := seams.RunBootstrapPhase(data)
+		if berr != nil {
+			return nil, true, fmt.Errorf("bootstrap phase: %w", berr)
+		}
+		data = bootstrapped
 		// EARLY schema-version gate: a below-HEAD (or absent) root `version:` is
 		// rejected with the `charly migrate` hint BEFORE any shape parsing — so
 		// an out-of-date config never reaches node-form CUE validation.

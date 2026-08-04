@@ -49,13 +49,20 @@ func (e *executorLoaderExecutor) LoaderThreaded() spec.Threaded {
 	return t
 }
 
-// RunBootstrapPhase runs the host's bootstrap-phase plugins over the raw root bytes ([]byte→[]byte).
-// A leg failure returns the bytes unchanged (the no-op-seam contract).
-func (e *executorLoaderExecutor) RunBootstrapPhase(data []byte) []byte {
-	if out, err := e.ex.HostBuild(e.ctx, "loader-bootstrap", data); err == nil {
-		return out
+// RunBootstrapPhase runs the host's bootstrap-phase plugins over the raw root bytes via the
+// "loader-bootstrap" HostBuild seam. A reverse-channel/IPC failure here used to fall back silently
+// to the raw, un-bootstrapped bytes — a genuine defect: LoadUnified would then proceed on an
+// un-bootstrapped root with zero visible signal (root-caused during the K-wave terminus RCA,
+// #20 — the confirmed regression in e0edc38d's vmPrepareVenue self-load swap). Every sibling
+// LoaderExecutor leg (WalkProject, MaterializeLoadedProject, ValidateAndroidDevices,
+// ValidatePreemptible) already propagates a HostBuild failure as a hard error; this leg now matches
+// that contract instead of being the one silent exception.
+func (e *executorLoaderExecutor) RunBootstrapPhase(data []byte) ([]byte, error) {
+	out, err := e.ex.HostBuild(e.ctx, "loader-bootstrap", data)
+	if err != nil {
+		return nil, fmt.Errorf("loader-bootstrap: %w", err)
 	}
-	return data
+	return out, nil
 }
 
 // WalkProject runs the host's kind-blind import/discover/namespace walk (spec.LoaderWalkRequest →
