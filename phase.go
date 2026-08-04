@@ -18,6 +18,7 @@ import (
 // time (today only the no-op candy/plugin-example-bootstrap registers here — neither migrate nor
 // egress is a bootstrap plugin; both are verb plugins invoked the normal way).
 const (
+	PhasePreflight = phase.PhasePreflight // before ANY command dispatch, before Kong even parses a project — compiled-in only.
 	PhaseBootstrap = phase.PhaseBootstrap // before config validation/migration; compiled-in only (no validated config exists yet to discover an out-of-process source).
 	PhaseSchema    = phase.PhaseSchema    // schema / migration phase
 	PhaseLoad      = phase.PhaseLoad      // config-load phase (kind decode, etc.)
