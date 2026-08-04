@@ -311,6 +311,24 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 				return nil, err
 			}
 		}
+		// Pull in any explicitly-requested namespace-qualified targets too (task #17 fix — mirrors
+		// buildkit.ResolveAllBox's own opts.RequestedBoxes handling for the RESOLVE half): the walk
+		// above only follows base/builder edges from ROOT-owned images, so an on-demand
+		// namespace-qualified target (`charly box generate fedora.check-pod`) that is not itself a
+		// base/builder of any root image is otherwise never visited — its own remote candy refs
+		// (including a back-ref to this very repo) are then silently never collected, and the later
+		// candy-order resolve fails "unknown candy" for a ref the fetch step skipped. A bare
+		// (non-qualified) requested name is already covered by the AllBoxNames() loop above.
+		for _, name := range opts.RequestedBoxes {
+			if _, _, qualified := spec.SplitNamespaceRef(name); !qualified {
+				continue
+			}
+			if _, tc, ok := cfg.ResolveBoxRef(name); ok {
+				if err := collectBox(tc, spec.LeafName(name)); err != nil {
+					return nil, err
+				}
+			}
+		}
 		for tplName, body := range cfg.Local {
 			r, rerr := seams.ResolveLocal(body)
 			if rerr != nil || r == nil {
