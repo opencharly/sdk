@@ -68,14 +68,14 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 	rp := &spec.ResolvedProject{Version: version}
 
 	resolvedBoxes := map[string]*buildkit.ResolvedBox{}
-	// The fresh-resolve arm is projected in a SECOND pass: the init `depends_candy:` injection
-	// (deploykit.InjectInitDependsCandy) is a whole-box-set pass that rewrites img.Candy, and
-	// deploykit.ProjectResolvedBox copies that list into the view — so every fresh box must be
-	// resolved BEFORE any of them is projected, or the view would carry the pre-injection list.
-	// The pre-resolved arm needs no such pass: the build path (candy/plugin-build's
-	// resolveBuildEngine) already injected before render-prep filled these boxes' caches.
-	var freshOrder []string
-	freshBoxes := map[string]*buildkit.ResolvedBox{}
+	// The init `depends_candy:` injection, on the AUTHORED config, BEFORE anything is resolved or
+	// projected. It writes the one source a box's composition has (cfg's candy list); the resolved
+	// boxes below, the ResolvedBoxView.Candy the projector copies, and every chain collector that
+	// re-walks cfg (ProjectBoxAggregates' ports/volumes/aliases, FillBoxPlans' plans) all derive
+	// from it, so one write covers them. It is idempotent, so the pre-resolved arm — whose boxes the
+	// build path (candy/plugin-build's resolveBuildEngine) already injected for before render-prep
+	// filled their caches — is unaffected by running it again here.
+	deploykit.InjectInitDependsCandy(cfg, layers, initCfg)
 	projectBox := func(name string, resolved *buildkit.ResolvedBox) {
 		view := deploykit.ProjectResolvedBox(resolved)
 		deploykit.ProjectBoxAggregates(cfg, layers, name, resolved, &view)
@@ -111,12 +111,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 			continue
 		}
 		resolvedBoxes[name] = resolved
-		freshBoxes[name] = resolved
-		freshOrder = append(freshOrder, name)
-	}
-	deploykit.InjectInitDependsCandy(freshBoxes, layers, initCfg)
-	for _, name := range freshOrder {
-		projectBox(name, freshBoxes[name])
+		projectBox(name, resolved)
 	}
 
 	// Auto-intermediates (#67): preResolvedBoxes (gen.Boxes) carries the auto-generated
