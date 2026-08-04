@@ -82,11 +82,14 @@ func RunPrivileged(p PrivilegedRun) error {
 		// Bind-mount a host directory at the parent of OutputPath so the script can write
 		// directly to OutputDest's location without a post-run copy step.
 		var err error
-		hostStaging, err = os.MkdirTemp("", "charly-priv-")
+		// Held for the privileged container's lifetime (pacstrap / bootc-install run for
+		// minutes and write into the bind-mount, never touching this root's own mtime).
+		var releaseStaging func()
+		hostStaging, releaseStaging, err = proc.MkdirTempHeld("", "charly-priv-")
 		if err != nil {
 			return fmt.Errorf("creating staging dir: %w", err)
 		}
-		proc.RegisterTempCleanup(hostStaging)
+		defer releaseStaging()
 		defer proc.UnregisterTempCleanup(hostStaging)
 		stagingDir = filepath.Dir(p.OutputPath)
 		args = append(args, "-v", fmt.Sprintf("%s:%s", hostStaging, stagingDir))
