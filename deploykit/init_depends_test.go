@@ -4,21 +4,24 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/spec/spec"
 )
 
-// init_depends_test.go — the two DIRECTIONS of the init `depends_candy:` injection. Both fail
-// without deploykit.InjectInitDependsCandy: the container direction because nothing would add the
-// supervisord candy, and the systemd direction because a target-BLIND fix (e.g. a blanket
-// `require: supervisord` on every service candy) would wrongly install supervisord onto a machine
-// venue that already has an init.
+// init_depends_test.go — the DIRECTIONS of the init `depends_candy:` injection. The container
+// direction fails without deploykit.InjectInitDependsCandy because nothing would add the supervisord
+// candy; the systemd direction fails under a target-BLIND fix (e.g. a blanket `require: supervisord`
+// on every service candy), which would wrongly install supervisord onto a machine venue that already
+// has an init.
+//
+// The pass writes the AUTHORED composition on *spec.Config — the one source a box's candy list has,
+// which the resolved boxes and every chain collector derive from — so these tests assert through
+// cfg. init_depends_collect_test.go covers the collector-facing half of the same property.
 
 // initVocabFixture mirrors the SHAPE of the real embedded init vocabulary (charly/charly.yml
 // `init:`): supervisord declares a depends_candy (a container carries no init), systemd declares
 // none (every machine venue already has one) and is gated on the preserve_user capability.
-func initVocabFixture() *buildkit.InitConfig {
-	return &buildkit.InitConfig{
+func initVocabFixture() *spec.InitConfig {
+	return &spec.InitConfig{
 		Init: map[string]*spec.ResolvedInit{
 			"supervisord": {
 				CandyFields:   []string{"service"},
@@ -64,6 +67,25 @@ func bootcCandy(name string) CandyModel {
 	)
 }
 
+// boxCfg builds a one-or-more-box *spec.Config from name → authored candy list.
+func boxCfg(boxes map[string][]string) *spec.Config {
+	cfg := &spec.Config{Box: spec.BoxMap{}}
+	for name, candies := range boxes {
+		cfg.SetBox(name, spec.BoxConfig{Base: "quay.io/fedora/fedora:43", Build: []string{"rpm"}, Candy: candies})
+	}
+	return cfg
+}
+
+// boxCandy reads a box's authored candy list back off the config.
+func boxCandy(t *testing.T, cfg *spec.Config, name string) []string {
+	t.Helper()
+	img, ok := cfg.BoxConfig(name)
+	if !ok {
+		t.Fatalf("box %q missing from config", name)
+	}
+	return img.Candy
+}
+
 // TestInjectInitDependsCandy_ContainerInjectsSupervisord is the CONTAINER direction: a box composing
 // a tool candy plus a service candy — and NOT naming an init — resolves to supervisord and must gain
 // the supervisord candy. This is the exact shape that used to build clean, bake
@@ -75,13 +97,11 @@ func TestInjectInitDependsCandy_ContainerInjectsSupervisord(t *testing.T) {
 		"sshd":        serviceCandy("sshd", "supervisord", "systemd"),
 		"supervisord": plainCandy("supervisord"),
 	}
-	boxes := map[string]*buildkit.ResolvedBox{
-		"tutorial-shell": {ResolvedBox: spec.ResolvedBox{Name: "tutorial-shell", Candy: []string{"ripgrep", "sshd"}}},
-	}
+	cfg := boxCfg(map[string][]string{"tutorial-shell": {"ripgrep", "sshd"}})
 
-	InjectInitDependsCandy(boxes, layers, initVocabFixture())
+	InjectInitDependsCandy(cfg, layers, initVocabFixture())
 
-	got := boxes["tutorial-shell"].Candy
+	got := boxCandy(t, cfg, "tutorial-shell")
 	if !slices.Contains(got, "supervisord") {
 		t.Fatalf("container composition must gain the supervisord candy, got %v", got)
 	}
@@ -101,13 +121,11 @@ func TestInjectInitDependsCandy_MachineVenueInjectsNothing(t *testing.T) {
 		"sshd":        serviceCandy("sshd", "supervisord", "systemd"),
 		"supervisord": plainCandy("supervisord"),
 	}
-	boxes := map[string]*buildkit.ResolvedBox{
-		"os": {ResolvedBox: spec.ResolvedBox{Name: "os", Candy: []string{"bootc-base", "sshd"}}},
-	}
+	cfg := boxCfg(map[string][]string{"os": {"bootc-base", "sshd"}})
 
-	InjectInitDependsCandy(boxes, layers, initVocabFixture())
+	InjectInitDependsCandy(cfg, layers, initVocabFixture())
 
-	got := boxes["os"].Candy
+	got := boxCandy(t, cfg, "os")
 	if slices.Contains(got, "supervisord") {
 		t.Fatalf("machine-venue composition must NOT gain the supervisord candy, got %v", got)
 	}
@@ -123,13 +141,11 @@ func TestInjectInitDependsCandy_NoServiceCandyInjectsNothing(t *testing.T) {
 		"ripgrep":     plainCandy("ripgrep"),
 		"supervisord": plainCandy("supervisord"),
 	}
-	boxes := map[string]*buildkit.ResolvedBox{
-		"tools": {ResolvedBox: spec.ResolvedBox{Name: "tools", Candy: []string{"ripgrep"}}},
-	}
+	cfg := boxCfg(map[string][]string{"tools": {"ripgrep"}})
 
-	InjectInitDependsCandy(boxes, layers, initVocabFixture())
+	InjectInitDependsCandy(cfg, layers, initVocabFixture())
 
-	if got := boxes["tools"].Candy; len(got) != 1 || got[0] != "ripgrep" {
+	if got := boxCandy(t, cfg, "tools"); len(got) != 1 || got[0] != "ripgrep" {
 		t.Fatalf("service-less box must be untouched, got %v", got)
 	}
 }
@@ -142,20 +158,20 @@ func TestInjectInitDependsCandy_Idempotent(t *testing.T) {
 		"sshd":        serviceCandy("sshd", "supervisord"),
 		"supervisord": plainCandy("supervisord"),
 	}
-	boxes := map[string]*buildkit.ResolvedBox{
-		"explicit": {ResolvedBox: spec.ResolvedBox{Name: "explicit", Candy: []string{"supervisord", "sshd"}}},
-		"implicit": {ResolvedBox: spec.ResolvedBox{Name: "implicit", Candy: []string{"sshd"}}},
-	}
-	cfg := initVocabFixture()
+	cfg := boxCfg(map[string][]string{
+		"explicit": {"supervisord", "sshd"},
+		"implicit": {"sshd"},
+	})
+	vocab := initVocabFixture()
 
-	InjectInitDependsCandy(boxes, layers, cfg)
-	if got := boxes["explicit"].Candy; len(got) != 2 {
+	InjectInitDependsCandy(cfg, layers, vocab)
+	if got := boxCandy(t, cfg, "explicit"); len(got) != 2 {
 		t.Fatalf("box already naming the init must be untouched, got %v", got)
 	}
 
-	first := append([]string(nil), boxes["implicit"].Candy...)
-	InjectInitDependsCandy(boxes, layers, cfg)
-	if got := boxes["implicit"].Candy; !slices.Equal(got, first) {
+	first := boxCandy(t, cfg, "implicit")
+	InjectInitDependsCandy(cfg, layers, vocab)
+	if got := boxCandy(t, cfg, "implicit"); !slices.Equal(got, first) {
 		t.Fatalf("second pass must be a no-op: %v -> %v", first, got)
 	}
 }
@@ -171,13 +187,11 @@ func TestInjectInitDependsCandy_TransitiveRequireSatisfies(t *testing.T) {
 			spec.CandyView{Name: "web-stack", InitSystems: map[string]bool{"supervisord": true}, Require: []string{"supervisord"}},
 		),
 	}
-	boxes := map[string]*buildkit.ResolvedBox{
-		"web": {ResolvedBox: spec.ResolvedBox{Name: "web", Candy: []string{"web-stack"}}},
-	}
+	cfg := boxCfg(map[string][]string{"web": {"web-stack"}})
 
-	InjectInitDependsCandy(boxes, layers, initVocabFixture())
+	InjectInitDependsCandy(cfg, layers, initVocabFixture())
 
-	if got := boxes["web"].Candy; len(got) != 1 || got[0] != "web-stack" {
+	if got := boxCandy(t, cfg, "web"); len(got) != 1 || got[0] != "web-stack" {
 		t.Fatalf("transitively-satisfied box must be untouched, got %v", got)
 	}
 }
@@ -188,28 +202,29 @@ func TestInjectInitDependsCandy_TransitiveRequireSatisfies(t *testing.T) {
 // injected entry must be the map KEY, not the bare name — injecting the name yields a dangling ref
 // that resolves to nothing, which is exactly how the first cut of this pass silently no-opped on
 // box/fedora while every unit test stayed green.
+//
+// The AUTHORED list here carries the rich `@…:version` form the map keys never do, which is the
+// second half of the same trap: reading cfg without BareCandyRef-normalizing first would resolve the
+// composition to nothing and skip injection outright.
 func TestInjectInitDependsCandy_RemoteKeyedInitCandy(t *testing.T) {
 	const remoteKey = "github.com/opencharly/charly/candy/supervisord"
 	layers := map[string]CandyModel{
 		"github.com/opencharly/charly/candy/sshd": serviceCandy("sshd", "supervisord"),
 		remoteKey: plainCandy("supervisord"),
 	}
-	boxes := map[string]*buildkit.ResolvedBox{
-		"tutorial-shell": {ResolvedBox: spec.ResolvedBox{
-			Name:  "tutorial-shell",
-			Candy: []string{"github.com/opencharly/charly/candy/sshd"},
-		}},
-	}
+	cfg := boxCfg(map[string][]string{
+		"tutorial-shell": {"@github.com/opencharly/charly/candy/sshd:2026.200.1200"},
+	})
 
-	InjectInitDependsCandy(boxes, layers, initVocabFixture())
+	InjectInitDependsCandy(cfg, layers, initVocabFixture())
 
-	got := boxes["tutorial-shell"].Candy
+	got := boxCandy(t, cfg, "tutorial-shell")
 	if !slices.Contains(got, remoteKey) {
 		t.Fatalf("remote init candy must be injected by its MAP KEY, got %v", got)
 	}
 	// A second pass must still be a no-op now that the presence check compares keys.
-	InjectInitDependsCandy(boxes, layers, initVocabFixture())
-	if got2 := boxes["tutorial-shell"].Candy; !slices.Equal(got2, got) {
+	InjectInitDependsCandy(cfg, layers, initVocabFixture())
+	if got2 := boxCandy(t, cfg, "tutorial-shell"); !slices.Equal(got2, got) {
 		t.Fatalf("second pass must be a no-op: %v -> %v", got, got2)
 	}
 }
@@ -223,13 +238,11 @@ func TestInjectInitDependsCandy_AbsentDependsCandyIsNoOp(t *testing.T) {
 	layers := map[string]CandyModel{
 		"svc": serviceCandy("svc", "supervisord"),
 	}
-	boxes := map[string]*buildkit.ResolvedBox{
-		"mybox": {ResolvedBox: spec.ResolvedBox{Name: "mybox", Candy: []string{"svc"}}},
-	}
+	cfg := boxCfg(map[string][]string{"mybox": {"svc"}})
 
-	InjectInitDependsCandy(boxes, layers, initVocabFixture())
+	InjectInitDependsCandy(cfg, layers, initVocabFixture())
 
-	if got := boxes["mybox"].Candy; len(got) != 1 || got[0] != "svc" {
+	if got := boxCandy(t, cfg, "mybox"); len(got) != 1 || got[0] != "svc" {
 		t.Fatalf("unreachable depends_candy must not be injected, got %v", got)
 	}
 }
@@ -237,13 +250,16 @@ func TestInjectInitDependsCandy_AbsentDependsCandyIsNoOp(t *testing.T) {
 // TestInjectInitDependsCandy_NilInitConfig pins the documented no-op for a project with no init
 // vocabulary at all.
 func TestInjectInitDependsCandy_NilInitConfig(t *testing.T) {
-	boxes := map[string]*buildkit.ResolvedBox{
-		"b": {ResolvedBox: spec.ResolvedBox{Name: "b", Candy: []string{"sshd"}}},
-	}
-	InjectInitDependsCandy(boxes, map[string]CandyModel{"sshd": serviceCandy("sshd", "supervisord")}, nil)
-	if got := boxes["b"].Candy; len(got) != 1 {
+	cfg := boxCfg(map[string][]string{"b": {"sshd"}})
+	InjectInitDependsCandy(cfg, map[string]CandyModel{"sshd": serviceCandy("sshd", "supervisord")}, nil)
+	if got := boxCandy(t, cfg, "b"); len(got) != 1 {
 		t.Fatalf("nil initCfg must be a no-op, got %v", got)
 	}
+}
+
+// TestInjectInitDependsCandy_NilConfig pins the other guard — a nil config is a no-op, not a panic.
+func TestInjectInitDependsCandy_NilConfig(t *testing.T) {
+	InjectInitDependsCandy(nil, map[string]CandyModel{"sshd": serviceCandy("sshd", "supervisord")}, initVocabFixture())
 }
 
 // TestFillNamespaceBoxViews_InjectsInitDependsCandy is the THIRD box-composition path, and the one

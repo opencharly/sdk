@@ -116,6 +116,16 @@ func SpecBoxes(m map[string]*buildkit.ResolvedBox) map[string]*spec.ResolvedBox 
 // before calling). Byte-equivalent to the former in-core inner block of the deleted host namespaced-box fill.
 func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReader, initCfg *spec.InitConfig, child, calver, dir string, opts spec.ResolveOpts, rp *spec.ResolvedProject) {
 	bkopts := specToBuildkit(opts)
+	// The init `depends_candy:` injection, for the NAMESPACED box set. This is the THIRD box-
+	// composition path (beside candy/plugin-build's resolveBuildEngine and
+	// loaderkit.ProjectResolvedProject's fresh-box loop) and it needs the pass just as much: an
+	// import namespace's boxes are resolved from the namespace's OWN config here, so they never
+	// pass through either of the other two seams. Without it a namespaced box composing service
+	// candies would get ai.opencharly.init baked by the RenderPrepBox below — the init RESOLVED —
+	// while its init candy was never added, which is exactly the defect this pass exists to close.
+	// MUST run BEFORE the resolve loop: the pass writes the authored composition on `sub`, and the
+	// resolved boxes (and every chain collector that re-walks `sub`) derive from it.
+	InjectInitDependsCandy(sub, nsLayers, initCfg)
 	subBoxes := map[string]*buildkit.ResolvedBox{}
 	for _, name := range sub.AllBoxNames() {
 		img, ok := sub.BoxConfig(name)
@@ -131,15 +141,6 @@ func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReade
 	if len(subBoxes) == 0 {
 		return
 	}
-	// The init `depends_candy:` injection, for the NAMESPACED box set. This is the THIRD box-
-	// composition path (beside candy/plugin-build's resolveBuildEngine and
-	// loaderkit.ProjectResolvedProject's fresh-box loop) and it needs the pass just as much: an
-	// import namespace's boxes are resolved from the namespace's OWN config here, so they never
-	// pass through either of the other two seams. Without it a namespaced box composing service
-	// candies would get ai.opencharly.init baked by the RenderPrepBox below — the init RESOLVED —
-	// while its init candy was never added, which is exactly the defect this pass exists to close.
-	// MUST run before the render-prep loop so RenderCandyOrder/BakedMetadata see the injected candy.
-	InjectInitDependsCandy(subBoxes, nsLayers, initCfg)
 	tempGen := NewRenderGenerator()
 	tempGen.Config = sub
 	tempGen.Candies = nsLayers
