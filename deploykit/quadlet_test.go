@@ -703,7 +703,7 @@ func TestLocalizePort(t *testing.T) {
 }
 
 // TestQuadletWithBindMounts / TestQuadletWithEncryptedBindMountsKeyring /
-// TestQuadletWithEncryptedBindMountsNonKeyring / TestQuadletWithoutEncryptedMounts relocated
+// TestQuadletWithoutEncryptedMounts relocated
 // from charly/enc_test.go (#55 K4 cone3): pure GenerateQuadlet/QuadletConfig/ResolvedBindMount
 // coverage with zero charly dependency — the encrypted-BindMounts (vs the plain-Volumes
 // TestGenerateQuadletWithVolumes above) crypto-service/keyring-backend paths had no existing
@@ -742,7 +742,6 @@ func TestQuadletWithEncryptedBindMountsKeyring(t *testing.T) {
 		},
 		CharlyBin:       "/usr/local/bin/charly",
 		EncryptedMounts: true,
-		KeyringBackend:  true,
 	}
 
 	got := GenerateQuadlet(cfg)
@@ -761,36 +760,6 @@ func TestQuadletWithEncryptedBindMountsKeyring(t *testing.T) {
 	}
 	if !strings.Contains(got, "Volume=/data/enc/charly-myapp-secrets/plain:/home/user/.secrets") {
 		t.Errorf("expected Volume for encrypted bind mount, got:\n%s", got)
-	}
-}
-
-func TestQuadletWithEncryptedBindMountsNonKeyring(t *testing.T) {
-	cfg := QuadletConfig{
-		BoxName:     "myapp",
-		ImageRef:    "ghcr.io/test/myapp:latest",
-		Home:        "/home/user/project",
-		BindAddress: "127.0.0.1",
-		BindMounts: []ResolvedBindMount{
-			{Name: "secrets", HostPath: "/data/enc/charly-myapp-secrets/plain", ContPath: "/home/user/.secrets", Encrypted: true},
-		},
-		CharlyBin:       "/usr/local/bin/charly",
-		EncryptedMounts: true,
-		KeyringBackend:  false, // config (non-keyring) backend
-	}
-
-	got := GenerateQuadlet(cfg)
-
-	// ExecStartPre still present as safety guard
-	if !strings.Contains(got, "ExecStartPre=/usr/local/bin/charly config mount myapp") {
-		t.Errorf("expected ExecStartPre for encrypted mounts, got:\n%s", got)
-	}
-	// Non-keyring: default timeout (not 0)
-	if strings.Contains(got, "TimeoutStartSec=0") {
-		t.Errorf("should NOT have TimeoutStartSec=0 for non-keyring backend, got:\n%s", got)
-	}
-	// Non-keyring: NO auto-start at boot (requires charly start)
-	if strings.Contains(got, "WantedBy=default.target") {
-		t.Errorf("should NOT have WantedBy for non-keyring encrypted service, got:\n%s", got)
 	}
 }
 

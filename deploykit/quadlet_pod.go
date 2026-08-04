@@ -55,11 +55,7 @@ func GeneratePodQuadlet(cfg QuadletConfig) string {
 	}
 
 	b.WriteString("\n[Install]\n")
-	if cfg.EncryptedMounts && !cfg.KeyringBackend {
-		b.WriteString("# Encrypted volumes require 'charly start' (no keyring auto-unlock)\n")
-	} else {
-		b.WriteString("WantedBy=default.target\n")
-	}
+	b.WriteString("WantedBy=default.target\n")
 
 	return b.String()
 }

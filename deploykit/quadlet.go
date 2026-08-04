@@ -88,7 +88,6 @@ type QuadletConfig struct {
 	Entrypoint      []string
 	CharlyBin       string
 	EncryptedMounts bool
-	KeyringBackend  bool
 	PodName         string
 	Sidecar         []ResolvedSidecar
 }
@@ -266,11 +265,8 @@ func emitServiceSection(b *strings.Builder, cfg QuadletConfig) {
 			imgArg = cfg.BoxName + " -i " + cfg.Instance
 		}
 		fmt.Fprintf(b, "ExecStartPre=%s config mount %s\n", cfg.CharlyBin, imgArg)
-		if cfg.KeyringBackend {
-			b.WriteString("TimeoutStartSec=0\n")
-		} else {
-			b.WriteString("TimeoutStartSec=900\n")
-		}
+		// No deadline: the unit starts at boot and waits for the keyring to unlock.
+		b.WriteString("TimeoutStartSec=0\n")
 	} else {
 		b.WriteString("TimeoutStartSec=900\n")
 	}
@@ -313,11 +309,7 @@ func emitServiceSection(b *strings.Builder, cfg QuadletConfig) {
 
 func emitInstallSection(b *strings.Builder, cfg QuadletConfig) {
 	b.WriteString("\n[Install]\n")
-	if cfg.EncryptedMounts && !cfg.KeyringBackend {
-		b.WriteString("# Encrypted volumes require 'charly start' (no keyring auto-unlock)\n")
-	} else {
-		b.WriteString("WantedBy=default.target\n")
-	}
+	b.WriteString("WantedBy=default.target\n")
 }
 
 // ---- pure helpers (relocated from charly core; exported for the core aliases) ----
