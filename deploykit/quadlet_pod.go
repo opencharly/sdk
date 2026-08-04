@@ -54,8 +54,9 @@ func GeneratePodQuadlet(cfg QuadletConfig) string {
 		fmt.Fprintf(&b, "PodmanArgs=-p %s\n", LocalizePort(port, cfg.BindAddress))
 	}
 
-	b.WriteString("\n[Install]\n")
-	b.WriteString("WantedBy=default.target\n")
+	// One emitter, both unit kinds (R3): the pod owns the app container's lifecycle, so its
+	// [Install] must answer the autostart question identically to the .container's.
+	emitInstallSection(&b, cfg)
 
 	return b.String()
 }

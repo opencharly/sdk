@@ -702,12 +702,12 @@ func TestLocalizePort(t *testing.T) {
 	}
 }
 
-// TestQuadletWithBindMounts / TestQuadletWithEncryptedBindMountsKeyring /
+// TestQuadletWithBindMounts / TestQuadletEncryptedAutostartCapability /
 // TestQuadletWithoutEncryptedMounts relocated
 // from charly/enc_test.go (#55 K4 cone3): pure GenerateQuadlet/QuadletConfig/ResolvedBindMount
 // coverage with zero charly dependency — the encrypted-BindMounts (vs the plain-Volumes
-// TestGenerateQuadletWithVolumes above) crypto-service/keyring-backend paths had no existing
-// sdk-side coverage.
+// TestGenerateQuadletWithVolumes above) crypto-service/autostart-capability paths had no
+// existing sdk-side coverage.
 
 func TestQuadletWithBindMounts(t *testing.T) {
 	cfg := QuadletConfig{
@@ -731,36 +731,80 @@ func TestQuadletWithBindMounts(t *testing.T) {
 	}
 }
 
-func TestQuadletWithEncryptedBindMountsKeyring(t *testing.T) {
-	cfg := QuadletConfig{
-		BoxName:     "myapp",
-		ImageRef:    "ghcr.io/test/myapp:latest",
-		Home:        "/home/user/project",
-		BindAddress: "127.0.0.1",
-		BindMounts: []ResolvedBindMount{
-			{Name: "secrets", HostPath: "/data/enc/charly-myapp-secrets/plain", ContPath: "/home/user/.secrets", Encrypted: true},
-		},
-		CharlyBin:       "/usr/local/bin/charly",
-		EncryptedMounts: true,
+// TestQuadletEncryptedAutostartCapability asserts BOTH arms of the autostart decision, for
+// BOTH unit kinds. An encrypted deploy whose passphrase is obtainable unattended is enabled at
+// boot and waits without a deadline; one whose passphrase needs a human carries no [Install]
+// target and keeps the ordinary start timeout. The two arms differ only in UnattendedUnlock,
+// which is what makes each assertion a mutation gate on that field rather than on the fixture.
+func TestQuadletEncryptedAutostartCapability(t *testing.T) {
+	base := func(unattended bool) QuadletConfig {
+		return QuadletConfig{
+			BoxName:     "myapp",
+			ImageRef:    "ghcr.io/test/myapp:latest",
+			Home:        "/home/user/project",
+			BindAddress: "127.0.0.1",
+			BindMounts: []ResolvedBindMount{
+				{Name: "secrets", HostPath: "/data/enc/charly-myapp-secrets/plain", ContPath: "/home/user/.secrets", Encrypted: true},
+			},
+			CharlyBin:        "/usr/local/bin/charly",
+			EncryptedMounts:  true,
+			UnattendedUnlock: unattended,
+		}
 	}
 
-	got := GenerateQuadlet(cfg)
+	t.Run("unattended-capable/container", func(t *testing.T) {
+		got := GenerateQuadlet(base(true))
 
-	// ExecStartPre mounts encrypted volumes before container starts
-	if !strings.Contains(got, "ExecStartPre=/usr/local/bin/charly config mount myapp") {
-		t.Errorf("expected ExecStartPre for encrypted mounts, got:\n%s", got)
-	}
-	// Keyring backend: wait indefinitely for keyring unlock
-	if !strings.Contains(got, "TimeoutStartSec=0") {
-		t.Errorf("expected TimeoutStartSec=0 for keyring backend, got:\n%s", got)
-	}
-	// Keyring backend: auto-start at boot (waits for keyring)
-	if !strings.Contains(got, "WantedBy=default.target") {
-		t.Errorf("expected WantedBy=default.target for keyring backend, got:\n%s", got)
-	}
-	if !strings.Contains(got, "Volume=/data/enc/charly-myapp-secrets/plain:/home/user/.secrets") {
-		t.Errorf("expected Volume for encrypted bind mount, got:\n%s", got)
-	}
+		if !strings.Contains(got, "ExecStartPre=/usr/local/bin/charly config mount myapp") {
+			t.Errorf("expected ExecStartPre for encrypted mounts, got:\n%s", got)
+		}
+		if !strings.Contains(got, "TimeoutStartSec=0") {
+			t.Errorf("expected TimeoutStartSec=0 when the key is obtainable, got:\n%s", got)
+		}
+		if !strings.Contains(got, "WantedBy=default.target") {
+			t.Errorf("expected WantedBy=default.target when the key is obtainable, got:\n%s", got)
+		}
+		if !strings.Contains(got, "Volume=/data/enc/charly-myapp-secrets/plain:/home/user/.secrets") {
+			t.Errorf("expected Volume for encrypted bind mount, got:\n%s", got)
+		}
+	})
+
+	t.Run("human-gated/container", func(t *testing.T) {
+		got := GenerateQuadlet(base(false))
+
+		// The mount guard survives — it is what produces the actionable error on an
+		// explicit `charly start`.
+		if !strings.Contains(got, "ExecStartPre=/usr/local/bin/charly config mount myapp") {
+			t.Errorf("expected ExecStartPre to survive on the human-gated arm, got:\n%s", got)
+		}
+		if strings.Contains(got, "WantedBy=default.target") {
+			t.Errorf("must NOT autostart a unit whose key needs a human, got:\n%s", got)
+		}
+		if strings.Contains(got, "TimeoutStartSec=0") {
+			t.Errorf("must NOT wait without a deadline for a key that needs a human, got:\n%s", got)
+		}
+		if !strings.Contains(got, "TimeoutStartSec=900") {
+			t.Errorf("expected the ordinary start timeout on the human-gated arm, got:\n%s", got)
+		}
+	})
+
+	// The pod unit owns the app container's lifecycle, so it must answer the same question
+	// the same way — this is the second [Install] site the original sweep missed.
+	t.Run("unattended-capable/pod", func(t *testing.T) {
+		cfg := base(true)
+		cfg.PodName = "charly-myapp"
+		if got := GeneratePodQuadlet(cfg); !strings.Contains(got, "WantedBy=default.target") {
+			t.Errorf("expected pod WantedBy=default.target when the key is obtainable, got:\n%s", got)
+		}
+	})
+
+	t.Run("human-gated/pod", func(t *testing.T) {
+		cfg := base(false)
+		cfg.PodName = "charly-myapp"
+		if got := GeneratePodQuadlet(cfg); strings.Contains(got, "WantedBy=default.target") {
+			t.Errorf("must NOT autostart a pod whose key needs a human, got:\n%s", got)
+		}
+	})
 }
 
 func TestQuadletWithoutEncryptedMounts(t *testing.T) {

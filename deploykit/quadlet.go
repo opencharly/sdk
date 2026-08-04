@@ -88,8 +88,14 @@ type QuadletConfig struct {
 	Entrypoint      []string
 	CharlyBin       string
 	EncryptedMounts bool
-	PodName         string
-	Sidecar         []ResolvedSidecar
+	// UnattendedUnlock reports that this deploy's encryption passphrase can be obtained with
+	// no human running a command, so the unit may be enabled at boot and wait for its key.
+	// Computed by the secret layer (deploykit.EncPassphraseUnattended) — this package never
+	// learns which backend supplied the answer. Only consulted when EncryptedMounts is set;
+	// a deploy without encrypted volumes has nothing to unlock and always autostarts.
+	UnattendedUnlock bool
+	PodName          string
+	Sidecar          []ResolvedSidecar
 }
 
 // GenerateQuadlet produces the contents of a quadlet .container file. Pure.
@@ -265,8 +271,15 @@ func emitServiceSection(b *strings.Builder, cfg QuadletConfig) {
 			imgArg = cfg.BoxName + " -i " + cfg.Instance
 		}
 		fmt.Fprintf(b, "ExecStartPre=%s config mount %s\n", cfg.CharlyBin, imgArg)
-		// No deadline: the unit starts at boot and waits for the keyring to unlock.
-		b.WriteString("TimeoutStartSec=0\n")
+		if cfg.UnattendedUnlock {
+			// The key is known to be obtainable, so waiting indefinitely is correct: the unit
+			// starts at boot and blocks in start-pre until the secret store serves it.
+			b.WriteString("TimeoutStartSec=0\n")
+		} else {
+			// Obtaining the key needs a human, so an unbounded wait is not justified — this
+			// unit only ever runs from an explicit `charly start`.
+			b.WriteString("TimeoutStartSec=900\n")
+		}
 	} else {
 		b.WriteString("TimeoutStartSec=900\n")
 	}
@@ -307,8 +320,17 @@ func emitServiceSection(b *strings.Builder, cfg QuadletConfig) {
 	}
 }
 
+// emitInstallSection decides whether systemd may start this unit at boot. The question is not
+// which secret backend is configured — it is whether this deploy's passphrase can be obtained
+// with no human present. A unit whose key needs a human must NOT carry an [Install] target:
+// enabling it would make it fail on every boot, forever.
 func emitInstallSection(b *strings.Builder, cfg QuadletConfig) {
 	b.WriteString("\n[Install]\n")
+	if cfg.EncryptedMounts && !cfg.UnattendedUnlock {
+		b.WriteString("# No autostart: this deploy's encryption passphrase cannot be obtained\n")
+		b.WriteString("# without a human, so the unit is started explicitly with 'charly start'.\n")
+		return
+	}
 	b.WriteString("WantedBy=default.target\n")
 }
 

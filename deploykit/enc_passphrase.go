@@ -49,6 +49,31 @@ func ResolveEncPassphrase(boxName string, autoGenerate bool, cred CredentialAcce
 	return AskPassword("charly-"+boxName, "Passphrase for charly-"+boxName+":")
 }
 
+// EncPassphraseUnattended reports whether a box's gocryptfs passphrase can be obtained with
+// no human running a command — the single capability the quadlet emitters consume to decide
+// whether a unit may be enabled at boot. It asks a property, never a backend name: a backend
+// added tomorrow qualifies on the same merit, and this package never learns its name.
+//
+// It asks the resolver EXACTLY the question the boot path will ask. ResolveEncPassphraseForMount
+// resolves `charly/enc/<box>` with an empty envVar under systemd, so the env override is not
+// consulted there and must not be consulted here either — a mismatch would promise autostart on
+// a value the unit cannot see.
+//
+//   - a non-empty value            → the passphrase is in hand right now; nothing to wait for.
+//   - source "locked"              → a Secret Service is present and holds the collection. It
+//     unlocks when the operator logs in, with no charly command
+//     involved, and ResolveEncPassphraseForMount waits for exactly
+//     that. This is the canonical Secret Service autostart path.
+//   - source "default"             → the passphrase is stored nowhere. Enabling the unit would
+//     fail at every boot, forever.
+//   - source "unavailable"         → the backend could not be probed, so the capability cannot
+//     be established. Refuse rather than enable a unit that may
+//     never start.
+func EncPassphraseUnattended(boxName string, cred CredentialAccess) bool {
+	value, source := cred.Resolve("", "charly/enc", boxName, "")
+	return value != "" || source == "locked"
+}
+
 // EncMountDeadline bounds how long ResolveEncPassphraseForMount will retry transient
 // failures (source="unavailable") before giving up. source="locked" does NOT use this — it
 // uses event-driven DBus signal waiting with no deadline (see the caller-supplied waiter).
@@ -68,8 +93,9 @@ var EncMountPollPeriod = 5 * time.Second
 //     with an actionable error — no amount of polling will conjure a credential that was
 //     never stored.
 //
-// Explicit non-keyring backends under systemd: try resolve once, fail fast if not found. No
-// polling.
+// Every supported backend waits: `config` was removed as a selectable secret_backend, so the
+// resolved backend is always "", "auto" or "keyring", and there is no fail-fast-without-polling
+// second path to fork on.
 //
 // Interactive callers fall back to ResolveEncPassphrase which can prompt.
 //
@@ -98,19 +124,6 @@ func ResolveEncPassphraseForMountWithResolver(
 	reset func(),
 	waiter func(ctx context.Context, boxName string, resolver func() (string, string), reset func()) (string, string, error),
 ) (string, error) {
-	usesWaitingBackend := backend == "" || backend == "auto" || backend == "keyring"
-
-	if !usesWaitingBackend {
-		val, src := resolver()
-		if val != "" {
-			return val, nil
-		}
-		return "", fmt.Errorf(
-			"encryption passphrase not found for charly/enc/%s (backend=%s, source=%s); "+
-				"store with `charly secrets set charly/enc %s` or switch backend with `charly settings set secret_backend auto`",
-			boxName, backend, src, boxName)
-	}
-
 	// Initial probe.
 	val, src := resolver()
 	if val != "" {
@@ -148,8 +161,7 @@ func EncNotStoredError(boxName, backend, src string) error {
 		"encryption passphrase not available for charly/enc/%s "+
 			"(backend=%s, source=%s). "+
 			"Remediation: run `charly doctor` to check keyring health, "+
-			"store with `charly secrets set charly/enc %s`, "+
-			"or switch backend with `charly settings set secret_backend config`",
+			"or store it with `charly secrets set charly/enc %s`",
 		boxName, backend, src, boxName)
 }
 
@@ -175,8 +187,7 @@ func RetryUnavailable(
 				"encryption passphrase not available for charly/enc/%s after %d attempt(s) "+
 					"(backend=%s, source=%s, waited up to %v). "+
 					"Remediation: run `charly doctor` to check keyring health, "+
-					"store with `charly secrets set charly/enc %s`, "+
-					"or switch backend with `charly settings set secret_backend config`",
+					"or store it with `charly secrets set charly/enc %s`",
 				boxName, attempt, backend, src, EncMountDeadline, boxName)
 		}
 		fmt.Fprintf(os.Stderr,

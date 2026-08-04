@@ -20,6 +20,48 @@ func shrinkEncMountTimings(_ *testing.T) func() {
 	}
 }
 
+// TestEncPassphraseUnattended covers the capability the quadlet emitters consume. The
+// classification is by SOURCE, never by backend name — a backend added tomorrow reaching any of
+// these sources gets the same answer without this package changing.
+func TestEncPassphraseUnattended(t *testing.T) {
+	cases := []struct {
+		name   string
+		value  string
+		source string
+		want   bool
+	}{
+		{"value in hand from the keyring", "the-secret", "keyring", true},
+		{"value in hand from the config file", "the-secret", "config", true},
+		{"keyring present but locked — unlocks at login, no command", "", "locked", true},
+		{"stored nowhere — enabling would fail at every boot", "", "default", false},
+		{"backend unprobeable — capability cannot be established", "", "unavailable", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotEnvVar, gotService, gotKey string
+			cred := CredentialAccess{
+				Resolve: func(envVar, service, key, defaultVal string) (string, string) {
+					gotEnvVar, gotService, gotKey = envVar, service, key
+					return tc.value, tc.source
+				},
+			}
+			if got := EncPassphraseUnattended("myapp", cred); got != tc.want {
+				t.Errorf("EncPassphraseUnattended(value=%q, source=%q) = %v, want %v",
+					tc.value, tc.source, got, tc.want)
+			}
+			// It must ask EXACTLY what the boot path asks. ResolveEncPassphraseForMount
+			// resolves with an empty envVar under systemd, so consulting an env override
+			// here would promise autostart on a value the unit cannot see.
+			if gotEnvVar != "" {
+				t.Errorf("envVar = %q, want empty (the boot path does not consult env)", gotEnvVar)
+			}
+			if gotService != "charly/enc" || gotKey != "myapp" {
+				t.Errorf("resolved (%q, %q), want (\"charly/enc\", \"myapp\")", gotService, gotKey)
+			}
+		})
+	}
+}
+
 // TestResolveEncPassphraseForMount_Default_FailsFast: src="default" under a
 // keyring-capable backend fails immediately with no polling — "default" is
 // terminal (credential not stored anywhere).
@@ -139,33 +181,6 @@ func TestResolveEncPassphraseForMount_Success_ReturnsImmediately(t *testing.T) {
 	}
 	if resolveCalls != 1 {
 		t.Errorf("resolveCalls = %d, want 1", resolveCalls)
-	}
-}
-
-// TestResolveEncPassphraseForMount_ExplicitConfigBackend_FailsFast: with
-// backend="config", the function skips the poll loop entirely and fails on
-// first miss.
-func TestResolveEncPassphraseForMount_ExplicitConfigBackend_FailsFast(t *testing.T) {
-	defer shrinkEncMountTimings(t)()
-	resolveCalls := 0
-	resolver := func() (string, string) {
-		resolveCalls++
-		return "", "default"
-	}
-	start := time.Now()
-	_, err := ResolveEncPassphraseForMountWithResolver("testimg", "config", resolver, nil, nil)
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if resolveCalls != 1 {
-		t.Errorf("resolveCalls = %d, want 1", resolveCalls)
-	}
-	if elapsed > 20*time.Millisecond {
-		t.Errorf("elapsed = %v, want near-zero", elapsed)
-	}
-	if !strings.Contains(err.Error(), "backend=config") {
-		t.Errorf("err = %v, want 'backend=config'", err)
 	}
 }
 
