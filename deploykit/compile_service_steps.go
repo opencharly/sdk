@@ -6,12 +6,22 @@ package deploykit
 //
 // The filtering/scope/packaged-vs-custom decision logic is FULLY PORTABLE (a pure
 // function of the candy's service: list + the target distro/init) and lives here
-// directly. ONLY rendering a systemd CUSTOM entry's unit text needs the host: the
-// former charly/service_render.go:RenderService wraps TWO registry consults a plugin
-// cannot do itself (candy/plugin-init's OpResolve + the M16 egress gate), so that ONE
-// case reaches back via the "render-service" HostBuild seam
-// (spec.RenderServiceRequest/Reply, sdk/schema/seam.cue) — the packaged-unit case and
-// the supervisord case never touch the wire at all.
+// directly. Rendering a systemd CUSTOM entry's unit text no longer needs a host round
+// trip at all (#55 W3 B4): the former charly/service_render.go:RenderService's "TWO
+// registry consults a plugin cannot do itself" framing was stale — kind:init's
+// OpResolve and verb:egress's OpValidate are BOTH compiled-in (charly.yml), so any
+// connected plugin reaches them via a direct InvokeProvider peer-dispatch call. The
+// former "render-service" HostBuild CLI-reentry seam (charly/host_build_render_service.go)
+// is DELETED. renderServiceViaSeam below is a THIN wrapper over
+// render_generator_from_project.go's renderSeamCaller.renderService — an R3 find made
+// mid-cutover: that caller ALREADY implemented this EXACT InvokeProvider sequence for
+// the build-time init-assembly path (the K3 render-seam production move), so this
+// deploy-time call site reuses it rather than duplicating the marshal/dispatch/decode
+// boilerplate a second time in the same package. R8 byte-proof:
+// render_service_seam_roundtrip_test.go drives this SAME rendering sequence against
+// REAL compiled-in candy/plugin-init + candy/plugin-egress providers (not canned
+// replies) — byte-identical output confirmed before/after this cutover (team-lead's
+// bed proof, check-local-vm, independently re-verifies the live end-to-end path).
 //
 // The former LoadBuildConfigForBox fallback (a per-call lazy lookup "for a caller that
 // compiles outside the deploy-compile seam") is DELETED, not ported: it was already
@@ -24,16 +34,11 @@ package deploykit
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/opencharly/sdk"
 	"github.com/opencharly/spec/spec"
 )
-
-// renderServiceSeamKind names the HostBuild seam charly/host_build_render_service.go
-// serves.
-const renderServiceSeamKind = "render-service"
 
 // CompileServiceSteps lowers a candy's service: list into install steps.
 func CompileServiceSteps(ctx context.Context, ex *sdk.Executor, layer CandyModel, img *ResolvedBox, hostCtx HostContext) ([]InstallStep, error) {
@@ -124,35 +129,19 @@ func CompileServiceSteps(ctx context.Context, ex *sdk.Executor, layer CandyModel
 	return out, nil
 }
 
-// renderServiceViaSeam renders a ServiceEntry into a RenderedService via the
-// "render-service" HostBuild seam — the ONE genuinely host-only piece of the former
-// charly/service_render.go:RenderService (candy/plugin-init's OpResolve + the M16
-// egress gate). A nil def or nil ex is a caller bug (CompileServiceSteps only calls
-// this when both are already known non-nil); returns a clear error rather than
-// panicking.
+// renderServiceViaSeam renders a ServiceEntry into a RenderedService (#55 W3 B4 — no host
+// round-trip, no HostBuild CLI-reentry). It is a THIN wrapper over renderSeamCaller.renderService
+// (render_generator_from_project.go) — the R3 discovery that made this cutover a clean win rather
+// than a second copy: that caller ALREADY implements this EXACT sequence (kind:init's OpResolve
+// via direct InvokeProvider, then verb:egress's OpValidate on the rendered unit text) for the
+// build-time init-assembly path (K3 render-seam production move); this deploy-time call site
+// reuses it verbatim instead of duplicating the marshal/dispatch/decode boilerplate a second time
+// in the same package. A nil def or nil ex is a caller bug (CompileServiceSteps only calls this
+// when both are already known non-nil) — renderSeamCaller.renderService returns a clear error
+// rather than panicking either way.
 func renderServiceViaSeam(ctx context.Context, ex *sdk.Executor, entry *spec.ServiceEntry, def *spec.ResolvedInit, rctx spec.ServiceRenderContext) (*spec.RenderedService, error) {
-	if entry == nil {
-		return nil, fmt.Errorf("renderServiceViaSeam: nil entry")
-	}
-	if def == nil {
-		return nil, fmt.Errorf("renderServiceViaSeam: nil init def")
-	}
 	if ex == nil {
 		return nil, fmt.Errorf("render-service: no host reverse channel (command not compiled-in?)")
 	}
-	reqJSON, err := json.Marshal(spec.RenderServiceRequest{Entry: *entry, Init: *def, Ctx: rctx})
-	if err != nil {
-		return nil, fmt.Errorf("render-service: marshal request: %w", err)
-	}
-	resJSON, err := ex.HostBuild(ctx, renderServiceSeamKind, reqJSON)
-	if err != nil {
-		return nil, fmt.Errorf("render-service: %w", err)
-	}
-	var reply spec.RenderServiceReply
-	if len(resJSON) > 0 {
-		if err := json.Unmarshal(resJSON, &reply); err != nil {
-			return nil, fmt.Errorf("render-service: decode reply: %w", err)
-		}
-	}
-	return reply.Rendered, nil
+	return renderSeamCaller{ctx: ctx, ex: ex}.renderService(entry, def, rctx)
 }

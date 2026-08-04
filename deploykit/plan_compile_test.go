@@ -73,15 +73,17 @@ func compileTestOpInContext(c *spec.Op, ctx spec.ExecContext) bool {
 // and tasks_emit_test.go respectively — reused here as-is (R3: no second copy).
 
 // stubExecutorClient is a minimal, per-test-configurable pb.ExecutorServiceClient double. Every
-// method other than HostBuild is left on the nil embedded interface, so calling one panics loudly
-// — none of the tests below drive Venue/RunSystem/RunUser/InvokeProvider/etc., only the ONE
-// host-reaching seam each compiler function has (construct-step / render-service). This proves
+// method other than HostBuild/InvokeProvider is left on the nil embedded interface, so calling
+// one panics loudly — none of the tests below drive Venue/RunSystem/RunUser/etc., only the
+// host-reaching seams each compiler function has (construct-step / render-service). This proves
 // the compiler's OWN request-marshal / reply-decode plumbing in isolation from whatever the real
 // provider registry would decide (that decision is charly-core territory, covered by charly's own
-// install_act_test.go against the REAL construct-step host builder).
+// install_act_test.go against the REAL construct-step host builder, and — for render-service
+// specifically, #55 W3 B4 — render_service_seam_roundtrip_test.go's REAL-provider round trip).
 type stubExecutorClient struct {
 	pb.ExecutorServiceClient
-	hostBuild func(*pb.HostBuildRequest) (*pb.HostBuildReply, error)
+	hostBuild      func(*pb.HostBuildRequest) (*pb.HostBuildReply, error)
+	invokeProvider func(*pb.InvokeProviderRequest) (*pb.InvokeReply, error)
 }
 
 func (s stubExecutorClient) HostBuild(_ context.Context, in *pb.HostBuildRequest, _ ...grpc.CallOption) (*pb.HostBuildReply, error) {
@@ -91,11 +93,25 @@ func (s stubExecutorClient) HostBuild(_ context.Context, in *pb.HostBuildRequest
 	return s.hostBuild(in)
 }
 
+func (s stubExecutorClient) InvokeProvider(_ context.Context, in *pb.InvokeProviderRequest, _ ...grpc.CallOption) (*pb.InvokeReply, error) {
+	if s.invokeProvider == nil {
+		return nil, fmt.Errorf("stubExecutorClient: unexpected InvokeProvider(%s,%s) — no invokeProvider func configured", in.GetClass(), in.GetReserved())
+	}
+	return s.invokeProvider(in)
+}
+
 // testExecutor returns a background context + an *sdk.Executor backed by stubExecutorClient. A
 // nil hostBuild means "this test expects the compiler to NEVER dial HostBuild" (proving purity on
 // the non-plugin-verb / non-render path) — the stub errors loudly if it's ever called.
 func testExecutor(hostBuild func(*pb.HostBuildRequest) (*pb.HostBuildReply, error)) (context.Context, *sdk.Executor) {
 	return context.Background(), sdk.NewInProcExecutor(stubExecutorClient{hostBuild: hostBuild})
+}
+
+// testExecutorInvoke returns a background context + an *sdk.Executor backed by stubExecutorClient,
+// wired for InvokeProvider instead of HostBuild (#55 W3 B4 — the render-service seam moved off
+// HostBuild onto direct peer dispatch).
+func testExecutorInvoke(invokeProvider func(*pb.InvokeProviderRequest) (*pb.InvokeReply, error)) (context.Context, *sdk.Executor) {
+	return context.Background(), sdk.NewInProcExecutor(stubExecutorClient{invokeProvider: invokeProvider})
 }
 
 // ---------------------------------------------------------------------------
@@ -431,41 +447,55 @@ func TestCompileServiceSteps_PerDistroFilter(t *testing.T) {
 	}
 }
 
-// TestCompileServiceSteps_RendersCustomUnitViaSeamOnSystemd proves the render-service HostBuild
-// round trip: a custom exec: entry on a MachineVenue compile with a resolved systemd ActiveInit
-// dials HostBuild(render-service, ...) exactly once and carries the returned UnitText/UnitPath
-// into the ServiceCustomStep verbatim.
+// TestCompileServiceSteps_RendersCustomUnitViaSeamOnSystemd proves the render-service peer-dispatch
+// round trip (#55 W3 B4 — moved off HostBuild onto direct InvokeProvider): a custom exec: entry on
+// a MachineVenue compile with a resolved systemd ActiveInit InvokeProviders kind:init's OpResolve
+// exactly once, then verb:egress's OpValidate exactly once on the rendered unit text, and carries
+// the returned UnitText/UnitPath into the ServiceCustomStep verbatim. The REAL provider round trip
+// (no canned replies) is covered separately by render_service_seam_roundtrip_test.go.
 func TestCompileServiceSteps_RendersCustomUnitViaSeamOnSystemd(t *testing.T) {
-	var calls int
+	var initCalls, egressCalls int
 	layer := testCandy("myapp", spec.CandyModel{Service: []spec.ServiceEntry{
 		{Name: "worker", Exec: "/usr/bin/myapp-worker", Enable: true},
 	}}, spec.CandyView{})
 	img := testServiceImg("fedora:43", "fedora")
 
-	ctx, ex := testExecutor(func(in *pb.HostBuildRequest) (*pb.HostBuildReply, error) {
-		if in.GetKind() != "render-service" {
-			return nil, fmt.Errorf("unexpected HostBuild kind %q", in.GetKind())
+	ctx, ex := testExecutorInvoke(func(in *pb.InvokeProviderRequest) (*pb.InvokeReply, error) {
+		switch {
+		case in.GetClass() == "kind" && in.GetReserved() == "init":
+			initCalls++
+			reply, err := json.Marshal(spec.ServiceRenderReply{Rendered: &spec.RenderedService{
+				UnitText: "[Unit]\nDescription=worker\n",
+				UnitPath: "/etc/systemd/system/charly-myapp-worker.service",
+			}})
+			if err != nil {
+				return nil, err
+			}
+			return &pb.InvokeReply{ResultJson: reply}, nil
+		case in.GetClass() == "verb" && in.GetReserved() == "egress":
+			egressCalls++
+			reply, err := json.Marshal(map[string]string{"error": ""})
+			if err != nil {
+				return nil, err
+			}
+			return &pb.InvokeReply{ResultJson: reply}, nil
+		default:
+			return nil, fmt.Errorf("unexpected InvokeProvider(%s,%s)", in.GetClass(), in.GetReserved())
 		}
-		calls++
-		reply, err := json.Marshal(spec.RenderServiceReply{Rendered: &spec.RenderedService{
-			UnitText: "[Unit]\nDescription=worker\n",
-			UnitPath: "/etc/systemd/system/charly-myapp-worker.service",
-		}})
-		if err != nil {
-			return nil, err
-		}
-		return &pb.HostBuildReply{ResultJson: reply}, nil
 	})
 	steps, err := CompileServiceSteps(ctx, ex, layer, img, HostContext{
 		MachineVenue:   true,
 		ActiveInitName: "systemd",
-		ActiveInit:     &spec.ResolvedInit{Model: "systemd"},
+		ActiveInit:     &spec.ResolvedInit{Model: "systemd", ServiceSchema: &spec.InitServiceSchema{ServiceTemplate: "x"}},
 	})
 	if err != nil {
 		t.Fatalf("CompileServiceSteps: %v", err)
 	}
-	if calls != 1 {
-		t.Fatalf("HostBuild(render-service) called %d times, want exactly 1", calls)
+	if initCalls != 1 {
+		t.Fatalf("InvokeProvider(kind,init) called %d times, want exactly 1", initCalls)
+	}
+	if egressCalls != 1 {
+		t.Fatalf("InvokeProvider(verb,egress) called %d times, want exactly 1", egressCalls)
 	}
 	if len(steps) != 1 {
 		t.Fatalf("len(steps) = %d, want 1", len(steps))

@@ -137,8 +137,10 @@ func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolv
 }
 
 // renderService materializes a ServiceEntry via candy/plugin-init's OpResolve + egress-gates it —
-// direct peer-dispatch (K3). BuildServiceRenderContext is the SAME pure projection charly's own
-// (deploy-mode) RenderService calls (R3, one shared source).
+// direct peer-dispatch (K3). BuildServiceRenderContext is the SAME pure projection
+// compile_service_steps.go's deploy-time renderServiceViaSeam uses — that call site is now a
+// THIN wrapper delegating HERE (#55 W3 B4, R3: one shared implementation for both the build-time
+// and deploy-time render-service paths, not two).
 func (c renderSeamCaller) renderService(entry *spec.ServiceEntry, def *spec.ResolvedInit, ctx spec.ServiceRenderContext) (*spec.RenderedService, error) {
 	if entry == nil {
 		return nil, fmt.Errorf("RenderService: nil entry")
