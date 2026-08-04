@@ -61,7 +61,7 @@ func TestInjectedCandyReachesCollectedDescription(t *testing.T) {
 	if set == nil {
 		t.Fatal("CollectDescriptions returned nil")
 	}
-	var origins []string
+	origins := make([]string, 0, len(set.Candy))
 	for _, ld := range set.Candy {
 		origins = append(origins, ld.Origin)
 	}
@@ -97,7 +97,7 @@ func TestInjectedCandyReachesCollectedVolumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectBoxVolume() error = %v", err)
 	}
-	var names []string
+	names := make([]string, 0, len(mounts))
 	for _, m := range mounts {
 		names = append(names, m.VolumeName)
 	}
