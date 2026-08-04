@@ -163,3 +163,58 @@ WantedBy=
 		t.Errorf("UnitText =\n%s\nwant\n%s", sc.UnitText, wantUnitText)
 	}
 }
+
+// TestCompileServiceSteps_RealRenderRoundTrip_CheckLocalCoverageFixture mirrors the EXACT
+// candy/check-local-layer service: entry shape (#55 W3 B4 coverage rung 2) — the fixture
+// check-local-vm's live bed proof (team-lead-run) now exercises for real, over the guest's
+// target:local deploy-compile. Same real-provider round trip as the test above, a different
+// (simpler — no env, no explicit working_directory, restart:always) service shape, proving
+// the render+egress-validate sequence handles it byte-for-byte the same way.
+func TestCompileServiceSteps_RealRenderRoundTrip_CheckLocalCoverageFixture(t *testing.T) {
+	client := newRealProviderExecutorClient()
+	ctx, ex := context.Background(), sdk.NewInProcExecutor(client)
+
+	layer := testCandy("check-local-layer", spec.CandyModel{Service: []spec.ServiceEntry{
+		{
+			Name:    "check-local-marker-daemon",
+			Exec:    `/bin/sh -c "echo 'check-local-service v1' > /etc/check-local-service-marker; exec sleep infinity"`,
+			Restart: "always", Enable: true, Scope: "system",
+		},
+	}}, spec.CandyView{})
+	img := testServiceImg("arch")
+
+	steps, err := CompileServiceSteps(ctx, ex, layer, img, HostContext{
+		MachineVenue:   true,
+		ActiveInitName: "systemd",
+		ActiveInit:     fixtureSystemdInit(),
+	})
+	if err != nil {
+		t.Fatalf("CompileServiceSteps: %v", err)
+	}
+	if len(steps) != 1 {
+		t.Fatalf("len(steps) = %d, want 1; got %#v", len(steps), steps)
+	}
+	sc, ok := steps[0].(*ServiceCustomStep)
+	if !ok {
+		t.Fatalf("steps[0] = %#v, want *ServiceCustomStep", steps[0])
+	}
+
+	const wantUnitPath = "/etc/systemd/system/charly-charly-check-local-layer-check-local-marker-daemon.service"
+	if sc.UnitPath != wantUnitPath {
+		t.Errorf("UnitPath =\n%s\nwant\n%s", sc.UnitPath, wantUnitPath)
+	}
+	const wantUnitText = `[Unit]
+Description=charly-check-local-layer-check-local-marker-daemon (check-local-layer)
+
+[Service]
+ExecStart=/bin/sh -c "echo 'check-local-service v1' > /etc/check-local-service-marker; exec sleep infinity"
+Restart=always
+WorkingDirectory=
+
+[Install]
+WantedBy=
+`
+	if sc.UnitText != wantUnitText {
+		t.Errorf("UnitText =\n%s\nwant\n%s", sc.UnitText, wantUnitText)
+	}
+}
