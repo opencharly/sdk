@@ -129,7 +129,7 @@ func LoadUnifiedViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (
 // ResolveMergedTreeViaExecutor is THE executor-driven merged deploy-node tree resolver: the merged
 // project+operator deploy-node tree, ready for dotted-path traversal. It is the SOLE merged-tree read
 // for both a genuine out-of-module plugin (over its reverse channel) AND charly-core's own host check
-// seams (check_cmd.go's resolveMergedDeployTree wraps it over an in-proc executor) — the #55 LOADER
+// seams (plugin_loader.go's resolveMergedDeployTree wraps it over an in-proc executor) — the #55 LOADER
 // cone retired the former host-resident deploy_tree.go merged-tree read that this replaced. Its
 // composition: the PROJECT config via LoadUnifiedViaExecutor + deploykit.ProjectBundleConfig, the
 // per-host operator overlay via LoadHostBundleConfigViaExecutor (the cycle-free plugin-side read
