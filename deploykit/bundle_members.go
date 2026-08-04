@@ -21,19 +21,13 @@ package deploykit
 // re-entrant CLI call in the SAME process the caller runs in — NOT the HostBuild("cli")
 // reverse-channel reentry an out-of-process plugin would need) and spec/hostenv +
 // spec/exec's readiness gates — all plugin-importable fabric, no host-private state. Both
-// consumers — the operator path (candy/plugin-bundle's walk, via the now-deleted
-// "deploy-members-up"/"deploy-members-down" HostBuild seam) and the check-bed runner
-// (candy/plugin-check, via host_build_check_bed.go's members-up/members-down ops) — call these
-// directly now; candy/plugin-bundle already does (this commit). candy/plugin-check's bed-runner
-// call sites relocate in the immediately-following unit (#55 W3 B2-full), which also retires the
-// transitional core copy charly/bundle_members.go keeps for one commit cycle.
-//
-// TRANSITIONAL NOTE (dies with B2-full, the very next unit): charly/bundle_members.go still
-// carries its OWN copy of BringUpMembers/TearDownMembers (unexported, unchanged) because
-// host_build_check_bed.go's members-up/members-down ops call them as a same-package function —
-// core cannot import sdk/deploykit (import-purity). B2-full deletes that core copy once
-// candy/plugin-check calls THIS package directly instead, closing the transitional window in the
-// same working session it opened in — never a permanent duplicate.
+// consumers call these directly now, no HostBuild seam either way: the operator path
+// (candy/plugin-bundle's walk, since this commit — the former "deploy-members-up"/
+// "deploy-members-down" HostBuild seam is deleted) and the check-bed runner
+// (candy/plugin-check/bed_run.go, since the immediately-following unit #55 W3 B2-full, which
+// also deleted charly/bundle_members.go's transitional core copy this file's A4 landing had
+// briefly needed for one commit cycle — the former "check-bed" HostBuild seam it served is gone
+// too).
 
 import (
 	"errors"
@@ -75,7 +69,7 @@ func BringUpMembers(node *spec.BundleNode, imageTag string) error {
 		switch {
 		case spec.IsVmVenue(memberNode):
 			// VM member: full libvirt lifecycle, mirroring the isVM bed root
-			// (check_bed_run.go). The VM disk is built by the caller's build step
+			// (candy/plugin-check/bed_session.go's bedSetup). The VM disk is built by the caller's build step
 			// (the group bed's build arm); here we (re)create + wait for ssh +
 			// deploy the VM node — `bundle add <member> <vm-entity>` (the VM-template
 			// ref, like the isVM root's deploy-add), not the bare pod/local form.

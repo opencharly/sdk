@@ -1,16 +1,17 @@
 package deploykit
 
 import (
-	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
 
 // bed_session.go — the check-bed HOST helpers relocated from charly/check_bed_run.go
-// (Cutover B unit 6b, the InvokeProvider-generalization family). Every caller of these was
-// ALREADY core-only (host_build_check_bed.go, bundle_members.go — no plugin calls them
-// directly today), so this is the SAME "portable orchestration in sdk, thin core call sites"
-// pattern already applied to the credential family: no provider-registry coupling was ever
+// (Cutover B unit 6b, the InvokeProvider-generalization family). At relocation time the caller
+// was core-only; candy/plugin-check/bed_persist.go was the first plugin to call
+// PersistBedDeployOverrides directly, and it remains the sole caller through #55 W3 B2-full's
+// complete check-bed dissolution — core held no direct caller of this file across the whole
+// migration. This is the SAME "portable orchestration in sdk, thin core call sites" pattern
+// already applied to the credential family: no provider-registry coupling was ever
 // load-bearing here except ONE classification — isExternalDeploySubstrate (a live
 // provider-registry query) — which the caller now computes ONCE and threads in as a plain
 // `externalInPlace bool` parameter (the team-lead's ruling: a plain Go parameter, not a new
@@ -20,24 +21,18 @@ import (
 // UNSTAMPED node) reads node.Descent directly instead — every node these functions see comes
 // from a LoadUnified'd project, whose loader always stamps Descent (stampBundleDescents), so
 // this is a pure wire-field read, never a registry query.
+//
+// ResolveBedCheckLevel (formerly here, a thin wrapper over kit.DefaultCheckLevel/
+// kit.ResolveCheckLevel) DIED as dead code (#55 W3 B2-full, R1 sweep): its sole caller — core's
+// check_bed_run.go's bedCheckLevel — already documented having inlined to the spec.* helpers
+// directly ("now inlined to those spec helpers... importing zero deploykit"); the relocated
+// plugin-side bedCheckLevel (candy/plugin-check/bed_session.go) follows the SAME already-inlined
+// pattern, never calling back into this wrapper. Zero remaining callers, confirmed by grep.
 
 // The host-rooted descent predicate is now spec.HostRooted (#55 U4 — a pure #Deploy-tree read
 // over the wire-stamped node.Descent, promoted so DeployNestedLocalChildren and this file's
 // bed-session apply path share ONE predicate over the spec value type). Callers below reference
 // spec.HostRooted directly.
-
-// ResolveBedCheckLevel resolves the acceptance-depth rung for a bed. hasResolvedBox is true
-// iff the bed's root carries an `image:` AND that image resolved to a box config; checkLevel
-// is that box's authored check_level (ignored when hasResolvedBox is false). VM / local beds
-// carry no box image, so they always run at the default rung — the caller (which alone can
-// resolve a box ref against the loaded project) computes hasResolvedBox/checkLevel and calls
-// this pure classifier.
-func ResolveBedCheckLevel(hasResolvedBox bool, checkLevel string) string {
-	if !hasResolvedBox {
-		return kit.DefaultCheckLevel
-	}
-	return kit.ResolveCheckLevel(checkLevel)
-}
 
 // PersistBedDeployOverrides seeds the per-host charly.yml with a kind:check bed's
 // project-declared deploy-shaped fields (port / volume / env / tunnel / security / network),
@@ -116,6 +111,19 @@ func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace boo
 
 // WaitForVmSshReady + WaitForContainerReady (the deploy-venue readiness GATES) moved to
 // spec/exec (spec/exec/venue_wait.go, #55 K4) — pure process-driving pollers over spec/exec
-// executors + spec readiness primitives, with no bed-session coupling. Charly's bed/member
-// orchestration calls specexec.WaitFor*; the bed-SESSION mechanism above (ResolveBedCheckLevel +
-// PersistBedDeployOverrides + the lock/lease/persist family) STAYS here (K5).
+// executors + spec readiness primitives, with no bed-session coupling. candy/plugin-check's bed
+// runner calls specexec.WaitFor* directly.
+//
+// CORRECTION to this file's own former prediction (#55 W3 B2-full): PersistBedDeployOverrides
+// genuinely STAYS here — a plain library function any placement can call (ResolveBedCheckLevel,
+// its sibling, turned out to have zero remaining callers and was deleted as dead code, above).
+// But the flock/lease/env "lock/lease/persist family" this header once predicted would ALSO land
+// in deploykit landed somewhere more specific instead: directly in
+// candy/plugin-check/bed_session.go, NOT here. The reason is placement-class, not
+// process-boundary: os.Setenv(CHARLY_REPO_OVERRIDE/…) only lands in the process
+// hostBuildCli's cli-reentry children fork from when the CALLER is compiled-in — a fact true of
+// candy/plugin-check specifically, not of "any deploykit importer" generically. Putting that
+// state management HERE would have silently implied it's safe for an out-of-process placement,
+// which it is not (see bed_session.go's own PLACEMENT CLASS note). A kit is the right home for
+// placement-agnostic logic; this family is placement-COUPLED, so it belongs in the one compiled-in-
+// required consumer, not the shared kit.
