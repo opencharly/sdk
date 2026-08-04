@@ -171,8 +171,22 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 	}
 	for ref, cands := range candidates {
 		winner := PickCandyVersion(ref, cands)
-		if _, ok := localScanned[winner.Scanned.Model.Name]; ok {
+		// SHADOWING IS EFFECTIVE, NOT ADVISORY. A local candy of the same name wins, so BOTH
+		// keys under which that one logical candy is reachable — its bare name and this full
+		// remote ref — must resolve to the LOCAL materialization. Keeping the remote body here
+		// (which the note merely announced away) left the map carrying two rival bodies for one
+		// globally-unique candy name, so any consumer that iterates the map acted twice on the
+		// same candy with different content and Go's map order picked the winner. The
+		// plugin loader is where that bit: it host-builds a plugin candy's SourceDir per entry,
+		// so a shadowed plugin was built from the local tree or from the OLD pinned remote at
+		// random — and when the remote lost the go-plugin handshake (a pre-sdk-split source
+		// serving ProtocolVersion 1 against a v2 client), that surfaced as an intermittent
+		// "incompatible API version" warning. Resolving both keys to the local body makes the
+		// choice deterministic at the source instead of per consumer.
+		if local, ok := localScanned[winner.Scanned.Model.Name]; ok {
 			fmt.Fprintf(os.Stderr, "Note: local candy %q shadows remote candy %q\n", winner.Scanned.Model.Name, ref)
+			combined[ref] = local
+			continue
 		}
 		combined[ref] = winner.Scanned
 	}
