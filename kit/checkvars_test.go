@@ -239,10 +239,11 @@ type errStub string
 
 func (e errStub) Error() string { return string(e) }
 
-// DEPLOY_NAME is seeded (sanitized) in the runtime resolver so deploy-scope
-// checks can address their own cluster via cluster: "${DEPLOY_NAME}" — the
-// k3s-server fix. A colon-prefixed VM deploy name is sanitized identically to
-// K3sPostProvision's ClusterProfile naming (vm:k3s-vm -> vm-k3s-vm).
+// DEPLOY_NAME is seeded (sanitized) in the runtime resolver, so a deploy-scope
+// check can name the deployment it is running against. It is NOT a cluster
+// selector — see ResolveCheckVarsRuntime's comment in checkvars.go. This asserts
+// only the sanitization: a colon-prefixed name collapses the colon to a dash
+// (vm:k3s-vm -> vm-k3s-vm), matching SanitizeDeployName everywhere else.
 func TestResolveTestVarsRuntime_DeployName(t *testing.T) {
 	origInspect := InspectContainer
 	defer func() { InspectContainer = origInspect }()
