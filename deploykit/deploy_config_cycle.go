@@ -38,9 +38,10 @@ import (
 //
 // R3: this is the SINGLE cycle shell. SaveDeployState, CleanDeployEntry, SaveVmDeployState,
 // RemoveVmDeployEntry, candy/plugin-deploy-pod's config-setup writes and candy/plugin-bundle's
-// import/reset/ephemeral writes all route through it; the three per-candy lock helpers
-// (bundleAcquireDeployConfigLock / vmAcquireDeployConfigLock and the pod path's absent one) are
-// deleted. A new overlay writer adds a mutation closure here — never a fourth lock copy.
+// import/reset/ephemeral writes all route through it; the two private per-candy lock helpers
+// (plugin-bundle's and plugin-vm's — plugin-deploy-pod had none, which is how it shipped with no
+// lock at all) are deleted. A new overlay writer adds a mutation closure here, never a fourth
+// lock copy.
 
 // BundleConfigMutator mutates a FRESH BundleConfig read under the deploy-config lock. It reports
 // whether it changed anything: false skips the write entirely (so a no-op decision costs a read,
