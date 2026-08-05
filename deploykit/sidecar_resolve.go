@@ -3,10 +3,12 @@ package deploykit
 // sidecar_resolve.go — the pure host-adapter + quadlet-sweep helpers for pod
 // sidecars (K4: relocated from charly/sidecar.go, the genuinely pure quarter
 // of that file with no project-loader or reverse-channel dependency).
-// Only embeddedSidecarBodies stays in charly-core (it reads the binary-embedded
-// default config through the unified loader); the resolve DISPATCH + adapter moved
-// to candy/plugin-deploy-pod (sidecar_resolve.go's resolvePodSidecars, which
-// InvokeProviders kind:sidecar itself — the resolve seam-death).
+// charly/sidecar.go itself is DELETED (K-wave 2 cone R3): the binary-embedded
+// sidecar template library moved into candy/plugin-deploy-pod's OWN go:embed
+// (sidecar_embedded.go — a separate Go module cannot go:embed charly-core's
+// charly.yml); the resolve DISPATCH + adapter live in candy/plugin-deploy-pod
+// (sidecar_resolve.go's resolvePodSidecars, which InvokeProviders kind:sidecar
+// itself — the resolve seam-death).
 
 import (
 	"encoding/json"
