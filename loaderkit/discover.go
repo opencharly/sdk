@@ -19,7 +19,7 @@ import (
 )
 
 // RunDiscover is the STANDALONE discover-only entry point (K1 keystone, task #24 unit 3):
-// charly's ApplyDiscover (unified.go) calls this directly — reusing the SAME runDiscover/
+// charly's ApplyDiscover (loader_threaded.go) calls this directly — reusing the SAME runDiscover/
 // parseDiscoveredManifest walker mechanism the whole-project Walk drives internally for its own
 // depth-0 discover pass — rather than duplicating the walk+parse logic. Bypasses the
 // spec.ProjectWalker plugin-swap indirection deliberately: ApplyDiscover has never gone through the
