@@ -109,7 +109,10 @@ func BringUpMembers(node *spec.BundleNode, imageTag string) error {
 			}
 		}
 	}
-	return nil
+	// Every member is up; confirm the cross-member names they address actually resolve before
+	// handing over to probes that would otherwise spend their whole retry budget finding out —
+	// and would then misreport a host DNS fault as a check failure. See member_dns_preflight.go.
+	return preflightMemberDNS(node)
 }
 
 // TearDownMembers tears down every member of `node` in deterministic order — the companion to
