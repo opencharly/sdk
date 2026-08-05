@@ -42,7 +42,7 @@ type ScanSeams = spec.ScanSeams
 // non-generate caller — matches the pre-move opts.InitCfg).
 func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buildkit.InitConfig, seams ScanSeams) (map[string]spec.CandyReader, error) {
 	// 2. Collect remote refs from @-prefixed candy references, PLUS every local candy's raw
-	// (pre-finalize) require:/candy: refs — see the host CollectRemoteRefs closure (withLocalRawRefs)
+	// (pre-finalize) require:/candy: refs — see the CollectRemoteRefs closure (spec.WithLocalRawRefs)
 	// for why the wrapped-view walk CollectRemoteRefsOpts does on its own can't discover these alone.
 	downloads, err := seams.CollectRemoteRefs(localScanned)
 	if err != nil {
