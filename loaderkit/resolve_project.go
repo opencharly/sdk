@@ -68,6 +68,22 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 	rp := &spec.ResolvedProject{Version: version}
 
 	resolvedBoxes := map[string]*buildkit.ResolvedBox{}
+	// The init `depends_candy:` injection, on the AUTHORED config, BEFORE anything is resolved or
+	// projected. It writes the one source a box's composition has (cfg's candy list); the resolved
+	// boxes below, the ResolvedBoxView.Candy the projector copies, and every chain collector that
+	// re-walks cfg (ProjectBoxAggregates' ports/volumes/aliases, FillBoxPlans' plans) all derive
+	// from it, so one write covers them. It is idempotent, so the pre-resolved arm — whose boxes the
+	// build path (candy/plugin-build's resolveBuildEngine) already injected for before render-prep
+	// filled their caches — is unaffected by running it again here.
+	deploykit.InjectInitDependsCandy(cfg, layers, initCfg)
+	projectBox := func(name string, resolved *buildkit.ResolvedBox) {
+		view := deploykit.ProjectResolvedBox(resolved)
+		deploykit.ProjectBoxAggregates(cfg, layers, name, resolved, &view)
+		if rp.Boxes == nil {
+			rp.Boxes = make(map[string]spec.ResolvedBoxView, len(cfg.Box))
+		}
+		rp.Boxes[name] = view
+	}
 	for _, name := range cfg.AllBoxNames() {
 		img, ok := cfg.BoxConfig(name)
 		if !ok {
@@ -84,12 +100,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 				continue
 			}
 			resolvedBoxes[name] = resolved
-			view := deploykit.ProjectResolvedBox(resolved)
-			deploykit.ProjectBoxAggregates(cfg, layers, name, resolved, &view)
-			if rp.Boxes == nil {
-				rp.Boxes = make(map[string]spec.ResolvedBoxView, len(cfg.Box))
-			}
-			rp.Boxes[name] = view
+			projectBox(name, resolved)
 			continue
 		}
 		resolved, err := seams.ResolveBox(cfg, name, calver, dir)
@@ -100,12 +111,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 			continue
 		}
 		resolvedBoxes[name] = resolved
-		view := deploykit.ProjectResolvedBox(resolved)
-		deploykit.ProjectBoxAggregates(cfg, layers, name, resolved, &view)
-		if rp.Boxes == nil {
-			rp.Boxes = make(map[string]spec.ResolvedBoxView, len(cfg.Box))
-		}
-		rp.Boxes[name] = view
+		projectBox(name, resolved)
 	}
 
 	// Auto-intermediates (#67): preResolvedBoxes (gen.Boxes) carries the auto-generated
