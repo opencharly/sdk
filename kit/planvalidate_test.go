@@ -9,9 +9,11 @@ import (
 
 // TestValidatePlanSteps_Diagnostics unit-tests ValidatePlanSteps — the SHARED plan-block
 // validator both `charly box validate` (charly/validate.go) AND the externalized `charly
-// feature validate` (via the "feature" HostBuild seam) invoke (relocated from
-// charly/host_build_feature_test.go, K3 cone2 test closure: a pure sdk/kit function test with
-// zero charly-core dependency, and no prior duplicate found in this package). It flags an empty
+// feature validate` (candy/plugin-feature, which calls it in-process over its plugin-side
+// enumeration — the former "feature" HostBuild seam is DELETED, K-wave 2 cone R6) invoke
+// (relocated from the deleted charly/host_build_feature_test.go, K3 cone2 test closure: a pure
+// sdk/kit function test with zero charly-core dependency, and no prior duplicate found in this
+// package). It flags an empty
 // description and an agent step that illegally carries an Op verb; a clean (empty) plan with a
 // real description yields no errors.
 func TestValidatePlanSteps_Diagnostics(t *testing.T) {
