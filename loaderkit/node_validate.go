@@ -118,9 +118,10 @@ func ValidateEntityNodeRec(pn spec.ParsedNode, path string) error {
 
 // ValidateNodeFormSteps parses a node-form document and validates EVERY entity's (and nested
 // sub-entity's) assembled body against its closed per-kind def — the step-typo gate for candies,
-// boxes, pods, deploys, and check beds alike. Shared by ValidateCandyManifestCUE and the host's
-// validateProjectCUESchemas (R3). t/parser are host-supplied (the registry-derived Threaded
-// snapshot + the resolved DocParser) — this function never queries the registry itself.
+// boxes, pods, deploys, and check beds alike. Shared by ValidateCandyManifestCUE and
+// candy/plugin-box's validateProjectCUESchemas (R3). t/parser are caller-supplied (the
+// registry-derived Threaded snapshot + a spec.DocParser — normally the DocParser adapter in this
+// package) — this function never queries the registry itself.
 func ValidateNodeFormSteps(path string, data []byte, t spec.Threaded, parser spec.DocParser) error {
 	var ydoc yaml.Node
 	if err := yaml.Unmarshal(data, &ydoc); err != nil {
