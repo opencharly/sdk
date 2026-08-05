@@ -37,7 +37,7 @@ const (
 	OpPostTeardown     = ops.OpPostTeardown     // lifecycle: drop venue artifacts (image/domain)
 	OpStart            = ops.OpStart            // lifecycle: start the venue
 	OpStop             = ops.OpStop             // lifecycle: stop the venue
-	OpStatus           = ops.OpStatus           // lifecycle: venue status → StatusInfo
+	OpStatus           = ops.OpStatus           // lifecycle: venue status → spec.DeployTargetStatus
 	OpLogs             = ops.OpLogs             // lifecycle: stream venue logs
 	OpShell            = ops.OpShell            // lifecycle: NON-interactive in-container exec CAPTURE; interactive shell is OpAttach
 	OpAttach           = ops.OpAttach           // F12 lifecycle: LIVE-STDIO attach
