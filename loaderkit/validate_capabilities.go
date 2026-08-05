@@ -65,7 +65,7 @@ func ValidatePreemptibleOnNode(name string, node *spec.BundleNode, d *spec.Diagn
 		return
 	}
 	if p := node.Preemptible; p != nil {
-		if len(preemptDedupeNonEmpty(p.Holds)) == 0 {
+		if len(spec.DedupeNonEmpty(p.Holds)) == 0 {
 			addErr(d, "deploy %q: `preemptible.holds` must list at least one exclusive-resource token — a preemptible holder that holds nothing is meaningless", name)
 		}
 		if p.Stop != "" && p.Stop != spec.PreemptStopShutdown {
@@ -187,24 +187,8 @@ func preemptNeedsGPUResource(cnode *spec.BundleNode, resources map[string]*spec.
 	return false
 }
 
-// preemptDedupeNonEmpty trims + dedups a token list (loaderkit-private copy; charly/preempt.go keeps
-// its own for the acquire shim, candy/plugin-preempt its own — these travel per module, R3).
-func preemptDedupeNonEmpty(in []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range in {
-		s = strings.TrimSpace(s)
-		if s == "" || seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
-
-// preemptIntersect returns the set intersection of a and b (loaderkit-private copy; same per-module
-// travel rationale as preemptDedupeNonEmpty).
+// preemptIntersect returns the set intersection of a and b (loaderkit-private copy; the token-list
+// normalizer it pairs with consolidated to spec.DedupeNonEmpty, K-wave 2 cone R2).
 func preemptIntersect(a, b []string) []string {
 	set := map[string]bool{}
 	for _, s := range a {

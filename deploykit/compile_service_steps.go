@@ -7,7 +7,7 @@ package deploykit
 // The filtering/scope/packaged-vs-custom decision logic is FULLY PORTABLE (a pure
 // function of the candy's service: list + the target distro/init) and lives here
 // directly. Rendering a systemd CUSTOM entry's unit text no longer needs a host round
-// trip at all (#55 W3 B4): the former charly/service_render.go:RenderService's "TWO
+// trip at all (#55 W3 B4): the former core RenderService's "TWO
 // registry consults a plugin cannot do itself" framing was stale — kind:init's
 // OpResolve and verb:egress's OpValidate are BOTH compiled-in (charly.yml), so any
 // connected plugin reaches them via a direct InvokeProvider peer-dispatch call. The

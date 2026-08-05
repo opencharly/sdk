@@ -103,8 +103,8 @@ type Generator struct {
 	// this to renderSeamCaller.renderService (render_generator_from_project.go) — direct
 	// kind:init + verb:egress InvokeProvider peer dispatch, no host round-trip (both are
 	// compiled-in). The former charly-core RenderService this comment used to describe is
-	// DELETED (#55 W3 B4) — charly/service_render.go's deploy-time render-service HostBuild
-	// seam is gone too; compile_service_steps.go's renderServiceViaSeam reuses THIS SAME
+	// DELETED (#55 W3 B4) — the core deploy-time render-service HostBuild seam is gone too;
+	// compile_service_steps.go's renderServiceViaSeam reuses THIS SAME
 	// renderSeamCaller.renderService now, so both the build-time (this field) and
 	// deploy-time paths share one implementation. Used by GenerateInitFragments
 	// (fragment_assembly model).
