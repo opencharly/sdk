@@ -8,7 +8,9 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/renameio/v2 v2.0.2
 	github.com/google/uuid v1.6.0
-	github.com/opencharly/spec v0.2026215.1748
+	github.com/opencharly/charly/candy/plugin-egress v0.0.0-20260804180611-ee9d899f6b02
+	github.com/opencharly/charly/candy/plugin-init v0.0.0-20260805024709-c4b2fa2b5265
+	github.com/opencharly/spec v0.2026217.301
 	golang.org/x/term v0.41.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
