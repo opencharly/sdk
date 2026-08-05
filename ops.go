@@ -72,6 +72,13 @@ const (
 	// OpVerifyChecks is the command:check selector for the DEPLOY-VERIFY drive (#55 CHECK-ENGINE cone, Unit 2).
 	OpVerifyChecks = ops.OpVerifyChecks
 
+	// OpResolveEndpoint / OpResolveImageLabel / OpDrainEndpointCleanups are verb:check-resolve
+	// selectors (#55 W3 B7) for the relocated CheckContext.ResolveEndpoint/ResolveImageLabel
+	// resolution bodies + their shared cleanup-drain signal.
+	OpResolveEndpoint       = ops.OpResolveEndpoint
+	OpResolveImageLabel     = ops.OpResolveImageLabel
+	OpDrainEndpointCleanups = ops.OpDrainEndpointCleanups
+
 	// EphemeralPanicMarker prefixes an error converted from a RECOVERED PANIC inside OpEphemeralRegister/OpEphemeralTeardown (RCA #5).
 	EphemeralPanicMarker = ops.EphemeralPanicMarker
 )

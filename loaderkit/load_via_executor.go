@@ -12,24 +12,24 @@ import (
 
 // load_via_executor.go — the ONE shared, placement-invariant "run the whole project loader
 // PLUGIN-SIDE over the reverse channel" helper. It is the executor-backed loaderkit.LoaderExecutor
-// witness that FOUR plugin candies (candy/plugin-bundle, candy/plugin-build, candy/plugin-vm,
-// candy/plugin-loader) each carried a private near-identical copy of (an `execLoaderExecutor`
-// struct + a `LoadUnified(dir, LoadSeamsFromExecutor(...))` call). loaderkit is the correct home:
-// it ALREADY imports the root sdk package (resolve_via_executor.go's Resolve*ViaExecutor take a
-// *sdk.Executor) and owns the LoaderExecutor interface + LoadSeamsFromExecutor + LoadUnified +
-// UnmarshalMaterialized themselves — so this adds no new import direction (sdk root does NOT import
-// loaderkit; deploykit does NOT import loaderkit). Same R3 consolidation pattern as the former
-// deploykit.LoadBundleConfigViaSeam host round-trip (retired by the bundle_config_executor.go
-// helpers in this package), blessed by the charly#176
-// round-1 pr-validator: "an sdk kit is EXACTLY the mechanism this project uses to share code across
-// plugin module boundaries."
+// witness THREE plugin candies (candy/plugin-bundle, candy/plugin-build, candy/plugin-vm) each
+// carried a private near-identical copy of (a `<pkg>LoaderExecutor` struct + a
+// `LoadUnified(dir, LoadSeamsFromExecutor(...))` call) — hoisted here (K3-W2, task #13) and all
+// three now call LoadUnifiedViaExecutor directly, their private copies deleted (R3, zero remaining
+// duplicates). candy/plugin-loader is a DIFFERENT thing entirely — it is the HOST-CONSUMED
+// spec.DocParser/spec.ProjectWalker PROVIDER (the loader mechanism itself, resolved by charly core),
+// never a LoaderExecutor consumer over the reverse channel; it carried no copy of this pattern. Same
+// R3 consolidation pattern as the former deploykit.LoadBundleConfigViaSeam host round-trip (retired
+// by the bundle_config_executor.go helpers in this package), blessed by the charly#176 round-1
+// pr-validator: "an sdk kit is EXACTLY the mechanism this project uses to share code across plugin
+// module boundaries."
 //
 // The four core legs dispatch each registry-/host-coupled loader step over sdk.Executor.HostBuild to
 // charly's "loader-*" host legs (charly/host_build_loader_floor.go); the two capability validators
 // self-serve plugin-side over the same-package Resolve*ViaExecutor InvokeProvider callbacks. Pure
 // consolidation — byte-identical to the per-candy copies (same seam kinds, same nil/degradation
-// contract). New callers (candy/plugin-deploy-pod's deploy-key→box project fallback) use this helper;
-// the remaining per-candy copies are tracked R3 debt migrating onto it.
+// contract). candy/plugin-deploy-pod's deploy-key→box project fallback and candy/plugin-box (K3-W2)
+// use this helper too.
 
 // executorLoaderExecutor implements LoaderExecutor by dispatching each registry-coupled loader step
 // over sdk.Executor.HostBuild to charly's "loader-*" host legs.
@@ -49,13 +49,20 @@ func (e *executorLoaderExecutor) LoaderThreaded() spec.Threaded {
 	return t
 }
 
-// RunBootstrapPhase runs the host's bootstrap-phase plugins over the raw root bytes ([]byte→[]byte).
-// A leg failure returns the bytes unchanged (the no-op-seam contract).
-func (e *executorLoaderExecutor) RunBootstrapPhase(data []byte) []byte {
-	if out, err := e.ex.HostBuild(e.ctx, "loader-bootstrap", data); err == nil {
-		return out
+// RunBootstrapPhase runs the host's bootstrap-phase plugins over the raw root bytes via the
+// "loader-bootstrap" HostBuild seam. A reverse-channel/IPC failure here used to fall back silently
+// to the raw, un-bootstrapped bytes — a genuine defect: LoadUnified would then proceed on an
+// un-bootstrapped root with zero visible signal (root-caused during the K-wave terminus RCA,
+// #20 — the confirmed regression in e0edc38d's vmPrepareVenue self-load swap). Every sibling
+// LoaderExecutor leg (WalkProject, MaterializeLoadedProject, ValidateAndroidDevices,
+// ValidatePreemptible) already propagates a HostBuild failure as a hard error; this leg now matches
+// that contract instead of being the one silent exception.
+func (e *executorLoaderExecutor) RunBootstrapPhase(data []byte) ([]byte, error) {
+	out, err := e.ex.HostBuild(e.ctx, "loader-bootstrap", data)
+	if err != nil {
+		return nil, fmt.Errorf("loader-bootstrap: %w", err)
 	}
-	return data
+	return out, nil
 }
 
 // WalkProject runs the host's kind-blind import/discover/namespace walk (spec.LoaderWalkRequest →
@@ -107,6 +114,13 @@ func (e *executorLoaderExecutor) ValidatePreemptible(uf *spec.UnifiedFile) error
 	return ValidatePreemptible(uf, ResolveResourceViaExecutor(e.ctx, e.ex), ResolveVmViaExecutor(e.ctx, e.ex))
 }
 
+// LoaderThreadedViaExecutor returns the CURRENT registry snapshot (∅ → spec.Threaded) over the
+// reverse channel — the standalone form of executorLoaderExecutor.LoaderThreaded for a caller that
+// needs just the registry-derived D-facts (e.g. Primaries) without driving a full LoadUnified.
+func LoaderThreadedViaExecutor(ctx context.Context, ex *sdk.Executor) spec.Threaded {
+	return (&executorLoaderExecutor{ctx: ctx, ex: ex}).LoaderThreaded()
+}
+
 // LoadUnifiedViaExecutor drives LoadUnified PLUGIN-SIDE over the reverse channel: the PURE LOAD-half
 // seams run in-plugin and the registry-/host-coupled legs dispatch to charly's "loader-*" host legs
 // via ex.HostBuild. dir is the project directory (a plugin obtains it from the
@@ -122,7 +136,7 @@ func LoadUnifiedViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (
 // ResolveMergedTreeViaExecutor is THE executor-driven merged deploy-node tree resolver: the merged
 // project+operator deploy-node tree, ready for dotted-path traversal. It is the SOLE merged-tree read
 // for both a genuine out-of-module plugin (over its reverse channel) AND charly-core's own host check
-// seams (check_cmd.go's resolveMergedDeployTree wraps it over an in-proc executor) — the #55 LOADER
+// seams (plugin_loader.go's resolveMergedDeployTree wraps it over an in-proc executor) — the #55 LOADER
 // cone retired the former host-resident deploy_tree.go merged-tree read that this replaced. Its
 // composition: the PROJECT config via LoadUnifiedViaExecutor + deploykit.ProjectBundleConfig, the
 // per-host operator overlay via LoadHostBundleConfigViaExecutor (the cycle-free plugin-side read

@@ -231,11 +231,14 @@ func BuildLocalPkgOnHost(ctx context.Context, lp *LocalPkgDef, srcDir string, op
 		return nil, err
 	}
 	defer releaseBuildDir()
-	pkgDest, err := os.MkdirTemp("", "charly-localpkg-")
+	// Held for the build's lifetime (proc.MkdirTempHeld): makepkg writes into src/ and pkg/
+	// under this root and holds it as its CWD, so the sweep's age and open-fd guards BOTH read
+	// it as abandoned within five minutes. This is the tree the roster watched vanish mid-build.
+	pkgDest, releasePkgDest, err := proc.MkdirTempHeld("", "charly-localpkg-")
 	if err != nil {
 		return nil, fmt.Errorf("localpkg build output tempdir: %w", err)
 	}
-	proc.RegisterTempCleanup(pkgDest)
+	defer releasePkgDest()
 	keepArtifacts := false
 	defer func() {
 		if !keepArtifacts {
@@ -272,14 +275,19 @@ func stageLocalPkgSource(srcDir string) (string, func(), error) {
 	if !info.IsDir() {
 		return "", nil, fmt.Errorf("localpkg source %s is not a directory", srcDir)
 	}
-	stageRoot, err := os.MkdirTemp("", "charly-localpkg-src-")
+	// THE tree the roster lost. makepkg runs with source/ as its CWD and writes src/ and pkg/
+	// beneath it, so this root's own mtime never advances and no descriptor points at it — the
+	// sweep read it as abandoned five minutes in and RemoveAll'd it mid-build (one bed died with
+	// src/charly gone). Held for the build's lifetime; the hold is dropped in release, after the
+	// tree is removed.
+	stageRoot, dropStageHold, err := proc.MkdirTempHeld("", "charly-localpkg-src-")
 	if err != nil {
 		return "", nil, fmt.Errorf("localpkg source tempdir: %w", err)
 	}
-	proc.RegisterTempCleanup(stageRoot)
 	release := func() {
 		_ = os.RemoveAll(stageRoot)
 		proc.UnregisterTempCleanup(stageRoot)
+		dropStageHold()
 	}
 	stageDir := filepath.Join(stageRoot, "source")
 	if err := copyLocalPkgSource(srcDir, stageDir); err != nil {
@@ -568,11 +576,13 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, bDef *BuilderDef, bu
 	// Host staging dir bind-mounted as /tmp/aur-pkgs — the builder writes the
 	// package files here; we then glob them. RegisterTempCleanup sweeps it on
 	// exit; no defer-remove (caller owns the files until install completes).
-	hostStage, err := os.MkdirTemp("", "charly-pkgdep-")
+	// Held for the builder container's lifetime — same exposure as the localpkg stage above: the
+	// writes land inside the bind-mount, never touching this root's own mtime.
+	hostStage, releaseHostStage, err := proc.MkdirTempHeld("", "charly-pkgdep-")
 	if err != nil {
 		return nil, fmt.Errorf("dependency staging mkdir: %w", err)
 	}
-	proc.RegisterTempCleanup(hostStage)
+	defer releaseHostStage()
 	keepArtifacts := false
 	defer func() {
 		if !keepArtifacts {
@@ -751,6 +761,20 @@ func ExecLocalPkgInstall(ctx context.Context, exec DeployExecutor, s *LocalPkgIn
 	}
 	pkgDir := ResolveLocalPkgDir(s.PkgbuildRef, s.CandyDir, s.ProjectDir, s.LocalPkg.SourceSentinel)
 	if pkgDir == "" {
+		// On a BED this is fatal, matching renderLocalPkgImageDevInstall's identical condition on
+		// the image path. The two legs used to disagree: the image build hard-errored ("a
+		// disposable check bed must build the in-development package") while this one printed a
+		// skip and returned nil even for a bed. That asymmetry is how check-fedora-vm quietly
+		// stopped building its rpm when pkg/fedora was an uninitialized submodule — the deploy
+		// reported a benign skip, and the bed failed much later at a live `rpm -q` check that
+		// named neither the missing source nor the skipped build.
+		//
+		// For a NON-bed deploy the skip stays: a target whose distro simply has no package source
+		// in this checkout legitimately falls back to the candy's curl/COPY task.
+		if opts.DevLocalPkg {
+			return fmt.Errorf("dev-local-pkg: cannot locate the %s localpkg source (%q) for candy %q from candy dir %q or project dir %q — a disposable check bed must build the in-development package from local source (an uninitialized pkg/ submodule is the usual cause)",
+				s.Format, s.PkgbuildRef, s.CandyName, s.CandyDir, s.ProjectDir)
+		}
 		fmt.Fprintf(os.Stderr, "%s skip: localpkg %s (candy=%s) — no package source found from candy dir %q or project dir %q; the candy's curl/COPY task installs it instead\n",
 			venueName, s.PkgbuildRef, s.CandyName, s.CandyDir, s.ProjectDir)
 		return nil

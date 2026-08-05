@@ -84,10 +84,10 @@ var RuntimeOnlyVarPrefixes = []string{
 	// VM live-check intent: how many <hostdev> the VM's spec declares. Resolved only against a
 	// live VM deployment (check_cmd.go VM path), so a build-scope check must not reference it.
 	"VM_HOSTDEV_COUNT",
-	// The sanitized deploy name of the deployment under check — the same value
-	// K3sPostProvision uses for the kubeconfig context + ClusterProfile name, so a deploy-scope
-	// k8s check can address its own cluster generically via cluster: "${DEPLOY_NAME}". Resolved
-	// only against a live deployment.
+	// The sanitized deploy name of the deployment under check. Resolved only against a live
+	// deployment. NOT a cluster selector: the VM live check seeds it from the SHARED kind:vm
+	// ENTITY name, so cluster: "${DEPLOY_NAME}" cannot address a bed's own kubeconfig context
+	// (see ResolveCheckVarsRuntime in checkvars.go and the k3s-server candy).
 	"DEPLOY_NAME",
 	// Cross-member address var (resolved in candy/plugin-check/members.go): the unified
 	// ${HOST:<member>} (+ optional :port) lets a driven probe (a check with `on:`, or a sibling

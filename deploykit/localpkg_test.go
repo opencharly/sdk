@@ -210,9 +210,10 @@ func TestExecLocalPkgInstall_SkipsNilLocalPkg(t *testing.T) {
 	}
 }
 
-// TestExecLocalPkgInstall_SkipsMissingSource proves a missing source dir on a
-// supported venue is ALSO a clean no-op (fallback to the candy's curl/COPY
-// task) — not an error that aborts the deploy.
+// TestExecLocalPkgInstall_SkipsMissingSource is the NON-BED arm: for an ordinary deploy a missing
+// source dir on a supported venue stays a clean no-op (fallback to the candy's curl/COPY task), not
+// an error that aborts the deploy. Its bed counterpart is
+// TestExecLocalPkgInstall_MissingSourceIsFatalOnABed below.
 func TestExecLocalPkgInstall_SkipsMissingSource(t *testing.T) {
 	exec := &localPkgRecExec{}
 	s := &LocalPkgInstallStep{PkgbuildRef: "no/such/source", CandyName: "charly", ProjectDir: t.TempDir(), Format: "pac", LocalPkg: testPacLocalPkgDef()}
@@ -221,6 +222,51 @@ func TestExecLocalPkgInstall_SkipsMissingSource(t *testing.T) {
 	}
 	if len(exec.systemScripts) != 0 || len(exec.putDests) != 0 {
 		t.Errorf("missing source must not install anything: systemScripts=%v putDests=%v", exec.systemScripts, exec.putDests)
+	}
+}
+
+// TestExecLocalPkgInstall_MissingSourceIsFatalOnABed is the BED arm, and the regression this fix
+// closes. The image path already hard-errored on exactly this condition
+// (renderLocalPkgImageDevInstall: "a disposable check bed must build the in-development package");
+// the deploy path printed a skip and returned nil even for a bed. That asymmetry let
+// check-fedora-vm quietly stop building its rpm when pkg/fedora was an uninitialized submodule —
+// the deploy looked benign and the bed failed much later at a live `rpm -q` that named neither the
+// missing source nor the skipped build.
+func TestExecLocalPkgInstall_MissingSourceIsFatalOnABed(t *testing.T) {
+	exec := &localPkgRecExec{}
+	s := &LocalPkgInstallStep{PkgbuildRef: "no/such/source", CandyName: "charly", ProjectDir: t.TempDir(), Format: "rpm", LocalPkg: testPacLocalPkgDef()}
+
+	err := ExecLocalPkgInstall(context.Background(), exec, s, true /* supported */, "vm:check-fedora-vm", EmitOpts{DevLocalPkg: true})
+	if err == nil {
+		t.Fatal("a bed deploy with no locatable package source returned nil — the bed would install nothing and claim success, then fail later at an unrelated live check")
+	}
+	for _, want := range []string{"dev-local-pkg", "charly", "no/such/source"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q so the cause is readable at the point of failure", err, want)
+		}
+	}
+	if len(exec.systemScripts) != 0 || len(exec.putDests) != 0 {
+		t.Errorf("a failed bed localpkg install must not have installed anything: systemScripts=%v putDests=%v", exec.systemScripts, exec.putDests)
+	}
+}
+
+// TestExecLocalPkgInstall_BedFlagDoesNotBreakTheOtherSkips guards the blast radius: the bed
+// discriminator changes ONE decision. A venue with no package manager, or a distro that declares no
+// localpkg-capable format at all, is still a legitimate no-op on a bed — neither is a missing
+// in-development source, and failing them would make beds unrunnable on those targets.
+func TestExecLocalPkgInstall_BedFlagDoesNotBreakTheOtherSkips(t *testing.T) {
+	bed := EmitOpts{DevLocalPkg: true}
+
+	exec := &localPkgRecExec{}
+	unsupported := &LocalPkgInstallStep{PkgbuildRef: "pkg/arch", CandyName: "charly", ProjectDir: t.TempDir(), Format: "pac", LocalPkg: testPacLocalPkgDef()}
+	if err := ExecLocalPkgInstall(context.Background(), exec, unsupported, false /* supported */, "host", bed); err != nil {
+		t.Errorf("an unsupported venue must stay a no-op on a bed, got %v", err)
+	}
+
+	exec = &localPkgRecExec{}
+	noFormat := &LocalPkgInstallStep{PkgbuildRef: "pkg/arch", CandyName: "charly", ProjectDir: t.TempDir()} // LocalPkg nil
+	if err := ExecLocalPkgInstall(context.Background(), exec, noFormat, true, "host", bed); err != nil {
+		t.Errorf("a distro with no localpkg-capable format must stay a no-op on a bed, got %v", err)
 	}
 }
 

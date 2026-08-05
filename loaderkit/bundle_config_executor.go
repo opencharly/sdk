@@ -90,9 +90,9 @@ func LoadHostBundleConfigViaExecutor(ctx context.Context, ex *sdk.Executor) (*de
 // ResolveLifecycleDeployNodeViaExecutor is the drop-in replacement for the deleted
 // deploykit.ResolveLifecycleDeployNodeViaSeam: it resolves the per-host deploy overlay entry for
 // a start/stop/shell/cmd/logs/service verb PLUGIN-SIDE, threading the DATA a command:pod /
-// command:cmd plugin passes into the pod-lifecycle HostBuild requests (spec.PodStartRequest.Node
-// et al.) so the host's dispatchLifecycleTarget operates on the passed *spec.Deploy instead of
-// re-reading the per-host config itself.
+// command:cmd plugin passes into the single pod-lifecycle HostBuild request
+// (spec.PodLifecycleRequest.Node, #55 W3 A10b) so the host's dispatchLifecycleTarget operates on
+// the passed *spec.Deploy instead of re-reading the per-host config itself.
 //
 // Byte-identical to the former core resolver: the dc.Bundle[key] lookup keyed by DeployKey, the
 // container/""→pod Target normalization, and the {Target:pod} fallback for a bare image with no

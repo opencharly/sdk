@@ -140,11 +140,17 @@ func ResolveCheckVarsRuntime(meta *spec.BoxMetadata, deploy *vmshared.BundleNode
 	_ = deploy // reserved for future per-deploy overrides; instance now arrives explicitly
 	env := buildTimeVars(meta, instance)
 
-	// DEPLOY_NAME — the sanitized name of the deployment under check, the same
-	// identifier K3sPostProvision uses for the kubeconfig context + ClusterProfile
-	// (SanitizeDeployName collapses ':'/'.'/'/'-> '-'). Deploy-scope checks address
-	// their own cluster generically via cluster: "${DEPLOY_NAME}". Runtime-only
-	// (see RuntimeOnlyVarPrefixes) so it is never offered to build-scope checks.
+	// DEPLOY_NAME — the sanitized name of the deployment under check
+	// (SanitizeDeployName collapses ':'/'.'/'/'-> '-'). Runtime-only (see
+	// RuntimeOnlyVarPrefixes) so it is never offered to build-scope checks.
+	//
+	// NOT a cluster selector. It is per-deployment only on THIS path; the VM live
+	// check seeds it from the kind:vm ENTITY name instead (candy/plugin-check's
+	// pluginCheckLiveVM), and every bed deploying that entity SHARES it, so a
+	// cluster: "${DEPLOY_NAME}" in a candy plan names another deployment's context
+	// or none at all. A deploy needing a specific cluster names its own kind:k8s
+	// profile by literal, and a generic candy probes its control plane in-venue
+	// (see the k3s-server candy).
 	if deployName != "" {
 		env["DEPLOY_NAME"] = SanitizeDeployName(deployName)
 	}

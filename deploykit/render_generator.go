@@ -84,21 +84,30 @@ type Generator struct {
 	CollectBoxPorts func(boxName string) ([]string, error)
 
 	// ValidateEgress gates a hand-built config (traefik routes, …) against the
-	// egress CUE schemas before it is written into the build context. Wraps core
-	// ValidateEgress (the egress validation stays core / its plugin) — mode "bytes".
+	// egress CUE schemas before it is written into the build context — mode "bytes".
+	// NewRenderGeneratorFromProject wires this to renderSeamCaller.validateEgress
+	// (render_generator_from_project.go), a direct verb:egress InvokeProvider peer
+	// dispatch — verb:egress is compiled-in, no host round-trip needed.
 	ValidateEgress func(kind, label string, data []byte) error
 
 	// ValidateTextEgress gates a rendered TEXT artifact (the Containerfile — rejects the
-	// "<no value>" template-failure marker) against the rendered_text constraint. Wraps core
-	// validateTextEgress (kind "rendered_text", mode "text"). Distinct from ValidateEgress (bytes)
-	// because the Containerfile is a rendered string, not a YAML/JSON blob (#67 render-DRIVE move).
+	// "<no value>" template-failure marker) against the rendered_text constraint — mode
+	// "text". Distinct from ValidateEgress (bytes) because the Containerfile is a rendered
+	// string, not a YAML/JSON blob (#67 render-DRIVE move). Same wiring/dispatch mechanism
+	// as ValidateEgress above, just the "text" mode.
 	ValidateTextEgress func(label, text string) error
 
 	// RenderService materializes a ServiceEntry into a RenderedService via
 	// candy/plugin-init's OpResolve (the init-system template knowledge lives in
-	// the plugin) and egress-gates the unit text. The plugin Invoke + the egress
-	// gate STAY CORE; charly's toDeploykit() wires core RenderService here. Used by
-	// GenerateInitFragments (fragment_assembly model).
+	// the plugin) and egress-gates the unit text. NewRenderGeneratorFromProject wires
+	// this to renderSeamCaller.renderService (render_generator_from_project.go) — direct
+	// kind:init + verb:egress InvokeProvider peer dispatch, no host round-trip (both are
+	// compiled-in). The former charly-core RenderService this comment used to describe is
+	// DELETED (#55 W3 B4) — charly/service_render.go's deploy-time render-service HostBuild
+	// seam is gone too; compile_service_steps.go's renderServiceViaSeam reuses THIS SAME
+	// renderSeamCaller.renderService now, so both the build-time (this field) and
+	// deploy-time paths share one implementation. Used by GenerateInitFragments
+	// (fragment_assembly model).
 	RenderService func(entry *spec.ServiceEntry, def *spec.ResolvedInit, ctx spec.ServiceRenderContext) (*spec.RenderedService, error)
 
 	// RewriteHeaderCopyForRemote rewrites a stage_header_copy COPY line so its

@@ -29,11 +29,14 @@ func WriteSeedISO(outPath, userData, metaData, networkConfig string) error {
 	}
 
 	// Stage files in a tempdir. xorriso requires real paths on disk.
-	tmpDir, err := os.MkdirTemp("", "charly-cidata-*")
+	// Short-lived (stage, xorriso, remove), but held on the same path as every other swept
+	// namespace: a loaded host can stretch an ISO build past the sweep's floor, and the root's
+	// mtime is frozen the moment the staged files land inside it.
+	tmpDir, releaseTmpDir, err := proc.MkdirTempHeld("", "charly-cidata-*")
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
-	proc.RegisterTempCleanup(tmpDir)
+	defer releaseTmpDir()
 	defer func() { _ = os.RemoveAll(tmpDir); proc.UnregisterTempCleanup(tmpDir) }()
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "user-data"), []byte(userData), 0o644); err != nil {

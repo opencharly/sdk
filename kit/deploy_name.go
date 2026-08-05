@@ -9,8 +9,9 @@ import "strings"
 //
 // P12a: relocated from charly/k3s_post.go, which had the sole definition for
 // four core call sites (K3sPostProvision, checkvars.go's DEPLOY_NAME var,
-// data.go's artifact key, check_cmd.go's vm DEPLOY_NAME) — promoted here so
-// this file's own ResolveCheckVarsRuntime can call it without a core import.
+// data.go's artifact key, and the VM live check's DEPLOY_NAME — now
+// candy/plugin-check's pluginCheckLiveVM) — promoted here so this file's own
+// ResolveCheckVarsRuntime can call it without a core import.
 
 func SanitizeDeployName(s string) string {
 	r := strings.NewReplacer(":", "-", ".", "-", "/", "-")

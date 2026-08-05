@@ -14,17 +14,17 @@ import (
 // class as VmDeployEntryKeys/PruneStaleVmDottedTwin/IsAutoVmDeployEntry (FLOOR-SLIM Unit 3), which
 // already live here operating on deploykit's own *BundleConfig.
 //
-// The TWO genuinely host-resident primitives this pair needs — the process-shared deploy-config
-// FLOCK (acquireDeployConfigLock) and the plugin-primaries-coupled marshal callback
-// (saveBundleConfigNodeForm) — are NOT hoistable (the marshal needs a charly-package-private
-// registry-derived lookup, pluginPrimaryFor, with no sdk exposure today; see
-// charly/deploy_nodeform.go's own header for the proven-but-undeferred HOW). So they are INJECTED
-// callbacks, mirroring SaveBundleConfig's own marshalNode-callback shape: the caller (charly's
-// hostBuildConfigPersist) supplies acquireDeployConfigLock + saveBundleConfigNodeForm, and the WHOLE
-// read→decide→write critical section still runs under ONE lock hold in THIS function — atomicity is
-// preserved exactly as before, just with the decision logic relocated out of charly core. Splitting
-// the decision logic into a separate plugin-side call fed by a stale prior read would reintroduce
-// the lost-update race RCA #6/#7 (referenced below) already fixed — that design was considered and
+// The plugin-primaries-coupled marshal callback (saveBundleConfigNodeForm) is NOT hoistable — the
+// marshal needs a charly-package-private registry-derived lookup, pluginPrimaryFor, with no sdk
+// exposure today (see charly/deploy_nodeform.go's own header for the proven-but-undeferred HOW) —
+// so it stays an INJECTED save callback, mirroring SaveBundleConfig's own marshalNode-callback
+// shape. The process-shared deploy-config FLOCK is NO LONGER injected: both bodies below run inside
+// MutateBundleConfig (deploy_config_cycle.go), THE one locked read-modify-write cycle every overlay
+// writer now shares, so the WHOLE read→decide→write critical section still runs under ONE lock hold
+// exactly as before while the two per-candy lock copies this pair used to be handed are deleted
+// (R3). Splitting the decision logic into a separate plugin-side call fed by a stale prior read
+// would reintroduce the
+// lost-update race RCA #6/#7 (referenced below) already fixed — that design was considered and
 // rejected (team-lead ruling, #118 coneB-vmlifecycle).
 
 // SaveVmDeployState writes the updated VmDeployState into ~/.config/charly/charly.yml for the given
@@ -34,42 +34,35 @@ import (
 // deploy key e.g. `check-k3s-vm` differs from `vm:<entity>`) carries the linkage teardown needs to
 // find + remove it.
 //
-// acquireLock serializes the load→modify→save against concurrent charly processes — the SAME
-// blocking deploy-config lock every other deploy-state writer uses. Without it two parallel
-// `charly vm create` persist-auto-port writers (or a vm-create racing a `charly bundle add
-// vm:<name>`) load → modify → save the shared ~/.config/charly/charly.yml and silently drop each
-// other's entry.
+// The load→modify→save runs inside MutateBundleConfig, so it holds the process-shared blocking
+// deploy-config lock across the whole cycle and re-reads the overlay INSIDE that lock. Without
+// that, two parallel `charly vm create` persist-auto-port writers (or a vm-create racing a `charly
+// bundle add vm:<name>`) load → modify → save the shared ~/.config/charly/charly.yml and silently
+// drop each other's entry.
 //
-// read is the current-state re-read this load-mutate-save performs. A nil read falls back to
+// read is the current-state re-read that cycle performs. A nil read falls back to
 // LoadBundleConfig — the DeployStateHost-backed host read — so an IN-PROCESS host caller passes nil
 // and behaves exactly as before. A plugin caller (out-of-process command:vm) injects its OWN
 // loader-backed reader (loaderkit.LoadHostBundleConfigViaExecutor), so SaveVmDeployState no longer
 // requires the DeployStateHost package var (#55 coneC-dsh config-write seam-collapse — mirrors the
 // SaveBundleConfig/SaveDeployState reader-callback precedent).
-func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, acquireLock func() (func() error, error), save func(*BundleConfig) error, read func() (*BundleConfig, error)) error {
-	unlock, lockErr := acquireLock()
-	if lockErr != nil {
-		return fmt.Errorf("locking charly.yml for vm-state write: %w", lockErr)
-	}
-	defer func() { _ = unlock() }()
-
-	// Load existing charly.yml (or start fresh). A nil read falls back to the DeployStateHost-backed
-	// LoadBundleConfig (in-proc host caller); a plugin caller injects its own loader-backed reader.
+func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, save func(*BundleConfig) error, read func() (*BundleConfig, error)) error {
 	loadBase := read
 	if loadBase == nil {
 		loadBase = LoadBundleConfig
 	}
-	dc, err := loadBase()
-	if err != nil {
-		return fmt.Errorf("loading charly.yml: %w", err)
-	}
-	if dc == nil {
-		dc = &BundleConfig{}
-	}
-	if dc.Bundle == nil {
-		dc.Bundle = map[string]BundleNode{}
-	}
+	_, err := MutateBundleConfig(loadBase, save, func(dc *BundleConfig) (bool, error) {
+		saveVmStateInto(dc, deployName, vmEntity, state)
+		return true, nil
+	})
+	return err
+}
 
+// saveVmStateInto applies the vm-state write to a FRESH overlay read under the deploy-config lock.
+// Split out of SaveVmDeployState only so the mutation is a plain function over fresh state — the
+// shape MutateBundleConfig requires and the reason the lock never has to span a caller's
+// orchestration.
+func saveVmStateInto(dc *BundleConfig, deployName, vmEntity string, state *spec.VmDeployState) {
 	entry, exists := dc.Bundle[deployName]
 	if !exists {
 		entry = BundleNode{}
@@ -117,35 +110,31 @@ func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, a
 	if pruned := PruneStaleVmDottedTwin(dc, deployName); pruned != "" {
 		fmt.Fprintf(os.Stderr, "note: pruned a stale per-host overlay entry %q for domain %q — left by a prior version's now-eliminated dotted-key vm-state write (canonical entry: %q)\n", pruned, vmshared.VmDomainIdentity(deployName), deployName)
 	}
-
-	return save(dc)
 }
 
-// RemoveVmDeployEntry strips deploy.<deployName> from charly.yml. acquireLock/save are the SAME
-// injected host-resident primitives SaveVmDeployState takes — see this file's header. read is the
-// SAME reader-callback SaveVmDeployState takes (nil → DeployStateHost-backed LoadBundleConfig; a
-// plugin caller injects its own loader-backed reader).
-func RemoveVmDeployEntry(deployName string, acquireLock func() (func() error, error), save func(*BundleConfig) error, read func() (*BundleConfig, error)) error {
-	unlock, lockErr := acquireLock()
-	if lockErr != nil {
-		return fmt.Errorf("locking charly.yml for vm-entry removal: %w", lockErr)
-	}
-	defer func() { _ = unlock() }()
-
+// RemoveVmDeployEntry strips deploy.<deployName> from charly.yml. save is the SAME injected
+// node-form persist callback SaveVmDeployState takes — see this file's header — and the
+// load→decide→write runs under the SAME MutateBundleConfig lock hold. read is the SAME
+// reader-callback SaveVmDeployState takes (nil → DeployStateHost-backed LoadBundleConfig; a plugin
+// caller injects its own loader-backed reader).
+func RemoveVmDeployEntry(deployName string, save func(*BundleConfig) error, read func() (*BundleConfig, error)) error {
 	loadBase := read
 	if loadBase == nil {
 		loadBase = LoadBundleConfig
 	}
-	dc, err := loadBase()
-	if err != nil {
-		return err
-	}
-	if dc == nil || dc.Bundle == nil {
-		return nil
-	}
+	_, err := MutateBundleConfig(loadBase, save, func(dc *BundleConfig) (bool, error) {
+		return removeVmEntriesFrom(dc, deployName), nil
+	})
+	return err
+}
+
+// removeVmEntriesFrom applies the vm-entry removal to a FRESH overlay read under the deploy-config
+// lock, reporting whether anything changed (false skips the write). Split out for the same reason
+// saveVmStateInto is: MutateBundleConfig takes a function over fresh state.
+func removeVmEntriesFrom(dc *BundleConfig, deployName string) bool {
 	keys := VmDeployEntryKeys(dc, deployName)
 	if len(keys) == 0 {
-		return nil
+		return false
 	}
 	// Destroying the VM invalidates only the RUNTIME state (vm_state). Clear
 	// that, but PRESERVE every operator-authored per-host field (preemptible,
@@ -170,5 +159,5 @@ func RemoveVmDeployEntry(deployName string, acquireLock func() (func() error, er
 			dc.Bundle[key] = entry
 		}
 	}
-	return save(dc)
+	return true
 }

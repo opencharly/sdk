@@ -472,28 +472,27 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 		}
 		loadBase = func() (*BundleConfig, error) { return LoadDeployConfigForWrite("saveDeployState") }
 	}
-	path, pathErr := kit.DefaultDeployConfigPath()
-	if pathErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not resolve charly.yml path: %v\n", pathErr)
-		return
-	}
-	unlock, lockErr := kit.AcquireFileLock(path+".lock", true)
-	if lockErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not lock charly.yml for write: %v\n", lockErr)
-		return
-	}
-	defer func() { _ = unlock() }()
-	dc, err := loadBase()
-	if err != nil {
+	// The lock hold, the fresh re-read inside it, and the nil-config self-heal are
+	// MutateBundleConfig's (deploy_config_cycle.go) — THE one locked read-modify-write cycle every
+	// overlay writer shares. The write is best-effort, so a lock/read/write failure warns rather
+	// than propagating, exactly as this body's own inline lock did before.
+	// Thread the same reader into the fail-safe re-check so an out-of-process caller's write
+	// path never falls back to the DeployStateHost-backed LoadBundleConfig (nil → host default).
+	save := func(dc *BundleConfig) error { return SaveBundleConfig(dc, marshalNode, read) }
+	if _, err := MutateBundleConfig(loadBase, save, func(dc *BundleConfig) (bool, error) {
+		return applyDeployState(dc, boxName, instance, input), nil
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not save to charly.yml: %v\n", err)
-		return
 	}
-	if dc == nil {
-		dc = &BundleConfig{Bundle: make(map[string]BundleNode)}
-	}
-	if dc.Bundle == nil {
-		dc.Bundle = make(map[string]BundleNode)
-	}
+}
+
+// applyDeployState writes input's set fields onto the deploy's entry in a FRESH overlay read under
+// the deploy-config lock, reporting whether anything is worth persisting. Split out of
+// SaveDeployState so the mutation is a plain function over fresh state — the shape
+// MutateBundleConfig requires.
+//
+//nolint:gocyclo // field-by-field conditional persist; every branch is a peer (write-when-set)
+func applyDeployState(dc *BundleConfig, boxName, instance string, input SaveDeployStateInput) bool {
 	key := DeployKey(boxName, instance)
 	entry := dc.Bundle[key] // preserve existing fields (tunnel, volumes, etc.)
 	if input.Box != "" && entry.Image == "" {
@@ -575,14 +574,10 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 	// on a key that doesn't yet exist would otherwise write `<key>: {}`, materializing an empty
 	// entry that masks any matching entry from the project charly.yml deploy block.
 	if reflect.DeepEqual(entry, BundleNode{}) {
-		return
+		return false
 	}
 	dc.Bundle[key] = entry
-	// Thread the same reader into the fail-safe re-check so an out-of-process caller's write
-	// path never falls back to the DeployStateHost-backed LoadBundleConfig (nil → host default).
-	if err := SaveBundleConfig(dc, marshalNode, read); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not save to charly.yml: %v\n", err)
-	}
+	return true
 }
 
 // CleanDeployEntry removes an image's entry from charly.yml (best-effort). Also removes global
@@ -613,23 +608,39 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 		}
 		loadBase = LoadBundleConfig
 	}
-	path, pathErr := kit.DefaultDeployConfigPath()
-	if pathErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not resolve charly.yml path: %v\n", pathErr)
-		return
-	}
-	unlock, lockErr := kit.AcquireFileLock(path+".lock", true)
-	if lockErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not lock charly.yml for clean: %v\n", lockErr)
-		return
-	}
-	defer func() { _ = unlock() }()
-	dc, err := loadBase()
-	if err != nil || dc == nil {
-		return
-	}
-
 	key := DeployKey(boxName, instance)
+	save := func(dc *BundleConfig) error { return SaveBundleConfig(dc, marshalNode, read) }
+	cleaned := false
+	// The lock hold and the fresh re-read inside it are MutateBundleConfig's — the same locked
+	// cycle every other overlay writer uses. This clean is the one writer whose mutation may end
+	// in REMOVING the file rather than saving it, so that branch reports changed=false (nothing
+	// left to persist) after removing it.
+	if _, err := MutateBundleConfig(loadBase, save, func(dc *BundleConfig) (bool, error) {
+		if !cleanDeployEntryFrom(dc, boxName, instance, key) {
+			return false, nil
+		}
+		cleaned = true
+		if len(dc.Bundle) == 0 && dc.Provides == nil {
+			if path, pathErr := kit.DefaultDeployConfigPath(); pathErr == nil {
+				_ = os.Remove(path)
+			}
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not clean charly.yml: %v\n", err)
+		return
+	}
+	if cleaned {
+		fmt.Fprintf(os.Stderr, "Cleaned charly.yml entry for %s\n", key)
+	}
+}
+
+// cleanDeployEntryFrom removes the deploy's entry and any provides it injected from a FRESH overlay
+// read under the deploy-config lock, reporting whether it removed anything. Split out of
+// CleanDeployEntry so the mutation is a plain function over fresh state — the shape
+// MutateBundleConfig requires.
+func cleanDeployEntryFrom(dc *BundleConfig, boxName, instance, key string) bool {
 	hasImage := false
 	if _, ok := dc.Bundle[key]; ok {
 		hasImage = true
@@ -691,17 +702,5 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 		}
 	}
 
-	if !hasImage && !removedProvides {
-		return
-	}
-
-	if len(dc.Bundle) == 0 && dc.Provides == nil {
-		if path, pathErr := kit.DefaultDeployConfigPath(); pathErr == nil {
-			_ = os.Remove(path)
-		}
-	} else if err := SaveBundleConfig(dc, marshalNode, read); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not clean charly.yml: %v\n", err)
-		return
-	}
-	fmt.Fprintf(os.Stderr, "Cleaned charly.yml entry for %s\n", key)
+	return hasImage || removedProvides
 }
