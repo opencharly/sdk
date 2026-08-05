@@ -39,7 +39,7 @@ import (
 // opInContext), safe there because charly always shares that process with the compile call. This
 // package's own test binary links no charly core, so the hook stays nil unless wired here. The
 // implementation is pure (spec.VerbCatalog is static data + the op's own declared Context — no
-// registry consult), so it is ported verbatim from charly/checkspec.go's opInContext/
+// registry consult), so it is ported verbatim from charly/planrun_adapter.go's opInContext/
 // opEffectiveContexts (the SAME port candy/plugin-bundle's bundle_test_helpers_test.go already
 // carries for its own out-of-module test binary — R3 would collapse these into one shared sdk
 // helper if a THIRD package ever needed it; two independent test-binary ports of a ~15-line pure
