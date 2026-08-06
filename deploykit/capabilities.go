@@ -76,8 +76,10 @@ var CapabilityLabelMap = map[string]string{
 	// Hooks
 	"Hook": spec.LabelHook,
 
-	// Skills (doc pointer)
-	"Skill": spec.LabelSkill,
+	// Skills (the composed candies' skill definitions — readable from the image, no fetch;
+	// the ai.opencharly.skill key's wire shape migrated from a dead doc-pointer URL to the
+	// JSON skill array — singular wire name per the list-label convention)
+	"Skills": spec.LabelSkill,
 
 	// Data seeding
 	"DataEntries": spec.LabelDataEntries,
