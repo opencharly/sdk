@@ -43,11 +43,11 @@ type Root struct {
 // the leaf (a plugin-bundle candy's `plugin:` block came back nil), while the value-node decode
 // round-trips faithfully. The value-node form is what the original plugin-docs walk used.
 type Entity struct {
-	Name      string     // the top-level node name (as authored)
-	Namespace string     // "" for the superproject, else the box/<distro> submodule name
-	Dir       string     // directory holding this charly.yml, relative to the repo root
-	Kind      string     // the node's kind discriminator ("candy", "skill", "hook", "marketplace", …)
-	Value     yaml.Node  // the kind value body
+	Name      string    // the top-level node name (as authored)
+	Namespace string    // "" for the superproject, else the box/<distro> submodule name
+	Dir       string    // directory holding this charly.yml, relative to the repo root
+	Kind      string    // the node's kind discriminator ("candy", "skill", "hook", "marketplace", …)
+	Value     yaml.Node // the kind value body
 }
 
 // RepoRoots enumerates the superproject plus every box/<distro> submodule that is actually

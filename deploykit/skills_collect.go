@@ -71,7 +71,7 @@ func CollectSkills(cfg *spec.Config, layers map[string]CandyModel, boxName strin
 func projectSkill(s spec.Skill) spec.LabelSkillEntry {
 	refs := make([]spec.LabelSkillReference, 0, len(s.References))
 	for _, r := range s.References {
-		refs = append(refs, spec.LabelSkillReference{Name: r.Name, Content: r.Content})
+		refs = append(refs, spec.LabelSkillReference(r)) // S1016 — convertible field-identical types
 	}
 	return spec.LabelSkillEntry{
 		Family:      s.Family,

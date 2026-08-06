@@ -144,20 +144,6 @@ func ParseCandyManifest(path string, t spec.Threaded, vocab spec.CandyVocab) (*s
 	return nil, fmt.Errorf("%s: unrecognized candy manifest shape — expected node-form `<name>: {candy: …}` (or the `candy:` kind-keyed form)", path)
 }
 
-// kindWord reports whether w is one of the reserved authoring KIND keywords (the #Node
-// discriminators). The set is CUE-derived (spec.KindWords) and is EMPTY today — every authoring kind
-// is plugin-served — but the guard is preserved verbatim from the pre-move charly/layers.go rather
-// than folded away, because collapsing it would silently change the shape-classification rule if a
-// built-in arm ever returned.
-func kindWord(w string) bool {
-	for _, k := range spec.KindWords {
-		if k == w {
-			return true
-		}
-	}
-	return false
-}
-
 // SingleCandyMappingNode parses a candy manifest's bytes as a YAML multi-document stream and returns
 // the single top-level mapping node (DocumentNode unwrapped). It returns (nil, nil) when the stream
 // holds no non-empty document (an all-comment / null file → zero-value candy body), and errors on a
