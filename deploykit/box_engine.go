@@ -3,17 +3,15 @@ package deploykit
 import "github.com/opencharly/spec/spec"
 
 // box_engine.go — the two per-deploy engine-resolution functions with NO project-loader
-// dependency (K4: relocated from charly/engine.go). Homed here (not kit) because
+// dependency (K4: relocated from the DELETED charly/engine.go). Homed here (not kit) because
 // ResolveBoxEngineForDeploy needs LoadDeployConfigForRead, a deploykit-only mechanism (kit cannot
-// import deploykit — that would cycle). ResolveBoxEngine/ResolveBoxEngineFromDir/ImageRuntime
-// (which DO need *Config/*Candy/LoadConfig) STAY in charly core (charly/engine.go). Shared
-// between charly core's remaining callers — commands.go, config_image.go, preempt.go,
-// service.go, pod_lifecycle_resolve.go, all direct deploykit.ResolveBoxEngineForDeploy/
-// ResolveBoxEngineFromMeta calls (CHECK-wave container-resolve dedup; corrected 2026-07-20 —
-// this comment previously named resolved_project_host.go and the since-deleted
-// status_collector.go, neither of which ever called these two functions, and claimed
-// preempt.go already called them directly when it in fact still called a bare core
-// duplicate until this fix) — and candy/plugin-deploy-pod (the pod-lifecycle resolvers).
+// import deploykit — that would cycle). ResolveBoxEngine (the *Config/*Candy/LoadConfig-bound
+// variant) lives in sdk/deploykit/box_build_resolve.go; ResolveBoxEngineFromDir/ImageRuntime have
+// no live definition. The consumers of ResolveBoxEngineForDeploy are all candies:
+// candy/plugin-deploy-pod/resolve.go, candy/plugin-pod/{pod_cmd,service_resolve,
+// remove_orchestration}.go, candy/plugin-preempt/holder_dispatch.go, and
+// candy/plugin-substrate/{status_flat,status_android_collect}.go (CHECK-wave container-resolve
+// dedup; corrected 2026-08-06 — the former charly-core caller list named deleted files).
 
 // ResolveBoxEngineForDeploy resolves the run engine from the per-host deploy config,
 // falling back to globalEngine. No charly.yml (project) dependency.
