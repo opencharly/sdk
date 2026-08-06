@@ -18,11 +18,12 @@ import (
 //
 // The verb:enc OpExecute dispatch is now fully plugin-owned (candy/plugin-deploy-pod +
 // candy/plugin-pod drive verb:enc via their own InvokeProvider; the former core encExecViaPlugin
-// shim + the pod-config-enc-mounts seam are RETIRED). awaitKeyringUnlockViaPlugin needs the
-// CONCRETE core CredentialStore's awaitUnlock/credentialAwaiter — it is threaded into
+// shim + the pod-config-enc-mounts seam are RETIRED). The keyring-unlock wait is likewise
+// plugin-side (candy/plugin-pod's pluginAwaitKeyringUnlock) — it is threaded into
 // ResolveEncPassphraseForMount below as an injected `waiter` closure, exactly like the
-// pre-existing resolver/reset closures, so this package needs no knowledge of its shape
-// beyond the func signature it already declared).
+// resolver/reset closures, so this package needs no knowledge of its shape beyond the func
+// signature it already declared. (Core's former awaitUnlock/credentialAwaiter +
+// awaitKeyringUnlockViaPlugin are DELETED, K-wave 2 cone CONTESTED.)
 
 // ResolveEncPassphrase resolves the gocryptfs passphrase for an image. Resolution order:
 // GOCRYPTFS_PASSWORD env var → credential store (keyring/config) → auto-generate or
@@ -73,10 +74,12 @@ var EncMountPollPeriod = 5 * time.Second
 //
 // Interactive callers fall back to ResolveEncPassphrase which can prompt.
 //
-// backend/reset/waiter are supplied by the caller: charly-core passes its
-// resolveSecretBackend()/resetDefaultCredentialStore/awaitKeyringUnlockViaPlugin (the
+// backend/reset/waiter are supplied by the caller: candy/plugin-pod passes its
+// pluginResolveSecretBackend()/pluginResetCredentialStore/pluginAwaitKeyringUnlock (the
 // keyring-unlock wait RPCs verb:credential `await-unlock` out-of-process in
-// candy/plugin-secrets); a future plugin caller supplies its own InvokeProvider-backed
+// candy/plugin-secrets — core's former resolveSecretBackend/resetDefaultCredentialStore/
+// awaitKeyringUnlockViaPlugin are DELETED, K-wave 2 cone CONTESTED); a future plugin caller
+// supplies its own InvokeProvider-backed
 // equivalents. waiter may be nil (falls through to the bounded retry).
 func ResolveEncPassphraseForMount(boxName, backend string, cred CredentialAccess, reset func(), waiter func(ctx context.Context, boxName string, resolver func() (string, string), reset func()) (string, string, error)) (string, error) {
 	if os.Getenv("INVOCATION_ID") == "" {
