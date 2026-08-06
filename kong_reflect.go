@@ -21,9 +21,12 @@ import (
 // pure presence marker — so a value-carrying `cmd:"foo"` with no separate `name:` tag does NOT mean
 // the command is named "foo"; replicating the fallback here keeps a declared subcommand's NAME
 // byte-identical to what Kong actually dispatches). Help comes from the field's `help:` tag. A
-// field tagged `hidden:""` is skipped — machinery subcommands stay invisible to `--help` and MCP
-// exactly as in the plugin's own internal grammar. A field with no `cmd` tag key at all (kong
-// requires the key to be PRESENT, regardless of value, to mark a subcommand) is skipped too.
+// field tagged `hidden:""` is carried as Hidden:true — HIDDEN-BUT-REACHABLE, not skipped: the host
+// still renders it as a real (hidden) Kong `cmd:""` child so it DISPATCHES (the machinery a hidden
+// subcommand exists for — e.g. the iterate harness's `charly check run-local` re-exec — keeps
+// working), while `--help` and the CLI model (MCP) stay blind to it exactly as in the plugin's own
+// internal grammar. A field with no `cmd` tag key at all (kong requires the key to be PRESENT,
+// regardless of value, to mark a subcommand) is skipped too.
 func KongSubcommands(v any) []CLISubcommand {
 	rv := reflect.Indirect(reflect.ValueOf(v))
 	if rv.Kind() != reflect.Struct {
@@ -39,14 +42,12 @@ func KongSubcommands(v any) []CLISubcommand {
 		if _, ok := f.Tag.Lookup("cmd"); !ok {
 			continue
 		}
-		if _, hidden := f.Tag.Lookup("hidden"); hidden {
-			continue
-		}
+		_, hidden := f.Tag.Lookup("hidden")
 		name := f.Tag.Get("name")
 		if name == "" {
 			name = kongDefaultFieldName(f.Name)
 		}
-		out = append(out, CLISubcommand{Name: name, Help: f.Tag.Get("help")})
+		out = append(out, CLISubcommand{Name: name, Help: f.Tag.Get("help"), Hidden: hidden})
 	}
 	return out
 }

@@ -26,7 +26,7 @@ import (
 
 // LoadSeams bundles every registry-coupled or standing-core-resident step
 // LoadUnified's orchestration calls out to. A nil field panics on use — the host
-// wrapper (charly/unified.go) is the SOLE constructor and always populates every
+// wrapper (charly's LoadUnified, loader_threaded.go) is the SOLE constructor and always populates every
 // field before calling LoadUnified.
 type LoadSeams struct {
 	// RunBootstrapPhase invokes every registered bootstrap-phase plugin

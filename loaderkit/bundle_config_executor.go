@@ -87,6 +87,36 @@ func LoadHostBundleConfigViaExecutor(ctx context.Context, ex *sdk.Executor) (*de
 	return LoadBundleConfigViaExecutor(ctx, ex, dir)
 }
 
+// VmStateFromBundleConfig extracts a domain's persisted VmDeployState (the "vm:"+entity key) from
+// a per-host deploy overlay BundleConfig — the pure lookup ResolveVmStateViaExecutor applies.
+func VmStateFromBundleConfig(dc *deploykit.BundleConfig, entity string) *spec.VmDeployState {
+	if dc == nil {
+		return nil
+	}
+	if entry, ok := dc.Bundle["vm:"+entity]; ok {
+		return entry.VmState
+	}
+	return nil
+}
+
+// ResolveVmStateViaExecutor reads a domain's persisted VmDeployState (instance-id, ssh_port, disk
+// path) from the per-host deploy overlay PLUGIN-SIDE — the cycle-free replacement for the deleted
+// "config-resolve" HostBuild seam's VmState leg (K-wave 2 cone R2 bank D). Three plugins consume it
+// (candy/plugin-vm's hostConfigResolve, candy/plugin-deploy-vm's resolvePriorVmState,
+// candy/plugin-kube's deployVMForwards), so it lives here once (R3). A miss or an unreadable
+// overlay degrades to nil, matching the former seam's own swallow.
+func ResolveVmStateViaExecutor(ctx context.Context, ex *sdk.Executor, entity string) (*spec.VmDeployState, error) {
+	dir := hostBundleConfigDir()
+	if dir == "" {
+		return nil, nil
+	}
+	dc, err := LoadBundleConfigViaExecutor(ctx, ex, dir)
+	if err != nil {
+		return nil, nil
+	}
+	return VmStateFromBundleConfig(dc, entity), nil
+}
+
 // ResolveLifecycleDeployNodeViaExecutor is the drop-in replacement for the deleted
 // deploykit.ResolveLifecycleDeployNodeViaSeam: it resolves the per-host deploy overlay entry for
 // a start/stop/shell/cmd/logs/service verb PLUGIN-SIDE, threading the DATA a command:pod /

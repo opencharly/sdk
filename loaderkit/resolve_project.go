@@ -21,11 +21,12 @@ import (
 // InvokeProvider-backed / reverse-leg-backed closures. This keeps the assembler opts-agnostic — it never
 // inspects a package-main ResolveOpts, only calls the seams — so the whole body compiles here with zero
 // package-main dependency. `resolveResources` stays HOST (a resource InvokeProvider leg); the
-// namespaced-box resolve (the former host namespaced-box fill, now deleted) is a plugin-side fold over
-// the host's flat NamespaceScanReply (buildengine-namespaced) — candy/plugin-build's
-// foldNamespaceScanEntries runs ScanCandyFromLocal + deploykit.RawCandyPair + deploykit.
-// FillNamespaceBoxViews; `ResolveBox`/`ComputeIntermediates` are the pure buildkit/deploykit resolvers
-// behind a thin host wrapper.
+// namespaced-box resolve is ENTIRELY plugin-side — candy/plugin-build's fillNamespacedBoxes walks the
+// import-namespace tree off the uf it already holds, running ProjectCandiesScanned +
+// CollectRemoteRefsOpts + ScanCandyFromLocal + deploykit.RawCandyPair + deploykit.FillNamespaceBoxViews
+// per namespace, with no host round-trip (the former host namespaced-box fill and its successor
+// `buildengine-namespaced` leg are both deleted); `ResolveBox`/`ComputeIntermediates` are the pure
+// buildkit/deploykit resolvers behind a thin host wrapper.
 
 // ResolveProjectSeams carries the host-coupled legs the envelope assembler cannot run itself. Each is a
 // closure the caller builds — the host over its in-proc ResolveOpts/registry, the plugin over its reverse
@@ -35,10 +36,12 @@ type ResolveProjectSeams struct {
 	// DistroCfg/BuilderCfg that short-circuit fillBuildConfigFallback), so the assembler passes no opts.
 	ResolveBox func(cfg *spec.Config, name, calver, dir string) (*buildkit.ResolvedBox, error)
 	// FillNamespacedBoxes folds each import namespace's boxes (qualified) + their OWN candy sets into rp.
-	// The host recurses the import-namespace tree ONCE and emits a flat spec.NamespaceScanReply
-	// (buildengine-namespaced); the seam closure (candy/plugin-build's foldNamespaceScanEntries) iterates
-	// the reply plugin-side — ScanCandyFromLocal + deploykit.RawCandyPair + deploykit.FillNamespaceBoxViews.
-	// The deleted host namespaced-box fill (resolved_project_host.go) was the former in-proc owner.
+	// The seam closure owns the WHOLE recursion — the assembler calls it ONCE with prefix "" and a fresh
+	// visited set, and the closure descends uf.Namespaces itself (candy/plugin-build's
+	// fillNamespacedBoxes: ProjectCandiesScanned + CollectRemoteRefsOpts + ScanCandyFromLocal +
+	// deploykit.RawCandyPair + deploykit.FillNamespaceBoxViews per namespace). Its two predecessors —
+	// the in-proc host namespaced-box fill (resolved_project_host.go) and the `buildengine-namespaced`
+	// host leg that replaced it — are both deleted; nothing here crosses a process boundary.
 	FillNamespacedBoxes func(uf *spec.UnifiedFile, initCfg *buildkit.InitConfig, prefix, calver, dir string, rp *spec.ResolvedProject, visited map[*spec.UnifiedFile]bool)
 	// ResolveResources projects uf's `resource:` kind entities. HOST (per-node registry resolve);
 	// becomes an InvokeProvider(ClassKind,"resource") leg at U5.

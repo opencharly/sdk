@@ -25,7 +25,10 @@ import (
 // (the providerRegistry.resolve(ClassStep, word) + the in-proc reverse-channel OpEmit +
 // stepProviderFor.EmitOCI for ExternalPlugin) stays CORE (the host-side overlay builder
 // machinery, a kind-blind M-mechanism dispatched by word against the provider registry) and is
-// reached through the EmitStepOp seam the candy wires via HostBuild("render-seam","oci-emit-step").
+// reached through the EmitStepOp seam the candy wires via HostBuild("step-emit",
+// #StepEmitRequest{Word:"oci-emit-step"}). (Corrected in K-wave 2 cone R1: this line and the one
+// below named "render-seam", which was never the kind this seam dispatched on; the render-seam
+// HostBuild kind is deleted outright now, so the stale name could only mislead.)
 // The host seam reuses the EXACT former in-core emitStep/spliceClassStepEmit/stepProviderFor
 // funcs, so the rendered fragment is byte-identical to the pre-move core render (byte-parity by
 // construction, mirroring #67's render-seam contract). See P11c-VERDICT.md for the full design.
@@ -34,24 +37,24 @@ import (
 // Home (for ResolveHome), Distros (the per-step distros threaded onto the class:step OpEmit) —
 // NOT a *buildkit.ResolvedBox (the candy cannot construct one without the full Distro/Builder
 // maps, and the host-coupled render execution stays host-side behind the seam anyway). The host
-// overlay-prep returns Home/Distros to the candy (via a render-seam method), so the candy-side
-// walker never holds the heavy host state.
+// overlay-prep returns Home/Distros to the candy in its OverlayBuildReply envelope, so the
+// candy-side walker never holds the heavy host state.
 
 // OCITarget emits Containerfile directives for an InstallPlan. One instance handles one
 // overlay build; the caller (candy/plugin-deploy-pod's podPrepareVenue) constructs a target,
 // calls Emit with the add_candy plans, and reads the rendered fragment via String.
 type OCITarget struct {
-	// Dir is the project dir — the key the EmitStepOp seam (HostBuild("render-seam",
-	// "oci-emit-step")) uses to look up the host-side cached overlay buildEngineContext (the
-	// host overlay-prep constructs + caches it per dir, mirroring renderGenCache for the box
-	// build). The live *Generator / DistroDef / BuilderConfig / Box / ImageBuildDir /
-	// ContextRelPrefix the host step-emitters need never cross the wire — only this dir key does.
+	// Dir is the project dir — the key the EmitStepOp seam (HostBuild("step-emit",
+	// {Word:"oci-emit-step"})) uses to look up the host-side cached overlay buildEngineContext (the
+	// host overlay-prep constructs + caches it per dir). The live *Generator / DistroDef /
+	// BuilderConfig / Box / ImageBuildDir / ContextRelPrefix the host step-emitters need never
+	// cross the wire — only this dir key does.
 	Dir string
 
 	// Home is the overlay base image's runtime home — read by the walker for ResolveHome (the
 	// `{{.Home}}` token in home-bearing step fields resolves to this, the home the baked paths
-	// run under). The host overlay-prep returns it to the candy (via a render-seam method); the
-	// walker never holds the full ResolvedBox.
+	// run under). The host overlay-prep returns it to the candy in its OverlayBuildReply envelope;
+	// the walker never holds the full ResolvedBox.
 	Home string
 
 	// Distros is the overlay base image's distro tag set (Box.Tags) — threaded onto each step's
@@ -63,7 +66,7 @@ type OCITarget struct {
 	// Containerfile fragment via the CORE provider-registry dispatch (spliceClassStepEmit for
 	// the 12 compiler-emitted plugin-served kinds + the authored external step; stepProviderFor
 	// .EmitOCI for ExternalPlugin), using the host-side overlay Generator + buildEngineContext
-	// cached by overlay-prep. The candy wires this via HostBuild("render-seam","oci-emit-step")
+	// cached by overlay-prep. The candy wires this via HostBuild("step-emit", {Word:"oci-emit-step"})
 	// (out-of-process) or an in-proc closure (compiled-in / tests). A step that emits nothing
 	// (a deploy-only step, or VenueSkip) returns "". Nil EmitStepOp => a no-op render (the walker
 	// still writes the `# Layer:` header + the home resolution; tests that exercise the dispatch

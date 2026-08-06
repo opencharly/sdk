@@ -103,8 +103,8 @@ type Generator struct {
 	// this to renderSeamCaller.renderService (render_generator_from_project.go) — direct
 	// kind:init + verb:egress InvokeProvider peer dispatch, no host round-trip (both are
 	// compiled-in). The former charly-core RenderService this comment used to describe is
-	// DELETED (#55 W3 B4) — charly/service_render.go's deploy-time render-service HostBuild
-	// seam is gone too; compile_service_steps.go's renderServiceViaSeam reuses THIS SAME
+	// DELETED (#55 W3 B4) — the core deploy-time render-service HostBuild seam is gone too;
+	// compile_service_steps.go's renderServiceViaSeam reuses THIS SAME
 	// renderSeamCaller.renderService now, so both the build-time (this field) and
 	// deploy-time paths share one implementation. Used by GenerateInitFragments
 	// (fragment_assembly model).
@@ -130,19 +130,12 @@ type Generator struct {
 	// constructor wires it directly (no core closure needed). Used by WriteCandySteps.
 	RenderLocalPkgImageInstall func(step *LocalPkgInstallStep, devLocalPkg bool, imageDir, boxName string) (string, error)
 
-	// ResolveInlineBuilder connects + OpResolves an externalized INLINE builder and
-	// returns its in-candy fragment (C10 InlineFragment). Wraps the core builder-emit
-	// cluster (ensureBuildersConnected + registry ResolveBuilder + resolveBuilderStage;
-	// registry-coupled, stays core), preserving its per-failure error strings. Used by
-	// WriteCandySteps.
+	// ResolveInlineBuilder OpResolves an externalized INLINE builder and returns its in-candy
+	// fragment (C10 InlineFragment) — plugin-side peer-dispatch since K-wave 2 cone R1, sharing the
+	// ONE resolveBuilderStage its detection/external siblings below use (R3). The builder plugin is
+	// connected on demand by that Invoke itself (ops.InvokeProviderOpts.ExtraRef), which is why no
+	// separate EnsureBuildersConnected seam sits beside it any more. Used by WriteCandySteps.
 	ResolveInlineBuilder func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx *spec.BuildStageContext, img *spec.ResolvedBox) (inlineFragment string, err error)
-
-	// EnsureBuildersConnected connects the EXTERNALIZED detection-builder plugins an
-	// image triggers (on-demand, scoped — the SAME machinery the deploy build PRE-PASS
-	// uses, R3), so their OpResolve build leg can be Invoked. Wraps core
-	// ensureBuildersConnected(ctx, cfg, dir, detected) (registry-coupled, stays core).
-	// Used by EmitBuilderStages.
-	EnsureBuildersConnected func(detected []string) error
 
 	// ResolveDetectionBuilderStage resolves + Invokes an externalized DETECTION-builder
 	// plugin's OpResolve build leg for one (candy, builder), returning the rendered

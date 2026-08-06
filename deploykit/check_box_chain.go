@@ -12,9 +12,9 @@ import (
 // check_box_chain.go — the R44 Option-A box-mode executor (P12a: relocated from
 // charly/check_box_container.go). Lives here (not sdk/kit) because it constructs a
 // ContainerChain (deploykit's own DeployExecutor), so it sits alongside that
-// constructor; it imports only kit + stdlib — zero charly-core-only state — so core's
-// sole call site (host_build_check_run.go's hostBuildCheckBox arms) now calls
-// deploykit.CheckBoxContainerChain directly.
+// constructor; it imports only kit + stdlib — zero charly-core-only state — so the
+// box-mode consumer (candy/plugin-check's pluginCheckRunBox, and before it the deleted
+// core box arm) calls deploykit.CheckBoxContainerChain directly.
 
 // checkBoxContainerSeq makes each check-box container name unique across concurrent
 // `charly check box` runs in ONE process (the pid already separates processes).

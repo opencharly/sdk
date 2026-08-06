@@ -20,19 +20,18 @@ import (
 // buildRenderGenerator was the sole caller; P11c extracts it here so plugin-deploy-pod reuses it
 // for the overlay render.
 //
-// K3 render-seam production move: 5 of the original 9 host-coupled seams (RenderService, the
-// detection/external builder resolves, ValidateEgress, RewriteHeaderCopy) were PURE
-// providerRegistry.resolve+Invoke dispatch (or pure data + host-fs I/O over the CandyModel
-// envelope) — RDD-spiked live on the external-builder leg, proven to need no host callback at
-// all — so they now dispatch directly via renderSeamCaller.invoke (InvokeProvider, no
-// HostBuild round-trip). LocalPkg is ALSO GONE (W3): the seam's "host rebuilds from the live
-// *Candy graph" claim was stale — the caller (candy_steps.go) already builds the step from
-// dg.Candies/dg.Boxes (the SAME envelope data) before calling RenderLocalPkgImageInstall, so
-// the function now runs directly, in-package, on the step it's given. The 3 REMAINING seams
-// (EmitPluginOp, inline-builder, ensure-builders) + EmitBakedPlugins have a genuine host-only
-// dependency (the live loader's scan+connect machinery, or a Go-level type-assertion against a
-// BUILTIN provider's concrete type) and still call back via HostBuild("render-seam")
-// (EmitBakedPlugins is now a direct deploykit call — the former HostBuild("bake-plugins") is DELETED).
+// K3 render-seam production move, COMPLETED in K-wave 2 cone R1: the render now reaches the host
+// for NOTHING. 5 of the original 9 host-coupled seams (RenderService, the detection/external builder
+// resolves, ValidateEgress, RewriteHeaderCopy) went first — PURE registry resolve+Invoke dispatch
+// (or pure data + host-fs I/O over the CandyModel envelope), RDD-spiked live on the external-builder
+// leg. LocalPkg followed (W3): its "host rebuilds from the live *Candy graph" claim was stale — the
+// caller already builds the step from dg.Candies/dg.Boxes. EmitPluginOp followed (P8b): its
+// "only core can type-assert a BUILTIN provider's concrete type" claim was a concrete-type leak, not
+// a seam. The LAST two, inline-builder + ensure-builders, fall here on the same finding: the inline
+// resolve is the SAME OpResolve peer-dispatch resolveBuilderStage already runs for the detection and
+// external legs, and the connect is ops.InvokeProviderOpts.ExtraRef (the host's generic
+// connectPluginByWordRef Pass-2), which every plugin can request. So renderSeamCaller.hostBuild and
+// the whole HostBuild("render-seam") kind are DELETED; only InvokeProvider peer-dispatch remains.
 
 // renderSeamCaller holds the two dispatch primitives every wired seam needs (the venue executor
 // + its context) so NewRenderGeneratorFromProject's own body stays a flat field-assignment list
@@ -40,39 +39,6 @@ import (
 type renderSeamCaller struct {
 	ctx context.Context
 	ex  *sdk.Executor
-}
-
-// hostBuild dispatches one host-coupled render seam to the host via HostBuild("render-seam")
-// (#67). params is the per-method deploykit param struct; out is the per-method result struct to
-// decode into (nil for void methods). The host calls the corresponding CORE function
-// (byte-parity by construction) and returns its error string verbatim in reply.Error.
-func (c renderSeamCaller) hostBuild(method string, params, out any) error {
-	pj, err := json.Marshal(params)
-	if err != nil {
-		return fmt.Errorf("render-seam %s: marshal params: %w", method, err)
-	}
-	reqJSON, err := json.Marshal(spec.RenderSeamRequest{Method: method, Params: pj})
-	if err != nil {
-		return fmt.Errorf("render-seam %s: marshal request: %w", method, err)
-	}
-	replyJSON, err := c.ex.HostBuild(c.ctx, "render-seam", reqJSON)
-	if err != nil {
-		return fmt.Errorf("render-seam %s: %w", method, err)
-	}
-	var reply spec.RenderSeamReply
-	if err := json.Unmarshal(replyJSON, &reply); err != nil {
-		return fmt.Errorf("render-seam %s: decode reply: %w", method, err)
-	}
-	if reply.Error != "" {
-		// The host's exact core-function error string — re-emitted byte-identical.
-		return fmt.Errorf("%s", reply.Error)
-	}
-	if out != nil && len(reply.Result) > 0 {
-		if err := json.Unmarshal(reply.Result, out); err != nil {
-			return fmt.Errorf("render-seam %s: decode result: %w", method, err)
-		}
-	}
-	return nil
 }
 
 // invoke marshals params, InvokeProvider's (class, word, op) directly (peer-dispatch — no
@@ -115,7 +81,16 @@ func (c renderSeamCaller) validateEgress(kind, label, mode, data string) error {
 // resolveBuilderStage is the SHARED OpResolve Invoke+decode for the builder BUILDER leg (R3),
 // direct peer-dispatch (K3, RDD-spiked live on the external leg): marshal the render context as
 // params + a spec.BuildEnv descriptor as env, InvokeProvider the builder's OpResolve, decode the
-// reply UNVALIDATED — the caller enforces the emptiness rule appropriate to its path.
+// reply UNVALIDATED — the caller enforces the emptiness rule appropriate to its path. It serves ALL
+// THREE builder legs: detection, external_builder:, and (since K-wave 2 cone R1) inline.
+//
+// ExtraRef carries the builder's canonical plugin-candy ref so the host's InvokeProvider falls back
+// to connectPluginByWordRef's Pass-2 fetch for a build whose own candy closure vendors the plugin
+// nowhere — a box/<distro> submodule that triggers a builder purely by DETECTION. This REPLACES the
+// former ensure-builders host round-trip, which reached the identical two-pass
+// ScanAllCandyWithConfigOpts + loadProjectPlugins machinery through a bespoke second copy (R3);
+// connect is now on-demand per word at the moment of first use, and idempotent thereafter (the
+// host resolves the registry before ever re-scanning).
 func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolveInput, img *spec.ResolvedBox) (spec.BuilderResolveReply, error) {
 	var reply spec.BuilderResolveReply
 	env, err := json.Marshal(spec.BuildEnv{Distros: img.Tags, Image: img.Name})
@@ -126,7 +101,11 @@ func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolv
 	if err != nil {
 		return reply, fmt.Errorf("marshal builder resolve input: %w", err)
 	}
-	resJSON, ierr := c.ex.InvokeProvider(c.ctx, "builder", word, sdk.OpResolve, params, env, sdk.InvokeProviderOpts{})
+	opts := sdk.InvokeProviderOpts{}
+	if ref, ok := spec.ExternalBuilderPluginRef(word); ok {
+		opts.ExtraRef = ref
+	}
+	resJSON, ierr := c.ex.InvokeProvider(c.ctx, "builder", word, sdk.OpResolve, params, env, opts)
 	if ierr != nil {
 		return reply, ierr
 	}
@@ -284,20 +263,29 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// given (deploykit.RenderLocalPkgImageInstall, sdk/deploykit/localpkg.go).
 	dg.RenderLocalPkgImageInstall = RenderLocalPkgImageInstall
 
-	// ResolveInlineBuilder: still host-side — rides K1 with EnsureBuilders (its embedded connect
-	// is the same loader scan+connect action, usually a no-op but not guaranteed).
+	// ResolveInlineBuilder: direct peer-dispatch (K-wave 2 cone R1) — the LAST render seam to shed
+	// its host round-trip. It is the SAME resolveBuilderStage the detection/external legs below use;
+	// only the reply field it reads (InlineFragment, spliced in-candy) and its emptiness rule differ.
+	// The former host seam's separate connect step is gone: resolveBuilderStage's ExtraRef carries
+	// the canonical plugin-candy ref, so the host connects on demand during this very Invoke.
 	dg.ResolveInlineBuilder = func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx2 *spec.BuildStageContext, img *spec.ResolvedBox) (string, error) {
-		var res spec.InlineBuilderResult
-		if err := c.hostBuild(spec.RenderSeamInlineBuilder, spec.InlineBuilderParams{Dir: dir, BoxName: img.Name, CandyName: candyName, BuilderName: builderName, BDef: bDef, Ctx: ctx2}, &res); err != nil {
-			return "", err
+		// The resolve input carries the candy's INTRINSIC bare name, never the map key — they
+		// diverge for a REMOTE candy (keyed by its fully-qualified ref). The deleted host seam read
+		// it the same way (g.Candies[candyName].GetName()); the error messages keep using the key,
+		// also as before.
+		bare := candyName
+		if layer := dg.Candies[candyName]; layer != nil {
+			bare = layer.GetName()
 		}
-		return res.Fragment, nil
-	}
-
-	// EnsureBuildersConnected: still host-side — a genuine loader action (ScanAllCandyWithConfigOpts
-	// + loadProjectPlugins), not a data lookup. Rides K1 (#40).
-	dg.EnsureBuildersConnected = func(detected []string) error {
-		return c.hostBuild(spec.RenderSeamEnsureBuilders, spec.EnsureBuildersParams{Dir: dir, Words: detected}, nil)
+		in := spec.BuilderResolveInputFrom(bare, builderName, bDef, ctx2)
+		reply, err := c.resolveBuilderStage(builderName, in, img)
+		if err != nil {
+			return "", fmt.Errorf("candy %q: inline builder %q resolve: %w", candyName, builderName, err)
+		}
+		if strings.TrimSpace(reply.InlineFragment) == "" {
+			return "", fmt.Errorf("candy %q: inline builder %q returned an empty OpResolve inline fragment", candyName, builderName)
+		}
+		return reply.InlineFragment, nil
 	}
 
 	// ResolveDetectionBuilderStage / ResolveExternalBuilderStage: direct peer-dispatch (K3,

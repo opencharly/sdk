@@ -31,7 +31,7 @@ import (
 // disposable/lifecycle/from/install_opts) mixes deploy-envelope fields the workload #Kind does not
 // model — those are gated by #NodeDoc's deploy arm, not here. plugin_input: stays open (a plugin
 // step's params are validated by the plugin's own spliced schema, not base #Op).
-func assembleAndValidateEntitySteps(pn spec.ParsedNode, cs spec.CueSchema, label string) error {
+func assembleAndValidateEntitySteps(pn spec.ParsedNode, label string) error {
 	body, err := AssembleEntityBody(pn)
 	if err != nil {
 		return fmt.Errorf("%s: assemble: %w", label, err)
@@ -40,7 +40,7 @@ func assembleAndValidateEntitySteps(pn spec.ParsedNode, cs spec.CueSchema, label
 	if err != nil {
 		return fmt.Errorf("%s: marshal: %w", label, err)
 	}
-	v, err := CueDocFromYAML(cs, label, b)
+	v, err := CueDocFromYAML(label, b)
 	if err != nil {
 		return err
 	}
@@ -48,9 +48,9 @@ func assembleAndValidateEntitySteps(pn spec.ParsedNode, cs spec.CueSchema, label
 	if !plan.Exists() {
 		return nil // no steps to type
 	}
-	stepDef := cs.Root.LookupPath(cue.ParsePath("#Step"))
-	if stepDef.Err() != nil {
-		return fmt.Errorf("%s: #Step schema not found: %w", label, stepDef.Err())
+	stepDef, err := schemaDef(label, "#Step")
+	if err != nil {
+		return err
 	}
 	iter, lerr := plan.List()
 	if lerr != nil {
@@ -72,8 +72,8 @@ func assembleAndValidateEntitySteps(pn spec.ParsedNode, cs spec.CueSchema, label
 // is an entity child by construction (the parse-time desugar already separates step/data children
 // into the plan/body fields before a spec.ParsedNode ever reaches here), so no discClass filter is
 // needed.
-func ValidateEntityNodeRec(pn spec.ParsedNode, path string, cs spec.CueSchema) error {
-	if err := assembleAndValidateEntitySteps(pn, cs, fmt.Sprintf("%s: %s", path, pn.Name)); err != nil {
+func ValidateEntityNodeRec(pn spec.ParsedNode, path string) error {
+	if err := assembleAndValidateEntitySteps(pn, fmt.Sprintf("%s: %s", path, pn.Name)); err != nil {
 		return err
 	}
 	if pn.Disc == "candy" {
@@ -82,7 +82,7 @@ func ValidateEntityNodeRec(pn spec.ParsedNode, path string, cs spec.CueSchema) e
 			return fmt.Errorf("%s: %s: assemble: %w", path, pn.Name, err)
 		}
 		// The concrete gate covers LAYER manifests only (the pre-cutover
-		// validateCandyManifestCUE scope): an IMAGE entity (base:/from:) mixes
+		// ValidateCandyManifestCUE scope): an IMAGE entity (base:/from:) mixes
 		// build fields that stay non-concrete until merge and is gated by the
 		// #NodeDoc structural pass + decode validation instead.
 		if m := spec.MappingRoot(body); m != nil {
@@ -96,20 +96,20 @@ func ValidateEntityNodeRec(pn spec.ParsedNode, path string, cs spec.CueSchema) e
 		if err != nil {
 			return fmt.Errorf("%s: %s: marshal: %w", path, pn.Name, err)
 		}
-		cv, err := CueDocFromYAML(cs, fmt.Sprintf("%s: %s", path, pn.Name), b)
+		cv, err := CueDocFromYAML(fmt.Sprintf("%s: %s", path, pn.Name), b)
 		if err != nil {
 			return err
 		}
-		cdef := cs.Root.LookupPath(cue.ParsePath("#CandyValue"))
-		if cdef.Err() != nil {
-			return fmt.Errorf("%s: #CandyValue schema not found: %w", path, cdef.Err())
+		cdef, err := schemaDef(path, "#CandyValue")
+		if err != nil {
+			return err
 		}
 		if verr := cv.Unify(cdef).Validate(cue.Concrete(true)); verr != nil {
 			return fmt.Errorf("%s: candy %q: %s", path, pn.Name, errors.Details(verr, nil))
 		}
 	}
 	for _, ch := range pn.Children {
-		if err := ValidateEntityNodeRec(*ch, path, cs); err != nil {
+		if err := ValidateEntityNodeRec(*ch, path); err != nil {
 			return err
 		}
 	}
@@ -118,10 +118,11 @@ func ValidateEntityNodeRec(pn spec.ParsedNode, path string, cs spec.CueSchema) e
 
 // ValidateNodeFormSteps parses a node-form document and validates EVERY entity's (and nested
 // sub-entity's) assembled body against its closed per-kind def — the step-typo gate for candies,
-// boxes, pods, deploys, and check beds alike. Shared by ValidateCandyManifestCUE and the host's
-// validateProjectCUESchemas (R3). t/parser are host-supplied (the registry-derived Threaded
-// snapshot + the resolved DocParser) — this function never queries the registry itself.
-func ValidateNodeFormSteps(path string, data []byte, t spec.Threaded, parser spec.DocParser, cs spec.CueSchema) error {
+// boxes, pods, deploys, and check beds alike. Shared by ValidateCandyManifestCUE and
+// candy/plugin-box's validateProjectCUESchemas (R3). t/parser are caller-supplied (the
+// registry-derived Threaded snapshot + a spec.DocParser — normally the DocParser adapter in this
+// package) — this function never queries the registry itself.
+func ValidateNodeFormSteps(path string, data []byte, t spec.Threaded, parser spec.DocParser) error {
 	var ydoc yaml.Node
 	if err := yaml.Unmarshal(data, &ydoc); err != nil {
 		return fmt.Errorf("%s: yaml: %w", path, err)
@@ -131,7 +132,7 @@ func ValidateNodeFormSteps(path string, data []byte, t spec.Threaded, parser spe
 		return fmt.Errorf("%s: parse: %w", path, err)
 	}
 	for i := range pp.Nodes {
-		if verr := ValidateEntityNodeRec(pp.Nodes[i], path, cs); verr != nil {
+		if verr := ValidateEntityNodeRec(pp.Nodes[i], path); verr != nil {
 			return verr
 		}
 	}
@@ -143,14 +144,14 @@ func ValidateNodeFormSteps(path string, data []byte, t spec.Threaded, parser spe
 // tree: each candy node's assembled body validates against #CandyValue concretely and every
 // entity's plan steps type against the closed #Step (ValidateNodeFormSteps → ValidateEntityNodeRec)
 // — the desugared tree is the validation subject, never the raw sugar bytes.
-func ValidateCandyManifestCUE(path string, data []byte, t spec.Threaded, parser spec.DocParser, cs spec.CueSchema) error {
-	doc, err := CueDocFromYAML(cs, path, data)
+func ValidateCandyManifestCUE(path string, data []byte, t spec.Threaded, parser spec.DocParser) error {
+	doc, err := CueDocFromYAML(path, data)
 	if err != nil {
 		return err
 	}
-	def := cs.Root.LookupPath(cue.ParsePath("#NodeDoc"))
-	if def.Err() != nil {
-		return fmt.Errorf("%s: #NodeDoc schema not found: %w", path, def.Err())
+	def, err := schemaDef(path, "#NodeDoc")
+	if err != nil {
+		return err
 	}
 	if verr := doc.Unify(def).Validate(cue.Concrete(true)); verr != nil {
 		return fmt.Errorf("%s: %s", path, errors.Details(verr, nil))
@@ -159,5 +160,5 @@ func ValidateCandyManifestCUE(path string, data []byte, t spec.Threaded, parser 
 	// ValidateNodeFormSteps parses (and thereby DESUGARS) the tree, types every entity's plan
 	// steps against the closed #Step/#Op, and concretely validates each candy node's body against
 	// #CandyValue.
-	return ValidateNodeFormSteps(path, data, t, parser, cs)
+	return ValidateNodeFormSteps(path, data, t, parser)
 }

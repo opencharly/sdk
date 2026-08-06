@@ -13,11 +13,12 @@ import (
 // relocated from charly/generate.go; byte-identical). The multi-stage builder
 // render (detection builders pixi/npm/aur + `external_builder:` out-of-tree
 // builders) operates over CandyModel + buildkit.ResolvedBox. Its ONLY host
-// coupling — the provider registry (ResolveBuilder + OpResolve Invoke + the
-// on-demand connect) — is reached through the EnsureBuildersConnected /
-// ResolveDetectionBuilderStage / ResolveExternalBuilderStage seam function
-// fields (render_generator.go), wired by charly's g.toDeploykit(); the seam
-// impls preserve their error strings byte-exact. The two per-image reply caches
+// coupling — the provider registry (OpResolve Invoke + the on-demand connect) —
+// is reached through the ResolveDetectionBuilderStage / ResolveExternalBuilderStage
+// seam function fields (render_generator.go), which NewRenderGeneratorFromProject
+// wires to plain InvokeProvider peer-dispatch. (The EnsureBuildersConnected seam
+// that used to sit beside them is gone, K-wave 2 cone R1: the connect rides
+// ops.InvokeProviderOpts.ExtraRef on the resolve Invoke itself.) The two per-image reply caches
 // (externalBuilderReplies / detectionBuilderReplies) live on Generator.
 
 // EmitPreMainCandyStages emits the pre-main-FROM per-candy stages: the FROM-scratch
@@ -44,9 +45,10 @@ func (g *Generator) EmitPreMainCandyStages(b *strings.Builder, boxName string, i
 // renders its stage via its plugin's OpResolve leg (ResolveDetectionBuilderStage →
 // kit.BuilderResolve, C10 — no longer an in-core stage template); a non-externalized
 // builder emits no build-time multi-stage (a custom builder must be an external_builder
-// plugin). The externalized builder plugins are connected on-demand
-// (EnsureBuildersConnected). The reply is cached per (candy, builder) for
-// EmitBuilderArtifacts.
+// plugin). The externalized builder plugins are connected on-demand by the resolve Invoke itself
+// (ops.InvokeProviderOpts.ExtraRef — K-wave 2 cone R1 retired the separate EnsureBuildersConnected
+// pre-pass, whose two-pass scan+load was a second copy of the host's own connectPluginByWordRef).
+// The reply is cached per (candy, builder) for EmitBuilderArtifacts.
 func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *buildkit.ResolvedBox, candyOrder []string) error {
 	if img.BuilderConfig == nil {
 		return nil
@@ -54,17 +56,6 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 	// Reset the per-image detection-builder reply cache (populated below, read by
 	// EmitBuilderArtifacts). Scopes to ONE image, exactly like externalBuilderReplies.
 	g.detectionBuilderReplies = map[string]spec.BuilderResolveReply{}
-
-	// Connect the EXTERNALIZED detection-builder plugins this image triggers (on-demand,
-	// scoped — the SAME machinery the deploy build PRE-PASS uses via DetectExternalizedBuilders,
-	// R3), so their OpResolve build leg can be Invoked below. Only externalized (plugin) builders
-	// emit a build-time multi-stage; a non-externalized builder emits none (a custom builder must
-	// be a plugin).
-	if detected := DetectExternalizedBuilders(candyOrder, g.Candies, g.ExternalizedBuilders, img); len(detected) > 0 {
-		if err := g.EnsureBuildersConnected(detected); err != nil {
-			return fmt.Errorf("image %q: %w", boxName, err)
-		}
-	}
 
 	// Process builders in deterministic order
 	builderNames := img.BuilderConfig.BuilderNames()
@@ -124,8 +115,9 @@ func (g *Generator) resolveDetectionBuilderReply(builderName string, layer Candy
 // here) — buildkit.BuilderDef is spec.Builder (alias), so the spec func's *spec.BuilderDef
 // param typechecks against the *buildkit.BuilderDef the callers pass. Shared by the box-build
 // path (resolveDetectionBuilderReply above) AND the pod-overlay build-emit
-// (candy/plugin-installstep stepEmitBuilder) + the inline-builder seam (charly
-// resolveInlineBuilderSeam), R3 — hence the re-export.
+// (candy/plugin-installstep stepEmitBuilder) + the INLINE-builder resolve
+// (NewRenderGeneratorFromProject's dg.ResolveInlineBuilder — plugin-side since K-wave 2 cone R1,
+// where it replaced the deleted charly resolveInlineBuilderSeam), R3 — hence the re-export.
 var BuilderResolveInputFrom = spec.BuilderResolveInputFrom
 
 // EmitExternalBuilderStages emits the pre-main-FROM multi-stage block for every

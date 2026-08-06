@@ -7,9 +7,9 @@ package loaderkit
 // (CueDocFromYAML) all Unify against the HOST's process-wide compiled schema — cue.Value instances
 // only interoperate within the cue.Context that built them, so (unlike DecodeEntityViaCUE's
 // self-contained shorthand-decode, which owns an independent context) this mechanism never compiles
-// its own copy: every call carries the host's spec.CueSchema handle (Ctx/Root/KindDef), threaded
-// through the ProjectLoader seam from the still-core D-data (cueSchemaCtx/sharedCueSchema/
-// cueKindDef — charly/cue_schema.go, unchanged).
+// its own copy: every call resolves the loader's OWN process-wide compiled schema (cue_schema.go —
+// cueSchemaCtx/sharedCueSchema/cueKindDef, owned here since K-wave 2 cone R1 ruling 1, when the
+// former host-threaded `cs spec.CueSchema` parameter was dropped from every entry point below).
 
 import (
 	"fmt"
@@ -17,21 +17,20 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/errors"
 	cueyaml "cuelang.org/go/encoding/yaml"
-	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
 
 // docDirectiveSet (the reserved document-directive word set, #NodeDoc top-level keys) is already
 // defined in parse.go — the SAME fixed vocabulary constant (spec.DocDirectives), reused here (R3).
 
-// CueDocFromYAML ingests one YAML document into a cue.Value (the whole doc), using cs.Ctx so the
-// result can Unify against cs.Root's definitions.
-func CueDocFromYAML(cs spec.CueSchema, path string, data []byte) (cue.Value, error) {
+// CueDocFromYAML ingests one YAML document into a cue.Value (the whole doc), built with the
+// loader's own cue.Context so the result can Unify against the compiled schema's definitions.
+func CueDocFromYAML(path string, data []byte) (cue.Value, error) {
 	af, err := cueyaml.Extract(path, data)
 	if err != nil {
 		return cue.Value{}, fmt.Errorf("%s: yaml ingest: %w", path, err)
 	}
-	v := cs.Ctx.BuildFile(af)
+	v := cueSchemaCtx().BuildFile(af)
 	if v.Err() != nil {
 		return cue.Value{}, fmt.Errorf("%s: build: %w", path, v.Err())
 	}
@@ -49,12 +48,30 @@ func CueDocFromYAML(cs spec.CueSchema, path string, data []byte) (cue.Value, err
 // plugin-kind gate (RDD-verified live: `plugin kind:<X>: plugin_input fails #<X>Input`) is the
 // actual production entity-schema enforcement path today, superseding the legacy per-kind Go-side
 // validateVocabularyCollections/validateEntityCUE pair (also deleted) for every kind beyond box.
-func ValidateEntityClosedCUE(cs spec.CueSchema, kind, label string, entity cue.Value) error {
-	def, ok := cs.KindDef(kind)
+func ValidateEntityClosedCUE(kind, label string, entity cue.Value) error {
+	def, ok := cueKindDef(kind)
 	if !ok {
 		return fmt.Errorf("%s: no CUE schema registered for kind %q", label, kind)
 	}
 	if err := entity.Unify(def).Validate(); err != nil {
+		return fmt.Errorf("%s: %s", label, errors.Details(err, nil))
+	}
+	return nil
+}
+
+// ValidateEntityCUE is ValidateEntityClosedCUE's CONCRETE twin: it unifies a single entity with
+// #<Kind> and validates it requiring concreteness, so it catches everything the closed check does
+// PLUS missing-required fields and unresolved disjunctions (a PCI hostdev with no slot/function, a
+// vm source: arm missing its discriminator-required field). charly core's own load-time
+// validateKindValueCUE is the closedness-only gate for the #<Kind>Value-typed kinds; this is the
+// stricter form the schema-tightening corpus asserts the schema still enforces, so that a future
+// re-loosening of any modeled subtree fails loudly instead of silently accepting a broken entity.
+func ValidateEntityCUE(kind, label string, entity cue.Value) error {
+	def, ok := cueKindDef(kind)
+	if !ok {
+		return fmt.Errorf("%s: no CUE schema registered for kind %q", label, kind)
+	}
+	if err := entity.Unify(def).Validate(cue.Concrete(true)); err != nil {
 		return fmt.Errorf("%s: %s", label, errors.Details(err, nil))
 	}
 	return nil
@@ -72,14 +89,14 @@ func ValidateEntityClosedCUE(cs spec.CueSchema, kind, label string, entity cue.V
 // O(entities × kinds × children) blow-up (a full-graph validate took ~30 CPU-minutes). One small
 // entity at a time keeps each unification bounded by that entity's own size while preserving
 // identical strictness.
-func ValidateNodeDocCUE(cs spec.CueSchema, label string, data []byte) error {
-	doc, err := CueDocFromYAML(cs, label, data)
+func ValidateNodeDocCUE(label string, data []byte) error {
+	doc, err := CueDocFromYAML(label, data)
 	if err != nil {
 		return err
 	}
-	docDef := cs.Root.LookupPath(cue.ParsePath("#NodeDoc"))
-	if docDef.Err() != nil {
-		return fmt.Errorf("%s: #NodeDoc schema not found: %w", label, docDef.Err())
+	docDef, err := schemaDef(label, "#NodeDoc")
+	if err != nil {
+		return err
 	}
 	iter, ierr := doc.Fields()
 	if ierr != nil {
@@ -117,8 +134,8 @@ func ValidateNodeDocCUE(cs spec.CueSchema, label string, data []byte) error {
 // Because it round-trips through the CLOSED #<Kind> schema, the entity must already validate
 // against it (it does — the loader validated it). The round-trip is lossless for every modeled
 // field; see cue_defaults_test.go (charly).
-func ApplyCueDefaults(cs spec.CueSchema, kind string, out any) error {
-	def, ok := cs.KindDef(kind)
+func ApplyCueDefaults(kind string, out any) error {
+	def, ok := cueKindDef(kind)
 	if !ok {
 		return fmt.Errorf("applyCueDefaults: no CUE schema registered for kind %q", kind)
 	}
@@ -130,7 +147,7 @@ func ApplyCueDefaults(cs spec.CueSchema, kind string, out any) error {
 	if err != nil {
 		return fmt.Errorf("applyCueDefaults %s: cue ingest: %w", kind, err)
 	}
-	cv := cs.Ctx.BuildFile(af)
+	cv := cueSchemaCtx().BuildFile(af)
 	if cv.Err() != nil {
 		return fmt.Errorf("applyCueDefaults %s: cue build: %w", kind, cv.Err())
 	}

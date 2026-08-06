@@ -37,74 +37,13 @@ func specToBuildkit(o spec.ResolveOpts) buildkit.ResolveOpts {
 	}
 }
 
-// ResolveSpecBox resolves ONE box and returns its wire-clean *spec.ResolvedBox (the embedded value
-// of the pure buildkit resolve). calver is the CalVer stamp (empty for a bare resolve).
-func ResolveSpecBox(cfg *spec.Config, name, calver, dir string, opts spec.ResolveOpts) (*spec.ResolvedBox, error) {
-	resolved, err := buildkit.ResolveBox(cfg, name, calver, dir, specToBuildkit(opts))
-	if err != nil {
-		return nil, err
-	}
-	if resolved == nil {
-		return nil, nil
-	}
-	return &resolved.ResolvedBox, nil
-}
-
-// ResolveAllSpecBoxes resolves every enabled box and returns their wire-clean *spec.ResolvedBox
-// values — the render-seam-floor Generator's box set (it reads only Name/Tags off them).
-func ResolveAllSpecBoxes(cfg *spec.Config, calver, dir string, opts spec.ResolveOpts) (map[string]*spec.ResolvedBox, error) {
-	images, err := buildkit.ResolveAllBox(cfg, calver, dir, specToBuildkit(opts))
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]*spec.ResolvedBox, len(images))
-	for name, b := range images {
-		if b == nil {
-			continue
-		}
-		box := &b.ResolvedBox
-		out[name] = box
-	}
-	return out, nil
-}
-
-// WrapSpecBoxes wraps wire-clean *spec.ResolvedBox values back into *buildkit.ResolvedBox for a
-// deploykit render Generator. The host-render cache pointers are nil until a RenderPrep pass fills
-// them (charly's toDeploykit uses this only to feed its now-spec-typed Generator.Boxes to the
-// render engine; the render-seam floor + the box-build render-prep drive fill the caches).
-func WrapSpecBoxes(m map[string]*spec.ResolvedBox) map[string]*buildkit.ResolvedBox {
-	if m == nil {
-		return nil
-	}
-	out := make(map[string]*buildkit.ResolvedBox, len(m))
-	for name, b := range m {
-		if b == nil {
-			continue
-		}
-		out[name] = &buildkit.ResolvedBox{ResolvedBox: *b}
-	}
-	return out
-}
-
-// SpecBoxes is the forward inverse of WrapSpecBoxes: it projects an already-resolved
-// buildkit box map to the wire-clean *spec.ResolvedBox map (each entry's embedded spec value, by
-// address) — the SAME conversion ResolveAllSpecBoxes performs inline, factored out so a caller
-// that already ran buildkit.ResolveAllBox (candy/plugin-build's resolveBuildEngine) can push its
-// resolved boxes to the host's buildengine-prep leg via #ResolvedProjectRequest.boxes WITHOUT the
-// host re-resolving. #55 coneB2 Class B — sheds the deploykit import from charly/generate.go.
-func SpecBoxes(m map[string]*buildkit.ResolvedBox) map[string]*spec.ResolvedBox {
-	if m == nil {
-		return nil
-	}
-	out := make(map[string]*spec.ResolvedBox, len(m))
-	for name, b := range m {
-		if b == nil {
-			continue
-		}
-		out[name] = &b.ResolvedBox
-	}
-	return out
-}
+// ResolveSpecBox / ResolveAllSpecBoxes / WrapSpecBoxes / SpecBoxes are DELETED (K-wave 2 cone R1).
+// They were the HOST side of this bridge — the box resolve charly core used to run for the
+// render-seam floor's Generator cache. #55 coneB2 Class B had already inverted that (the plugin
+// resolves the boxes and pushed them to the host over #ResolvedProjectRequest.boxes), which left
+// three of the four with no callers at all; cone R1 then deleted the render seam itself, orphaning
+// the fourth (SpecBoxes) and the wire field it fed. Only specToBuildkit + FillNamespaceBoxViews
+// survive here, both driven plugin-side by candy/plugin-build.
 
 // FillNamespaceBoxViews resolves + render-preps every box in a namespace's own config and merges
 // the resulting namespace-QUALIFIED spec.ResolvedBoxView into rp.Boxes (keyed child+"."+name),

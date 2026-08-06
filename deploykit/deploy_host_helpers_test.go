@@ -15,7 +15,7 @@ func testArtifactCandy(name string, artifacts []spec.CandyArtifact) spec.CandyRe
 }
 
 // TestDeriveDeploymentName relocated from the deleted charly/deploy_nested_pod_test.go
-// (Cone A shape 3) — DeriveDeploymentName now has two callers (charly/bundle_from_box_cmd.go's
+// (Cone A shape 3) — DeriveDeploymentName now has two callers (candy/plugin-bundle/from_box_pod.go's
 // pod path, candy/plugin-bundle/deploy_from_box.go's k8s path), so it lives here, R3.
 func TestDeriveDeploymentName(t *testing.T) {
 	cases := []struct{ ref, want string }{

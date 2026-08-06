@@ -12,13 +12,13 @@ package kit
 // spec.CheckResult fields only and the DeadlineExceeded flag lives on the kit-internal engine
 // CheckResult, dropped at the StepResult boundary exactly as it was on the wire before —
 // byte-identical output, R3.
-// charly core's check-run seam (host_build_check_run.go) references spec.CheckRunReply importing
-// only spec; kit re-exports each here so every existing kit.CheckRunReply / kit.StepPass call
-// site (charly core + the candies) is untouched. The reply carries []StepResult VERBATIM so the
+// charly core's former check-run seam referenced spec.CheckRunReply importing only spec; kit
+// re-exports each here so every existing kit.CheckRunReply / kit.StepPass call
+// site (the candies) is untouched. The reply carries []StepResult VERBATIM so the
 // plugin reuses the kit formatters (FormatStepResults*) with byte-parity across every --format.
-// command:check (candy/plugin-check) forwards a run to HostBuild("check-run"); the host builds
-// the venue + runs the Runner and returns this reply, which the plugin formats + tallies into an
-// exit code.
+// command:check (candy/plugin-check) runs every mode plugin-side (K-wave 2 cone R4 — the
+// "check-run" HostBuild kind is deleted) and returns this reply, which the plugin formats +
+// tallies into an exit code.
 
 import "github.com/opencharly/spec/spec"
 

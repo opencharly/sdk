@@ -18,10 +18,12 @@ package loaderkit
 // boundary-law precedent for this exact situation). The kit comment is fixed in the same cutover.
 //
 // The TWO genuinely registry-coupled calls this mechanism used to make directly — the local-template
-// substrate-plugin resolve (former resolveLocalViaPlugin) and the command:migrate dispatch (former
-// autoMigrateCacheProjectOnly) — thread in as callback parameters, exactly like
-// MaterializeSeams.DecodeEntity/BuildBundleEntity thread the registry-touching kind dispatch to a
-// kind-blind mechanism. Neither callback's OWN body lives here; only the call shape does.
+// substrate-plugin resolve and the command:migrate dispatch — thread in as callback parameters,
+// exactly like MaterializeSeams.DecodeEntity/BuildBundleEntity thread the registry-touching kind
+// dispatch to a kind-blind mechanism. Neither callback's OWN body lives here; only the call shape
+// does. Since K-wave 2 cone R1 those bodies live in candy/plugin-loader (refs_seams.go), reaching
+// each peer over InvokeProvider — charly core, which used to supply them, is out of the fetch path
+// entirely.
 
 import (
 	"fmt"

@@ -26,6 +26,10 @@ func TestKongSubcommands(t *testing.T) {
 		// Kong ignores the `cmd:"list-ai"` VALUE for naming — only the field name is kebab-cased —
 		// so the real dispatched (and here, derived) name is "list-agent", not "list-ai".
 		{Name: "list-agent", Help: "list agents"},
+		// A `hidden:""` field is HIDDEN-BUT-REACHABLE (not skipped): it is still declared, with
+		// Hidden:true, so the host renders a real (hidden) Kong child that DISPATCHES while
+		// `--help` and the CLI model stay blind to it — the check run-local harness re-exec path.
+		{Name: "run-local", Help: "hidden", Hidden: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("KongSubcommands() = %#v, want %#v", got, want)
