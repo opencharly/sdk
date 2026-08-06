@@ -98,7 +98,7 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope, Venue: int32(c.StepContract.Venue), Gate: c.StepContract.Gate, Emits: c.StepContract.Emits}
 		}
 		for _, sc := range c.Subcommands {
-			pc.Subcommands = append(pc.Subcommands, &pb.CLISubcommand{Name: sc.Name, Help: sc.Help})
+			pc.Subcommands = append(pc.Subcommands, &pb.CLISubcommand{Name: sc.Name, Help: sc.Help, Hidden: sc.Hidden})
 		}
 		if c.DeployTraits != nil {
 			pc.DeployTraits = &pb.DeployTraits{
