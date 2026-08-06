@@ -50,7 +50,7 @@ func DecodeDeployVenue(envJSON []byte) (spec.DeployVenue, error) {
 
 // PluginScriptReverseOp builds the generic recordable teardown op an external
 // deploy/step/builder plugin returns: a verbatim shell script run at `charly
-// bundle del` time at the given scope (spec.ScopeSystem → root, spec.ScopeUser →
+// fleet del` time at the given scope (spec.ScopeSystem → root, spec.ScopeUser →
 // deploy user). The host records it in the ledger and replays it via
 // reverse_ops.go's reversePluginScript — record-and-replay, never recomputed.
 func PluginScriptReverseOp(scope spec.Scope, script string) spec.ReverseOp {

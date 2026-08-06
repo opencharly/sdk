@@ -7,13 +7,13 @@ package deploykit
 // BuildDeployPlan-level INTEGRATION coverage (real candy/ fixtures for ripgrep/dev-tools/
 // pre-commit, ComputeDeployID, MergePlan, DescribePlan, the builder-purity/no-plugin-RPC gate,
 // the SystemPackagesStep repo-key regression guard) already lives in
-// candy/plugin-bundle/install_build_test.go (#55 decoupling Batch A, 42d97495) — this file does
+// candy/plugin-fleet/install_build_test.go (#55 decoupling Batch A, 42d97495) — this file does
 // NOT duplicate that. What it covers instead is genuinely uncovered ground (repo-wide grep
 // confirmed before writing this file): CompileOpSteps was previously exercised ONLY
 // transitively through BuildDeployPlan, or via charly's own verb-routing-specific tests
 // (install_act_test.go / plan_unify_test.go, which assert compileActOp's typed-step routing for
 // ONE verb — not the compiler's own iteration/filtering/dispatch mechanics); CompileServiceSteps
-// had exactly one direct caller anywhere (candy/plugin-bundle/service_distro_filter_test.go),
+// had exactly one direct caller anywhere (candy/plugin-fleet/service_distro_filter_test.go),
 // narrowly scoped to distro filtering alone. Confirming this required wiring spec.OpInContext
 // (a package-level DI hook CompileOpSteps calls — production wires it from charly/layers.go's
 // init(), which this sdk-only test binary never links) ourselves below; no other sdk/deploykit
@@ -40,7 +40,7 @@ import (
 // package's own test binary links no charly core, so the hook stays nil unless wired here. The
 // implementation is pure (spec.VerbCatalog is static data + the op's own declared Context — no
 // registry consult), so it is ported verbatim from charly/planrun_adapter.go's opInContext/
-// opEffectiveContexts (the SAME port candy/plugin-bundle's bundle_test_helpers_test.go already
+// opEffectiveContexts (the SAME port candy/plugin-fleet's fleet_test_helpers_test.go already
 // carries for its own out-of-module test binary — R3 would collapse these into one shared sdk
 // helper if a THIRD package ever needed it; two independent test-binary ports of a ~15-line pure
 // function is not yet worth a shared-package indirection).
@@ -176,7 +176,7 @@ func TestCompileOpSteps_SkipsRuntimeOnlyOps(t *testing.T) {
 
 // TestCompileOpSteps_NonPluginVerbNeverDialsHostBuild is the CompileOpSteps-level externalization
 // purity gate (the constructOpStep-scoped sibling of
-// candy/plugin-bundle/install_build_test.go's TestBuildDeployPlan_BuilderPurity_NoPluginRPC,
+// candy/plugin-fleet/install_build_test.go's TestBuildDeployPlan_BuilderPurity_NoPluginRPC,
 // which proves BUILDER-step purity — this proves the SAME invariant one layer down, for the
 // install-verb dispatch that decides whether ANY op needs the wire at all): every install verb
 // (mkdir/copy/write/link/download/setcap/build/command — anything whose Kind() != "plugin") must

@@ -14,7 +14,7 @@ package deploykit
 // the caller resolves it ONCE per deploy and passes it through, keeping this file pure.
 //
 // Called from the deploy-add path after target.Emit succeeds and any deploy-scope tests pass —
-// the finalization step that ends a successful `charly bundle add`.
+// the finalization step that ends a successful `charly fleet add`.
 
 import (
 	"context"

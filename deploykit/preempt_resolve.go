@@ -10,10 +10,10 @@ import (
 )
 
 // preempt_resolve.go — portable (LoadUnified-free) resource-arbiter deploy-tree helpers,
-// servable off a plain map[string]spec.BundleNode: the shape both a freshly-loaded uf.Bundle
+// servable off a plain map[string]spec.FleetNode: the shape both a freshly-loaded uf.Fleet
 // (host-side) and a resolved-project envelope's rp.Deploy (plugin-side, via
 // Executor.InvokeProvider("build","project", OpResolve) — the former HostBuild("resolved-project")
-// seam is DELETED) already carry — spec.BundleNode is a type alias for
+// seam is DELETED) already carry — spec.FleetNode is a type alias for
 // spec.Deploy (charly_names.go). K1-UNBLOCK wave 1: extracted from charly/preempt.go so the
 // resource-arbiter plugin (candy/plugin-preempt) and any still-core caller needing the same
 // projection (e.g. a kind:vm exclusive-claimant lookup) share ONE implementation (R3) instead of
@@ -22,12 +22,12 @@ import (
 // MergedDeployTree merges an already-loaded project deploy tree with the per-host deploy-config
 // overlay (~/.config/charly/charly.yml) — exactly the merge the resource arbiter's holder/claimant
 // gather has always performed (former charly/preempt.go gatherDeployNodes): per-host entries win
-// per-field via MergeBundleNode. project may be nil/empty (no project loaded, e.g. a project-less
+// per-field via MergeFleetNode. project may be nil/empty (no project loaded, e.g. a project-less
 // `charly vm` invocation); the per-host overlay loads via read. context is a short label threaded to
 // the reader's stderr warning so the caller is identifiable.
 //
 // read is the per-host-overlay loader (placement-invariant: a plugin caller injects
-// loaderkit.LoadHostBundleConfigViaExecutor; a host in-proc caller may pass a LoadBundleConfig
+// loaderkit.LoadHostFleetConfigViaExecutor; a host in-proc caller may pass a LoadFleetConfig
 // wrapper). #55 coneC-dsh β2+δ seam-death: MergedDeployTree no longer hard-wires
 // LoadDeployConfigForRead (the DeployStateHost-backed read that silently degraded to project-only
 // when DeployStateHost was nil — a placement-dependent correctness regression for the compiled-in
@@ -35,8 +35,8 @@ import (
 // plugin-vm config-resolve Claimant computation load the per-host overlay placement-invariantly.
 // A nil read → no merge (project passes through unchanged) — the semantics the
 // TestMergedDeployTree_ProjectOnlyWhenNoLocalConfig corpus pins.
-func MergedDeployTree(project map[string]spec.BundleNode, context string, read func() (*BundleConfig, error)) map[string]spec.BundleNode {
-	out := make(map[string]spec.BundleNode, len(project))
+func MergedDeployTree(project map[string]spec.FleetNode, context string, read func() (*FleetConfig, error)) map[string]spec.FleetNode {
+	out := make(map[string]spec.FleetNode, len(project))
 	maps.Copy(out, project)
 	if read == nil {
 		return out
@@ -47,8 +47,8 @@ func MergedDeployTree(project map[string]spec.BundleNode, context string, read f
 		return out
 	}
 	if dc != nil {
-		for name, node := range dc.Bundle {
-			out[name] = MergeBundleNode(out[name], node)
+		for name, node := range dc.Fleet {
+			out[name] = MergeFleetNode(out[name], node)
 		}
 	}
 	return out
@@ -57,7 +57,7 @@ func MergedDeployTree(project map[string]spec.BundleNode, context string, read f
 // FilterPreemptibleHolders returns every node in tree that declares itself a preemption holder
 // (IsPreemptible), projected into spec.HolderDescriptor — the candidate set the arbiter may stop.
 // Deterministic (sorted by name).
-func FilterPreemptibleHolders(tree map[string]spec.BundleNode) []spec.HolderDescriptor {
+func FilterPreemptibleHolders(tree map[string]spec.FleetNode) []spec.HolderDescriptor {
 	names := make([]string, 0, len(tree))
 	for name, node := range tree {
 		if node.IsPreemptible() {

@@ -65,7 +65,7 @@ func assembleAndValidateEntitySteps(pn spec.ParsedNode, label string) error {
 }
 
 // ValidateEntityNodeRec assemble-validates one entity node (when its kind is CUE-registered) and
-// recurses into its sub-entity children (bundle members, nested deploys), which carry their own
+// recurses into its sub-entity children (fleet members, nested deploys), which carry their own
 // steps. A candy node's DESUGARED body is additionally validated concretely against #CandyValue
 // (version+description required, unknown inline fields rejected) — the box-validate counterpart of
 // the load-time host-side validateKindValueCUE (which is closedness-only). Every pn.Children entry

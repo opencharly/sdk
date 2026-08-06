@@ -566,9 +566,9 @@ func CandyProvidedByBox(boxName string, boxes map[string]*buildkit.ResolvedBox, 
 // unaffected at runtime — their services run under systemd regardless of whether the supervisord
 // package is present.
 //
-// Relocated from charly/bundle_add_cmd.go (K4 unit B, core-min wave 3) — a pure function of
+// Relocated from charly/fleet_add_cmd.go (K4 unit B, core-min wave 3) — a pure function of
 // order+HostContext.MachineVenue with no core-only dependency, now shared (R3) by charly-core's
-// compileBoxSelection (unchanged, box shape) AND candy/plugin-bundle's candy-selection path (K4
+// compileBoxSelection (unchanged, box shape) AND candy/plugin-fleet's candy-selection path (K4
 // unit B) instead of being duplicated on both sides.
 func PruneContainerInitForSystemd(order []string, hostCtx HostContext) []string {
 	if !hostCtx.MachineVenue {

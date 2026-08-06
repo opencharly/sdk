@@ -8,7 +8,7 @@ import "github.com/opencharly/spec/spec"
 // builds that LoadSeams from a LoaderExecutor — wiring the PURE, relocated LOAD-half seams DIRECTLY
 // and dispatching the coupled steps through the executor. Two placements implement LoaderExecutor:
 // the COMPILED-IN host (charly.LoadUnified) with its typed host funcs directly (zero marshal, U3),
-// and every genuine PLUGIN (candy/plugin-bundle, candy/plugin-build, candy/plugin-vm — and any
+// and every genuine PLUGIN (candy/plugin-fleet, candy/plugin-build, candy/plugin-vm — and any
 // future reverse-channel consumer) over sdk.Executor's reverse channel, ALL through the ONE
 // canonical plugin-side witness in this file (executorLoaderExecutor, load_via_executor.go) — no
 // per-candy copies (K3-W2, task #13, hoisted the former private duplicates and deleted them, R3).
@@ -37,9 +37,9 @@ func LoadSeamsFromExecutor(exec LoaderExecutor) LoadSeams {
 		RunBootstrapPhase:        exec.RunBootstrapPhase,
 		WalkProject:              exec.WalkProject,
 		MaterializeLoadedProject: exec.MaterializeLoadedProject,
-		FlattenBundleVenues:      FlattenBundleVenues,
+		FlattenFleetVenues:      FlattenFleetVenues,
 		FoldMembers:              FoldMembers,
-		StampBundleDescents:      func(uf *spec.UnifiedFile) { StampBundleDescents(uf, exec.LoaderThreaded()) },
+		StampFleetDescents:      func(uf *spec.UnifiedFile) { StampFleetDescents(uf, exec.LoaderThreaded()) },
 		ValidateEphemeral:        func(uf *spec.UnifiedFile) error { return ValidateEphemeralUnified(uf, exec.LoaderThreaded()) },
 		ValidateCheckBeds:        func(uf *spec.UnifiedFile) error { return ValidateCheckBeds(uf, exec.LoaderThreaded()) },
 		ValidateAndroidDevices:   exec.ValidateAndroidDevices,

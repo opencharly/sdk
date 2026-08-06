@@ -78,7 +78,7 @@ func charlyCmdCapture(memberKey, script string) (string, error) {
 
 // memberDNSRefs returns, per container-venue member key, the sorted set of SIBLING member names
 // that member's own plan addresses by container DNS — the ${HOST:<name>} form with no :<port>.
-func memberDNSRefs(node *spec.BundleNode) map[string][]string {
+func memberDNSRefs(node *spec.FleetNode) map[string][]string {
 	if node == nil || len(node.Members) == 0 {
 		return nil
 	}
@@ -124,7 +124,7 @@ func memberDNSRefs(node *spec.BundleNode) map[string][]string {
 // preflightMemberDNS verifies that every cross-member container-DNS name a member's plan
 // references actually resolves from that member's venue, BEFORE any probe spends its retry budget
 // discovering otherwise.
-func preflightMemberDNS(node *spec.BundleNode) error {
+func preflightMemberDNS(node *spec.FleetNode) error {
 	refs := memberDNSRefs(node)
 	if len(refs) == 0 {
 		return nil

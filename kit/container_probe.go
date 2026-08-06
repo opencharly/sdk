@@ -38,7 +38,7 @@ func defaultContainerRunning(engine, name string) bool {
 // inspect` succeeds for any existing container, so its exit status is the signal. R3
 // consolidation (K-wave 2 cone R2 bank C): the shared home for the token-identical copies that
 // used to travel per module (candy/plugin-pod's `container exists` form + the new
-// candy/plugin-bundle del-resolve probe); charly core keeps its OWN copy (import purity — charly/
+// candy/plugin-fleet del-resolve probe); charly core keeps its OWN copy (import purity — charly/
 // imports only spec, and spec/container.EngineBinary is the allowed equivalent). Package-level
 // var for testability (tests inject a stub, same pattern as ContainerRunning).
 var ContainerExists = defaultContainerExists

@@ -4,7 +4,7 @@ package kit
 // at install time, turning them into concrete teardown commands.
 //
 // Each InstallStep's Reverse() method records a list of ReverseOps
-// when the step runs (see deploy_host_helpers.go). `charly bundle del`
+// when the step runs (see deploy_host_helpers.go). `charly fleet del`
 // reads those ops from the candy ledger and hands them here for
 // execution. The ops are opaque to the ledger — only the teardown
 // logic in this file understands each Kind.
@@ -22,7 +22,7 @@ import (
 )
 
 // ReverseExecutor is the interface ReverseOp handlers expect. Allows
-// us to pass either BundleDelCmd (for real teardown) or a test mock.
+// us to pass either FleetDelCmd (for real teardown) or a test mock.
 //
 // ReverseRunner returns the shell-runner used to execute reversal
 // commands. When non-nil, handlers dispatch through it (so VM teardown
@@ -165,7 +165,7 @@ func reversePackageRemove(op ReverseOp, re ReverseExecutor) error {
 // command, or "" when the format has no uninstall template. It keeps this
 // function free of the buildkit DistroConfig/RenderTemplate dependency (which
 // would cycle kit→buildkit→kit once reverse_ops lives in kit) — the caller
-// (candy/plugin-bundle/deploy_target.go, S3b — was charly core's
+// (candy/plugin-fleet/deploy_target.go, S3b — was charly core's
 // deploy_target_external.go before the deploy-dispatch cluster moved) closes
 // over DistroCfg + RenderTemplate.
 func FillReverseUninstallCmds(ops []ReverseOp, renderUninstall func(format string, packages []string) string) {

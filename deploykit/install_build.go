@@ -253,7 +253,7 @@ func ComputeDeployID(box string, layers, addCandies []string) string {
 // PrimaryDistroTag picks the distro tag this plan is materialized against.
 // img.Distro is the AUTHORITATIVE deploy-target distro chain and always wins: the caller's
 // synthetic-box construction sets the operator host's tags for a host target / the GUEST's for a
-// vm target (candy/plugin-bundle/candy_select.go's syntheticHostBoxFromEnvelope /
+// vm target (candy/plugin-fleet/candy_select.go's syntheticHostBoxFromEnvelope /
 // syntheticVmBoxFromEnvelope, K4 unit B), and ResolveBox the image's — so a vm deploy resolves
 // the guest distro, a host deploy the operator's, a pod/image deploy the image's. For a host deploy
 // img.Distro[0] == hostCtx.Distro (both from DetectHostDistro; PrimaryTag() ==

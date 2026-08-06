@@ -4,7 +4,7 @@ package kit
 // bed, RELOCATED to the spec/lock fabric slice github.com/opencharly/spec/lock/bed_vm_domain.go
 // (#55 CHECK-ENGINE cone Option A — the bed-session lock family candy/plugin-check's bed session
 // (bed_session.go, #55 W3 B2-full) reaches importing zero kit). Pure over an already-LOADED
-// (loader-stamped) spec.BundleNode: it reads node.Descent directly rather than falling back to
+// (loader-stamped) spec.FleetNode: it reads node.Descent directly rather than falling back to
 // a registry-backed resolver — a check bed's node always comes from LoadUnified. kit re-exports
 // the symbols here so every existing kit.BedVmDomains / kit.AcquireVmDomainLock call site
 // (charly core + plugins) is untouched. New consumers should import spec/lock directly.

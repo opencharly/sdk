@@ -25,8 +25,8 @@ package deploykit
 //
 // The former LoadBuildConfigForBox fallback (a per-call lazy lookup "for a caller that
 // compiles outside the deploy-compile seam") is DELETED, not ported: it was already
-// dead in production (candy/plugin-bundle's compileDeployPlans always receives
-// hostCtx.ActiveInit pre-resolved by charly/bundle_compile_seam.go's
+// dead in production (candy/plugin-fleet's compileDeployPlans always receives
+// hostCtx.ActiveInit pre-resolved by charly/fleet_compile_seam.go's
 // preresolveActiveInitInto BEFORE calling BuildDeployPlan) and every test exercising
 // it relied on it FAILING (an empty temp dir with no charly.yml) — never on it
 // succeeding. Preferring the preresolved ActiveInit is therefore the ONLY path now,

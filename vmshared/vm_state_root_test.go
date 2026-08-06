@@ -57,7 +57,7 @@ func TestVmStateRoot_RelativeOverrideRejected(t *testing.T) {
 }
 
 // TestVmStateRoot_WhitespaceOnlyOverrideIgnored: an accidentally-set-but-empty env var (e.g.
-// `CHARLY_VM_STATE_DIR= charly bundle add ...` from a stray shell script) must fall back to the
+// `CHARLY_VM_STATE_DIR= charly fleet add ...` from a stray shell script) must fall back to the
 // default, not error or resolve to an empty/garbage path.
 func TestVmStateRoot_WhitespaceOnlyOverrideIgnored(t *testing.T) {
 	t.Setenv(VmStateDirEnv, "   ")

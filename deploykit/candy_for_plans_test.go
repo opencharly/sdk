@@ -7,7 +7,7 @@ import (
 )
 
 // TestSelectCandiesForPlans covers the pure plan→candy pick shared (#55 K4) by charly's host
-// CandyForPlan and candy/plugin-bundle's plugin-side secret/artifact resolution: CandiesIncluded
+// CandyForPlan and candy/plugin-fleet's plugin-side secret/artifact resolution: CandiesIncluded
 // (topo order) then per-plan Candy, deduped in first-seen order, resolved against the supplied map;
 // a name absent from the map is skipped. This is the code the collapsed deploy-candy-secrets /
 // deploy-artifacts-retrieve seams used to run host-side — a regression here misroutes candy secrets.

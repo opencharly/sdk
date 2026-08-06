@@ -16,7 +16,7 @@ import (
 )
 
 // hostRefStep builds a container-venue member whose plan addresses each given ${HOST:...} arg.
-func hostRefStep(args ...string) *spec.BundleNode {
+func hostRefStep(args ...string) *spec.FleetNode {
 	n := podNode()
 	for _, arg := range args {
 		n.Plan = append(n.Plan, spec.Step{
@@ -31,7 +31,7 @@ func hostRefStep(args ...string) *spec.BundleNode {
 // only — not the port-bearing endpoint form, not self-references, not non-members, and not
 // members on a non-container venue.
 func TestMemberDNSRefs_OnlyContainerDNSSiblings(t *testing.T) {
-	node := &spec.BundleNode{Members: map[string]*spec.BundleNode{
+	node := &spec.FleetNode{Members: map[string]*spec.FleetNode{
 		// chrome addresses web (container DNS), api WITH a port (host-vantage endpoint — must be
 		// ignored), itself (ignored), and a name that is not a member at all (ignored).
 		"chrome": hostRefStep("web", "api:8080", "chrome", "not-a-member"),
@@ -39,7 +39,7 @@ func TestMemberDNSRefs_OnlyContainerDNSSiblings(t *testing.T) {
 		"api":    podNode(),
 		// A vm member is not on the shared container network; its refs are not this preflight's
 		// business even though it declares one.
-		"guest": func() *spec.BundleNode {
+		"guest": func() *spec.FleetNode {
 			n := vmNode("some-vm")
 			n.Plan = hostRefStep("web").Plan
 			return n
@@ -56,7 +56,7 @@ func TestMemberDNSRefs_OnlyContainerDNSSiblings(t *testing.T) {
 // TestMemberDNSRefs_NoRefsIsNil: a group with no cross-member addressing produces no work, which
 // is what keeps the preflight free for every bed that does not need it.
 func TestMemberDNSRefs_NoRefsIsNil(t *testing.T) {
-	node := &spec.BundleNode{Members: map[string]*spec.BundleNode{
+	node := &spec.FleetNode{Members: map[string]*spec.FleetNode{
 		"a": podNode(),
 		"b": podNode(),
 	}}
@@ -76,7 +76,7 @@ func TestPreflightMemberDNS_NoRefsSkipsProbing(t *testing.T) {
 	called := 0
 	resolveNameFromMember = func(string, string) error { called++; return nil }
 
-	node := &spec.BundleNode{Members: map[string]*spec.BundleNode{"a": podNode(), "b": podNode()}}
+	node := &spec.FleetNode{Members: map[string]*spec.FleetNode{"a": podNode(), "b": podNode()}}
 	if err := preflightMemberDNS(node); err != nil {
 		t.Fatalf("preflightMemberDNS on a group with no cross-member refs: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestPreflightMemberDNS_FailureNamesRecovery(t *testing.T) {
 		return errors.New("getent: no such host")
 	}
 
-	node := &spec.BundleNode{Members: map[string]*spec.BundleNode{
+	node := &spec.FleetNode{Members: map[string]*spec.FleetNode{
 		"chrome": hostRefStep("web"),
 		"web":    podNode(),
 	}}
@@ -131,7 +131,7 @@ func TestPreflightMemberDNS_ResolvableSiblingPasses(t *testing.T) {
 		return nil
 	}
 
-	node := &spec.BundleNode{Members: map[string]*spec.BundleNode{
+	node := &spec.FleetNode{Members: map[string]*spec.FleetNode{
 		"chrome": hostRefStep("web"),
 		"web":    podNode(),
 	}}

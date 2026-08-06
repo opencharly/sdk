@@ -252,20 +252,20 @@ func TestCipherPopulatedPlainEmpty(t *testing.T) {
 // --- LoadEncryptedVolumeFromConfig / EncPlanForConfig / EncStatusFromConfig ---
 //
 // These are the SEAM-ROUTABLE siblings of LoadEncryptedVolume/EncPlanFor/EncStatus: instead
-// of reaching the package-level LoadBundleConfig() themselves, they take an ALREADY-LOADED
-// *BundleConfig. Every fixture below sets an explicit Host: on its encrypted volume so the
+// of reaching the package-level LoadFleetConfig() themselves, they take an ALREADY-LOADED
+// *FleetConfig. Every fixture below sets an explicit Host: on its encrypted volume so the
 // derived CipherDir/PlainDir/ScopeUnit are fully deterministic — independent of whatever
 // engine.encrypted_storage_path a live ~/.config/charly/charly.yml on the test host might
 // carry (only kit.ResolveRuntime()'s ENGINE AUTO-DETECT is exercised for real, which needs
 // nothing beyond `podman`/`docker` on PATH and never fails the test on its own).
 
-// encFixtureConfig builds a *BundleConfig with one encrypted + one plain volume under
+// encFixtureConfig builds a *FleetConfig with one encrypted + one plain volume under
 // DeployKey(boxName, instance), each with an explicit Host: so downstream path derivation
 // needs no runtime-config lookup.
-func encFixtureConfig(instance, encHost, plainHost string) *BundleConfig {
+func encFixtureConfig(instance, encHost, plainHost string) *FleetConfig {
 	const boxName = "myapp"
-	return &BundleConfig{
-		Bundle: map[string]BundleNode{
+	return &FleetConfig{
+		Fleet: map[string]FleetNode{
 			DeployKey(boxName, instance): {
 				Volume: []spec.DeployVolume{
 					{Name: "secrets", Type: "encrypted", Host: encHost},
@@ -383,8 +383,8 @@ func TestEncPlanForConfig(t *testing.T) {
 	})
 
 	t.Run("volume filter narrows the plan to the named volume only", func(t *testing.T) {
-		dc := &BundleConfig{
-			Bundle: map[string]BundleNode{
+		dc := &FleetConfig{
+			Fleet: map[string]FleetNode{
 				DeployKey("myapp", ""): {
 					Volume: []spec.DeployVolume{
 						{Name: "secrets", Type: "encrypted", Host: "/srv/enc/secrets"},
@@ -414,7 +414,7 @@ func TestEncPlanForConfig(t *testing.T) {
 	})
 
 	t.Run("no encrypted volumes at all returns an empty plan, no error", func(t *testing.T) {
-		dc := &BundleConfig{Bundle: map[string]BundleNode{
+		dc := &FleetConfig{Fleet: map[string]FleetNode{
 			DeployKey("myapp", ""): {Volume: []spec.DeployVolume{{Name: "data", Type: "plain", Host: "/srv/plain/data"}}},
 		}}
 		plan, err := EncPlanForConfig(dc, "myapp", "", "", "myapp")
@@ -450,7 +450,7 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func TestEncStatusFromConfig(t *testing.T) {
 	t.Run("no encrypted mounts prints the empty-state message", func(t *testing.T) {
-		dc := &BundleConfig{Bundle: map[string]BundleNode{
+		dc := &FleetConfig{Fleet: map[string]FleetNode{
 			DeployKey("myapp", ""): {Volume: []spec.DeployVolume{{Name: "data", Type: "plain", Host: "/srv/plain/data"}}},
 		}}
 		out := captureStdout(t, func() {

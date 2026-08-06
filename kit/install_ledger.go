@@ -2,8 +2,8 @@ package kit
 
 // install_ledger.go — persistent record of host deploys.
 //
-// Every `charly bundle add host …` writes structured records to a ledger
-// so a later `charly bundle del host …` can reverse the exact operations.
+// Every `charly fleet add host …` writes structured records to a ledger
+// so a later `charly fleet del host …` can reverse the exact operations.
 // Layout:
 //
 //   ~/.config/opencharly/installed/
@@ -70,7 +70,7 @@ func (p *LedgerPaths) Ensure() error {
 }
 
 // ---------------------------------------------------------------------------
-// Flock — serialize concurrent charly bundle sessions.
+// Flock — serialize concurrent charly fleet sessions.
 // ---------------------------------------------------------------------------
 
 // LedgerLock is an acquired advisory lock on the ledger directory. Call

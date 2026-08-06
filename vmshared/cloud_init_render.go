@@ -284,7 +284,7 @@ func composeUsers(spec *VmSpec, ci *VmCloudInit, rt CloudInitRuntimeParams) []an
 // input — nil spec (an unresolved vm entity, e.g. an upstream entity-
 // resolution bug) now returns "" instead of dereferencing spec.SSH. Exported
 // via the ResolveCloudInitSSHUser var-alias (exports.go) consumed by three
-// charly call sites (bundle_add_cmd.go, check_cmd.go, vm_lifecycle_preresolve.go)
+// charly call sites (fleet_add_cmd.go, check_cmd.go, vm_lifecycle_preresolve.go)
 // — one guard covers all three (R3).
 func resolveCloudInitSSHUser(spec *VmSpec) string {
 	if spec == nil {

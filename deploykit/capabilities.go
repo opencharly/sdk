@@ -13,7 +13,7 @@ import (
 // label home (CapabilityLabelMap below). This is the "what can this image do, what does
 // it need, what does it provide" view baked into OCI labels at build time and read back
 // at deploy time, with no dependence on the source repo's charly.yml. The self-deploy
-// invariant (`charly bundle from-box`) depends on this list being complete.
+// invariant (`charly fleet from-box`) depends on this list being complete.
 //
 // The former charly-core `Capabilities` name was a bare `type Capabilities =
 // spec.BoxMetadata` alias (ZERO-ALIASES residue per the kernel/plugin boundary law — an
@@ -51,7 +51,7 @@ var CapabilityLabelMap = map[string]string{
 	"Security": spec.LabelSecurity,
 
 	// Networking — image-declared network mode. Tunnel / DNS / AcmeEmail
-	// moved to BundleNode in schema v4 (deployment choices, no
+	// moved to FleetNode in schema v4 (deployment choices, no
 	// image-declaration meaning).
 	"Network": spec.LabelNetwork,
 
@@ -61,7 +61,7 @@ var CapabilityLabelMap = map[string]string{
 	"PathAppend": spec.LabelPathAppend,
 
 	// Init — auto-detected from candies (see init_config.go ResolveInitSystem).
-	// Engine moved to BundleNode in schema v4 (deploy-host choice).
+	// Engine moved to FleetNode in schema v4 (deploy-host choice).
 	"Init":         spec.LabelInit,
 	"InitDef":      spec.LabelInitDef,
 	"Service":      spec.LabelService,
@@ -103,7 +103,7 @@ var CapabilityLabelMap = map[string]string{
 
 	// Shell-init manifest — three-section (candy/box/deploy) per-shell
 	// rc-snippet contributions. 2026-05 cutover. Read by `charly box
-	// inspect` and `charly bundle from-box`; the Deploy section is
+	// inspect` and `charly fleet from-box`; the Deploy section is
 	// permanently empty today — the deploy-scope `shell:` overlay
 	// authoring field was retired (validation-correctness batch): its
 	// would-be merge, MergeDeployShell, never had a production caller.
@@ -120,7 +120,7 @@ var CapabilityLabelMap = map[string]string{
 // CapabilityLabelMap mapping.
 //
 // This list codifies the schema v4 migration note on labels.go: "Tunnel / DNS /
-// AcmeEmail / Engine moved to BundleNode". The fields stay on spec.BoxMetadata because
+// AcmeEmail / Engine moved to FleetNode". The fields stay on spec.BoxMetadata because
 // deploy-mode commands still consume them after MergeDeployOntoMetadata runs — but they
 // never round-trip through OCI labels.
 var DeployOnlyCapabilityFields = map[string]bool{
@@ -152,7 +152,7 @@ func CheckCapabilityLabelCompleteness() error {
 	return nil
 }
 
-// CapabilitiesFromLabels is the source-less loader used by `charly bundle from-box`:
+// CapabilitiesFromLabels is the source-less loader used by `charly fleet from-box`:
 // given only an engine + image ref, pull OCI labels via inspect and produce a
 // spec.BoxMetadata struct. No charly.yml, no source repo access required. Errors
 // propagate ErrImageNotLocal when appropriate (caller can wrap with a "run charly box

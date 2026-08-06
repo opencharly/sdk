@@ -23,7 +23,7 @@ import (
 //
 // When fn returns a non-nil error, traversal stops immediately and
 // the error propagates.
-func BundleWalkPreOrder(n *BundleNode, path string, fn func(path string, node *BundleNode) error) error {
+func FleetWalkPreOrder(n *FleetNode, path string, fn func(path string, node *FleetNode) error) error {
 	if n == nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func BundleWalkPreOrder(n *BundleNode, path string, fn func(path string, node *B
 		if path != "" {
 			childPath = path + "." + k
 		}
-		if err := BundleWalkPreOrder(n.Children[k], childPath, fn); err != nil {
+		if err := FleetWalkPreOrder(n.Children[k], childPath, fn); err != nil {
 			return err
 		}
 	}
@@ -46,7 +46,7 @@ func BundleWalkPreOrder(n *BundleNode, path string, fn func(path string, node *B
 // before invoking fn on this node. Post-order is the delete-order
 // semantic: a child must be torn down while its parent environment
 // is still alive, so the caller reverses leaves first.
-func BundleWalkPostOrder(n *BundleNode, path string, fn func(path string, node *BundleNode) error) error {
+func FleetWalkPostOrder(n *FleetNode, path string, fn func(path string, node *FleetNode) error) error {
 	if n == nil {
 		return nil
 	}
@@ -55,7 +55,7 @@ func BundleWalkPostOrder(n *BundleNode, path string, fn func(path string, node *
 		if path != "" {
 			childPath = path + "." + k
 		}
-		if err := BundleWalkPostOrder(n.Children[k], childPath, fn); err != nil {
+		if err := FleetWalkPostOrder(n.Children[k], childPath, fn); err != nil {
 			return err
 		}
 	}
@@ -162,15 +162,15 @@ func ArgHasImageTag(arg string) bool {
 func RejectImageRefAsDeployName(box string) error {
 	if strings.Contains(box, ".") && ArgHasImageTag(box) {
 		return fmt.Errorf(
-			"deploy name %q is a tagged registry image ref — a registry ref can't be a deploy name (its dots collide with dotted-path addressing). Give it a short name:\n    charly bundle add <name> %s",
+			"deploy name %q is a tagged registry image ref — a registry ref can't be a deploy name (its dots collide with dotted-path addressing). Give it a short name:\n    charly fleet add <name> %s",
 			box, box)
 	}
 	return nil
 }
 
-// FindVmDeployNode finds the BundleNode for a vm-target deploy. It is
+// FindVmDeployNode finds the FleetNode for a vm-target deploy. It is
 // THE shared "which deploy entry backs this VM" lookup used by both
-// `charly bundle add` (artifact-env collection) and `charly check live` (tests
+// `charly fleet add` (artifact-env collection) and `charly check live` (tests
 // overlay), so the two never diverge. Resolution order:
 //  1. by deploy NAME (the entry key) — the precise match;
 //  2. by the legacy "vm:<name>" key form;
@@ -197,9 +197,9 @@ func RejectImageRefAsDeployName(box string) error {
 // points at check-substrate's own domain. err is non-nil ONLY when the
 // step-3 fallback scan finds 2+ candidates — steps 1-2 are exact-key matches
 // and never ambiguous.
-func FindVmDeployNode(deploys map[string]BundleNode, name, vmName string) (BundleNode, bool, error) {
+func FindVmDeployNode(deploys map[string]FleetNode, name, vmName string) (FleetNode, bool, error) {
 	if deploys == nil {
-		return BundleNode{}, false, nil
+		return FleetNode{}, false, nil
 	}
 	if name != "" {
 		if e, ok := deploys[name]; ok && (e.Target == "vm" || e.From != "") {
@@ -209,13 +209,13 @@ func FindVmDeployNode(deploys map[string]BundleNode, name, vmName string) (Bundl
 			return e, true, nil
 		}
 	}
-	var match BundleNode
+	var match FleetNode
 	var matchKey string
 	found := false
 	for k, e := range deploys {
 		if e.Target == "vm" && e.From != "" && (e.From == vmName || e.From == name) {
 			if found {
-				return BundleNode{}, false, fmt.Errorf("ambiguous vm deploy lookup for %q (vm %q): both %q and %q declare from %q — the caller must resolve the exact deploy node instead of scanning by entity", name, vmName, matchKey, k, e.From)
+				return FleetNode{}, false, fmt.Errorf("ambiguous vm deploy lookup for %q (vm %q): both %q and %q declare from %q — the caller must resolve the exact deploy node instead of scanning by entity", name, vmName, matchKey, k, e.From)
 			}
 			match, matchKey, found = e, k, true
 		}
@@ -223,10 +223,10 @@ func FindVmDeployNode(deploys map[string]BundleNode, name, vmName string) (Bundl
 	if found {
 		return match, true, nil
 	}
-	return BundleNode{}, false, nil
+	return FleetNode{}, false, nil
 }
 
-// FindBundleNode locates a deploy node by key across the WHOLE tree — every
+// FindFleetNode locates a deploy node by key across the WHOLE tree — every
 // top-level root, plus its nested Children and peer Members, at any depth.
 // Returns nil when no node with that key exists anywhere in the tree. The
 // SDK-side twin of ResolveNodePath (which descends a known DOTTED path) and
@@ -235,37 +235,37 @@ func FindVmDeployNode(deploys map[string]BundleNode, name, vmName string) (Bundl
 // node's bare key, not its path from a root.
 //
 // Moved from charly/k3s_post.go (Cutover B unit 5, P13-KERNEL-B): a pure
-// BundleNode-tree search with zero loader/registry dependency — the
+// FleetNode-tree search with zero loader/registry dependency — the
 // scoping-map re-audit found this was the ONLY genuinely movable piece of
 // its family; the LoadUnified-coupled orchestration around it (resolving
 // which deploy owns a VM entity, reading the persisted port-forward
 // allocation) stays host-side, since LoadUnified/materialize is
 // K1-permanent core (R-E2).
-func FindBundleNode(bundle map[string]BundleNode, name string) *BundleNode {
-	for k := range bundle {
-		n := bundle[k]
+func FindFleetNode(fleet map[string]FleetNode, name string) *FleetNode {
+	for k := range fleet {
+		n := fleet[k]
 		if k == name {
 			return &n
 		}
-		if r := findBundleNodePtr(n.Children, name); r != nil {
+		if r := findFleetNodePtr(n.Children, name); r != nil {
 			return r
 		}
-		if r := findBundleNodePtr(n.Members, name); r != nil {
+		if r := findFleetNodePtr(n.Members, name); r != nil {
 			return r
 		}
 	}
 	return nil
 }
 
-func findBundleNodePtr(m map[string]*BundleNode, name string) *BundleNode {
+func findFleetNodePtr(m map[string]*FleetNode, name string) *FleetNode {
 	for k, n := range m {
 		if k == name {
 			return n
 		}
-		if r := findBundleNodePtr(n.Children, name); r != nil {
+		if r := findFleetNodePtr(n.Children, name); r != nil {
 			return r
 		}
-		if r := findBundleNodePtr(n.Members, name); r != nil {
+		if r := findFleetNodePtr(n.Members, name); r != nil {
 			return r
 		}
 	}
@@ -280,14 +280,14 @@ func findBundleNodePtr(m map[string]*BundleNode, name string) *BundleNode {
 // port, security, …) that MUST survive a destroy→create cycle. Compares against
 // the zero node after blanking the three auto-set fields, so a newly-added
 // per-host field is covered automatically (no remembered append — same
-// drift-proof discipline as MergeBundleNode).
-func IsAutoVmDeployEntry(entry BundleNode) bool {
+// drift-proof discipline as MergeFleetNode).
+func IsAutoVmDeployEntry(entry FleetNode) bool {
 	probe := entry
 	probe.VmState = nil
 	probe.Target = ""
 	probe.From = ""
 	probe.Descent = nil // loader-DERIVED (Cutover H), never operator-authored
-	return reflect.DeepEqual(probe, BundleNode{})
+	return reflect.DeepEqual(probe, FleetNode{})
 }
 
 // AppendOrReplaceEnv adds or replaces an env var entry (KEY=VALUE) in a slice.
@@ -335,38 +335,38 @@ func MergeEnvVars(existing, newVars map[string]string) map[string]string {
 	return out
 }
 
-// --- BundleConfig state container (moved from charly/deploy.go, P4) ---
-// BundleConfig represents per-machine deployment overrides (~/.config/charly/charly.yml).
-// SPIKE (value-type relocation, #55 cluster 2): relocated to spec.BundleConfig
-// (spec/spec/bundle_config.go) — every field already resolved to a spec.* type, so
+// --- FleetConfig state container (moved from charly/deploy.go, P4) ---
+// FleetConfig represents per-machine deployment overrides (~/.config/charly/charly.yml).
+// SPIKE (value-type relocation, #55 cluster 2): relocated to spec.FleetConfig
+// (spec/spec/fleet_config.go) — every field already resolved to a spec.* type, so
 // the type carried zero deploykit-only content. This is now a zero-churn alias;
 // the two pure methods (Lookup/LookupKey) moved with it. The three methods that
 // reach sdk/kit (DeployedContainerNames/OccupiedHostPorts/GlobalEnvForImage) stay
-// below as free functions (bundle_derive.go) — spec can never import sdk/kit.
-type BundleConfig = spec.BundleConfig
+// below as free functions (fleet_derive.go) — spec can never import sdk/kit.
+type FleetConfig = spec.FleetConfig
 
 // MergeDeployConfigs merges multiple DeployConfigs left-to-right. Later
 // configs take precedence (field-level replace per image). The merge walks
-// every yaml-tagged field of BundleNode via reflect: a field copies
+// every yaml-tagged field of FleetNode via reflect: a field copies
 // from src → dst when src's value is non-zero (string != "", slice/map/ptr
 // not nil, bool != false, numeric != 0). This makes adding a new field to
-// BundleNode automatically merge-correct — the pre-2026-05 hand-rolled
+// FleetNode automatically merge-correct — the pre-2026-05 hand-rolled
 // per-field merge silently dropped 19+ fields (ResolvedPort, Description,
 // Secret, Sidecar, Shell, Kubernetes, ForwardGpgAgent, ForwardSshAgent,
 // Kind, Replica, Restart, Schedule, Resources, Expose, Storage, Probes,
 // Cpus, Ram, DiskSize) whenever any merge → save cycle ran.
 //
-// The yaml tag `-` (currently only BundleNode.Inside, a derived
+// The yaml tag `-` (currently only FleetNode.Inside, a derived
 // runtime field) skips the merge. Untagged fields are also skipped.
-func MergeDeployConfigs(configs ...*BundleConfig) *BundleConfig {
-	result := &BundleConfig{Bundle: make(map[string]BundleNode)}
+func MergeDeployConfigs(configs ...*FleetConfig) *FleetConfig {
+	result := &FleetConfig{Fleet: make(map[string]FleetNode)}
 	for _, dc := range configs {
-		if dc == nil || dc.Bundle == nil {
+		if dc == nil || dc.Fleet == nil {
 			continue
 		}
-		for name, overlay := range dc.Bundle {
-			existing := result.Bundle[name]
-			result.Bundle[name] = MergeBundleNode(existing, overlay)
+		for name, overlay := range dc.Fleet {
+			existing := result.Fleet[name]
+			result.Fleet[name] = MergeFleetNode(existing, overlay)
 		}
 	}
 	return result
@@ -447,20 +447,20 @@ func ScopeVolumesToDeployKey(meta *spec.BoxMetadata, deployName, instance string
 }
 
 // SaveDeployState persists deployment parameters to charly.yml (best-effort). Merges onto any
-// existing entry to preserve fields from charly bundle import. Relocated from charly/deploy.go
+// existing entry to preserve fields from charly fleet import. Relocated from charly/deploy.go
 // (K5-Unit-1); the process-shared flock is a kind-blind kit primitive (kit.AcquireFileLock on
 // the deploy-config path) and the loader reaches core through the DeployStateHost seam
-// (LoadUnifiedBundleConfig). marshalNode is the deploy-kind-specific node-form serializer the
-// caller supplies (the callback SaveBundleConfig invokes per entry).
+// (LoadUnifiedFleetConfig). marshalNode is the deploy-kind-specific node-form serializer the
+// caller supplies (the callback SaveFleetConfig invokes per entry).
 //
 //nolint:gocyclo // field-by-field conditional persist; every branch is a peer (write-when-set)
-func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *BundleNode) (*yaml.Node, error), read func() (*BundleConfig, error)) {
+func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *FleetNode) (*yaml.Node, error), read func() (*FleetConfig, error)) {
 	// read is the current-state re-read this load-mutate-save performs. A nil read falls back to
 	// LoadDeployConfigForWrite — the DeployStateHost-backed host read — so an IN-PROCESS host
 	// caller passes nil and behaves exactly as before, INCLUDING the "can't read → don't write"
 	// data-safety guard (a nil-read caller with no DeployStateHost registered is not compiled to
 	// touch the ledger, so the write is skipped rather than clobbering an unreadable file). A
-	// plugin caller (out-of-process command:bundle) injects its OWN loader-backed reader, so
+	// plugin caller (out-of-process command:fleet) injects its OWN loader-backed reader, so
 	// SaveDeployState no longer requires the DeployStateHost package var (#55 K4 config-write
 	// seam-collapse). NAMED EXIT: the nil-read branch is DI serving the still-in-proc host callers
 	// (bed_session / CleanDeployEntry) — NOT a transitional shim; it dies when the last migrates
@@ -470,16 +470,16 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 		if DeployStateHost == nil {
 			return
 		}
-		loadBase = func() (*BundleConfig, error) { return LoadDeployConfigForWrite("saveDeployState") }
+		loadBase = func() (*FleetConfig, error) { return LoadDeployConfigForWrite("saveDeployState") }
 	}
 	// The lock hold, the fresh re-read inside it, and the nil-config self-heal are
-	// MutateBundleConfig's (deploy_config_cycle.go) — THE one locked read-modify-write cycle every
+	// MutateFleetConfig's (deploy_config_cycle.go) — THE one locked read-modify-write cycle every
 	// overlay writer shares. The write is best-effort, so a lock/read/write failure warns rather
 	// than propagating, exactly as this body's own inline lock did before.
 	// Thread the same reader into the fail-safe re-check so an out-of-process caller's write
-	// path never falls back to the DeployStateHost-backed LoadBundleConfig (nil → host default).
-	save := func(dc *BundleConfig) error { return SaveBundleConfig(dc, marshalNode, read) }
-	if _, err := MutateBundleConfig(loadBase, save, func(dc *BundleConfig) (bool, error) {
+	// path never falls back to the DeployStateHost-backed LoadFleetConfig (nil → host default).
+	save := func(dc *FleetConfig) error { return SaveFleetConfig(dc, marshalNode, read) }
+	if _, err := MutateFleetConfig(loadBase, save, func(dc *FleetConfig) (bool, error) {
 		return applyDeployState(dc, boxName, instance, input), nil
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not save to charly.yml: %v\n", err)
@@ -489,12 +489,12 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 // applyDeployState writes input's set fields onto the deploy's entry in a FRESH overlay read under
 // the deploy-config lock, reporting whether anything is worth persisting. Split out of
 // SaveDeployState so the mutation is a plain function over fresh state — the shape
-// MutateBundleConfig requires.
+// MutateFleetConfig requires.
 //
 //nolint:gocyclo // field-by-field conditional persist; every branch is a peer (write-when-set)
-func applyDeployState(dc *BundleConfig, boxName, instance string, input SaveDeployStateInput) bool {
+func applyDeployState(dc *FleetConfig, boxName, instance string, input SaveDeployStateInput) bool {
 	key := DeployKey(boxName, instance)
-	entry := dc.Bundle[key] // preserve existing fields (tunnel, volumes, etc.)
+	entry := dc.Fleet[key] // preserve existing fields (tunnel, volumes, etc.)
 	if input.Box != "" && entry.Image == "" {
 		entry.Image = input.Box
 	}
@@ -569,14 +569,14 @@ func applyDeployState(dc *BundleConfig, boxName, instance string, input SaveDepl
 	if len(input.RequiresShared) > 0 {
 		entry.RequiresShared = input.RequiresShared
 	}
-	// Defensive zero-write guard: refuse to persist a fully-zero BundleNode (every field at its
+	// Defensive zero-write guard: refuse to persist a fully-zero FleetNode (every field at its
 	// Go zero value). A future caller invoking SaveDeployState with an empty SaveDeployStateInput
 	// on a key that doesn't yet exist would otherwise write `<key>: {}`, materializing an empty
 	// entry that masks any matching entry from the project charly.yml deploy block.
-	if reflect.DeepEqual(entry, BundleNode{}) {
+	if reflect.DeepEqual(entry, FleetNode{}) {
 		return false
 	}
-	dc.Bundle[key] = entry
+	dc.Fleet[key] = entry
 	return true
 }
 
@@ -592,35 +592,35 @@ func applyDeployState(dc *BundleConfig, boxName, instance string, input SaveDepl
 // is the deploy-kind-specific node-form serializer the caller supplies.
 //
 // read is the current-state re-read this load-mutate-save performs. A nil read falls back to the
-// DeployStateHost-backed LoadBundleConfig — the in-proc host read — INCLUDING the
+// DeployStateHost-backed LoadFleetConfig — the in-proc host read — INCLUDING the
 // "DeployStateHost==nil → skip" guard (a nil-read caller with no DeployStateHost registered is not
 // compiled to touch the ledger, so the clean is skipped rather than clobbering an unreadable
 // file). A plugin caller (out-of-process command:pod) injects its OWN loader-backed reader
-// (loaderkit.LoadHostBundleConfigViaExecutor), so CleanDeployEntry no longer requires the
-// DeployStateHost package var (#55 coneC-dsh — mirrors the SaveBundleConfig/SaveDeployState
-// reader-callback precedent). The reader is ALSO threaded as SaveBundleConfig's failsafeRead so the
+// (loaderkit.LoadHostFleetConfigViaExecutor), so CleanDeployEntry no longer requires the
+// DeployStateHost package var (#55 coneC-dsh — mirrors the SaveFleetConfig/SaveDeployState
+// reader-callback precedent). The reader is ALSO threaded as SaveFleetConfig's failsafeRead so the
 // data-safety re-check uses the same loader-backed read, not the DeployStateHost-backed one.
-func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *BundleNode) (*yaml.Node, error), read func() (*BundleConfig, error)) {
+func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *FleetNode) (*yaml.Node, error), read func() (*FleetConfig, error)) {
 	loadBase := read
 	if loadBase == nil {
 		if DeployStateHost == nil {
 			return
 		}
-		loadBase = LoadBundleConfig
+		loadBase = LoadFleetConfig
 	}
 	key := DeployKey(boxName, instance)
-	save := func(dc *BundleConfig) error { return SaveBundleConfig(dc, marshalNode, read) }
+	save := func(dc *FleetConfig) error { return SaveFleetConfig(dc, marshalNode, read) }
 	cleaned := false
-	// The lock hold and the fresh re-read inside it are MutateBundleConfig's — the same locked
+	// The lock hold and the fresh re-read inside it are MutateFleetConfig's — the same locked
 	// cycle every other overlay writer uses. This clean is the one writer whose mutation may end
 	// in REMOVING the file rather than saving it, so that branch reports changed=false (nothing
 	// left to persist) after removing it.
-	if _, err := MutateBundleConfig(loadBase, save, func(dc *BundleConfig) (bool, error) {
+	if _, err := MutateFleetConfig(loadBase, save, func(dc *FleetConfig) (bool, error) {
 		if !cleanDeployEntryFrom(dc, boxName, instance, key) {
 			return false, nil
 		}
 		cleaned = true
-		if len(dc.Bundle) == 0 && dc.Provides == nil {
+		if len(dc.Fleet) == 0 && dc.Provides == nil {
 			if path, pathErr := kit.DefaultDeployConfigPath(); pathErr == nil {
 				_ = os.Remove(path)
 			}
@@ -639,10 +639,10 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 // cleanDeployEntryFrom removes the deploy's entry and any provides it injected from a FRESH overlay
 // read under the deploy-config lock, reporting whether it removed anything. Split out of
 // CleanDeployEntry so the mutation is a plain function over fresh state — the shape
-// MutateBundleConfig requires.
-func cleanDeployEntryFrom(dc *BundleConfig, boxName, instance, key string) bool {
+// MutateFleetConfig requires.
+func cleanDeployEntryFrom(dc *FleetConfig, boxName, instance, key string) bool {
 	hasImage := false
-	if _, ok := dc.Bundle[key]; ok {
+	if _, ok := dc.Fleet[key]; ok {
 		hasImage = true
 		RemoveBoxDeploy(dc, key)
 	}
@@ -671,7 +671,7 @@ func cleanDeployEntryFrom(dc *BundleConfig, boxName, instance, key string) bool 
 		} else {
 			// Base image removal: only remove if no other entries for the same base image remain
 			hasOtherEntries := false
-			for k := range dc.Bundle {
+			for k := range dc.Fleet {
 				base, _ := ParseDeployKey(k)
 				if base == boxName {
 					hasOtherEntries = true

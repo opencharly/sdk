@@ -15,47 +15,47 @@ import (
 // deploy_file.go — the deploy STATE-MODEL load/save/merge/export body relocated out of
 // charly/deploy.go to sdk/deploykit (K5-Unit-1, the S-K5 keystone that unblocks P13). The
 // PURE helpers (LoadDeployFile / RemoveBoxDeploy) were already here; this cutover moved the
-// state-model bodies — LoadBundleConfig / SaveBundleConfig / LoadDeployConfigForRead /
+// state-model bodies — LoadFleetConfig / SaveFleetConfig / LoadDeployConfigForRead /
 // LoadDeployConfigForWrite / MergeDeployOntoMetadata / CleanDeployEntry / SaveDeployState /
 // ExportAllBox — plus the SaveDeployStateInput type (deploy_state.go) and the pure helpers
 // (ScopeVolumesToDeployKey / DescriptionInfo / IsSameBaseBox / RemoveBySource /
 // RemoveByExactSource / Named).
 //
 // ONE of these bodies reaches a core Mechanism the SDK cannot import — the unified LOADER
-// (LoadUnified → uf.ProjectBundleConfig), reached through the DeployStateHost seam below
+// (LoadUnified → uf.ProjectFleetConfig), reached through the DeployStateHost seam below
 // (filled by charly at init). The process-shared deploy-config FLOCK + the runtime VERSION
 // stamp are kind-blind kit primitives (kit.AcquireFileLock / kit.LatestSchemaVersion) called
 // directly; the deploy-kind-specific marshal (the struct-body → compact node-form transform)
-// is the caller's responsibility, supplied as a callback to the kind-blind SaveBundleConfig
+// is the caller's responsibility, supplied as a callback to the kind-blind SaveFleetConfig
 // shell. ExportAllBox is the #67 keystone: it takes the spec.ResolvedProject envelope the
 // "resolved-project" HostBuild seam produces (K5-Unit-0) and projects the box-authored
-// deploy-overlay fields into a BundleConfig — no live *Config graph. The per-host ledger is
+// deploy-overlay fields into a FleetConfig — no live *Config graph. The per-host ledger is
 // read/written by compiled-in command plugins via the config-resolve / config-persist host
 // seams (the plugin-vm precedent); these bodies are the shared library those seams and the
 // charly command family both call.
 
 // StateHostMechanisms carries the ONE host-side Mechanism the state-file load/save bodies need
-// but the SDK cannot import: the unified LOADER (LoadUnified → uf.ProjectBundleConfig), reached
-// through LoadUnifiedBundleConfig. charly/ fills it at init (RegisterDeployStateHost); a plugin
+// but the SDK cannot import: the unified LOADER (LoadUnified → uf.ProjectFleetConfig), reached
+// through LoadUnifiedFleetConfig. charly/ fills it at init (RegisterDeployStateHost); a plugin
 // or SDK consumer that does not register it gets nil-safe no-ops from the write paths (the read
 // paths fall back to the kit-only file path when the seam is absent).
 //
-// E/M justification (the kernel/plugin boundary law): LoadUnifiedBundleConfig is a kind-blind
+// E/M justification (the kernel/plugin boundary law): LoadUnifiedFleetConfig is a kind-blind
 // MECHANISM (M) — it loads ANY per-host charly.yml through the unified loader and returns its
-// ProjectBundleConfig, never branching on a deploy kind. It lives in the seam (not in deploykit
+// ProjectFleetConfig, never branching on a deploy kind. It lives in the seam (not in deploykit
 // directly) ONLY because the LoadUnified orchestration has not yet relocated to sdk/loaderkit
-// (K1, task #31): once K1 lands, plugin-bundle calls loaderkit.LoadUnified directly and this
+// (K1, task #31): once K1 lands, plugin-fleet calls loaderkit.LoadUnified directly and this
 // seam dies entirely. The deploy-kind-specific marshal is NOT here — it is the caller's
-// responsibility, supplied as a callback to SaveBundleConfig (a kind-blind file shell). Tracked
+// responsibility, supplied as a callback to SaveFleetConfig (a kind-blind file shell). Tracked
 // K1-exit task: this seam field is deleted when K1 lands.
 type StateHostMechanisms struct {
-	// LoadUnifiedBundleConfig loads a per-host charly.yml configDir through the unified
-	// loader and returns its ProjectBundleConfig (or nil, nil when absent / empty).
-	LoadUnifiedBundleConfig func(configDir string) (*BundleConfig, error)
+	// LoadUnifiedFleetConfig loads a per-host charly.yml configDir through the unified
+	// loader and returns its ProjectFleetConfig (or nil, nil when absent / empty).
+	LoadUnifiedFleetConfig func(configDir string) (*FleetConfig, error)
 }
 
 // DeployStateHost is the seam charly fills at init. Nil-safe: the write paths (SaveDeployState /
-// CleanDeployEntry) no-op when it is nil; LoadBundleConfig returns (nil, nil) (absent file) so
+// CleanDeployEntry) no-op when it is nil; LoadFleetConfig returns (nil, nil) (absent file) so
 // the read-only validate/inspect paths work without a registration. A plugin/SDK consumer that
 // never writes the per-host ledger leaves it nil.
 var DeployStateHost *StateHostMechanisms
@@ -67,10 +67,10 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 	}
 }
 
-// LoadBundleConfig reads the per-host deploy overlay (~/.config/charly/charly.yml) through the
+// LoadFleetConfig reads the per-host deploy overlay (~/.config/charly/charly.yml) through the
 // unified loader — the SAME LoadUnified path as every project charly.yml. Returns nil, nil if
 // the file doesn't exist. Relocated from charly/deploy.go (K5-Unit-1); the LoadUnified hop
-// reaches core through DeployStateHost.LoadUnifiedBundleConfig.
+// reaches core through DeployStateHost.LoadUnifiedFleetConfig.
 //
 // Every transform the old bespoke parser did — the `images:` legacy-key reject, the
 // deployment-tree / required-box: / preemptible / ephemeral-naming validation, and the
@@ -78,7 +78,7 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 // deploy-validation block subsume the legacy check; the ephemeral/naming validators +
 // promotion were consolidated there so a PROJECT charly.yml's inline deploy: entries get them
 // too — R3, one path).
-func LoadBundleConfig() (*BundleConfig, error) {
+func LoadFleetConfig() (*FleetConfig, error) {
 	path, err := kit.DefaultDeployConfigPath()
 	if err != nil {
 		return nil, nil
@@ -96,58 +96,58 @@ func LoadBundleConfig() (*BundleConfig, error) {
 		)
 	}
 
-	if DeployStateHost == nil || DeployStateHost.LoadUnifiedBundleConfig == nil {
+	if DeployStateHost == nil || DeployStateHost.LoadUnifiedFleetConfig == nil {
 		return nil, nil
 	}
-	dc, err := DeployStateHost.LoadUnifiedBundleConfig(configDir)
+	dc, err := DeployStateHost.LoadUnifiedFleetConfig(configDir)
 	if err != nil {
 		return nil, err
 	}
 	if dc != nil {
 		return dc, nil
 	}
-	// A present-but-empty config still returns a non-nil BundleConfig (matching the old
+	// A present-but-empty config still returns a non-nil FleetConfig (matching the old
 	// bespoke parser), so callers that range/index dc.Deploy without a nil guard keep working
 	// after an overlay's last entry is removed.
-	return &BundleConfig{}, nil
+	return &FleetConfig{}, nil
 }
 
-// SaveBundleConfig writes a BundleConfig to the standard charly.yml path. The kind-blind file
+// SaveFleetConfig writes a FleetConfig to the standard charly.yml path. The kind-blind file
 // shell: the HEAD version stamp (kit.LatestSchemaVersion), the provides directive, the
 // caller-supplied per-entry node-form bodies, and the atomic tempfile+os.Rename write with a
 // fail-safe re-check. The deploy-kind-specific marshal (the struct-body → compact node-form
 // transform) is the caller's responsibility — supplied via marshalNode, which returns the
-// MIGRATED node-form body for one BundleNode (the value placed under the entry's name key).
-// This keeps SaveBundleConfig kind-blind: no per-kind map, no target-vocabulary switch, no
+// MIGRATED node-form body for one FleetNode (the value placed under the entry's name key).
+// This keeps SaveFleetConfig kind-blind: no per-kind map, no target-vocabulary switch, no
 // deploy-kind-specific struct knowledge. Relocated from charly/deploy.go (K5-Unit-1).
 //
 // failsafeRead is the config re-read the write path performs for its data-safety guard (below).
-// A nil failsafeRead falls back to LoadBundleConfig — the DeployStateHost-backed host read, so
+// A nil failsafeRead falls back to LoadFleetConfig — the DeployStateHost-backed host read, so
 // an IN-PROCESS host caller passes nil and behaves exactly as before. A plugin caller that is
 // NOT guaranteed to hold the charly-init DeployStateHost registration (an out-of-process
-// command:bundle) passes its OWN loader-backed reader (loaderkit.LoadHostBundleConfigViaExecutor),
-// so SaveBundleConfig no longer depends on the DeployStateHost package var to re-check
+// command:fleet) passes its OWN loader-backed reader (loaderkit.LoadHostFleetConfigViaExecutor),
+// so SaveFleetConfig no longer depends on the DeployStateHost package var to re-check
 // the on-disk file. Follows the marshalNode-param precedent: the host-coupled leg is injected,
 // not hard-wired (#55 K4 config-write seam-collapse).
 //
 // NAMED EXIT for the nil-failsafeRead branch: it is DI serving the still-in-proc host callers
 // (enc_probe / status_flat / vm state, RemoveVmDeployEntry), NOT a transitional shim — the
-// migrated caller (command:bundle) already never passes nil. The nil path dies when the LAST of
+// migrated caller (command:fleet) already never passes nil. The nil path dies when the LAST of
 // those host callers migrates plugin-side in its own deferred cone (enc floor / check-cone).
-func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *BundleNode) (*yaml.Node, error), failsafeRead func() (*BundleConfig, error)) error {
+func SaveFleetConfig(dc *FleetConfig, marshalNode func(name string, node *FleetNode) (*yaml.Node, error), failsafeRead func() (*FleetConfig, error)) error {
 	path, err := kit.DefaultDeployConfigPath()
 	if err != nil {
 		return fmt.Errorf("determining deploy config path: %w", err)
 	}
 	// FAIL-SAFE (data-safety): refuse to clobber a present-but-currently-unloadable per-host
 	// config. A writer that loaded through the error-swallowing LoadDeployConfigForRead path
-	// holds a DEGRADED (empty) BundleConfig whenever the on-disk file fails the loader gate;
+	// holds a DEGRADED (empty) FleetConfig whenever the on-disk file fails the loader gate;
 	// writing that degraded config would TRUNCATE the user's recoverable deploy state. Re-check
 	// the on-disk file here and abort with a `charly migrate` hint instead — the bytes stay on
 	// disk for the migration to recover.
 	recheck := failsafeRead
 	if recheck == nil {
-		recheck = LoadBundleConfig
+		recheck = LoadFleetConfig
 	}
 	if _, lerr := recheck(); lerr != nil {
 		return fmt.Errorf("refusing to overwrite %s — the existing per-host config fails to load (%w); fix it (or remove it to regenerate) first", path, lerr)
@@ -156,10 +156,10 @@ func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *Bund
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 	if dc == nil {
-		dc = &BundleConfig{}
+		dc = &FleetConfig{}
 	}
 	if marshalNode == nil {
-		return fmt.Errorf("SaveBundleConfig: marshalNode callback is nil (the deploy-kind-specific marshal is the caller's responsibility)")
+		return fmt.Errorf("SaveFleetConfig: marshalNode callback is nil (the deploy-kind-specific marshal is the caller's responsibility)")
 	}
 	// Write a unified node-form per-host charly.yml: the HEAD `version:` stamp lets a re-load
 	// through LoadUnified pass the schema gate; `provides:` stays a document directive; each
@@ -181,13 +181,13 @@ func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *Bund
 			root.Content = append(root.Content, kit.ScalarNode("provides"), pd.Content[0])
 		}
 	}
-	names := make([]string, 0, len(dc.Bundle))
-	for n := range dc.Bundle {
+	names := make([]string, 0, len(dc.Fleet))
+	for n := range dc.Fleet {
 		names = append(names, n)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		node := dc.Bundle[name]
+		node := dc.Fleet[name]
 		body, merr := marshalNode(name, &node)
 		if merr != nil {
 			return fmt.Errorf("marshaling deploy %q: %w", name, merr)
@@ -226,7 +226,7 @@ func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *Bund
 }
 
 // LoadDeployConfigForRead loads charly.yml for read-only consumption. Unlike the historical
-// `dc, _ := LoadBundleConfig()` pattern (silently discards validation errors → caller proceeds
+// `dc, _ := LoadFleetConfig()` pattern (silently discards validation errors → caller proceeds
 // with nil → feature degrades invisibly), this helper SURFACES the load error as a stderr
 // warning while still returning nil — preserving the existing caller nil-check contract but
 // giving the operator visibility into why a command behaved as if charly.yml were absent.
@@ -234,42 +234,42 @@ func SaveBundleConfig(dc *BundleConfig, marshalNode func(name string, node *Bund
 //
 // context is a short human-readable label included in the warning message so the operator can
 // trace which code path noticed the problem (e.g. "charly status", "config injectEnvProvides").
-func LoadDeployConfigForRead(context string) *BundleConfig {
-	dc, err := LoadBundleConfig()
+func LoadDeployConfigForRead(context string) *FleetConfig {
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s: charly.yml unavailable for read: %v\n", context, err)
 	}
 	// NEVER return nil — a caller dereferences `dc.Deploy[...]` directly (and some assign into
-	// it), so an absent config (LoadBundleConfig → (nil, nil)) or a load error both degrade to
+	// it), so an absent config (LoadFleetConfig → (nil, nil)) or a load error both degrade to
 	// an EMPTY config with a live map (image-label-driven behavior), not a nil-deref /
 	// nil-map-assignment panic.
 	if dc == nil {
-		return &BundleConfig{Bundle: map[string]BundleNode{}}
+		return &FleetConfig{Fleet: map[string]FleetNode{}}
 	}
-	if dc.Bundle == nil {
-		dc.Bundle = map[string]BundleNode{}
+	if dc.Fleet == nil {
+		dc.Fleet = map[string]FleetNode{}
 	}
 	return dc
 }
 
 // LoadDeployConfigForWrite loads charly.yml for mutation. Unlike the historical
-// `dc, _ := LoadBundleConfig()` pattern (silently discards validation errors → writer constructs
-// an empty config → SaveBundleConfig truncates the file), this helper PROPAGATES the load error
+// `dc, _ := LoadFleetConfig()` pattern (silently discards validation errors → writer constructs
+// an empty config → SaveFleetConfig truncates the file), this helper PROPAGATES the load error
 // so writers can ABORT instead of destroying data. Relocated from charly/deploy.go (K5-Unit-1).
 //
 // context is a short human-readable label included in the error message (e.g. "saveDeployState").
 // Returns (nil, error) when the file exists but failed parse/validation; (fresh empty config,
 // nil) when the file doesn't exist; (parsed config, nil) on clean load.
-func LoadDeployConfigForWrite(context string) (*BundleConfig, error) {
-	dc, err := LoadBundleConfig()
+func LoadDeployConfigForWrite(context string) (*FleetConfig, error) {
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("%s: refusing to write — charly.yml load failed: %w", context, err)
 	}
 	if dc == nil {
-		dc = &BundleConfig{Bundle: make(map[string]BundleNode)}
+		dc = &FleetConfig{Fleet: make(map[string]FleetNode)}
 	}
-	if dc.Bundle == nil {
-		dc.Bundle = make(map[string]BundleNode)
+	if dc.Fleet == nil {
+		dc.Fleet = make(map[string]FleetNode)
 	}
 	return dc, nil
 }
@@ -286,17 +286,17 @@ func LoadDeployConfigForWrite(context string) (*BundleConfig, error) {
 // and clobber this entry's explicit port:/env:/security:.
 //
 //nolint:gocyclo // field-by-field conditional overlay merge; every branch is a peer
-func MergeDeployOntoMetadata(meta *spec.BoxMetadata, dc *BundleConfig, deployName, instance string) {
+func MergeDeployOntoMetadata(meta *spec.BoxMetadata, dc *FleetConfig, deployName, instance string) {
 	// Volume isolation runs UNCONDITIONALLY (independent of any charly.yml overlay), so every
 	// distinctly-named deploy gets its own volume namespace on the very first `charly config` and
 	// every run after — see ScopeVolumesToDeployKey.
 	ScopeVolumesToDeployKey(meta, deployName, instance)
 
-	if dc == nil || dc.Bundle == nil || meta == nil {
+	if dc == nil || dc.Fleet == nil || meta == nil {
 		return
 	}
 
-	overlay, ok := dc.Bundle[DeployKey(deployName, instance)]
+	overlay, ok := dc.Fleet[DeployKey(deployName, instance)]
 	if !ok {
 		return
 	}
@@ -420,8 +420,8 @@ func MergeDeployOntoMetadata(meta *spec.BoxMetadata, dc *BundleConfig, deployNam
 // security / network) ride #ResolvedBoxView (grown in this cutover); version is the box's
 // EffectiveVersion (the stable content-derived CalVer), matching the prior behaviour's
 // `img.Version`.
-func ExportAllBox(rp *spec.ResolvedProject) *BundleConfig {
-	dc := &BundleConfig{Bundle: make(map[string]BundleNode)}
+func ExportAllBox(rp *spec.ResolvedProject) *FleetConfig {
+	dc := &FleetConfig{Fleet: make(map[string]FleetNode)}
 	if rp == nil {
 		return dc
 	}
@@ -436,7 +436,7 @@ func ExportAllBox(rp *spec.ResolvedProject) *BundleConfig {
 		view := rp.Boxes[name]
 		// Schema v4: Tunnel / DNS / AcmeEmail / Engine no longer sourced from BoxConfig
 		// (they're deploy-only).
-		entry := BundleNode{
+		entry := FleetNode{
 			Version:     view.Version,
 			Description: view.Description,
 			Env:         view.Env,
@@ -449,19 +449,19 @@ func ExportAllBox(rp *spec.ResolvedProject) *BundleConfig {
 		if entry.Version != "" || entry.Description != "" ||
 			entry.Env != nil ||
 			entry.EnvFile != "" || entry.Security != nil || entry.Network != "" {
-			dc.Bundle[name] = entry
+			dc.Fleet[name] = entry
 		}
 	}
 	return dc
 }
 
-// LoadDeployFile reads a charly.yml from an arbitrary path into a BundleConfig.
-func LoadDeployFile(path string) (*BundleConfig, error) {
+// LoadDeployFile reads a charly.yml from an arbitrary path into a FleetConfig.
+func LoadDeployFile(path string) (*FleetConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
-	var dc BundleConfig
+	var dc FleetConfig
 	if err := yaml.Unmarshal(data, &dc); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
@@ -469,9 +469,9 @@ func LoadDeployFile(path string) (*BundleConfig, error) {
 }
 
 // RemoveBoxDeploy removes an image's entry from a deploy config.
-func RemoveBoxDeploy(dc *BundleConfig, boxName string) {
-	if dc != nil && dc.Bundle != nil {
-		delete(dc.Bundle, boxName)
+func RemoveBoxDeploy(dc *FleetConfig, boxName string) {
+	if dc != nil && dc.Fleet != nil {
+		delete(dc.Fleet, boxName)
 	}
 }
 

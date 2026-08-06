@@ -6,7 +6,7 @@ package deploykit
 // remaining functions in that file (MigratePlaintextEnvSecret,
 // scrubSecretCLIEnv, writeDeployBackup) stay in charly-core: they call
 // DefaultCredentialStore() (a provider-registry-coupled host singleton) and
-// saveBundleConfigNodeForm (loader-seam-coupled) — inseparable from
+// saveFleetConfigNodeForm (loader-seam-coupled) — inseparable from
 // charly-core today, pending the config_image.go OpConfig seam.
 //
 // InjectSecretsIntoPlans (P13-KERNEL fold-in) was relocated from charly/layer_secrets.go — it was

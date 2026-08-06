@@ -15,8 +15,8 @@ func testArtifactCandy(name string, artifacts []spec.CandyArtifact) spec.CandyRe
 }
 
 // TestDeriveDeploymentName relocated from the deleted charly/deploy_nested_pod_test.go
-// (Cone A shape 3) — DeriveDeploymentName now has two callers (candy/plugin-bundle/from_box_pod.go's
-// pod path, candy/plugin-bundle/deploy_from_box.go's k8s path), so it lives here, R3.
+// (Cone A shape 3) — DeriveDeploymentName now has two callers (candy/plugin-fleet/from_box_pod.go's
+// pod path, candy/plugin-fleet/deploy_from_box.go's k8s path), so it lives here, R3.
 func TestDeriveDeploymentName(t *testing.T) {
 	cases := []struct{ ref, want string }{
 		{"ghcr.io/opencharly/selkies-kde-nvidia:2026.153.1026", "selkies-kde-nvidia"},
@@ -73,7 +73,7 @@ func TestCandyArtifactRegisters_NameBlind(t *testing.T) {
 // kit.RunReverseOps. Relocated from charly/deploy_host_helpers_test.go when
 // HostReverseExec/TeardownHostDeploy moved to sdk/deploykit (P13-KERNEL, the 4/5 sdk
 // lift); their end-to-end teardown is exercised live by the check-local bed's
-// `charly bundle del`.
+// `charly fleet del`.
 func TestHostReverseExec_AccessorPassthrough(t *testing.T) {
 	e := &HostReverseExec{
 		DryRun:          true,

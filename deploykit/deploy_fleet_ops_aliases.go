@@ -1,6 +1,6 @@
 package deploykit
 
-// deploy_bundle_ops_aliases.go — thin re-export aliases for the pure deploy-tree / deploy-path /
+// deploy_fleet_ops_aliases.go — thin re-export aliases for the pure deploy-tree / deploy-path /
 // candy-stage / preempt-resolve / task-var value HELPERS relocated to the spec contract module
 // (#55 import-purity, deploykit D2-clean). spec now OWNS these stdlib-only value helpers; deploykit's
 // own callers, its tests, and the deploy candies keep referencing deploykit.X unchanged, while
@@ -24,8 +24,8 @@ var (
 	BedCheckLiveRefs = spec.BedCheckLiveRefs
 	// DescriptionInfo returns the trimmed first line of a candy/box description.
 	DescriptionInfo = spec.DescriptionInfo
-	// MergeBundleNode overlays src's authored + structural-tree fields onto dst.
-	MergeBundleNode = spec.MergeBundleNode
+	// MergeFleetNode overlays src's authored + structural-tree fields onto dst.
+	MergeFleetNode = spec.MergeFleetNode
 	// HostRooted reports whether a node's stamped descent is a host-rooted (local/SSH-shell) venue.
 	HostRooted = spec.HostRooted
 	// DeployNestedLocalChildren applies a parent venue's nested target:local children in place.

@@ -40,7 +40,7 @@ func TestResolveVmSshPort(t *testing.T) {
 }
 
 // vm_deploy_addressing_test.go — sdk-level coverage for the VM deploy-state helpers relocated out
-// of charly/vm_deploy_state.go by FLOOR-SLIM Unit 3 (a pure *BundleConfig-shaped mechanism, not
+// of charly/vm_deploy_state.go by FLOOR-SLIM Unit 3 (a pure *FleetConfig-shaped mechanism, not
 // LoadUnified-coupled).
 
 // TestPruneStaleVmDottedTwin is the regression test for a nested (dotted) deploy's per-host
@@ -50,7 +50,7 @@ func TestResolveVmSshPort(t *testing.T) {
 // write.
 func TestPruneStaleVmDottedTwin(t *testing.T) {
 	t.Run("removes a matching dotted twin", func(t *testing.T) {
-		dc := &BundleConfig{Bundle: map[string]BundleNode{
+		dc := &FleetConfig{Fleet: map[string]FleetNode{
 			"check-sidecar-pod.check-sidecar-pod-ephvm":    {Target: "vm", VmState: &spec.VmDeployState{SshPort: 45551}},
 			"vm:check-sidecar-pod-check-sidecar-pod-ephvm": {Target: "vm", VmState: &spec.VmDeployState{SshPort: 33799}},
 		}}
@@ -58,15 +58,15 @@ func TestPruneStaleVmDottedTwin(t *testing.T) {
 		if got != "check-sidecar-pod.check-sidecar-pod-ephvm" {
 			t.Errorf("PruneStaleVmDottedTwin() = %q, want the dotted twin's key", got)
 		}
-		if _, stillThere := dc.Bundle["check-sidecar-pod.check-sidecar-pod-ephvm"]; stillThere {
-			t.Error("dotted twin was not removed from dc.Bundle")
+		if _, stillThere := dc.Fleet["check-sidecar-pod.check-sidecar-pod-ephvm"]; stillThere {
+			t.Error("dotted twin was not removed from dc.Fleet")
 		}
-		if _, canonical := dc.Bundle["vm:check-sidecar-pod-check-sidecar-pod-ephvm"]; !canonical {
+		if _, canonical := dc.Fleet["vm:check-sidecar-pod-check-sidecar-pod-ephvm"]; !canonical {
 			t.Error("the canonical entry itself was wrongly removed")
 		}
 	})
 	t.Run("no twin present is a no-op", func(t *testing.T) {
-		dc := &BundleConfig{Bundle: map[string]BundleNode{
+		dc := &FleetConfig{Fleet: map[string]FleetNode{
 			"vm:myapp": {Target: "vm"},
 		}}
 		if got := PruneStaleVmDottedTwin(dc, "vm:myapp"); got != "" {
@@ -74,40 +74,40 @@ func TestPruneStaleVmDottedTwin(t *testing.T) {
 		}
 	})
 	t.Run("does not over-match an unrelated dotted entry", func(t *testing.T) {
-		dc := &BundleConfig{Bundle: map[string]BundleNode{
+		dc := &FleetConfig{Fleet: map[string]FleetNode{
 			"vm:myapp":                 {Target: "vm"},
 			"other-stack.other-member": {Target: "vm"}, // a DIFFERENT domain's dotted entry
 		}}
 		if got := PruneStaleVmDottedTwin(dc, "vm:myapp"); got != "" {
 			t.Errorf("PruneStaleVmDottedTwin() = %q, want \"\" (unrelated domain must survive)", got)
 		}
-		if _, survived := dc.Bundle["other-stack.other-member"]; !survived {
+		if _, survived := dc.Fleet["other-stack.other-member"]; !survived {
 			t.Error("unrelated dotted entry was wrongly pruned (over-match)")
 		}
 	})
 	t.Run("the canonical key itself is never pruned even though it is its own domain match", func(t *testing.T) {
-		dc := &BundleConfig{Bundle: map[string]BundleNode{
+		dc := &FleetConfig{Fleet: map[string]FleetNode{
 			"vm:myapp": {Target: "vm"},
 		}}
 		PruneStaleVmDottedTwin(dc, "vm:myapp")
-		if _, ok := dc.Bundle["vm:myapp"]; !ok {
+		if _, ok := dc.Fleet["vm:myapp"]; !ok {
 			t.Error("the canonical entry was wrongly self-pruned")
 		}
 	})
 }
 
 // TestVmDeployEntryKeys exercises the `vm:`-form From-scan: a kind:check VM bed (e.g.
-// check-k3s-vm) writes its vm_state under the BUNDLE key (check-k3s-vm) cross-referencing the VM
+// check-k3s-vm) writes its vm_state under the FLEET key (check-k3s-vm) cross-referencing the VM
 // ENTITY (k3s-vm). The scan lets the DIRECT `charly vm destroy k3s-vm` path (which builds
-// "vm:k3s-vm") still resolve the bundle-keyed entry via that cross-ref. The scan must not
-// over-match an UNRELATED bundle.
+// "vm:k3s-vm") still resolve the fleet-keyed entry via that cross-ref. The scan must not
+// over-match an UNRELATED fleet.
 func TestVmDeployEntryKeys(t *testing.T) {
-	dc := &BundleConfig{Bundle: map[string]BundleNode{
+	dc := &FleetConfig{Fleet: map[string]FleetNode{
 		"check-k3s-vm":   {Target: "vm", From: "k3s-vm"},
 		"check-other-vm": {Target: "vm", From: "other-vm"},
 	}}
 
-	t.Run("vm:-prefixed entity resolves the bundle-keyed entry via the From cross-ref", func(t *testing.T) {
+	t.Run("vm:-prefixed entity resolves the fleet-keyed entry via the From cross-ref", func(t *testing.T) {
 		keys := VmDeployEntryKeys(dc, "vm:k3s-vm")
 		if len(keys) != 1 || keys[0] != "check-k3s-vm" {
 			t.Errorf("VmDeployEntryKeys(vm:k3s-vm) = %v, want [check-k3s-vm]", keys)

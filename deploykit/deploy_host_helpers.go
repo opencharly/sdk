@@ -101,8 +101,8 @@ func TeardownHostDeploy(paths *kit.LedgerPaths, rec *kit.DeployRecord, hostHome 
 // Shared by the local deploy target.Add / the vm deploy's Add path — both feed it
 // to RetrieveCandyArtifacts so rewrite rules like ${K3S_KUBECONFIG_SERVER}
 // resolve to the declared value rather than a literal placeholder. The
-// node is the dispatch-merged BundleNode (never re-read from disk).
-func BuildArtifactEnv(secretEnv map[string]string, node *spec.BundleNode) map[string]string {
+// node is the dispatch-merged FleetNode (never re-read from disk).
+func BuildArtifactEnv(secretEnv map[string]string, node *spec.FleetNode) map[string]string {
 	env := make(map[string]string, len(secretEnv))
 	for k, v := range secretEnv {
 		env[k] = v

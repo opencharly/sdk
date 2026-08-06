@@ -5,7 +5,7 @@ package vmshared
 // bed_session.go, #55 W3 B2-full) derive the per-deploy VM domain identity without a vmshared
 // import. This thin
 // re-export keeps every existing vmshared.VmDomainIdentity consumer (sdk/deploykit,
-// sdk/kit, the VM/check/preempt/kube/bundle plugins) — and this package's own
+// sdk/kit, the VM/check/preempt/kube/fleet plugins) — and this package's own
 // internal callers — compiling unchanged. ONE home: the definition lives in spec.
 
 import "github.com/opencharly/spec/spec"

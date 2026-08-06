@@ -15,23 +15,23 @@ import (
 // coneB-vmlifecycle): SaveVmDeployState/RemoveVmDeployEntry moved here, so their coverage moves
 // with them. deploykit's own test binary has no charly/LoadUnified available (DeployStateHost is a
 // charly-process-only registration — see deploy_file.go's own header), so these tests stub
-// LoadUnifiedBundleConfig with an in-memory *BundleConfig instead of a real per-host overlay file:
+// LoadUnifiedFleetConfig with an in-memory *FleetConfig instead of a real per-host overlay file:
 // the stub returns the SAME live object on every call, so in-place mutations "persist" across
 // SaveVmDeployState/RemoveVmDeployEntry calls exactly like a real file would, without needing a
-// real marshal/parse round-trip (that fidelity is already covered by TestSaveBundleConfig_RoundTrip
+// real marshal/parse round-trip (that fidelity is already covered by TestSaveFleetConfig_RoundTrip
 // + charly's own marshalDeployNode tests). The lock-serialization test uses a REAL
 // kit.AcquireFileLock over a temp path — the same production primitive — so the concurrency
 // property under test (the lock actually prevents the lost-update race) is genuine, not simulated.
 
 // newFakeVmDeployStateHost registers an in-memory DeployStateHost stub and returns the save
 // callback SaveVmDeployState/RemoveVmDeployEntry take. It also points the deploy-config path at a
-// fresh temp file (kit.DeployConfigEnv), so the flock MutateBundleConfig derives from that path is
+// fresh temp file (kit.DeployConfigEnv), so the flock MutateFleetConfig derives from that path is
 // a REAL kit.AcquireFileLock over an isolated location — the lock-serialization tests exercise the
 // genuine OS-level primitive, not a fake, and never touch the operator's own overlay lock.
-func newFakeVmDeployStateHost(t *testing.T) (save func(*BundleConfig) error) {
+func newFakeVmDeployStateHost(t *testing.T) (save func(*FleetConfig) error) {
 	t.Helper()
 	t.Setenv(kit.DeployConfigEnv, filepath.Join(t.TempDir(), "charly.yml"))
-	state := &BundleConfig{Bundle: map[string]BundleNode{}}
+	state := &FleetConfig{Fleet: map[string]FleetNode{}}
 	// Guards each INDIVIDUAL read and save — the atomicity a real file gives for free, and what
 	// keeps the concurrency tests clean under -race (which cannot see happens-before through an OS
 	// flock). It does NOT span read→modify→save: that is the flock's job, and the property the
@@ -39,7 +39,7 @@ func newFakeVmDeployStateHost(t *testing.T) (save func(*BundleConfig) error) {
 	var mu sync.Mutex
 	prev := DeployStateHost
 	RegisterDeployStateHost(&StateHostMechanisms{
-		LoadUnifiedBundleConfig: func(configDir string) (*BundleConfig, error) {
+		LoadUnifiedFleetConfig: func(configDir string) (*FleetConfig, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			return state, nil
@@ -47,7 +47,7 @@ func newFakeVmDeployStateHost(t *testing.T) (save func(*BundleConfig) error) {
 	})
 	t.Cleanup(func() { DeployStateHost = prev })
 
-	save = func(dc *BundleConfig) error {
+	save = func(dc *FleetConfig) error {
 		mu.Lock()
 		defer mu.Unlock()
 		state = dc
@@ -58,7 +58,7 @@ func newFakeVmDeployStateHost(t *testing.T) (save func(*BundleConfig) error) {
 
 // TestSaveVmDeployState_ConcurrentWritersAllSurvive proves SaveVmDeployState's load→modify→save
 // cycle is serialized through the shared deploy-config flock — without it, concurrent writers (parallel
-// `charly vm create` persist-auto-port, or a vm-create racing a `charly bundle add vm:<name>`)
+// `charly vm create` persist-auto-port, or a vm-create racing a `charly fleet add vm:<name>`)
 // load→modify→save the same config and silently drop each other's entry.
 func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
@@ -82,16 +82,16 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 		}
 	}
 
-	dc, err := LoadBundleConfig()
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		t.Fatalf("final load: %v", err)
 	}
-	if dc == nil || dc.Bundle == nil {
+	if dc == nil || dc.Fleet == nil {
 		t.Fatal("no config persisted")
 	}
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("vm:e%02d", i)
-		entry, ok := dc.Bundle[name]
+		entry, ok := dc.Fleet[name]
 		if !ok {
 			t.Errorf("entry %q was lost — concurrent write race (lock not serializing)", name)
 			continue
@@ -115,67 +115,67 @@ func TestSaveVmDeployState_LockReleasedBetweenCalls(t *testing.T) {
 	if err := SaveVmDeployState("vm:two", "", &spec.VmDeployState{SshPort: 2202}, save, nil); err != nil {
 		t.Fatalf("second write (lock not released?): %v", err)
 	}
-	dc, err := LoadBundleConfig()
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if _, ok := dc.Bundle["vm:one"]; !ok {
+	if _, ok := dc.Fleet["vm:one"]; !ok {
 		t.Error("vm:one lost across the second write")
 	}
-	if _, ok := dc.Bundle["vm:two"]; !ok {
+	if _, ok := dc.Fleet["vm:two"]; !ok {
 		t.Error("vm:two not persisted")
 	}
 }
 
-// TestRemoveVmDeployEntry_RemovesBundleKeyedBedEntry exercises the `vm:`-form From-scan in
-// VmDeployEntryKeys: a kind:check VM bed (e.g. check-k3s-vm) writes its vm_state under the BUNDLE
+// TestRemoveVmDeployEntry_RemovesFleetKeyedBedEntry exercises the `vm:`-form From-scan in
+// VmDeployEntryKeys: a kind:check VM bed (e.g. check-k3s-vm) writes its vm_state under the FLEET
 // key (check-k3s-vm) cross-referencing the VM ENTITY (k3s-vm). The scan lets the DIRECT
-// `charly vm destroy k3s-vm` path (which builds "vm:k3s-vm") still resolve the bundle-keyed entry
+// `charly vm destroy k3s-vm` path (which builds "vm:k3s-vm") still resolve the fleet-keyed entry
 // via that cross-ref — an exact-key delete on "vm:k3s-vm" alone would miss it and leak it. The
-// From-scan must not over-match an UNRELATED bundle (check-other-vm, From=other-vm).
-func TestRemoveVmDeployEntry_RemovesBundleKeyedBedEntry(t *testing.T) {
+// From-scan must not over-match an UNRELATED fleet (check-other-vm, From=other-vm).
+func TestRemoveVmDeployEntry_RemovesFleetKeyedBedEntry(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
-	// Seed through the REAL write path under the bundle/bed key (dctx.Name) with the resolved VM
+	// Seed through the REAL write path under the fleet/bed key (dctx.Name) with the resolved VM
 	// entity — exactly how the vm lifecycle hook PrepareVenue persists it.
 	if err := SaveVmDeployState("check-k3s-vm", "k3s-vm", &spec.VmDeployState{SshPort: 40161, Backend: "auto"}, save, nil); err != nil {
 		t.Fatalf("seed write: %v", err)
 	}
-	// An UNRELATED VM bundle that must survive the k3s-vm teardown (no over-match).
+	// An UNRELATED VM fleet that must survive the k3s-vm teardown (no over-match).
 	if err := SaveVmDeployState("check-other-vm", "other-vm", &spec.VmDeployState{SshPort: 40162, Backend: "auto"}, save, nil); err != nil {
 		t.Fatalf("seed unrelated: %v", err)
 	}
 
-	dc, err := LoadBundleConfig()
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		t.Fatalf("reload after seed: %v", err)
 	}
-	seeded, ok := dc.Bundle["check-k3s-vm"]
+	seeded, ok := dc.Fleet["check-k3s-vm"]
 	if !ok {
-		t.Fatal("seed did not write the check-k3s-vm bundle entry")
+		t.Fatal("seed did not write the check-k3s-vm fleet entry")
 	}
 	if seeded.From != "k3s-vm" {
 		t.Fatalf("seed entry missing vm: cross-ref (teardown linkage): got %q", seeded.From)
 	}
 
 	// The DIRECT `charly vm destroy k3s-vm` path reaches RemoveVmDeployEntry with the prefixed
-	// ENTITY form — NOT the bundle key the entry was written under. The From-scan bridges the gap.
+	// ENTITY form — NOT the fleet key the entry was written under. The From-scan bridges the gap.
 	if err := RemoveVmDeployEntry("vm:k3s-vm", save, nil); err != nil {
 		t.Fatalf("RemoveVmDeployEntry: %v", err)
 	}
 
-	got, err := LoadBundleConfig()
+	got, err := LoadFleetConfig()
 	if err != nil {
 		t.Fatalf("reload after teardown: %v", err)
 	}
-	if got == nil || got.Bundle == nil {
+	if got == nil || got.Fleet == nil {
 		t.Fatal("config vanished entirely")
 	}
-	if _, leaked := got.Bundle["check-k3s-vm"]; leaked {
-		t.Error("bundle-keyed bed entry check-k3s-vm leaked after teardown (key-mismatch bug)")
+	if _, leaked := got.Fleet["check-k3s-vm"]; leaked {
+		t.Error("fleet-keyed bed entry check-k3s-vm leaked after teardown (key-mismatch bug)")
 	}
-	if _, survived := got.Bundle["check-other-vm"]; !survived {
-		t.Error("unrelated bundle check-other-vm was wrongly removed (over-match)")
+	if _, survived := got.Fleet["check-other-vm"]; !survived {
+		t.Error("unrelated fleet check-other-vm was wrongly removed (over-match)")
 	}
 }
 
@@ -186,7 +186,7 @@ func TestSaveVmDeployState_SelfHealsStaleDottedTwin(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
 	// Seed a pre-fix poisoned overlay: a dotted twin alongside (what will become) the canonical entry.
-	if err := save(&BundleConfig{Bundle: map[string]BundleNode{
+	if err := save(&FleetConfig{Fleet: map[string]FleetNode{
 		"check-sidecar-pod.check-sidecar-pod-ephvm": {Target: "vm", VmState: &spec.VmDeployState{SshPort: 45551}},
 	}}); err != nil {
 		t.Fatalf("seeding pre-fix overlay: %v", err)
@@ -197,21 +197,21 @@ func TestSaveVmDeployState_SelfHealsStaleDottedTwin(t *testing.T) {
 		t.Fatalf("canonical write: %v", err)
 	}
 
-	dc, err := LoadBundleConfig()
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if _, stillPoisoned := dc.Bundle["check-sidecar-pod.check-sidecar-pod-ephvm"]; stillPoisoned {
+	if _, stillPoisoned := dc.Fleet["check-sidecar-pod.check-sidecar-pod-ephvm"]; stillPoisoned {
 		t.Error("the stale dotted twin survived the canonical write — self-heal did not fire")
 	}
-	entry, ok := dc.Bundle["vm:check-sidecar-pod-check-sidecar-pod-ephvm"]
+	entry, ok := dc.Fleet["vm:check-sidecar-pod-check-sidecar-pod-ephvm"]
 	if !ok || entry.VmState == nil || entry.VmState.SshPort != 33799 {
 		t.Errorf("canonical entry missing or wrong after self-heal: %+v", entry)
 	}
 }
 
 // TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite is the regression test for the
-// FINAL/K5 unit 6a RCA #7 live-probe-caught bug: registerEphemeralIfMarked (candy/plugin-bundle's
+// FINAL/K5 unit 6a RCA #7 live-probe-caught bug: registerEphemeralIfMarked (candy/plugin-fleet's
 // ephemeral family) persists .VmState.Ephemeral under the canonical "vm:"+domainID key BEFORE
 // `charly vm create`'s own state writes (e.g. the port_auto persist) run — RCA #6's key
 // unification made this the COMMON ordering (the two writers never collided on separate keys
@@ -224,7 +224,7 @@ func TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite(t *testing.T) {
 
 	// Step 1: the ephemeral registration write (mirrors persistEphemeralRuntime — seeds
 	// Target/From + an Ephemeral block, the FIRST write to a fresh overlay).
-	if err := save(&BundleConfig{Bundle: map[string]BundleNode{
+	if err := save(&FleetConfig{Fleet: map[string]FleetNode{
 		key: {
 			Target: "vm",
 			From:   "eval-vm",
@@ -242,11 +242,11 @@ func TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite(t *testing.T) {
 		t.Fatalf("vm-create state write: %v", err)
 	}
 
-	dc, err := LoadBundleConfig()
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	entry, ok := dc.Bundle[key]
+	entry, ok := dc.Fleet[key]
 	if !ok {
 		t.Fatal("canonical entry vanished")
 	}
@@ -266,7 +266,7 @@ func TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite(t *testing.T) {
 
 // TestSaveVmDeployState_ReverseOrderingRoundTrips double-checks the REVERSE ordering (vm-create's
 // state write lands FIRST, ephemeral registration SECOND) still round-trips correctly —
-// persistEphemeralRuntime's own logic (candy/plugin-bundle/ephemeral.go) reads the EXISTING
+// persistEphemeralRuntime's own logic (candy/plugin-fleet/ephemeral.go) reads the EXISTING
 // node.VmState and only sets .Ephemeral on it, never wholesale-replacing, so this direction was
 // never at risk — this test documents and locks that in from the SaveVmDeployState side.
 func TestSaveVmDeployState_ReverseOrderingRoundTrips(t *testing.T) {
@@ -285,11 +285,11 @@ func TestSaveVmDeployState_ReverseOrderingRoundTrips(t *testing.T) {
 		t.Fatalf("ephemeral-carrying write: %v", err)
 	}
 
-	dc, err := LoadBundleConfig()
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	entry, ok := dc.Bundle[key]
+	entry, ok := dc.Fleet[key]
 	if !ok || entry.VmState == nil {
 		t.Fatal("canonical entry missing")
 	}
@@ -302,7 +302,7 @@ func TestSaveVmDeployState_ReverseOrderingRoundTrips(t *testing.T) {
 }
 
 // TestSplitVmAddress_LedgerIdentityRegression is the regression test for the FINAL/K5 unit 6a
-// RCA #9 live-probe-caught bug: `bundle del vm:<dotted-name>` silently no-op'd because
+// RCA #9 live-probe-caught bug: `fleet del vm:<dotted-name>` silently no-op'd because
 // ComputeDeployID hashes the deploy name VERBATIM, and the raw "vm:"-prefixed CLI form hashed to a
 // COMPLETELY DIFFERENT ID than the plain form the add-time tree walk used to record the ledger
 // entry (verified live: 6413f8070aaa6087 vs d81fff596411fea4 for the exact same logical
