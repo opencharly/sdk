@@ -72,21 +72,29 @@ func ParseCandyManifest(path string, t spec.Threaded, vocab spec.CandyVocab) (*s
 		return &spec.CandyYAML{}, nil
 	}
 
-	// Unified node-form: a single name-first node `<name>: {candy: …, <children>}`.
+	// Unified node-form: one or more name-first nodes `<name>: {candy: …, <children>}`.
 	// (The `candy` discriminator is NESTED under the node name, so the kind-keyed branch below —
-	// which looks for a TOP-LEVEL `candy:` key — won't match.)
-	if len(inner.Content) == 2 && !kindWord(inner.Content[0].Value) {
-		if _, pp, perr := ParseDoc(inner, t); perr == nil && len(pp.Nodes) == 1 && pp.Nodes[0].Disc == "candy" {
-			// Decode-ONLY at load (fast, runs on every invocation): the full closed-schema CUE
-			// validation (CalVer/enum/unknown-key checks) runs at `charly box validate`, not here.
-			var c spec.CandyYAML
-			if derr := DecodeNodeValue(pp.Nodes[0], &c); derr != nil {
-				return nil, fmt.Errorf("%s: %w", path, derr)
+	// which looks for a TOP-LEVEL `candy:` key — won't match.) A STACKED manifest carries a candy
+	// node PLUS sibling kind entities (`skill:`/`hook:`/`marketplace:` — the plugins→candies
+	// migration): find the candy node among them and return ITS body — the discovered-candy scan
+	// enumerates candies; the sibling entities are resolved by the full load path (ParseDoc).
+	if len(inner.Content) >= 2 {
+		if _, pp, perr := ParseDoc(inner, t); perr == nil {
+			for i := range pp.Nodes {
+				if pp.Nodes[i].Disc != "candy" {
+					continue
+				}
+				// Decode-ONLY at load (fast, runs on every invocation): the full closed-schema CUE
+				// validation (CalVer/enum/unknown-key checks) runs at `charly box validate`, not here.
+				var c spec.CandyYAML
+				if derr := DecodeNodeValue(pp.Nodes[i], &c); derr != nil {
+					return nil, fmt.Errorf("%s: %w", path, derr)
+				}
+				// Name is the node KEY in node-form (the migration moves a legacy body `name:` up to
+				// the key), so stamp it — the decoded body carries no `name:`.
+				c.Name = pp.Nodes[i].Name
+				return &c, nil
 			}
-			// Name is the node KEY in node-form (the migration moves a legacy body `name:` up to
-			// the key), so stamp it — the decoded body carries no `name:`.
-			c.Name = pp.Nodes[0].Name
-			return &c, nil
 		}
 	}
 

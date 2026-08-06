@@ -192,9 +192,13 @@ func (g *Generator) WriteLabels(b *strings.Builder, meta *spec.BakedLabelSet, bo
 	}
 	writeJSONLabel(b, spec.LabelPathAppend, meta.PathAppend)
 
-	// Skills documentation URL
-	if meta.Skill != "" {
-		fmt.Fprintf(b, "LABEL %s=%q\n", spec.LabelSkill, meta.Skill)
+	// Skills: the composed candies' skill definitions (ai.opencharly.skill, a JSON array) — an
+	// image is self-describing, so the operator reads the skills from the image directly, no
+	// external fetch. The wire shape migrated from the vestigial doc-pointer URL string to this
+	// array (render_prep.go's plugins/charly-images/ stat never matched — the old URL was never
+	// emitted), keeping the singular wire name per the list-label convention.
+	if len(meta.Skills) > 0 {
+		writeJSONLabel(b, spec.LabelSkill, meta.Skills)
 	}
 
 	// Status and info: the box's effective status is the WORST of its own nominal status and
