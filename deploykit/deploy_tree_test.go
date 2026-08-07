@@ -12,7 +12,7 @@ func TestVmChildExecutor_PerDeployAlias(t *testing.T) {
 		{"check-substrate", "charly-check-substrate"},   // bed root → its OWN domain, not charly-eval-vm
 		{"check-builder-vm", "charly-check-builder-vm"}, // sibling bed on the same entity → distinct
 		{"stack.vm-member", "charly-stack-vm-member"},   // dotted member path flattens like the domain
-		{"vm:arch", "charly-arch"},                      // bundle ref drops the vm: prefix
+		{"vm:arch", "charly-arch"},                      // fleet ref drops the vm: prefix
 	}
 	for _, c := range cases {
 		exe, err := VmChildExecutor(nil, c.deploy) // nil parent → a plain SSHExecutor at the root

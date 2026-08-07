@@ -22,7 +22,7 @@ const (
 	OpResolve  = ops.OpResolve  // builder: resolve a builder image + steps (build-time multi-stage)
 	OpBuild    = ops.OpBuild    // build: dispatch the image-build / generate engine host-side (F10 HostBuild seam)
 
-	// OpCompile is the K4-B deploy-COMPILE selector (command:bundle).
+	// OpCompile is the K4-B deploy-COMPILE selector (command:fleet).
 	OpCompile = ops.OpCompile
 
 	// OpCollectContext + OpReverse are the DEPLOY-TIME builder-IR legs of an externalized detection-builder.
@@ -62,11 +62,11 @@ const (
 	// OpBootstrap is the BOOTSTRAP-PHASE hook (F9).
 	OpBootstrap = ops.OpBootstrap
 
-	// OpEphemeralRegister / OpEphemeralTeardown are the command:bundle EPHEMERAL-LIFECYCLE selectors (FINAL/K5 unit 6a).
+	// OpEphemeralRegister / OpEphemeralTeardown are the command:fleet EPHEMERAL-LIFECYCLE selectors (FINAL/K5 unit 6a).
 	OpEphemeralRegister = ops.OpEphemeralRegister
 	OpEphemeralTeardown = ops.OpEphemeralTeardown
 
-	// OpDeployDispatch is the command:bundle S3b selector (ELEVEN former methods through ONE wire pair, R3).
+	// OpDeployDispatch is the command:fleet S3b selector (ELEVEN former methods through ONE wire pair, R3).
 	OpDeployDispatch = ops.OpDeployDispatch
 
 	// OpVerifyChecks is the command:check selector for the DEPLOY-VERIFY drive (#55 CHECK-ENGINE cone, Unit 2).

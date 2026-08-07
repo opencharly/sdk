@@ -11,7 +11,7 @@ import (
 )
 
 // resolve_via_executor.go — the plugin-side substrate/resource RESOLVE callbacks the plugin-side loader
-// (execLoaderExecutor in plugin-bundle/plugin-build/plugin-vm) threads into loaderkit.ValidateAndroidDevices
+// (execLoaderExecutor in plugin-fleet/plugin-build/plugin-vm) threads into loaderkit.ValidateAndroidDevices
 // / ValidatePreemptible, so the plugin runs those loader validators ITSELF instead of calling back to the
 // host over a HostBuild leg (the former host android/preempt-validate legs, now dissolved). Each is
 // InvokeProvider(class:kind, word, OpResolve) over the plugin's reverse channel — the SAME plugin↔plugin

@@ -8,10 +8,10 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// vm_deploy_addressing.go — the BundleConfig-shaped VM deploy-state helpers (FLOOR-SLIM Unit 3,
-// relocated from charly/vm_deploy_state.go): each one is PURE over an already-loaded *BundleConfig
+// vm_deploy_addressing.go — the FleetConfig-shaped VM deploy-state helpers (FLOOR-SLIM Unit 3,
+// relocated from charly/vm_deploy_state.go): each one is PURE over an already-loaded *FleetConfig
 // / *spec.ResolvedVm, touching no LoadUnified and no charly-core type. They stay in deploykit
-// (rather than vmshared) because they operate on deploykit's OWN BundleConfig type — vmshared
+// (rather than vmshared) because they operate on deploykit's OWN FleetConfig type — vmshared
 // cannot import deploykit (deploykit already imports vmshared; the reverse is a cycle). The WRITE
 // path (SaveVmDeployState/RemoveVmDeployEntry, vm_deploy_state.go — F6 vm-lifecycle move,
 // coneB-vmlifecycle) now lives in THIS SAME package and calls these directly; only the two
@@ -32,7 +32,7 @@ func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
 	return kit.ResolveVmSshPort(sp, vmName, persisted)
 }
 
-// PruneStaleVmDottedTwin removes and returns any OTHER dc.Bundle key that is a dotted deploy name
+// PruneStaleVmDottedTwin removes and returns any OTHER dc.Fleet key that is a dotted deploy name
 // whose VmDomainIdentity sanitizes to the SAME domain identity as canonicalKey (also
 // VmDomainIdentity-sanitized) — the "stale twin" a prior version's now-eliminated dotted-key
 // vm-state write could leave behind: a nested (dotted) deploy's per-host state used to ALSO get
@@ -40,35 +40,35 @@ func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
 // write, and poisoning the whole overlay on every subsequent load since a dotted key fails the
 // loader's deployment-name validation. Pulled out as its own pure function purely for
 // testability. Returns "" when no twin is found.
-func PruneStaleVmDottedTwin(dc *BundleConfig, canonicalKey string) string {
+func PruneStaleVmDottedTwin(dc *FleetConfig, canonicalKey string) string {
 	domainID := vmshared.VmDomainIdentity(canonicalKey)
-	for k := range dc.Bundle {
+	for k := range dc.Fleet {
 		if k == canonicalKey || !strings.Contains(k, ".") {
 			continue
 		}
 		if vmshared.VmDomainIdentity(k) == domainID {
-			delete(dc.Bundle, k)
+			delete(dc.Fleet, k)
 			return k
 		}
 	}
 	return ""
 }
 
-// VmDeployEntryKeys resolves the per-host charly.yml bundle key(s) a VM teardown for deployName
-// targets. It handles the case where a bundle's name differs from its `vm:<X>` runtime-state key:
+// VmDeployEntryKeys resolves the per-host charly.yml fleet key(s) a VM teardown for deployName
+// targets. It handles the case where a fleet's name differs from its `vm:<X>` runtime-state key:
 // the literal-key delete + the `vm:`-form From-scan below remain for the DIRECT
 // `charly vm destroy <entity>` path and any legacy `vm:<name>` teardown key: they target the
-// literal deployName key AND — when deployName is "vm:<X>" — every bundle whose `vm:` cross-ref
+// literal deployName key AND — when deployName is "vm:<X>" — every fleet whose `vm:` cross-ref
 // names <X>. Because domain identities are unique and never equal an entity a sibling shares, the
 // From-scan can no longer over-match sibling beds during a deploy teardown.
-func VmDeployEntryKeys(dc *BundleConfig, deployName string) []string {
+func VmDeployEntryKeys(dc *FleetConfig, deployName string) []string {
 	var keys []string
 	seen := map[string]bool{}
 	add := func(k string) {
 		if seen[k] {
 			return
 		}
-		if _, ok := dc.Bundle[k]; ok {
+		if _, ok := dc.Fleet[k]; ok {
 			seen[k] = true
 			keys = append(keys, k)
 		}
@@ -78,7 +78,7 @@ func VmDeployEntryKeys(dc *BundleConfig, deployName string) []string {
 	// plain-name deployName therefore takes the literal-key path only (no scan,
 	// so a non-prefixed name can never over-match unrelated bundles).
 	if entity, perr := vmshared.VmNameFromDeployName(deployName); perr == nil {
-		for key, entry := range dc.Bundle {
+		for key, entry := range dc.Fleet {
 			if entry.From == entity {
 				add(key)
 			}

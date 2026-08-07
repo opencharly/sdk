@@ -20,7 +20,7 @@ func mustYAMLNode(t *testing.T, s string) *yaml.Node {
 // Misclassifying it as group writes the pod-only resolved_port under group:, which #GroupInput
 // rejects at the next load (the 2026-07 config corruption: `kind:group: #GroupInput.resolved_port
 // field not allowed`). Only a truly members-only deploy (no own workload) stays a group.
-func TestBundleDiscForEntity_PodWorkloadNotGroup(t *testing.T) {
+func TestFleetDiscForEntity_PodWorkloadNotGroup(t *testing.T) {
 	cases := []struct {
 		name string
 		yaml string
@@ -37,8 +37,8 @@ func TestBundleDiscForEntity_PodWorkloadNotGroup(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := bundleDiscForEntity(mustYAMLNode(t, c.yaml)); got != c.want {
-				t.Errorf("bundleDiscForEntity(%q) = %q, want %q", c.yaml, got, c.want)
+			if got := fleetDiscForEntity(mustYAMLNode(t, c.yaml)); got != c.want {
+				t.Errorf("fleetDiscForEntity(%q) = %q, want %q", c.yaml, got, c.want)
 			}
 		})
 	}

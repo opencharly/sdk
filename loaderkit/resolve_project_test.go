@@ -14,7 +14,7 @@ import (
 // deploykit/init_depends_test.go pins what InjectInitDependsCandy DECIDES (both init directions,
 // the remote-key case, idempotence, the no-op boundaries). Nothing there pins that
 // ProjectResolvedProject actually CALLS it — and that seam is not the build path: it feeds the
-// validate / inspect / bundle-deploy envelope, whose consumers (candy/plugin-bundle's
+// validate / inspect / fleet-deploy envelope, whose consumers (candy/plugin-fleet's
 // resolveBoxSelection) read rp.Boxes[...] to decide what a deploy installs. A silent no-op here is
 // therefore a real deploy defect that the build-path coverage cannot see.
 //

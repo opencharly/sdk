@@ -1,12 +1,12 @@
 package loaderkit
 
-// node_tree.go — the entity-body assembly + bundle/resource-member tree-builder mechanism (K1
-// unit 3b, relocated from charly/node_build.go + charly/node_bundle.go + charly/node_normalize.go).
+// node_tree.go — the entity-body assembly + fleet/resource-member tree-builder mechanism (K1
+// unit 3b, relocated from charly/node_build.go + charly/node_fleet.go + charly/node_normalize.go).
 // Operates on spec.ParsedNode (the wire-safe parsed-entity shape LoadUnified's parse already
 // produces) rather than charly core's *genericNode: genericNode is a host-internal reconstruction
 // consumed directly by charly/provider_kind_invoke.go's TRUE clause-M dispatch (candyIsImage /
 // buildCandy, the box⊻layer bootstrap routing — clause B, permanently core), so it cannot itself
-// move; but everything BELOW that dispatch layer — the entity-body assembler, the bundle-tree
+// move; but everything BELOW that dispatch layer — the entity-body assembler, the fleet-tree
 // builder, the standalone-template shape detection — never needed genericNode's yaml.Node
 // convenience wrapper specifically, only the SAME name/disc/body/children shape spec.ParsedNode
 // already carries. The host constructs *genericNode ONLY where a call genuinely needs it
@@ -86,17 +86,17 @@ func EntityBodyJSON(pn spec.ParsedNode) (json.RawMessage, error) {
 	return entityBodyJSON(pn.Name, dv)
 }
 
-// BuildBundleNode recursively builds a BundleNode from a bundle/resource node. The discriminator
-// value carries the deploy config; inline STEP children (checks) fold into the bundle's plan via
+// BuildFleetNode recursively builds a FleetNode from a fleet/resource node. The discriminator
+// value carries the deploy config; inline STEP children (checks) fold into the fleet's plan via
 // DecodeNodeValue (the assembler); ENTITY children are RESOURCE members (deploy-into / alongside).
-func BuildBundleNode(pn spec.ParsedNode, t spec.Threaded) (*spec.BundleNode, error) {
-	var dn spec.BundleNode
+func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error) {
+	var dn spec.FleetNode
 	if err := DecodeNodeValue(pn, &dn); err != nil {
 		return nil, err
 	}
 	// EDGE-INHERIT cutover B: the substrate kind at the EDGE is the target directly (no
 	// inference from a cross-ref). group:/host: are targetless venues.
-	dn.Target = BundleTargetForDisc(pn.Disc, t)
+	dn.Target = FleetTargetForDisc(pn.Disc, t)
 	// A scalar discriminator value (`vm: pg-vm` / `pod: img`) is the deploy's cross-ref: pod →
 	// the image it runs; vm/k8s/local/android → the same-kind template it inherits (`from:`).
 	dv, err := discValue(pn)
@@ -104,7 +104,7 @@ func BuildBundleNode(pn spec.ParsedNode, t spec.Threaded) (*spec.BundleNode, err
 		return nil, err
 	}
 	if dv != nil && dv.Kind == yaml.ScalarNode {
-		SetBundleCrossRef(&dn, pn.Disc, dv.Value, t)
+		SetFleetCrossRef(&dn, pn.Disc, dv.Value, t)
 	}
 
 	children, err := BuildResourceMemberChildren(pn, t)
@@ -117,12 +117,12 @@ func BuildBundleNode(pn spec.ParsedNode, t spec.Threaded) (*spec.BundleNode, err
 		// Nested).
 		if dn.Target == "" {
 			if dn.Members == nil {
-				dn.Members = map[string]*spec.BundleNode{}
+				dn.Members = map[string]*spec.FleetNode{}
 			}
 			dn.Members[name] = member
 		} else {
 			if dn.Children == nil {
-				dn.Children = map[string]*spec.BundleNode{}
+				dn.Children = map[string]*spec.FleetNode{}
 			}
 			dn.Children[name] = member
 		}
@@ -130,42 +130,42 @@ func BuildBundleNode(pn spec.ParsedNode, t spec.Threaded) (*spec.BundleNode, err
 	return &dn, nil
 }
 
-// BuildResourceMemberChildren decodes pn's RESOURCE-MEMBER entity children into a name→*BundleNode
-// map via the SAME BuildBundleNode recursion — the SINGLE source of truth for authored member-tree
+// BuildResourceMemberChildren decodes pn's RESOURCE-MEMBER entity children into a name→*FleetNode
+// map via the SAME BuildFleetNode recursion — the SINGLE source of truth for authored member-tree
 // decode (R3). Every pn.Children entry is an entity child by construction (the parse-time desugar
 // already separates step/data children into the plan/body fields before a spec.ParsedNode ever
 // reaches here — see charly/node_parse.go), so no discClass filter is needed. A non-resource
 // entity child is a hard error (deploy/resource children must be pod/vm/k8s/local/android/group).
-func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) (map[string]*spec.BundleNode, error) {
-	var out map[string]*spec.BundleNode
+func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) (map[string]*spec.FleetNode, error) {
+	var out map[string]*spec.FleetNode
 	for _, rk := range pn.Children {
 		if !IsResourceDisc(rk.Disc, t) {
 			return nil, fmt.Errorf("node %q: a %q child %q is not a resource member (deploy/resource children must be pod/vm/k8s/local/android)", pn.Name, rk.Disc, rk.Name)
 		}
-		member, err := BuildBundleNode(*rk, t)
+		member, err := BuildFleetNode(*rk, t)
 		if err != nil {
 			return nil, err
 		}
 		if out == nil {
-			out = map[string]*spec.BundleNode{}
+			out = map[string]*spec.FleetNode{}
 		}
 		out[rk.Name] = member
 	}
 	return out, nil
 }
 
-// BuildBundleNodeInto builds pn into a BundleNode and registers it in the Deploy (bundle) map. acc
+// BuildFleetNodeInto builds pn into a FleetNode and registers it in the Deploy (fleet) map. acc
 // is the K1-unit-1 spec.MaterializedProject accumulator — this function only ever touches the
-// Bundle field.
-func BuildBundleNodeInto(pn spec.ParsedNode, t spec.Threaded, acc *spec.MaterializedProject) error {
-	dn, err := BuildBundleNode(pn, t)
+// Fleet field.
+func BuildFleetNodeInto(pn spec.ParsedNode, t spec.Threaded, acc *spec.MaterializedProject) error {
+	dn, err := BuildFleetNode(pn, t)
 	if err != nil {
 		return err
 	}
-	if acc.Bundle == nil {
-		acc.Bundle = map[string]spec.BundleNode{}
+	if acc.Fleet == nil {
+		acc.Fleet = map[string]spec.FleetNode{}
 	}
-	acc.Bundle[pn.Name] = *dn
+	acc.Fleet[pn.Name] = *dn
 	return nil
 }
 
@@ -200,8 +200,8 @@ func DecodeStandaloneTemplateJSON(pn spec.ParsedNode, t spec.Threaded) (json.Raw
 	return EntityBodyJSON(pn)
 }
 
-// ResourceChildren returns pn's children whose discriminator is itself a resource/bundle kind (the
-// markers of a bundle-shaped node). The deployable set is the CUE-derived resourceKindSet
+// ResourceChildren returns pn's children whose discriminator is itself a resource/fleet kind (the
+// markers of a fleet-shaped node). The deployable set is the CUE-derived resourceKindSet
 // (#ResourceKind) — the fixed vocab alone, not the registry-derived external-substrate extension
 // (mirrors the original's own scope).
 func ResourceChildren(pn spec.ParsedNode) []spec.ParsedNode {

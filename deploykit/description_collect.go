@@ -13,7 +13,7 @@ import (
 // seam, unlike a plugin destination which would force those 3 still-core callers to reach it
 // over InvokeProvider/HostBuild for no functional reason (their own K1/K3 unmigrated status is
 // the actual blocker, not this file's shape). BoxCandyChain (config_candy_chain.go) already
-// lives here (fs-bundle's FLOOR-SLIM Unit-1 landing); spec.OpInContext (spec/injection_seams.go) is
+// lives here (fs-fleet's FLOOR-SLIM Unit-1 landing); spec.OpInContext (spec/injection_seams.go) is
 // the EXISTING DI-hook charly injects at init (spec.OpInContext = opInContext, layers.go) — this
 // file calls that package var directly, no new injection needed. stampStepIntentDo is 100% pure
 // over spec.Step (spec.StepDoMode), so it moves here unconditionally, no seam at all.

@@ -3,7 +3,7 @@ package kit
 // report.go — re-export of the check-run result reporters, RELOCATED to the spec/report fabric
 // slice github.com/opencharly/spec/report/report.go (#55 CHECK-ENGINE cone Option A — the
 // FormatStepResults* family + ReportStepResultsCount + ClassifyStepFailures the deploy-verify
-// path (candy/plugin-bundle's verify_local.go, #55 W3 B3) reaches importing zero kit). The
+// path (candy/plugin-fleet's verify_local.go, #55 W3 B3) reaches importing zero kit). The
 // reporters operate on []spec.StepResult + spec.Status; the INFRA-failure discriminator
 // IsContainerInfraResult lives in spec/exec (a host primitive), so the body homes in spec/report
 // (its own package, to import spec/exec WITHOUT forcing spec/spec to cycle). kit re-exports the

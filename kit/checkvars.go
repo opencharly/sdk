@@ -3,7 +3,7 @@ package kit
 // checkvars.go — runtime/build-time `${…}` variable resolution for the check engine
 // (P12a: relocated from charly/checkvars.go). Every dependency here is already
 // wire-portable: *spec.BoxMetadata (the OCI-label-derived image metadata),
-// *vmshared.BundleNode (the deploy overlay — currently unused, reserved for a future
+// *vmshared.FleetNode (the deploy overlay — currently unused, reserved for a future
 // per-deploy override), and a plain `{engine} inspect <name>` shell-out. Nothing here
 // touches a live *Generator/*Config/providerRegistry.
 
@@ -136,7 +136,7 @@ func ResolveCheckVarsBuild(meta *spec.BoxMetadata) *CheckVarResolver {
 // On inspect failure the function still returns a resolver with the
 // build-time portion populated; HasRuntime is false and runtime-only vars
 // will be unresolved downstream.
-func ResolveCheckVarsRuntime(meta *spec.BoxMetadata, deploy *vmshared.BundleNode, engine, deployName, containerName, instance string) (*CheckVarResolver, error) {
+func ResolveCheckVarsRuntime(meta *spec.BoxMetadata, deploy *vmshared.FleetNode, engine, deployName, containerName, instance string) (*CheckVarResolver, error) {
 	_ = deploy // reserved for future per-deploy overrides; instance now arrives explicitly
 	env := buildTimeVars(meta, instance)
 

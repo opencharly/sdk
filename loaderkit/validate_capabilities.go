@@ -26,7 +26,7 @@ import (
 // This is the entity-level XOR the #Android CUE schema formerly expressed via a trailing
 // `& ({box:_} | {adb:_})` disjunction (dropped because gengotypes collapses an entity-level
 // disjunction to an empty struct — see schema/android.cue). Runs at LOAD time so EVERY command that
-// resolves a device (charly bundle add android:, charly check run, charly box validate, …) sees the
+// resolves a device (charly fleet add android:, charly check run, charly box validate, …) sees the
 // same friendly error. resolveAndroid projects one opaque android template body into its
 // *spec.ResolvedAndroid via the registry (host-threaded).
 func ValidateAndroidDevices(uf *spec.UnifiedFile, resolveAndroid func(json.RawMessage) (*spec.ResolvedAndroid, error)) error {
@@ -60,7 +60,7 @@ func ValidateAndroidDevices(uf *spec.UnifiedFile, resolveAndroid func(json.RawMe
 //   - requires_exclusive / requires_shared entries must be non-empty strings.
 //   - a node may not claim a resource BOTH exclusively and shared, nor both hold and require/share the
 //     SAME token (self-contention).
-func ValidatePreemptibleOnNode(name string, node *spec.BundleNode, d *spec.Diagnostics) {
+func ValidatePreemptibleOnNode(name string, node *spec.FleetNode, d *spec.Diagnostics) {
 	if node == nil {
 		return
 	}
@@ -114,7 +114,7 @@ func ValidatePreemptible(uf *spec.UnifiedFile,
 		return nil
 	}
 	var d spec.Diagnostics
-	for name, node := range uf.Bundle {
+	for name, node := range uf.Fleet {
 		n := node
 		ValidatePreemptibleOnNode(name, &n, &d)
 	}
@@ -133,7 +133,7 @@ func ValidatePreemptible(uf *spec.UnifiedFile,
 //   - an ExclusiveVenue claimant (today: only `vm`) requiring a GPU resource needs `backend: libvirt`
 //     on its VM entity — a PCI <hostdev> does not render under the qemu backend, so auto-allocation
 //     would silently fail at create time. Read BY TRAIT (the stamped node.Descent.ExclusiveVenue —
-//     StampBundleDescents runs before this validator in LoadUnified), never by switching on the
+//     StampFleetDescents runs before this validator in LoadUnified), never by switching on the
 //     substrate kind word (the boundary law).
 func validateResourceDefs(uf *spec.UnifiedFile,
 	resolveResource func(json.RawMessage) (*spec.ResolvedResource, error),
@@ -152,7 +152,7 @@ func validateResourceDefs(uf *spec.UnifiedFile,
 	if len(resources) == 0 {
 		return
 	}
-	for name, node := range uf.Bundle {
+	for name, node := range uf.Fleet {
 		n := node
 		if n.Descent == nil || !n.Descent.ExclusiveVenue { // vm (exclusive venue)
 			continue
@@ -175,7 +175,7 @@ func validateResourceDefs(uf *spec.UnifiedFile,
 // to a `resource:` carrying a gpu selector. Loaderkit-private copy of charly's requiredGPUResource
 // (the arbiter's own copy travels with it in candy/plugin-preempt / candy/plugin-vm, their separate
 // modules) — the validator here needs only the boolean.
-func preemptNeedsGPUResource(cnode *spec.BundleNode, resources map[string]*spec.ResolvedResource) bool {
+func preemptNeedsGPUResource(cnode *spec.FleetNode, resources map[string]*spec.ResolvedResource) bool {
 	if cnode == nil {
 		return false
 	}

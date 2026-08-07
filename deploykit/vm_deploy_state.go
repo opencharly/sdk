@@ -8,18 +8,18 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// vm_deploy_state.go — the charly.yml persistence half of the former bundle_add_cmd_vm.go,
+// vm_deploy_state.go — the charly.yml persistence half of the former fleet_add_cmd_vm.go,
 // R3-relocated from charly/vm_deploy_state.go (F6 vm-lifecycle move, coneB-vmlifecycle): this is
 // SHARED deploy-state logic every deploy plugin (compiled-in or out-of-process) reaches, the same
 // class as VmDeployEntryKeys/PruneStaleVmDottedTwin/IsAutoVmDeployEntry (FLOOR-SLIM Unit 3), which
-// already live here operating on deploykit's own *BundleConfig.
+// already live here operating on deploykit's own *FleetConfig.
 //
-// The plugin-primaries-coupled marshal callback (saveBundleConfigNodeForm) is NOT hoistable — the
+// The plugin-primaries-coupled marshal callback (saveFleetConfigNodeForm) is NOT hoistable — the
 // marshal needs a charly-package-private registry-derived lookup, pluginPrimaryFor, with no sdk
 // exposure today (see charly/deploy_nodeform.go's own header for the proven-but-undeferred HOW) —
-// so it stays an INJECTED save callback, mirroring SaveBundleConfig's own marshalNode-callback
+// so it stays an INJECTED save callback, mirroring SaveFleetConfig's own marshalNode-callback
 // shape. The process-shared deploy-config FLOCK is NO LONGER injected: both bodies below run inside
-// MutateBundleConfig (deploy_config_cycle.go), THE one locked read-modify-write cycle every overlay
+// MutateFleetConfig (deploy_config_cycle.go), THE one locked read-modify-write cycle every overlay
 // writer now shares, so the WHOLE read→decide→write critical section still runs under ONE lock hold
 // exactly as before while the two per-candy lock copies this pair used to be handed are deleted
 // (R3). Splitting the decision logic into a separate plugin-side call fed by a stale prior read
@@ -30,28 +30,28 @@ import (
 // SaveVmDeployState writes the updated VmDeployState into ~/.config/charly/charly.yml for the given
 // deploy name. Idempotent — overwrites the deploy.<name>.vm_state block. vmEntity is the kind:vm
 // entity the deploy targets ("" → derive from a legacy "vm:<name>" deployName prefix); it is
-// persisted as the entry's `vm:` cross-ref so a bundle-keyed entry (a kind:check VM bed, whose
+// persisted as the entry's `vm:` cross-ref so a fleet-keyed entry (a kind:check VM bed, whose
 // deploy key e.g. `check-k3s-vm` differs from `vm:<entity>`) carries the linkage teardown needs to
 // find + remove it.
 //
-// The load→modify→save runs inside MutateBundleConfig, so it holds the process-shared blocking
+// The load→modify→save runs inside MutateFleetConfig, so it holds the process-shared blocking
 // deploy-config lock across the whole cycle and re-reads the overlay INSIDE that lock. Without
 // that, two parallel `charly vm create` persist-auto-port writers (or a vm-create racing a `charly
-// bundle add vm:<name>`) load → modify → save the shared ~/.config/charly/charly.yml and silently
+// fleet add vm:<name>`) load → modify → save the shared ~/.config/charly/charly.yml and silently
 // drop each other's entry.
 //
 // read is the current-state re-read that cycle performs. A nil read falls back to
-// LoadBundleConfig — the DeployStateHost-backed host read — so an IN-PROCESS host caller passes nil
+// LoadFleetConfig — the DeployStateHost-backed host read — so an IN-PROCESS host caller passes nil
 // and behaves exactly as before. A plugin caller (out-of-process command:vm) injects its OWN
-// loader-backed reader (loaderkit.LoadHostBundleConfigViaExecutor), so SaveVmDeployState no longer
+// loader-backed reader (loaderkit.LoadHostFleetConfigViaExecutor), so SaveVmDeployState no longer
 // requires the DeployStateHost package var (#55 coneC-dsh config-write seam-collapse — mirrors the
-// SaveBundleConfig/SaveDeployState reader-callback precedent).
-func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, save func(*BundleConfig) error, read func() (*BundleConfig, error)) error {
+// SaveFleetConfig/SaveDeployState reader-callback precedent).
+func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, save func(*FleetConfig) error, read func() (*FleetConfig, error)) error {
 	loadBase := read
 	if loadBase == nil {
-		loadBase = LoadBundleConfig
+		loadBase = LoadFleetConfig
 	}
-	_, err := MutateBundleConfig(loadBase, save, func(dc *BundleConfig) (bool, error) {
+	_, err := MutateFleetConfig(loadBase, save, func(dc *FleetConfig) (bool, error) {
 		saveVmStateInto(dc, deployName, vmEntity, state)
 		return true, nil
 	})
@@ -60,16 +60,16 @@ func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, s
 
 // saveVmStateInto applies the vm-state write to a FRESH overlay read under the deploy-config lock.
 // Split out of SaveVmDeployState only so the mutation is a plain function over fresh state — the
-// shape MutateBundleConfig requires and the reason the lock never has to span a caller's
+// shape MutateFleetConfig requires and the reason the lock never has to span a caller's
 // orchestration.
-func saveVmStateInto(dc *BundleConfig, deployName, vmEntity string, state *spec.VmDeployState) {
-	entry, exists := dc.Bundle[deployName]
+func saveVmStateInto(dc *FleetConfig, deployName, vmEntity string, state *spec.VmDeployState) {
+	entry, exists := dc.Fleet[deployName]
 	if !exists {
-		entry = BundleNode{}
+		entry = FleetNode{}
 	}
 	entry.Target = "vm"
-	// Persist the `vm:` cross-ref so the per-host entry is a well-formed bundle
-	// node AND so teardown can resolve a bundle-keyed entry back to its VM entity.
+	// Persist the `vm:` cross-ref so the per-host entry is a well-formed fleet
+	// node AND so teardown can resolve a fleet-keyed entry back to its VM entity.
 	// Precedence: the explicit vmEntity (the canonical mapping the caller resolved,
 	// e.g. check-k3s-vm → k3s-vm) → a legacy "vm:<entity>" deployName prefix →
 	// PRESERVE the existing entry.From (never clobber a known cross-ref with "").
@@ -86,7 +86,7 @@ func saveVmStateInto(dc *BundleConfig, deployName, vmEntity string, state *spec.
 	// `charly vm create`'s own state writes run (e.g. the port_auto persist) — RCA #6's key
 	// unification made this THE common case (the two writers never collided before, since
 	// Writer B's now-eliminated dual key hid the interaction). A caller's `state` here is NEVER
-	// told about ephemeral registration (a SEPARATE concern candy/plugin-bundle's ephemeral family
+	// told about ephemeral registration (a SEPARATE concern candy/plugin-fleet's ephemeral family
 	// owns), so a wholesale `entry.VmState = state` would silently ERASE a just-registered
 	// ephemeral block whenever the incoming state carries none. PRESERVE it explicitly — this is
 	// NOT a general deep-merge; every OTHER VmState field is still a full overwrite, exactly as
@@ -99,7 +99,7 @@ func saveVmStateInto(dc *BundleConfig, deployName, vmEntity string, state *spec.
 	if entry.VmState != nil && entry.VmState.Ephemeral == nil && priorEphemeral != nil {
 		entry.VmState.Ephemeral = priorEphemeral
 	}
-	dc.Bundle[deployName] = entry
+	dc.Fleet[deployName] = entry
 
 	// Self-healing prune (RCA #6, FINAL/K5 unit 6a): remove a stale dotted-key twin the
 	// now-eliminated dual-writer path left behind for THIS SAME domain in an existing overlay —
@@ -114,15 +114,15 @@ func saveVmStateInto(dc *BundleConfig, deployName, vmEntity string, state *spec.
 
 // RemoveVmDeployEntry strips deploy.<deployName> from charly.yml. save is the SAME injected
 // node-form persist callback SaveVmDeployState takes — see this file's header — and the
-// load→decide→write runs under the SAME MutateBundleConfig lock hold. read is the SAME
-// reader-callback SaveVmDeployState takes (nil → DeployStateHost-backed LoadBundleConfig; a plugin
+// load→decide→write runs under the SAME MutateFleetConfig lock hold. read is the SAME
+// reader-callback SaveVmDeployState takes (nil → DeployStateHost-backed LoadFleetConfig; a plugin
 // caller injects its own loader-backed reader).
-func RemoveVmDeployEntry(deployName string, save func(*BundleConfig) error, read func() (*BundleConfig, error)) error {
+func RemoveVmDeployEntry(deployName string, save func(*FleetConfig) error, read func() (*FleetConfig, error)) error {
 	loadBase := read
 	if loadBase == nil {
-		loadBase = LoadBundleConfig
+		loadBase = LoadFleetConfig
 	}
-	_, err := MutateBundleConfig(loadBase, save, func(dc *BundleConfig) (bool, error) {
+	_, err := MutateFleetConfig(loadBase, save, func(dc *FleetConfig) (bool, error) {
 		return removeVmEntriesFrom(dc, deployName), nil
 	})
 	return err
@@ -130,8 +130,8 @@ func RemoveVmDeployEntry(deployName string, save func(*BundleConfig) error, read
 
 // removeVmEntriesFrom applies the vm-entry removal to a FRESH overlay read under the deploy-config
 // lock, reporting whether anything changed (false skips the write). Split out for the same reason
-// saveVmStateInto is: MutateBundleConfig takes a function over fresh state.
-func removeVmEntriesFrom(dc *BundleConfig, deployName string) bool {
+// saveVmStateInto is: MutateFleetConfig takes a function over fresh state.
+func removeVmEntriesFrom(dc *FleetConfig, deployName string) bool {
 	keys := VmDeployEntryKeys(dc, deployName)
 	if len(keys) == 0 {
 		return false
@@ -151,12 +151,12 @@ func removeVmEntriesFrom(dc *BundleConfig, deployName string) bool {
 	// destroy cleaned up the entry in the first place). Otherwise keep the
 	// now-stateless entry so its operator config survives.
 	for _, key := range keys {
-		entry := dc.Bundle[key]
+		entry := dc.Fleet[key]
 		entry.VmState = nil
 		if IsAutoVmDeployEntry(entry) {
-			delete(dc.Bundle, key)
+			delete(dc.Fleet, key)
 		} else {
-			dc.Bundle[key] = entry
+			dc.Fleet[key] = entry
 		}
 	}
 	return true

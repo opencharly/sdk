@@ -1,8 +1,8 @@
 package deploykit
 
-// bundle_members_test.go — relocated + adapted from charly/bundle_members_test.go (#55 W3 A4).
+// fleet_members_test.go — relocated + adapted from charly/fleet_members_test.go (#55 W3 A4).
 // TestIsPodMember/TestTearDownMembers_* covered isPodMember/tearDownMembers via bare
-// spec.BundleNode{Target: "pod"} fixtures, relying on core's OLD nodeTraits' registry-fallback
+// spec.FleetNode{Target: "pod"} fixtures, relying on core's OLD nodeTraits' registry-fallback
 // branch (Descent nil → resolve via the live provider registry). The relocated
 // spec.IsVmVenue/spec.IsContainerVenue predicates read ONLY the wire-stamped node.Descent (no
 // registry access, matching candy/plugin-check's own registry-free twin) — every node
@@ -19,16 +19,16 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-func vmNode(from string) *spec.BundleNode {
-	return &spec.BundleNode{From: from, Descent: &spec.DescentDescriptor{Venue: "ssh"}}
+func vmNode(from string) *spec.FleetNode {
+	return &spec.FleetNode{From: from, Descent: &spec.DescentDescriptor{Venue: "ssh"}}
 }
 
-func podNode() *spec.BundleNode {
-	return &spec.BundleNode{Descent: &spec.DescentDescriptor{Venue: "container"}}
+func podNode() *spec.FleetNode {
+	return &spec.FleetNode{Descent: &spec.DescentDescriptor{Venue: "container"}}
 }
 
-func localNode() *spec.BundleNode {
-	return &spec.BundleNode{Descent: &spec.DescentDescriptor{Venue: "shell", HostRooted: true}}
+func localNode() *spec.FleetNode {
+	return &spec.FleetNode{Descent: &spec.DescentDescriptor{Venue: "shell", HostRooted: true}}
 }
 
 // TestIsVmVenue_IsContainerVenue covers the routing predicates BringUpMembers/TearDownMembers
@@ -52,10 +52,10 @@ func TestIsVmVenue_IsContainerVenue(t *testing.T) {
 }
 
 // TestTearDownMembers_RoutingAndOrder: TearDownMembers iterates members in sorted order and
-// routes a pod member to `charly remove --purge`, a non-pod member to `charly bundle del
+// routes a pod member to `charly remove --purge`, a non-pod member to `charly fleet del
 // --assume-yes` — the same iteration/routing logic BringUpMembers uses, verified here with the
 // stubbable proc.RunCharlySubcommand package var (no side effects). The flag itself is proven
-// valid against real Kong parsing by TestBundleDelArgv_KongAccepts (this stub-based test cannot —
+// valid against real Kong parsing by TestFleetDelArgv_KongAccepts (this stub-based test cannot —
 // it never invokes flag parsing, which is exactly how a `--yes`/`--force` drift once slipped
 // through).
 func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
@@ -66,7 +66,7 @@ func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
 		calls = append(calls, args)
 		return nil
 	}
-	node := &spec.BundleNode{Members: map[string]*spec.BundleNode{
+	node := &spec.FleetNode{Members: map[string]*spec.FleetNode{
 		"zeta-pod":   podNode(),
 		"alpha-host": localNode(),
 	}}
@@ -74,7 +74,7 @@ func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
 		t.Fatalf("TearDownMembers: %v", err)
 	}
 	want := [][]string{
-		spec.BundleDelArgv("alpha-host"),  // sorted first; non-pod → deploy del --assume-yes (unattended)
+		spec.FleetDelArgv("alpha-host"),   // sorted first; non-pod → deploy del --assume-yes (unattended)
 		{"remove", "zeta-pod", "--purge"}, // pod → remove --purge
 	}
 	if !reflect.DeepEqual(calls, want) {
@@ -88,7 +88,7 @@ func TestTearDownMembers_NoMembersNoop(t *testing.T) {
 	defer func() { proc.RunCharlySubcommand = orig }()
 	called := false
 	proc.RunCharlySubcommand = func(args ...string) error { called = true; return nil }
-	if err := TearDownMembers(&spec.BundleNode{}); err != nil {
+	if err := TearDownMembers(&spec.FleetNode{}); err != nil {
 		t.Fatalf("TearDownMembers(empty): %v", err)
 	}
 	if called {
@@ -109,7 +109,7 @@ func TestTearDownMembers_AttemptsAllAndReturnsJoinedErrors(t *testing.T) {
 		}
 		return secondErr
 	}
-	err := TearDownMembers(&spec.BundleNode{Members: map[string]*spec.BundleNode{
+	err := TearDownMembers(&spec.FleetNode{Members: map[string]*spec.FleetNode{
 		"a-local": localNode(),
 		"b-pod":   podNode(),
 	}})
@@ -127,7 +127,7 @@ func TestBringUpMembers_NoMembersNoop(t *testing.T) {
 	defer func() { proc.RunCharlySubcommand = orig }()
 	called := false
 	proc.RunCharlySubcommand = func(args ...string) error { called = true; return nil }
-	if err := BringUpMembers(&spec.BundleNode{}, ""); err != nil {
+	if err := BringUpMembers(&spec.FleetNode{}, ""); err != nil {
 		t.Fatalf("BringUpMembers(empty): %v", err)
 	}
 	if called {

@@ -9,9 +9,9 @@ package deploykit
 //
 // Coverage:
 //   - ExportAllBox against a constructed *spec.ResolvedProject (the #67 keystone).
-//   - SaveBundleConfig round-trip through a stub DeployStateHost (the 1-op
-//     LoadUnifiedBundleConfig seam) + CHARLY_DEPLOY_CONFIG tempdir redirect + a stub
-//     marshalNode callback (exercises LoadBundleConfig's fail-safe, the kit.LatestSchemaVersion
+//   - SaveFleetConfig round-trip through a stub DeployStateHost (the 1-op
+//     LoadUnifiedFleetConfig seam) + CHARLY_DEPLOY_CONFIG tempdir redirect + a stub
+//     marshalNode callback (exercises LoadFleetConfig's fail-safe, the kit.LatestSchemaVersion
 //     version stamp, the atomic tempfile+rename write). The deploy-kind-specific marshal
 //     itself is tested charly-side (it lives in charly/deploy_nodeform.go).
 //   - RegisterDeployStateHost seam (the charly init hook, 1-op).
@@ -29,7 +29,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// --- ExportAllBox — the #67 keystone (#ResolvedProject envelope → BundleConfig) ---
+// --- ExportAllBox — the #67 keystone (#ResolvedProject envelope → FleetConfig) ---
 
 // TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject pins the #67 keystone:
 // ExportAllBox reads the box-authored deploy-overlay surfaces (version / description /
@@ -54,12 +54,12 @@ func TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject(t *testing.T
 
 	dc := ExportAllBox(rp)
 	if dc == nil {
-		t.Fatal("ExportAllBox returned nil BundleConfig")
+		t.Fatal("ExportAllBox returned nil FleetConfig")
 	}
-	if len(dc.Bundle) != 1 {
-		t.Fatalf("ExportAllBox produced %d entries; want 1 (the zero box must be skipped)", len(dc.Bundle))
+	if len(dc.Fleet) != 1 {
+		t.Fatalf("ExportAllBox produced %d entries; want 1 (the zero box must be skipped)", len(dc.Fleet))
 	}
-	entry, ok := dc.Bundle["web"]
+	entry, ok := dc.Fleet["web"]
 	if !ok {
 		t.Fatal("ExportAllBox missing the 'web' entry")
 	}
@@ -84,55 +84,55 @@ func TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject(t *testing.T
 
 	// Determinism: re-running produces the same map (ExportAllBox sorts names internally).
 	dc2 := ExportAllBox(rp)
-	if !reflect.DeepEqual(dc.Bundle, dc2.Bundle) {
+	if !reflect.DeepEqual(dc.Fleet, dc2.Fleet) {
 		t.Errorf("ExportAllBox is non-deterministic across calls")
 	}
 }
 
 // TestExportAllBox_NilSafe proves the nil-receiver guard: a nil *spec.ResolvedProject
-// yields an empty (non-nil) BundleConfig with a live Bundle map, so callers that range
-// dc.Bundle never nil-deref.
+// yields an empty (non-nil) FleetConfig with a live Fleet map, so callers that range
+// dc.Fleet never nil-deref.
 func TestExportAllBox_NilSafe(t *testing.T) {
 	dc := ExportAllBox(nil)
 	if dc == nil {
 		t.Fatal("ExportAllBox(nil) returned nil")
 	}
-	if dc.Bundle == nil {
-		t.Fatal("ExportAllBox(nil) returned a BundleConfig with nil Bundle map")
+	if dc.Fleet == nil {
+		t.Fatal("ExportAllBox(nil) returned a FleetConfig with nil Fleet map")
 	}
-	if len(dc.Bundle) != 0 {
-		t.Errorf("ExportAllBox(nil) produced %d entries; want 0", len(dc.Bundle))
+	if len(dc.Fleet) != 0 {
+		t.Errorf("ExportAllBox(nil) produced %d entries; want 0", len(dc.Fleet))
 	}
 }
 
-// --- SaveBundleConfig — the kind-blind file shell + callback round-trip ---
+// --- SaveFleetConfig — the kind-blind file shell + callback round-trip ---
 
-// TestSaveBundleConfig_RoundTrip exercises the full SaveBundleConfig write path: the
-// fail-safe LoadBundleConfig re-check (through the 1-op LoadUnifiedBundleConfig seam), the
+// TestSaveFleetConfig_RoundTrip exercises the full SaveFleetConfig write path: the
+// fail-safe LoadFleetConfig re-check (through the 1-op LoadUnifiedFleetConfig seam), the
 // kit.LatestSchemaVersion version stamp, the caller-supplied marshalNode callback per entry,
 // and the atomic tempfile+os.Rename write. CHARLY_DEPLOY_CONFIG redirects the write to a
 // tempdir so the test never touches the operator's real per-host overlay. The marshalNode
 // stub emits a simple node-form body (the deploy-kind-specific marshal lives in
 // charly/deploy_nodeform.go and is tested charly-side).
-func TestSaveBundleConfig_RoundTrip(t *testing.T) {
+func TestSaveFleetConfig_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "charly.yml")
 	t.Setenv(kit.DeployConfigEnv, dest)
 
-	// Stub the ONE host Mechanism SaveBundleConfig reaches through DeployStateHost (the
+	// Stub the ONE host Mechanism SaveFleetConfig reaches through DeployStateHost (the
 	// LoadUnified hop for the fail-safe re-check). The version stamp is kit.LatestSchemaVersion
 	// (a direct kit call, not a seam op); the marshal is the caller's callback.
 	stub := &StateHostMechanisms{
-		LoadUnifiedBundleConfig: func(configDir string) (*BundleConfig, error) {
-			return nil, nil // absent file → LoadBundleConfig returns (empty, nil) → fail-safe passes
+		LoadUnifiedFleetConfig: func(configDir string) (*FleetConfig, error) {
+			return nil, nil // absent file → LoadFleetConfig returns (empty, nil) → fail-safe passes
 		},
 	}
 	prev := DeployStateHost
 	RegisterDeployStateHost(stub)
 	t.Cleanup(func() { DeployStateHost = prev })
 
-	dc := &BundleConfig{
-		Bundle: map[string]BundleNode{
+	dc := &FleetConfig{
+		Fleet: map[string]FleetNode{
 			"web": {
 				Image: "web",
 				Env:   map[string]string{"LOG_LEVEL": "info"},
@@ -141,8 +141,8 @@ func TestSaveBundleConfig_RoundTrip(t *testing.T) {
 	}
 
 	// stubMarshalNode emits a node-form body: a mapping with the discriminator + the
-	// struct-marshaled fields (a faithful miniature of charly's marshalBundleNode).
-	stubMarshalNode := func(name string, node *BundleNode) (*yaml.Node, error) {
+	// struct-marshaled fields (a faithful miniature of charly's marshalFleetNode).
+	stubMarshalNode := func(name string, node *FleetNode) (*yaml.Node, error) {
 		nb, err := yaml.Marshal(node)
 		if err != nil {
 			return nil, err
@@ -164,8 +164,8 @@ func TestSaveBundleConfig_RoundTrip(t *testing.T) {
 		return content, nil
 	}
 
-	if err := SaveBundleConfig(dc, stubMarshalNode, nil); err != nil {
-		t.Fatalf("SaveBundleConfig: %v", err)
+	if err := SaveFleetConfig(dc, stubMarshalNode, nil); err != nil {
+		t.Fatalf("SaveFleetConfig: %v", err)
 	}
 
 	data, err := os.ReadFile(dest)
@@ -183,23 +183,23 @@ func TestSaveBundleConfig_RoundTrip(t *testing.T) {
 
 	// The file must exist at the redirected path (atomic rename landed).
 	if !kit.FileExists(dest) {
-		t.Errorf("overlay file not present at %s after SaveBundleConfig", dest)
+		t.Errorf("overlay file not present at %s after SaveFleetConfig", dest)
 	}
 }
 
-// TestSaveBundleConfig_ErrorsWhenCallbackNil pins the nil-callback guard: SaveBundleConfig
+// TestSaveFleetConfig_ErrorsWhenCallbackNil pins the nil-callback guard: SaveFleetConfig
 // errors clearly when marshalNode is nil (the deploy-kind-specific marshal is the caller's
 // responsibility — a nil callback would nil-deref inside the per-entry loop).
-func TestSaveBundleConfig_ErrorsWhenCallbackNil(t *testing.T) {
+func TestSaveFleetConfig_ErrorsWhenCallbackNil(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(kit.DeployConfigEnv, filepath.Join(dir, "charly.yml"))
 	prev := DeployStateHost
 	DeployStateHost = nil // no fail-safe re-check dep when the seam is nil
 	t.Cleanup(func() { DeployStateHost = prev })
 
-	err := SaveBundleConfig(&BundleConfig{Bundle: map[string]BundleNode{"x": {Image: "x"}}}, nil, nil)
+	err := SaveFleetConfig(&FleetConfig{Fleet: map[string]FleetNode{"x": {Image: "x"}}}, nil, nil)
 	if err == nil {
-		t.Fatal("SaveBundleConfig with nil callback returned nil; want an error")
+		t.Fatal("SaveFleetConfig with nil callback returned nil; want an error")
 	}
 }
 
@@ -213,7 +213,7 @@ func TestRegisterDeployStateHost(t *testing.T) {
 	t.Cleanup(func() { DeployStateHost = prev })
 
 	DeployStateHost = nil
-	h := &StateHostMechanisms{LoadUnifiedBundleConfig: func(string) (*BundleConfig, error) { return nil, nil }}
+	h := &StateHostMechanisms{LoadUnifiedFleetConfig: func(string) (*FleetConfig, error) { return nil, nil }}
 	RegisterDeployStateHost(h)
 	if DeployStateHost != h {
 		t.Fatal("RegisterDeployStateHost did not store the non-nil host")
@@ -318,42 +318,42 @@ func TestRemoveByExactSource(t *testing.T) {
 	}
 }
 
-// TestFindBundleNode covers the whole-tree name search (Cutover B unit 5, P13-KERNEL-B —
-// moved from charly/k3s_post.go's findBundleNodeByName/findBundleNodePtrByName, which had
+// TestFindFleetNode covers the whole-tree name search (Cutover B unit 5, P13-KERNEL-B —
+// moved from charly/k3s_post.go's findFleetNodeByName/findFleetNodePtrByName, which had
 // no dedicated test coverage in charly; this closes that gap at the new home). A node may
 // be found at the top level, nested under Children at any depth, or nested under Members
 // at any depth; a name present nowhere in the tree returns nil.
-func TestFindBundleNode(t *testing.T) {
-	leaf := &BundleNode{Image: "leaf-image"}
-	member := &BundleNode{Image: "member-image"}
-	child := &BundleNode{
+func TestFindFleetNode(t *testing.T) {
+	leaf := &FleetNode{Image: "leaf-image"}
+	member := &FleetNode{Image: "member-image"}
+	child := &FleetNode{
 		Image:    "child-image",
-		Children: map[string]*BundleNode{"leaf": leaf},
+		Children: map[string]*FleetNode{"leaf": leaf},
 	}
-	root := BundleNode{
+	root := FleetNode{
 		Image:    "root-image",
-		Children: map[string]*BundleNode{"child": child},
-		Members:  map[string]*BundleNode{"sidecar": member},
+		Children: map[string]*FleetNode{"child": child},
+		Members:  map[string]*FleetNode{"sidecar": member},
 	}
-	bundle := map[string]BundleNode{"stack": root}
+	fleet := map[string]FleetNode{"stack": root}
 
-	if got := FindBundleNode(bundle, "stack"); got == nil || got.Image != "root-image" {
-		t.Errorf("FindBundleNode(stack) top-level = %v; want root-image", got)
+	if got := FindFleetNode(fleet, "stack"); got == nil || got.Image != "root-image" {
+		t.Errorf("FindFleetNode(stack) top-level = %v; want root-image", got)
 	}
-	if got := FindBundleNode(bundle, "child"); got != child {
-		t.Errorf("FindBundleNode(child) nested-Children = %v; want %v", got, child)
+	if got := FindFleetNode(fleet, "child"); got != child {
+		t.Errorf("FindFleetNode(child) nested-Children = %v; want %v", got, child)
 	}
-	if got := FindBundleNode(bundle, "leaf"); got != leaf {
-		t.Errorf("FindBundleNode(leaf) nested-two-deep-Children = %v; want %v", got, leaf)
+	if got := FindFleetNode(fleet, "leaf"); got != leaf {
+		t.Errorf("FindFleetNode(leaf) nested-two-deep-Children = %v; want %v", got, leaf)
 	}
-	if got := FindBundleNode(bundle, "sidecar"); got != member {
-		t.Errorf("FindBundleNode(sidecar) nested-Members = %v; want %v", got, member)
+	if got := FindFleetNode(fleet, "sidecar"); got != member {
+		t.Errorf("FindFleetNode(sidecar) nested-Members = %v; want %v", got, member)
 	}
-	if got := FindBundleNode(bundle, "nonexistent"); got != nil {
-		t.Errorf("FindBundleNode(nonexistent) = %v; want nil", got)
+	if got := FindFleetNode(fleet, "nonexistent"); got != nil {
+		t.Errorf("FindFleetNode(nonexistent) = %v; want nil", got)
 	}
-	if got := FindBundleNode(nil, "anything"); got != nil {
-		t.Errorf("FindBundleNode(nil bundle) = %v; want nil", got)
+	if got := FindFleetNode(nil, "anything"); got != nil {
+		t.Errorf("FindFleetNode(nil fleet) = %v; want nil", got)
 	}
 }
 
@@ -365,7 +365,7 @@ func TestFindBundleNode(t *testing.T) {
 // order per process. Steps 1-2 (exact key match) stay unambiguous by
 // construction and must never error.
 func TestFindVmDeployNode_AmbiguousFallbackErrors(t *testing.T) {
-	deploys := map[string]BundleNode{
+	deploys := map[string]FleetNode{
 		// Two independent top-level vm deploys sharing one base entity —
 		// the check-substrate / check-builder-vm shape (both real top-level
 		// vm deploys, both `from: eval-vm`).
@@ -444,23 +444,23 @@ func TestPathLeaf(t *testing.T) {
 }
 
 // TestClassifyNodeTarget covers the W4 pure-helpers relocation (moved from
-// charly/bundle_add_cmd.go): node.Target wins when set; otherwise a
+// charly/fleet_add_cmd.go): node.Target wins when set; otherwise a
 // ref-based deploy's path LEAF classifies "host"/"local" as the local
 // target and everything else as pod.
 func TestClassifyNodeTarget(t *testing.T) {
 	cases := []struct {
 		name string
-		node *BundleNode
+		node *FleetNode
 		path string
 		want string
 	}{
-		{"node.Target wins", &BundleNode{Target: "vm"}, "anything", "vm"},
-		{"nested node.Target wins over leaf", &BundleNode{Target: "k8s"}, "stack.web", "k8s"},
+		{"node.Target wins", &FleetNode{Target: "vm"}, "anything", "vm"},
+		{"nested node.Target wins over leaf", &FleetNode{Target: "k8s"}, "stack.web", "k8s"},
 		{"nil node, literal host leaf -> local", nil, "host", "local"},
 		{"nil node, literal local leaf -> local", nil, "local", "local"},
 		{"nil node, nested host leaf -> local", nil, "stack.host", "local"},
 		{"nil node, other leaf -> pod", nil, "my-app", "pod"},
-		{"empty node, no Target, other leaf -> pod", &BundleNode{}, "my-app", "pod"},
+		{"empty node, no Target, other leaf -> pod", &FleetNode{}, "my-app", "pod"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -473,7 +473,7 @@ func TestClassifyNodeTarget(t *testing.T) {
 
 // TestSaveDeployState_PluginSideReader pins the #55 K4 config-write seam-collapse: a NON-NIL
 // injected reader makes SaveDeployState persist deploy-state even when DeployStateHost is nil —
-// the OUT-OF-PROCESS command:bundle case, where the write now runs plugin-side (deploykit.SaveDeployState
+// the OUT-OF-PROCESS command:fleet case, where the write now runs plugin-side (deploykit.SaveDeployState
 // with the plugin's own loader-backed reader + loader-threaded Primaries) instead of over the deleted
 // "deploy-config-save-state" host seam. Without the reader param, SaveDeployState returns early at
 // `if DeployStateHost == nil` and writes NOTHING, so this test FAILS on the pre-refactor code
@@ -487,10 +487,10 @@ func TestSaveDeployState_PluginSideReader(t *testing.T) {
 	t.Cleanup(func() { DeployStateHost = prev })
 
 	// The plugin's own loader-backed reader — a fresh, non-nil overlay (nothing on disk yet).
-	reader := func() (*BundleConfig, error) {
-		return &BundleConfig{Bundle: map[string]BundleNode{}}, nil
+	reader := func() (*FleetConfig, error) {
+		return &FleetConfig{Fleet: map[string]FleetNode{}}, nil
 	}
-	marshalNode := func(_ string, _ *BundleNode) (*yaml.Node, error) {
+	marshalNode := func(_ string, _ *FleetNode) (*yaml.Node, error) {
 		content := &yaml.Node{Kind: yaml.MappingNode}
 		content.Content = append(content.Content, kit.ScalarNode("pod"), &yaml.Node{Kind: yaml.MappingNode})
 		return content, nil

@@ -45,7 +45,7 @@ import (
 //   - Empty / comment-only file → zero-value spec.Candy.
 //   - Single top-level `candy:` key → decode its body as the candy body (canonical form).
 //   - `candy:` + other top-level keys → error (ambiguous shape).
-//   - Multi-document stream → error (the candy manifest is not a bundle file).
+//   - Multi-document stream → error (the candy manifest is not a fleet file).
 //   - Flat form (no `candy:` wrapper) → error with migration hint.
 //
 // t is the registry-derived kind-recognition snapshot the node-form parse needs; vocab is the build
@@ -169,7 +169,7 @@ func SingleCandyMappingNode(path string, data []byte) (*yaml.Node, error) {
 		return nil, nil
 	}
 	if len(docs) > 1 {
-		return nil, fmt.Errorf("%s: the candy manifest is not a multi-document stream; bundle files belong in the unified charly.yml", path)
+		return nil, fmt.Errorf("%s: the candy manifest is not a multi-document stream; fleet files belong in the unified charly.yml", path)
 	}
 	// Unwrap the DocumentNode wrapper.
 	inner := &docs[0]

@@ -16,13 +16,13 @@ import (
 // enc_probe.go — the encrypted-volume STATE-PROBE + plan-building functions relocated from
 // charly/enc.go (Cutover B unit 2). These are genuinely portable (no provider-registry or
 // credential-store coupling — pure FS probes, exec.Command wrappers, and charly.yml reads
-// via the SAME deploykit.LoadBundleConfig every deploy-config consumer already uses), so they
+// via the SAME deploykit.LoadFleetConfig every deploy-config consumer already uses), so they
 // move here rather than staying behind a HostBuild seam. The verb:enc OpExecute dispatch is now
 // fully plugin-owned (candy/plugin-deploy-pod + candy/plugin-pod each drive verb:enc via their own
 // InvokeProvider; the former core encExecViaPlugin shim + the pod-config-enc-mounts seam are
 // RETIRED). charly/enc.go is now DELETED (#55 coneB-br2): coreCredentialAccess moved plugin-side to
 // candy/plugin-deploy-pod's buildOverlay (deploykit.CredentialAccessViaExecutor, mirroring
-// candy/plugin-bundle/secrets_artifacts.go). candy/plugin-deploy-pod
+// candy/plugin-fleet/secrets_artifacts.go). candy/plugin-deploy-pod
 // had ALREADY hand-duplicated 3 of these (isEncryptedMountedLocal/cipherPopulatedPlainEmptyLocal/
 // verifyBindMountsLocal in config_setup_helpers.go) because the originals weren't movable as a
 // whole — those duplicates are deleted in the same cutover, now calling this package instead (R3).
@@ -97,17 +97,17 @@ func EncPlanFor(boxName, instance, volume, scopeDir string) ([]spec.EncVolumePla
 }
 
 // EncPlanForConfig is EncPlanFor's SEAM-ROUTABLE sibling: identical plan-building logic,
-// but takes an ALREADY-LOADED dc instead of reaching the package-level LoadBundleConfig()
+// but takes an ALREADY-LOADED dc instead of reaching the package-level LoadFleetConfig()
 // itself. EncPlanFor (and the LoadEncryptedVolume it calls) is placement-DEPENDENT — it
 // silently degrades to "no encrypted volumes" (not an error) unless DeployStateHost is
 // registered, which only happens in charly-core's own init(); safe today because
 // candy/plugin-pod's command:config is compiled-in-only, but that is a per-BUILD fact, not
 // a guarantee (the exact class of latent bug candy/plugin-pod/remove_orchestration.go's
 // resolveSidecarNames hit and fixed the same way). A caller that might ever run
-// out-of-process loads dc itself via loaderkit.LoadHostBundleConfigViaExecutor (over the
-// executor reverse channel — the former pod-config-load-bundle host seam was retired) and
+// out-of-process loads dc itself via loaderkit.LoadHostFleetConfigViaExecutor (over the
+// executor reverse channel — the former pod-config-load-deploy host seam was retired) and
 // calls this instead — see candy/plugin-pod/enc_cmd.go.
-func EncPlanForConfig(dc *BundleConfig, boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
+func EncPlanForConfig(dc *FleetConfig, boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
 	mounts, storagePath, err := LoadEncryptedVolumeFromConfig(dc, boxName, instance)
 	if err != nil {
 		return nil, err
@@ -161,7 +161,7 @@ func FuseAllowOtherEnabled() bool {
 // LoadEncryptedVolume loads encrypted volume configs from charly.yml for an image.
 // Returns the deploy volume configs with type=encrypted and the encrypted storage path.
 func LoadEncryptedVolume(boxName, instance string) ([]vmshared.DeployVolumeConfig, string, error) {
-	// Propagate LoadBundleConfig errors instead of swallowing them. A
+	// Propagate LoadFleetConfig errors instead of swallowing them. A
 	// schema error (e.g. the 2026-05-12 require-image cutover rejecting
 	// pre-cutover deploy.yml entries) used to silently degrade to "no
 	// encrypted volumes", which broke the encMount short-circuit and
@@ -169,7 +169,7 @@ func LoadEncryptedVolume(boxName, instance string) ([]vmshared.DeployVolumeConfi
 	// password → indefinite hang waiting for stdin. Surfacing the error
 	// turns that hang into a clean error message with a remediation
 	// hint pointing at `charly migrate`.
-	dc, err := LoadBundleConfig()
+	dc, err := LoadFleetConfig()
 	if err != nil {
 		return nil, "", fmt.Errorf("loading deploy config for encrypted volumes: %w", err)
 	}
@@ -178,9 +178,9 @@ func LoadEncryptedVolume(boxName, instance string) ([]vmshared.DeployVolumeConfi
 
 // LoadEncryptedVolumeFromConfig is LoadEncryptedVolume's SEAM-ROUTABLE sibling — identical
 // lookup logic given an ALREADY-LOADED dc (nil dc == no per-host overlay, matching
-// LoadBundleConfig's own nil-on-absent contract). See EncPlanForConfig's doc comment for
+// LoadFleetConfig's own nil-on-absent contract). See EncPlanForConfig's doc comment for
 // the placement-dependency rationale a caller of this variant is avoiding.
-func LoadEncryptedVolumeFromConfig(dc *BundleConfig, boxName, instance string) ([]vmshared.DeployVolumeConfig, string, error) {
+func LoadEncryptedVolumeFromConfig(dc *FleetConfig, boxName, instance string) ([]vmshared.DeployVolumeConfig, string, error) {
 	rt, err := kit.ResolveRuntime()
 	if err != nil {
 		return nil, "", err
@@ -189,7 +189,7 @@ func LoadEncryptedVolumeFromConfig(dc *BundleConfig, boxName, instance string) (
 		return nil, rt.EncryptedStoragePath, nil
 	}
 
-	overlay, ok := dc.Bundle[DeployKey(boxName, instance)]
+	overlay, ok := dc.Fleet[DeployKey(boxName, instance)]
 	if !ok {
 		return nil, rt.EncryptedStoragePath, nil
 	}
@@ -270,7 +270,7 @@ func EncStatus(boxName, instance string) error {
 // EncStatusFromConfig is EncStatus's SEAM-ROUTABLE sibling — identical output given an
 // ALREADY-LOADED dc. See EncPlanForConfig's doc comment for the placement-dependency
 // rationale a caller of this variant is avoiding.
-func EncStatusFromConfig(dc *BundleConfig, boxName, instance string) error {
+func EncStatusFromConfig(dc *FleetConfig, boxName, instance string) error {
 	mounts, storagePath, err := LoadEncryptedVolumeFromConfig(dc, boxName, instance)
 	if err != nil {
 		return err

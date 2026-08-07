@@ -7,7 +7,7 @@ import (
 
 // deploy_chain.go — the executor-CHAIN constructors moved to spec/exec (the floor primitive
 // home, beside the ShellExecutor/SSHExecutor/NestedExecutor they build — #55 K4); deploykit
-// RE-EXPORTS them here for its plugin-side callers (candy/plugin-bundle, plugin-check,
+// RE-EXPORTS them here for its plugin-side callers (candy/plugin-fleet, plugin-check,
 // plugin-status, plugin-vm) so those `deploykit.<Fn>` references compile unchanged. charly core
 // calls specexec.<Fn> directly (no deploykit import for the chain). ContainerChain STAYS — it
 // delegates to kit.ContainerChainFromDescriptor (kit-coupled, not a spec/exec pure constructor).

@@ -91,7 +91,7 @@ var RuntimeOnlyVarPrefixes = []string{
 	"DEPLOY_NAME",
 	// Cross-member address var (resolved in candy/plugin-check/members.go): the unified
 	// ${HOST:<member>} (+ optional :port) lets a driven probe (a check with `on:`, or a sibling
-	// bundle member) reach a SEPARATE member. Resolved only against running deployments, so a
+	// fleet member) reach a SEPARATE member. Resolved only against running deployments, so a
 	// build-scope check must not reference it.
 	"HOST",
 }

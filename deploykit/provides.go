@@ -1,6 +1,6 @@
 package deploykit
 
-// provides.go — the deploy-config provides types (part of BundleConfig) AND the
+// provides.go — the deploy-config provides types (part of FleetConfig) AND the
 // provides PIPELINE LOGIC (filter/template-resolve — K4: relocated from
 // charly/provides.go, a genuinely pure mechanism with no project-loader dependency).
 // FilterOwnProvides needs the Named generic constraint, already deploykit-native.

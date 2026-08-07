@@ -45,7 +45,7 @@ func ResolvedSidecarFromSpec(s spec.ResolvedSidecar) ResolvedSidecar {
 // SidecarTemplatesOf returns the project-root sidecar templates carried by a
 // deploy config (nil-safe), as OPAQUE bodies. These extend/override the
 // embedded set inside the sidecar plugin's OpResolve.
-func SidecarTemplatesOf(dc *BundleConfig) map[string]json.RawMessage {
+func SidecarTemplatesOf(dc *FleetConfig) map[string]json.RawMessage {
 	if dc == nil {
 		return nil
 	}

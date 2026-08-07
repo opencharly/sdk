@@ -9,7 +9,7 @@ import (
 )
 
 // resolve_project.go — the RESOLVED-project ENVELOPE ASSEMBLER (K3 build-engine, Unit 2 body). It is
-// the uf-COUPLED orchestration that walks the loaded project (*spec.UnifiedFile: uf.Bundle, uf.Namespaces,
+// the uf-COUPLED orchestration that walks the loaded project (*spec.UnifiedFile: uf.Fleet, uf.Namespaces,
 // uf.PluginKinds) and composes the generic spec.ResolvedProject envelope from the already-plugin-callable
 // resolve primitives — deploykit.ProjectResolvedBox/ProjectBoxAggregates/RawCandyPair/FillBoxPlans/
 // ResolveBoxOrder + uf.ProjectTemplates() (the spec method). Its home is loaderkit (it can import both
@@ -57,7 +57,7 @@ type ResolveProjectSeams struct {
 
 // ProjectResolvedProject assembles the spec.ResolvedProject from already-loaded resolve-engine outputs —
 // a DATA projection over the seams, no resolution logic of its own. boxes come from seams.ResolveBox (or
-// preResolvedBoxes), candies from the scanned layers map, deploy from the folded uf.Bundle tree, calver is
+// preResolvedBoxes), candies from the scanned layers map, deploy from the folded uf.Fleet tree, calver is
 // the wall-clock build tag threaded by the caller. When diags is nil it is FAIL-FAST (a per-box ResolveBox
 // failure aborts with an error). When diags is non-nil it is ERROR-TOLERANT (the validate-project path): a
 // ResolveBox failure appends a spec.Diagnostic and SKIPS that box.
@@ -161,11 +161,11 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 		seams.FillNamespacedBoxes(uf, initCfg, "", calver, dir, rp, map[*spec.UnifiedFile]bool{})
 	}
 
-	if uf != nil && len(uf.Bundle) > 0 {
-		// BundleNode is a type alias for spec.Deploy, so the folded deploy tree projects into the
+	if uf != nil && len(uf.Fleet) > 0 {
+		// FleetNode is a type alias for spec.Deploy, so the folded deploy tree projects into the
 		// envelope's map[string]*Deploy directly (a per-iteration copy, addressed).
-		rp.Deploy = make(map[string]*spec.Deploy, len(uf.Bundle))
-		for k, v := range uf.Bundle {
+		rp.Deploy = make(map[string]*spec.Deploy, len(uf.Fleet))
+		for k, v := range uf.Fleet {
 			node := v
 			rp.Deploy[k] = &node
 		}

@@ -42,7 +42,7 @@ func TestSidecarTemplatesOf(t *testing.T) {
 	if got := SidecarTemplatesOf(nil); got != nil {
 		t.Errorf("SidecarTemplatesOf(nil) = %v, want nil", got)
 	}
-	dc := &BundleConfig{Sidecar: map[string]json.RawMessage{"tailscale": json.RawMessage("{}")}}
+	dc := &FleetConfig{Sidecar: map[string]json.RawMessage{"tailscale": json.RawMessage("{}")}}
 	got := SidecarTemplatesOf(dc)
 	if len(got) != 1 || got["tailscale"] == nil {
 		t.Errorf("SidecarTemplatesOf = %v, want the dc.Sidecar map", got)

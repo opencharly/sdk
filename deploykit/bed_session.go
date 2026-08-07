@@ -19,7 +19,7 @@ import (
 // be exactly the "seam a later wave deletes" anti-pattern). The HostRooted trait check
 // (formerly nodeTraits(&node).HostRooted, itself only a provider-registry fallback for an
 // UNSTAMPED node) reads node.Descent directly instead — every node these functions see comes
-// from a LoadUnified'd project, whose loader always stamps Descent (stampBundleDescents), so
+// from a LoadUnified'd project, whose loader always stamps Descent (stampFleetDescents), so
 // this is a pure wire-field read, never a registry query.
 //
 // ResolveBedCheckLevel (formerly here, a thin wrapper over kit.DefaultCheckLevel/
@@ -42,7 +42,7 @@ import (
 // participant: bringUpMembers persists each member here, then the member's `charly start`
 // reloads the per-host node and fires the arbiter off these fields — without them a member's
 // requires_exclusive reloaded as [] and the arbiter silently no-op'd. The folded bed node is
-// the source of truth, but `charly bundle add` / `charly config` otherwise source those fields
+// the source of truth, but `charly fleet add` / `charly config` otherwise source those fields
 // from the IMAGE LABELS and gate port writes behind an operator `-p` — so a bed's declared
 // `port:` remap would never reach the quadlet (it would fall back to the image default and
 // collide with any same-image deploy already bound to that port). Seeding the per-host entry
@@ -56,11 +56,11 @@ import (
 //
 // read is the current-state re-read this load-mutate-save performs. A nil read falls back to
 // SaveDeployState's own DeployStateHost-backed read (the in-proc host path). A plugin caller
-// (out-of-process command:check / command:bundle) injects its OWN loader-backed reader
-// (loaderkit.LoadHostBundleConfigViaExecutor), so PersistBedDeployOverrides no longer requires the
-// DeployStateHost package var (#55 coneC-dsh — mirrors the SaveBundleConfig/SaveDeployState
+// (out-of-process command:check / command:fleet) injects its OWN loader-backed reader
+// (loaderkit.LoadHostFleetConfigViaExecutor), so PersistBedDeployOverrides no longer requires the
+// DeployStateHost package var (#55 coneC-dsh — mirrors the SaveFleetConfig/SaveDeployState
 // reader-callback precedent).
-func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace bool, marshalNode func(name string, node *BundleNode) (*yaml.Node, error), read func() (*BundleConfig, error)) {
+func PersistBedDeployOverrides(name string, node FleetNode, externalInPlace bool, marshalNode func(name string, node *FleetNode) (*yaml.Node, error), read func() (*FleetConfig, error)) {
 	// A GROUP bed (boxless root + sibling Members — the §3 cross-deployment shape) has NO
 	// root deployment to seed: its members each carry their own port/volume/env overrides
 	// (bringUpMembers persists every member), and the boxless root is never `charly config`'d.
@@ -72,13 +72,13 @@ func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace boo
 		return
 	}
 	// A LOCAL or EXTERNAL in-place bed never runs `charly config` (it applies candies in
-	// place during `charly bundle add`), so the whole reason PersistBedDeployOverrides exists
+	// place during `charly fleet add`), so the whole reason PersistBedDeployOverrides exists
 	// — seeding port/volume/env overrides BEFORE config — does not apply. Worse, a local bed's
 	// only persistable cross-ref is its `local:` template, which lives in the bed's OWN
 	// project; writing it into the GLOBAL per-host overlay makes that overlay un-loadable from
 	// every OTHER project (validateCheckBeds: "references local template … which is not
 	// defined"), poisoning concurrent/cross-project bed runs. Local deploys persist via the
-	// install ledger, not this bundle-map path, so skipping is also lossless.
+	// install ledger, not this fleet-map path, so skipping is also lossless.
 	if spec.HostRooted(&node) || externalInPlace {
 		return
 	}
@@ -107,7 +107,7 @@ func PersistBedDeployOverrides(name string, node BundleNode, externalInPlace boo
 
 // DeployNestedLocalChildren is now spec.DeployNestedLocalChildren (#55 U4 — a pure dotted-path
 // tree walk over the spec value types, promoted with HostRooted). deploykit keeps a re-export
-// forwarder (deploy_bundle_ops_aliases.go) so its charly callers compile unchanged.
+// forwarder (deploy_fleet_ops_aliases.go) so its charly callers compile unchanged.
 
 // WaitForVmSshReady + WaitForContainerReady (the deploy-venue readiness GATES) moved to
 // spec/exec (spec/exec/venue_wait.go, #55 K4) — pure process-driving pollers over spec/exec

@@ -9,7 +9,7 @@ import (
 
 // TestMaterialize_NotFoundPolicy exercises every arm of Materialize's not-found dispatch policy —
 // the four branches it runs when the DecodeEntity seam reports the provider registry has no
-// provider for the node's discriminator. The registry-coupled DecodeEntity/BuildBundleEntity work
+// provider for the node's discriminator. The registry-coupled DecodeEntity/BuildFleetEntity work
 // is the host's (clause M); this test drives the pure policy with mock seams.
 func TestMaterialize_NotFoundPolicy(t *testing.T) {
 	cases := []struct {
@@ -20,7 +20,7 @@ func TestMaterialize_NotFoundPolicy(t *testing.T) {
 		threaded   spec.Threaded // recognition snapshot (clause D)
 		inConnect  bool          // InKindConnectPass result
 		connectErr error         // DeclaredKindConnectError result
-		wantBundle bool          // BuildBundleEntity must have been called
+		wantFleet  bool          // BuildFleetEntity must have been called
 		wantErr    bool
 	}{
 		{
@@ -35,10 +35,10 @@ func TestMaterialize_NotFoundPolicy(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name:       "recognized deploy substrate → routes to bundle builder",
-			disc:       "exampledeploy",
-			threaded:   spec.Threaded{DeploySubstrates: map[string]bool{"exampledeploy": true}},
-			wantBundle: true,
+			name:      "recognized deploy substrate → routes to fleet builder",
+			disc:      "exampledeploy",
+			threaded:  spec.Threaded{DeploySubstrates: map[string]bool{"exampledeploy": true}},
+			wantFleet: true,
 		},
 		{
 			name:      "declared kind inside connect pre-pass → deferred (skip, no error)",
@@ -66,13 +66,13 @@ func TestMaterialize_NotFoundPolicy(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			bundleCalled := false
+			fleetCalled := false
 			seams := spec.MaterializeSeams{
 				DecodeEntity: func(spec.ParsedNode, *spec.MaterializedProject) (bool, error) {
 					return c.found, c.decodeErr
 				},
-				BuildBundleEntity: func(spec.ParsedNode, *spec.MaterializedProject) error {
-					bundleCalled = true
+				BuildFleetEntity: func(spec.ParsedNode, *spec.MaterializedProject) error {
+					fleetCalled = true
 					return nil
 				},
 				InKindConnectPass:        func() bool { return c.inConnect },
@@ -83,8 +83,8 @@ func TestMaterialize_NotFoundPolicy(t *testing.T) {
 			if (err != nil) != c.wantErr {
 				t.Fatalf("Materialize err = %v, wantErr %v", err, c.wantErr)
 			}
-			if bundleCalled != c.wantBundle {
-				t.Fatalf("BuildBundleEntity called = %v, want %v", bundleCalled, c.wantBundle)
+			if fleetCalled != c.wantFleet {
+				t.Fatalf("BuildFleetEntity called = %v, want %v", fleetCalled, c.wantFleet)
 			}
 		})
 	}

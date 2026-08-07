@@ -1,7 +1,7 @@
 package deploykit
 
 // spec_candy_adapter.go — the SERIALIZED-model adapter (task #60, Unit A). A resolving PLUGIN
-// (validate route-i, the bundle-add walk) holds the resolved-project envelope — spec.CandyModel
+// (validate route-i, the fleet-add walk) holds the resolved-project envelope — spec.CandyModel
 // (build model) + spec.CandyView (identity/graph) per candy — but BuildDeployPlan / ResolveCandyOrder
 // consume the deploykit.CandyModel INTERFACE (implemented in charly by the runtime *Candy). This
 // adapter satisfies that interface from the two envelope views + the candy's SourceDir, so a plugin

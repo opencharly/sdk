@@ -255,7 +255,7 @@ func IsAutoPort(mapping string) bool {
 // use by other deployments (so two `port: [auto]` deploys on the same
 // host don't collide). Returned mappings have BindAddr="" (default host
 // bind) and Protocol="tcp". Each successful allocation is recorded back
-// into `occupied` so subsequent calls in the same BundleConfig pass see
+// into `occupied` so subsequent calls in the same FleetConfig pass see
 // the reservation.
 //
 // Free-port discovery uses the same net.Listen("tcp","127.0.0.1:0") +

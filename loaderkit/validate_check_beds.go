@@ -17,7 +17,7 @@ import (
 // ValidateCheckBeds enforces the kind:check bed-specific invariants beyond the generic deploy
 // validation (which already runs on the folded beds via ValidateDeploymentTree, covering the pod
 // `box:` requirement). Runs at LOAD time so EVERY command that resolves a bed (charly check run,
-// charly bundle add, charly config, charly box validate, …) sees the same friendly error.
+// charly fleet add, charly config, charly box validate, …) sees the same friendly error.
 func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 	for name, node := range uf.CheckBeds() {
 		// An iterate: bed is a benchmark (the former kind:score), NOT a deterministic R10 bed: it
@@ -85,7 +85,7 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 // rules (target/disposable/cross-ref); instead: every iterate.agent[] references an entry in the
 // `agent:` catalog; iterate.sandbox names a deployment (non-empty); and the bed's plan: carries at
 // least one direct `check:` step. Pure — reads uf.PluginKinds["agent"] + node.Iterate + node.Plan.
-func ValidateIterateBed(uf *spec.UnifiedFile, name string, node *spec.BundleNode) error {
+func ValidateIterateBed(uf *spec.UnifiedFile, name string, node *spec.FleetNode) error {
 	it := node.Iterate
 	agents := uf.PluginKinds["agent"] // agent is a plugin kind; opaque name-keyed catalog
 	for _, a := range it.Agent {

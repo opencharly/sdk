@@ -1,17 +1,17 @@
 package loaderkit
 
-// bundle_load.go — the PURE, registry-free LOAD-half of the bundle passes (K1-LOADER
-// RELOCATION, moved from charly/node_bundle_venue.go + charly/bundle_members.go). These are
-// the LoadSeams.FlattenBundleVenues / FoldMembers steps plus the two shared sort helpers they
+// fleet_load.go — the PURE, registry-free LOAD-half of the fleet passes (K1-LOADER
+// RELOCATION, moved from charly/node_fleet_venue.go + charly/fleet_members.go). These are
+// the LoadSeams.FlattenFleetVenues / FoldMembers steps plus the two shared sort helpers they
 // (and the DEPLOY-half that STAYS core — bringUpMembers/tearDownMembers) rely on. Every function
-// here operates ONLY on the already-materialized *spec.UnifiedFile / spec.BundleNode maps with zero
+// here operates ONLY on the already-materialized *spec.UnifiedFile / spec.FleetNode maps with zero
 // provider-registry or host coupling (boundary law clause M: a kind-blind mechanism consuming an
 // envelope), so it runs identically host-side OR plugin-side — the property that lets
 // loaderkit.LoadUnified wire these seams directly without a reverse-channel hop. Behaviour is
 // byte-identical to the former charly copies.
 //
 // The DEPLOY-half — bringUpMembers / tearDownMembers / isPodMember / isVmMember / withMemberTag —
-// STAYS host-resident (charly/bundle_members.go) per the lead's U1 SPLIT ruling: it shells out via
+// STAYS host-resident (charly/fleet_members.go) per the lead's U1 SPLIT ruling: it shells out via
 // proc.RunCharlySubcommand + reads the live provider registry (nodeTraits), so it is NOT
 // registry-free and does NOT belong here.
 
@@ -23,8 +23,8 @@ import (
 )
 
 // SortedDeployKeys / SortedMemberKeys / VenueIsAgentProvisioned are DEFINED in the dedicated spec
-// module (spec/spec/bundle_keys.go, #55 2b Class A) — pure bundle-map helpers with no kind-specific
-// logic. These forwarders keep loaderkit's own callers (FoldMembers / FlattenBundleVenues here) +
+// module (spec/spec/fleet_keys.go, #55 2b Class A) — pure fleet-map helpers with no kind-specific
+// logic. These forwarders keep loaderkit's own callers (FoldMembers / FlattenFleetVenues here) +
 // charly's DEPLOY-half owner-walk terse (R3, one shared abstraction).
 var (
 	SortedDeployKeys        = spec.SortedDeployKeys
@@ -33,49 +33,49 @@ var (
 )
 
 // -----------------------------------------------------------------------------
-// venue-from-position for bundle plan steps.
+// venue-from-position for fleet plan steps.
 //
 // In the unified node-form model a step's EXECUTION VENUE comes ENTIRELY from its POSITION in the
-// bundle tree — there is no authored `on:`/`pod:` override (both retired). FlattenBundleVenues runs
+// fleet tree — there is no authored `on:`/`pod:` override (both retired). FlattenFleetVenues runs
 // at load time, AFTER the tree is built and BEFORE FoldMembers + validation, and:
 //
 //   1. stamps every step's `venue` (Op.Venue) from its tree position:
 //        - a step directly under a WORKLOAD root R          → "R"
 //        - a step under a sibling MEMBER M                  → "M"            (bare)
 //        - a step under a NESTED child C of parent path P   → "P.C"         (dotted)
-//   2. HOISTS every member/child step into the ROOT bundle's flat Plan (and clears the
+//   2. HOISTS every member/child step into the ROOT fleet's flat Plan (and clears the
 //      member/child Plan), because both runner entry points read the root node.Plan.
 //
 // A direct step under a pure GROUP root (no workload container) is a hard error — a group has no
 // venue of its own; place the step under a member.
 // -----------------------------------------------------------------------------
 
-// FlattenBundleVenues stamps venue + hoists plan steps for every top-level bundle in uf.
+// FlattenFleetVenues stamps venue + hoists plan steps for every top-level fleet in uf.
 // Idempotent on an already-flattened tree (members/children have empty Plan after the first pass,
 // so re-running hoists nothing). Must run before FoldMembers (which promotes members to top-level,
 // mutating the map) and before validateCheckBeds/validateIterateBed (which count root Plan checks).
-func FlattenBundleVenues(uf *spec.UnifiedFile) error {
-	if uf == nil || len(uf.Bundle) == 0 {
+func FlattenFleetVenues(uf *spec.UnifiedFile) error {
+	if uf == nil || len(uf.Fleet) == 0 {
 		return nil
 	}
-	for _, name := range SortedDeployKeys(uf.Bundle) {
-		node := uf.Bundle[name]
-		if err := flattenBundleOne(&node, name); err != nil {
+	for _, name := range SortedDeployKeys(uf.Fleet) {
+		node := uf.Fleet[name]
+		if err := flattenFleetOne(&node, name); err != nil {
 			return err
 		}
-		uf.Bundle[name] = node
+		uf.Fleet[name] = node
 	}
 	return nil
 }
 
-// flattenBundleOne flattens a single top-level bundle tree rooted at `root` (named rootName) in
+// flattenFleetOne flattens a single top-level fleet tree rooted at `root` (named rootName) in
 // place.
-func flattenBundleOne(root *spec.BundleNode, rootName string) error {
+func flattenFleetOne(root *spec.FleetNode, rootName string) error {
 	// 1. Root's OWN direct steps run on the root's own venue (its container / host). A pure GROUP
 	//    root (no cross-ref → empty Target) has no container, so a direct scored/run step there
 	//    has nowhere to run.
 	if root.Target == "" && len(root.Plan) > 0 {
-		return fmt.Errorf("bundle %q is a group (no workload cross-ref) but carries %d direct plan step(s) — a group has no venue; place each step under a member/nested resource node", rootName, len(root.Plan))
+		return fmt.Errorf("fleet %q is a group (no workload cross-ref) but carries %d direct plan step(s) — a group has no venue; place each step under a member/nested resource node", rootName, len(root.Plan))
 	}
 	for i := range root.Plan {
 		root.Plan[i].Venue = rootName
@@ -96,7 +96,7 @@ func flattenBundleOne(root *spec.BundleNode, rootName string) error {
 // clears node.Plan (so the steps run once, from the root plan), and recurses into node's nested
 // children (dotted) and any sub-members (bare). venuePath is the dotted address the plugin scorer's
 // chain resolver / ResolveDeployChain resolve.
-func hoistVenueSubtree(root, node *spec.BundleNode, venuePath string) {
+func hoistVenueSubtree(root, node *spec.FleetNode, venuePath string) {
 	if node == nil {
 		return
 	}
@@ -119,33 +119,33 @@ func hoistVenueSubtree(root, node *spec.BundleNode, venuePath string) {
 // -----------------------------------------------------------------------------
 // sibling `peer:` member fold (LOAD-half).
 //
-// A BundleNode's `peer:` map declares companion deployments brought up ALONGSIDE it on the shared
-// `charly` network. FoldMembers registers each member as a top-level, addressable Bundle entry at
+// A FleetNode's `peer:` map declares companion deployments brought up ALONGSIDE it on the shared
+// `charly` network. FoldMembers registers each member as a top-level, addressable Fleet entry at
 // load time (inheriting the owner's disposability), so a member is brought up/torn down by the SAME
 // deploy verbs the deploy path already uses.
 // -----------------------------------------------------------------------------
 
-// FoldMembers copies every deploy node's `peer:` entries into the Bundle map as top-level
+// FoldMembers copies every deploy node's `peer:` entries into the Fleet map as top-level
 // addressable entries (MemberOf set, disposability inherited), so every deploy verb resolves a
 // member by name through the same path as any deploy. Runs BEFORE validateDeploymentTree (so folded
-// members get the same deploy validation); a check bed is itself a `disposable: true` bundle, so a
+// members get the same deploy validation); a check bed is itself a `disposable: true` fleet, so a
 // bed's members fold the same way. A member name colliding with any existing deploy/member entry is
 // a hard error.
 func FoldMembers(uf *spec.UnifiedFile) error {
-	if uf == nil || len(uf.Bundle) == 0 {
+	if uf == nil || len(uf.Fleet) == 0 {
 		return nil
 	}
 	// Collect first (we mutate the map below). Iterate a sorted owner list so a collision between
 	// two owners' members is reported deterministically.
 	type pendingMember struct {
 		key        string
-		node       spec.BundleNode
+		node       spec.FleetNode
 		owner      string
 		disposable bool
 	}
 	var pending []pendingMember
-	for _, owner := range SortedDeployKeys(uf.Bundle) {
-		ownerNode := uf.Bundle[owner]
+	for _, owner := range SortedDeployKeys(uf.Fleet) {
+		ownerNode := uf.Fleet[owner]
 		for _, memberKey := range SortedMemberKeys(ownerNode.Members) {
 			memberNode := ownerNode.Members[memberKey]
 			if memberNode == nil {
@@ -168,7 +168,7 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 		}
 	}
 	for _, p := range pending {
-		if _, clash := uf.Bundle[p.key]; clash {
+		if _, clash := uf.Fleet[p.key]; clash {
 			return fmt.Errorf(
 				"peer name %q (declared under deploy %q) collides with an existing deploy/bed/peer entry — peer names must be globally unique; rename it",
 				p.key, p.owner)
@@ -181,7 +181,7 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 			disposable := true
 			node.Disposable = &disposable
 		}
-		uf.Bundle[p.key] = node
+		uf.Fleet[p.key] = node
 	}
 	return nil
 }
@@ -197,8 +197,8 @@ func ValidateMembers(uf *spec.UnifiedFile) error {
 	if uf == nil {
 		return nil
 	}
-	for _, owner := range SortedDeployKeys(uf.Bundle) {
-		node := uf.Bundle[owner]
+	for _, owner := range SortedDeployKeys(uf.Fleet) {
+		node := uf.Fleet[owner]
 		for _, memberKey := range SortedMemberKeys(node.Members) {
 			if err := spec.ValidateDeploymentName(memberKey, owner+" (peer)"); err != nil {
 				return err

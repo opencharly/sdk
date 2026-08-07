@@ -152,7 +152,7 @@ func ResolveBox(cfg *spec.Config, name string, calverTag string, dir string, opt
 	}
 
 	// Builder resolution flows through the ONE canonical function so it can't diverge across
-	// commands (build/generate/inspect via ResolveBox, `charly bundle add`'s synthetic host/VM
+	// commands (build/generate/inspect via ResolveBox, `charly fleet add`'s synthetic host/VM
 	// image, and the remote-ref fetch walk all call spec.ResolveEffectiveBuilder).
 	resolved.Builder = spec.ResolveEffectiveBuilder(cfg, name, resolved.Distro, resolved.Base, resolved.IsExternalBase, img.Builder)
 

@@ -9,7 +9,7 @@ import (
 // TestCollectEntities_NestedDecodeRoundTrip pins the yaml.v3 VALUE-node trap this kit exists to
 // avoid: decoding the discovered Value into a struct with a NESTED sub-mapping (a plugin candy's
 // `plugin:` block) must round-trip faithfully. The `*yaml.Node` form of the map decode silently
-// drops the nested struct (a plugin-bundle candy's plugin block came back nil); the value-node
+// drops the nested struct (a plugin-fleet candy's plugin block came back nil); the value-node
 // form this kit uses does not.
 func TestCollectEntities_NestedDecodeRoundTrip(t *testing.T) {
 	dir := t.TempDir()
