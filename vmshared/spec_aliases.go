@@ -26,7 +26,7 @@ type (
 	BoxConfig                = spec.BoxConfig
 	BuildStageContext        = spec.BuildStageContext
 	BuilderDef               = spec.BuilderDef
-	FleetNode               = spec.FleetNode
+	FleetNode                = spec.FleetNode
 	InstallContext           = spec.InstallContext
 	CacheMountDef            = spec.CacheMount
 	CandyArtifact            = spec.CandyArtifact

@@ -76,7 +76,7 @@ func VmDeployEntryKeys(dc *FleetConfig, deployName string) []string {
 	add(deployName)
 	// VmNameFromDeployName succeeds only for the prefixed "vm:<entity>" form; a
 	// plain-name deployName therefore takes the literal-key path only (no scan,
-	// so a non-prefixed name can never over-match unrelated fleetsverb).
+	// so a non-prefixed name can never over-match unrelated bundles).
 	if entity, perr := vmshared.VmNameFromDeployName(deployName); perr == nil {
 		for key, entry := range dc.Fleet {
 			if entry.From == entity {

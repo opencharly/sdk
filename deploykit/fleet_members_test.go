@@ -74,7 +74,7 @@ func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
 		t.Fatalf("TearDownMembers: %v", err)
 	}
 	want := [][]string{
-		spec.FleetDelArgv("alpha-host"),  // sorted first; non-pod → deploy del --assume-yes (unattended)
+		spec.FleetDelArgv("alpha-host"),   // sorted first; non-pod → deploy del --assume-yes (unattended)
 		{"remove", "zeta-pod", "--purge"}, // pod → remove --purge
 	}
 	if !reflect.DeepEqual(calls, want) {

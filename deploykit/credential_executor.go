@@ -11,7 +11,7 @@ import (
 
 // credential_executor.go — the ONE shared verb:credential-backed CredentialAccess (R3). A plugin
 // resolves/persists candy secrets by peer-dispatching verb:credential (candy/plugin-secrets) over
-// its own sdk.Executor.InvokeProvider; every consumer needs the SAME two RPC-backed ops fleetdverb into
+// its own sdk.Executor.InvokeProvider; every consumer needs the SAME two RPC-backed ops bundled into
 // a deploykit.CredentialAccess. This is that single abstraction, GENERAL (no per-caller shaping): it
 // takes only (ctx, *sdk.Executor) and returns a plain deploykit.CredentialAccess, so any deploy-time
 // plugin drops it in as-is.
@@ -39,7 +39,7 @@ type credentialViaExecReply struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// CredentialAccessViaExecutor fleetsverb verb:credential's resolve+set ops into a CredentialAccess,
+// CredentialAccessViaExecutor bundles verb:credential's resolve+set ops into a CredentialAccess,
 // driven over the given sdk.Executor's InvokeProvider (peer-dispatch to candy/plugin-secrets). Use
 // it anywhere a deploy-time plugin needs to resolve candy secret_requires:/secret_accepts: or an
 // enc passphrase (ResolveSecretForCandy / ResolveEncPassphrase / ResolveHookSecretEnv).

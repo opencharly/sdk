@@ -105,7 +105,7 @@ func EncPlanFor(boxName, instance, volume, scopeDir string) ([]spec.EncVolumePla
 // a guarantee (the exact class of latent bug candy/plugin-pod/remove_orchestration.go's
 // resolveSidecarNames hit and fixed the same way). A caller that might ever run
 // out-of-process loads dc itself via loaderkit.LoadHostFleetConfigViaExecutor (over the
-// executor reverse channel — the former pod-config-load-fleet host seam was retired) and
+// executor reverse channel — the former pod-config-load-deploy host seam was retired) and
 // calls this instead — see candy/plugin-pod/enc_cmd.go.
 func EncPlanForConfig(dc *FleetConfig, boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
 	mounts, storagePath, err := LoadEncryptedVolumeFromConfig(dc, boxName, instance)

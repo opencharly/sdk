@@ -1,6 +1,6 @@
 package deploykit
 
-// localpkg.go — build a fleetdverb package SOURCE dir on the host and install the
+// localpkg.go — build a bundled package SOURCE dir on the host and install the
 // resulting package FILE onto a deploy target, fully driven by the package
 // format's `local_pkg:` config (the embedded build vocabulary (charly/charly.yml)
 // `distro.<name>.format.<fmt>.local_pkg`). Relocated from charly core (W3): every
@@ -114,7 +114,7 @@ type localPkgInstallContext struct {
 // actually contains a `PKGBUILD` file:
 //
 //  1. absolute ref → used verbatim.
-//  2. <candyDir>/<ref>     — the source fleetdverb alongside the candy.
+//  2. <candyDir>/<ref>     — the source bundled alongside the candy.
 //  3. <projectDir>/<ref>   — relative to the deploy project dir (os.Getwd).
 //  4. walk UP from projectDir, trying <ancestor>/<ref> at each level — this is
 //     the operator path: `charly -C box/cachyos deploy add cachyos-gpu` has a

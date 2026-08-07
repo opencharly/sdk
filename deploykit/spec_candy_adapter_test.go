@@ -22,7 +22,7 @@ import (
 func TestSpecCandyAdapter_HasInit_PerInitLookup(t *testing.T) {
 	m := spec.CandyModel{
 		Name: "qemu-guest-agent-like",
-		// ServiceFiles empty (no fleetdverb *.service file — the unit ships in the OS
+		// ServiceFiles empty (no bundled *.service file — the unit ships in the OS
 		// package), Service carries ONE packaged-only entry — the exact shape that
 		// fooled the old fake.
 		Service: []spec.CandyService{{Name: "qemu-guest-agent", UsePackaged: "qemu-guest-agent.service"}},

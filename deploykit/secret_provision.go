@@ -29,7 +29,7 @@ type CredentialResolver func(envVar, service, key, defaultVal string) (value, so
 // charly-core's CredentialStore.Set(service, key, value) error.
 type CredentialWriter func(service, key, value string) error
 
-// CredentialAccess fleetsverb the two credential-store operations this file's orchestration
+// CredentialAccess bundles the two credential-store operations this file's orchestration
 // needs. Both fields are required by ProvisionPodmanSecrets/GenerateAndStoreSecret; only
 // Resolve is used by ResolveSecretValue/CollectCandySecretAccepts/ResolveHookSecretEnv.
 type CredentialAccess struct {

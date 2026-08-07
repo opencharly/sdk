@@ -49,7 +49,7 @@ func TestResolveLocalPkgDir(t *testing.T) {
 	if err := os.MkdirAll(nestedProject, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// A candy dir that fleetsverb its OWN PKGBUILD (candy-relative branch).
+	// A candy dir that bundles its OWN PKGBUILD (candy-relative branch).
 	candyWithPkg := filepath.Join(root, "candy", "mytool")
 	if err := os.MkdirAll(filepath.Join(candyWithPkg, "arch"), 0o755); err != nil {
 		t.Fatal(err)

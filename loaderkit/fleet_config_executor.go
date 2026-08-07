@@ -3,7 +3,7 @@ package loaderkit
 // fleet_config_executor.go — the cycle-free plugin-side replacement for the deleted
 // sdk/deploykit/load_fleet_config_seam.go (#55 coneC Unit C2). The former
 // deploykit.LoadFleetConfigViaSeam reached the per-host deploy overlay by calling BACK to
-// charly's "pod-config-load-fleet" HostBuild host handler (which called
+// charly's "pod-config-load-deploy" HostBuild host handler (which called
 // deploykit.LoadFleetConfig — the DeployStateHost-seam path). That seam is now retired:
 // loaderkit already imports deploykit (fleet_load.go et al.), so a helper LIVING IN loaderkit
 // can call LoadUnifiedViaExecutor + deploykit.ProjectFleetConfig DIRECTLY — cycle-free — and a

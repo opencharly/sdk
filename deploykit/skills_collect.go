@@ -13,7 +13,7 @@ import (
 // uf.PluginKinds["skill"] map, mirroring the Config.Sidecar precedent). CollectSkills is a PURE
 // walk producing the []spec.LabelSkillEntry the label carries — an image is SELF-DESCRIBING: its
 // composed candies' skill definitions are readable directly via `charly box labels` /
-// `charly bundle from-box`, with no external fetch (superseding the vestigial ai.opencharly.skill
+// `charly fleet from-box`, with no external fetch (superseding the vestigial ai.opencharly.skill
 // doc-pointer URL).
 //
 // Ownership: a skill's `owner` field names the candy that owns it. Only skills owned by a candy

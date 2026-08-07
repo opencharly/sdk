@@ -23,7 +23,7 @@ func ProjectFleetConfig(uf *spec.UnifiedFile) *FleetConfig {
 	}
 	return &FleetConfig{
 		Provides: uf.Provides,
-		Fleet:   uf.Fleet,
+		Fleet:    uf.Fleet,
 		Sidecar:  sidecars,
 	}
 }

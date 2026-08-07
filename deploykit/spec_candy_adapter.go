@@ -217,7 +217,7 @@ func (a *specCandyAdapter) TerminalProfiles() map[string]spec.TerminalProfile {
 	return a.v.TerminalProfiles
 }
 
-// LocalPkgFormats returns the sorted list of package formats with a fleetdverb local source
+// LocalPkgFormats returns the sorted list of package formats with a bundled local source
 // (localpkg: map keys) — the envelope carries the same map CollectLocalPkg needs.
 func (a *specCandyAdapter) LocalPkgFormats() []string {
 	if len(a.m.LocalPkg) == 0 {

@@ -24,7 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadSeams fleetsverb every registry-coupled or standing-core-resident step
+// LoadSeams bundles every registry-coupled or standing-core-resident step
 // LoadUnified's orchestration calls out to. A nil field panics on use — the host
 // wrapper (charly's LoadUnified, loader_threaded.go) is the SOLE constructor and always populates every
 // field before calling LoadUnified.

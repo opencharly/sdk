@@ -40,7 +40,7 @@ type Root struct {
 //
 // Value is a VALUE yaml.Node, not a pointer: yaml.v3's decode into
 // `map[string]map[string]*yaml.Node` silently drops nested structs when the caller then Decodes
-// the leaf (a plugin-bundle candy's `plugin:` block came back nil), while the value-node decode
+// the leaf (a plugin-fleet candy's `plugin:` block came back nil), while the value-node decode
 // round-trips faithfully. The value-node form is what the original plugin-docs walk used.
 type Entity struct {
 	Name      string    // the top-level node name (as authored)

@@ -20,7 +20,7 @@ func TestMaterialize_NotFoundPolicy(t *testing.T) {
 		threaded   spec.Threaded // recognition snapshot (clause D)
 		inConnect  bool          // InKindConnectPass result
 		connectErr error         // DeclaredKindConnectError result
-		wantFleet bool          // BuildFleetEntity must have been called
+		wantFleet  bool          // BuildFleetEntity must have been called
 		wantErr    bool
 	}{
 		{
@@ -35,9 +35,9 @@ func TestMaterialize_NotFoundPolicy(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name:       "recognized deploy substrate → routes to fleet builder",
-			disc:       "exampledeploy",
-			threaded:   spec.Threaded{DeploySubstrates: map[string]bool{"exampledeploy": true}},
+			name:      "recognized deploy substrate → routes to fleet builder",
+			disc:      "exampledeploy",
+			threaded:  spec.Threaded{DeploySubstrates: map[string]bool{"exampledeploy": true}},
 			wantFleet: true,
 		},
 		{
