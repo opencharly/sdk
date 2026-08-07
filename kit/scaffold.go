@@ -90,7 +90,43 @@ func ScaffoldCandy(dir, name, calver string) error {
         plan:
             - check: the /etc/os-release marker exists (replace with a real check)
               file: /etc/os-release
-`, name, name, calver, name, name)
+
+# ---- HARNESS SKILL (optional) ----
+# Declare this candy's harness skill as a sibling skill: node (FULL inline definition: every
+# metadata field + the markdown content). The charly marketplace generator (charly marketplace
+# generate) emits plugins/<family>/skills/<name>/SKILL.md from it, and the composed image's
+# ai.opencharly.skill label carries it (readable via charly box labels). family must be
+# declared in the repo's marketplace entity (candy/charly-marketplace/charly.yml); owner is
+# this candy's name.
+#   %s-skill:
+#       skill:
+#           name: %s
+#           family: <marketplace-family>
+#           owner: %s
+#           description: one-line "use when …" dispatch keyword
+#           content: |
+#               # %s
+#               …markdown body…
+#
+# ---- MARKETPLACE FAMILY (once per repo, in candy/charly-marketplace/charly.yml) ----
+#   marketplace:
+#       marketplace:
+#           name: charly-plugins
+#           version: 3.2.0
+#           description: The opencharly plugin marketplace.
+#           families:
+#               <family>: {category: images|commands|kind|development, description: …, keywords: […], profiles: [developer|user|container]}
+#
+# ---- HARNESS HOOKS (in candy/charly-hooks/charly.yml) ----
+#   <hook-name>:
+#       hook:
+#           name: <hook-name>.sh
+#           trigger: PreToolUse
+#           matcher: Bash
+#           content: |
+#               #!/usr/bin/env bash
+#               …script…
+`, name, name, calver, name, name, name, name, name, name)
 	if err := os.WriteFile(candyYml, []byte(candyContent), 0644); err != nil {
 		return fmt.Errorf("creating %s: %w", spec.UnifiedFileName, err)
 	}

@@ -3,8 +3,6 @@ package deploykit
 import (
 	"fmt"
 	"maps"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -181,6 +179,9 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 
 	// Shell-init manifest.
 	meta.Shell = CollectShell(g.Config, g.Candies, boxName)
+
+	// Skills: the composed candies' skill definitions (ai.opencharly.skills).
+	meta.Skills = CollectSkills(g.Config, g.Candies, boxName)
 
 	// Init system label: active init system name + per-init service list.
 	if g.InitConfig != nil {
@@ -379,12 +380,6 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 			meta.EnvCandy = merged.Vars
 		}
 		meta.PathAppend = merged.PathAppend
-	}
-
-	// Skills documentation URL.
-	skillPath := filepath.Join(g.Dir, "plugins", "charly-images", "skills", boxName, "SKILL.md")
-	if _, err := os.Stat(skillPath); err == nil {
-		meta.Skill = "https://github.com/opencharly/charly-plugins/blob/main/charly-images/skills/" + boxName + "/SKILL.md"
 	}
 
 	// Status + info: worst-of status + first-line info parts.
