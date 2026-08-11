@@ -4,10 +4,12 @@ package kit
 // RELOCATED to the spec/container fabric slice (#55 coneB build-render cone, Class A —
 // github.com/opencharly/spec/container/box_metadata_coneb.go). ExtractMetadata + the InspectLabels
 // testability var now live there; this file re-exports each so every existing kit.ExtractMetadata /
-// kit.InspectLabels call site (charly core's check harness, build_overlay.go, capabilities.go,
-// status_collector.go, k8s_deploy_preresolve.go, service.go, start.go + the candies) is unchanged.
-// New consumers reference spec/container directly. The R3 duplicate in sdk/deploykit/read_labels.go
-// is likewise collapsed to a re-export of the same canonical home (one source, R3).
+// kit.InspectLabels call site (the candies — plugin-substrate reads kit.ExtractMetadata) is
+// unchanged. charly core no longer reads base-image labels (K3-W2 removed the read from
+// charly/build_overlay.go); the candies that consume deploykit.ExtractMetadata are listed in the
+// sibling shim sdk/deploykit/read_labels.go. New consumers reference spec/container directly. The
+// R3 duplicate in sdk/deploykit/read_labels.go is likewise collapsed to a re-export of the same
+// canonical home (one source, R3).
 //
 // Testability: override container.InspectLabels (the var container.ExtractMetadata reads) to stub
 // label reads in tests of the decode logic; the kit.InspectLabels re-export var is a value-copy that

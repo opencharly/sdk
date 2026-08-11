@@ -131,7 +131,7 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 
 	// 7. Reboot: the candy manifest `reboot: true`. Emitted LAST so the reboot
 	// follows every install step of this candy. Only the vm deploy acts
-	// on it (the host's rebootVenueAndWait reboots the guest + waits); OCI/pod/k8s skip it (no machine
+	// on it (the host's rebootVenueAndWait reboots the guest + waits); OCI/pod/kubernetes skip it (no machine
 	// at build time); the local deploy target skips + warns (never reboots the
 	// operator host unattended). See RebootStep.
 	if layer.Reboot() {
@@ -165,7 +165,7 @@ func CompileApkStep(layer CandyModel) InstallStep {
 // same handle compileServiceSteps reads) as the two anchors the emit-time
 // walk-up search uses to locate the PKGBUILD. Each DeployTarget decides whether
 // to build+install (localpkg-capable host/guest), skip (image build, non-pac
-// targets, android, k8s).
+// targets, android, kubernetes).
 //
 // The localpkg mechanism is fully config-driven: the format's `local_pkg:`
 // block (resolved here via DistroDef.LocalPkgFormat, the SAME DistroDef the

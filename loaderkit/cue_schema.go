@@ -46,15 +46,15 @@ import (
 // node carrying base:/from: is typed "box" for per-entity validation. cueKindDefs was never
 // bijective with the kind keywords, so an internal key is fine.
 var cueKindDefs = map[string]string{
-	"android": "#Android",
-	"box":     "#Box",
-	"candy":   "#Candy",
-	"check":   "#Check",
-	"deploy":  "#Deploy",
-	"k8s":     "#K8s",
-	"local":   "#Local",
-	"pod":     "#Pod",
-	"vm":      "#Vm",
+	"android":    "#Android",
+	"box":        "#Box",
+	"candy":      "#Candy",
+	"check":      "#Check",
+	"deploy":     "#Deploy",
+	"kubernetes": "#Kubernetes",
+	"local":      "#Local",
+	"pod":        "#Pod",
+	"vm":         "#Vm",
 }
 
 // cueSchemaCtx is the loader's process-wide CUE context. Every ingest/build/Unify call in this

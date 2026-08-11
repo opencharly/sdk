@@ -18,7 +18,7 @@ func canonicalTraits(word string) *spec.DeployTraits {
 		return &spec.DeployTraits{Venue: "ssh", MachineVenue: true, ExclusiveVenue: true}
 	case "local":
 		return &spec.DeployTraits{Venue: "shell", MachineVenue: true}
-	case "k8s":
+	case "kubernetes":
 		return &spec.DeployTraits{Venue: "shell", ImageContext: true, LeafOnly: true}
 	case "android":
 		return &spec.DeployTraits{Venue: "parent"}
@@ -35,7 +35,7 @@ func TestDescentFromTraits_TransportsByTraits(t *testing.T) {
 	}{
 		{"pod", "container-exec", false},
 		{"vm", "ssh", false},
-		{"k8s", "reject", false},
+		{"kubernetes", "reject", false},
 		{"local", "none", true},
 		{"android", "none", false},
 		{"", "container-exec", false}, // targetless group → external-in-place default
@@ -62,8 +62,8 @@ func TestDescentFromTraits_CopiesDeclaredTraits(t *testing.T) {
 	if v := DescentFromTraits(canonicalTraits("vm")); v.Venue != "ssh" || !v.MachineVenue || !v.ExclusiveVenue {
 		t.Errorf("vm traits not copied onto descent: %+v", v)
 	}
-	if k := DescentFromTraits(canonicalTraits("k8s")); !k.LeafOnly || k.Venue != "shell" {
-		t.Errorf("k8s traits not copied onto descent: %+v", k)
+	if k := DescentFromTraits(canonicalTraits("kubernetes")); !k.LeafOnly || k.Venue != "shell" {
+		t.Errorf("kubernetes traits not copied onto descent: %+v", k)
 	}
 }
 

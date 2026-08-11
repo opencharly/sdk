@@ -135,7 +135,7 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	pn := spec.ParsedNode{Name: name, Disc: disc, Body: body}
 	for _, c := range memberPairs {
 		if !resourceKindSet[disc] && !t.StructuralKinds[disc] {
-			return spec.ParsedNode{}, fmt.Errorf("node %q (kind %q): child %q is not allowed — only deployable kinds (pod/vm/k8s/local/android/group) or an external structural plugin kind nest sub-entity members; an old-shape data/step child must be migrated (run: charly migrate)", name, disc, c.k.Value)
+			return spec.ParsedNode{}, fmt.Errorf("node %q (kind %q): child %q is not allowed — only deployable kinds (pod/vm/kubernetes/local/android/group) or an external structural plugin kind nest sub-entity members; an old-shape data/step child must be migrated (run: charly migrate)", name, disc, c.k.Value)
 		}
 		child, err := parseNode(c.k.Value, c.v, true, t)
 		if err != nil {

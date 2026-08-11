@@ -148,7 +148,7 @@ func ResolveCheckVarsRuntime(meta *spec.BoxMetadata, deploy *vmshared.FleetNode,
 	// check seeds it from the kind:vm ENTITY name instead (candy/plugin-check's
 	// pluginCheckLiveVM), and every bed deploying that entity SHARES it, so a
 	// cluster: "${DEPLOY_NAME}" in a candy plan names another deployment's context
-	// or none at all. A deploy needing a specific cluster names its own kind:k8s
+	// or none at all. A deploy needing a specific cluster names its own kind:kubernetes
 	// profile by literal, and a generic candy probes its control plane in-venue
 	// (see the k3s-server candy).
 	if deployName != "" {

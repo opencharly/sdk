@@ -64,7 +64,7 @@ func WalkDeploymentTree(rootPath string, root *FleetNode, parentExec DeployExecu
 
 // ClassifyTarget normalizes the Target field for dispatch. Empty Target
 // falls back to "pod" (the default for named deploys); otherwise Target is
-// the canonical source of truth (pod|vm|k8s|local|android — set from the
+// the canonical source of truth (pod|vm|kubernetes|local|android — set from the
 // node-form kind by fleetTargetForDisc; no name-prefix heuristic).
 func ClassifyTarget(node *FleetNode) string {
 	if node == nil || node.Target == "" {

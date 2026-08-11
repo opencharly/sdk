@@ -9,7 +9,7 @@ import (
 
 // deploy_nodeform.go — the canonical FleetNode → compact node-form deploy serializer. MarshalFleetNode
 // emits the COMPACT name-first node the per-host overlay (~/.config/charly/charly.yml) is read back in:
-// the kind discriminator (pod/vm/k8s/local/android/group/fleet) carries the FULL body inline (scalars,
+// the kind discriminator (pod/vm/kubernetes/local/android/group/fleet) carries the FULL body inline (scalars,
 // collections, and the `plan:` step list), and only nested/peer members become child nodes (their names
 // are load-bearing). Plan steps are RESUGARED (the internal plugin/plugin_input pair back to the authored
 // `<word>: <input>` sugar, collapsing a single-primary map to the scalar shorthand) so the written file
@@ -28,7 +28,7 @@ import (
 // fleetCrossRefKeys are the fleet-value scalar keys that NAME another top-level
 // entity (the key equals the referenced entity's kind).
 var fleetCrossRefKeys = map[string]bool{
-	"box": true, "vm": true, "k8s": true, "local": true, "android": true,
+	"box": true, "vm": true, "kubernetes": true, "local": true, "android": true,
 }
 
 // MarshalFleetNode emits a FleetNode as the compact name-first node-form the per-host
@@ -101,7 +101,7 @@ func MarshalFleetNode(node *spec.Deploy, primaries map[string]string) (*yaml.Nod
 
 // fleetDiscForEntity picks the node-form discriminator for a deploy/check entity
 // whose `target:` key is about to be dropped. A same-kind cross-ref (box/vm/local/
-// k8s/android) uses `fleet:` (buildFleetNode infers the workload target from it);
+// kubernetes/android) uses `fleet:` (buildFleetNode infers the workload target from it);
 // the SAVE path marshals FleetNode.Target, so the disc is that target — an empty
 // target with a POD-WORKLOAD indicator (image/resolved_image/resolved_port/port/
 // volume_project_checked) is a POD (the DEFAULT substrate), and an empty target with
@@ -137,7 +137,7 @@ func fleetDiscForEntity(body *yaml.Node) string {
 		}
 		return "group"
 	default:
-		return t // pod | vm | k8s | local | android
+		return t // pod | vm | kubernetes | local | android
 	}
 }
 

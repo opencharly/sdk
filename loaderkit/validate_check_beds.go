@@ -39,7 +39,7 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 		}
 		// Bed-target validity is DATA-DRIVEN from the substrate's declared #DeployTraits
 		// (candy/plugin-substrate), never a per-substrate-word switch (the boundary-law incomplete-seam
-		// gate, task #22): bed_target marks pod/vm/local/android as valid bed targets; k8s
+		// gate, task #22): bed_target marks pod/vm/local/android as valid bed targets; kubernetes
 		// (bed_target:false) and unknown words fall to the external/unsupported arm. image_backed
 		// distinguishes pod's box: cross-ref (enforced elsewhere) from the template-backed
 		// vm/local/android from: cross-ref.
@@ -69,7 +69,7 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 			// the deployment via the E3b reverse channel; it composes its candies via add_candy: and
 			// carries no from:/image: cross-ref to validate here. Recognized via the EXACT host
 			// isExternalDeploySubstrate DATA snapshot (Threaded.ExternalDeploySubstrates, filled by the
-			// host's own predicate) — NOT a reconstruction, and NOT a core in-process substrate (k8s has
+			// host's own predicate) — NOT a reconstruction, and NOT a core in-process substrate (kubernetes has
 			// traits but bed_target:false, stays unsupported as a bed target).
 			if t.ExternalDeploySubstrates[node.Target] {
 				break

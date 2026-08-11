@@ -455,7 +455,7 @@ func TestClassifyNodeTarget(t *testing.T) {
 		want string
 	}{
 		{"node.Target wins", &FleetNode{Target: "vm"}, "anything", "vm"},
-		{"nested node.Target wins over leaf", &FleetNode{Target: "k8s"}, "stack.web", "k8s"},
+		{"nested node.Target wins over leaf", &FleetNode{Target: "kubernetes"}, "stack.web", "kubernetes"},
 		{"nil node, literal host leaf -> local", nil, "host", "local"},
 		{"nil node, literal local leaf -> local", nil, "local", "local"},
 		{"nil node, nested host leaf -> local", nil, "stack.host", "local"},

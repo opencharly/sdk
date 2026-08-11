@@ -35,7 +35,7 @@ const scaffoldCharlyYAML = `# charly.yml — unified project root: the single fi
 # OVERRIDE it.
 #
 # Cross-kind name reuse is permitted — a single name (e.g. my-app) MAY exist
-# simultaneously as a candy, a box, a pod, a vm, a k8s, a local, AND a deploy
+# simultaneously as a candy, a box, a pod, a vm, a kubernetes, a local, AND a deploy
 # entry. charly verbs disambiguate by command context.
 
 version: __SCHEMA_VERSION__
