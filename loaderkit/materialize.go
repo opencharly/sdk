@@ -32,7 +32,7 @@ func Materialize(pn spec.ParsedNode, t spec.Threaded, seams spec.MaterializeSeam
 		return nil
 	}
 	// An external DEPLOY substrate word (e.g. `exampledeploy`) at a deploy's edge is not a KIND —
-	// it routes to the fleet builder, the same path the deploy-shape kinds (pod/vm/k8s/local/
+	// it routes to the fleet builder, the same path the deploy-shape kinds (pod/vm/kubernetes/local/
 	// android/group) take. Recognized via a connected OR pre-scanned deploy provider (t.DeploySubstrates,
 	// the Threaded snapshot), so the bed parses before the out-of-process provider connects.
 	if t.DeploySubstrates[pn.Disc] {

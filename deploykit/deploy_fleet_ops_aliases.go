@@ -16,7 +16,7 @@ var (
 	SplitDottedPath = spec.SplitDottedPath
 	// PathLeaf returns the last (tolerant) segment of a dotted deployment path.
 	PathLeaf = spec.PathLeaf
-	// ClassifyNodeTarget picks the pod|vm|k8s|local|android target discriminator for a node.
+	// ClassifyNodeTarget picks the pod|vm|kubernetes|local|android target discriminator for a node.
 	ClassifyNodeTarget = spec.ClassifyNodeTarget
 	// SortedNestedKeys returns a children map's keys in deterministic order.
 	SortedNestedKeys = spec.SortedNestedKeys

@@ -35,7 +35,7 @@ func FleetTargetForDisc(d string, t spec.Threaded) string {
 	if t.DeployTraits[d] == nil {
 		return "" // targetless (e.g. group — no own workload target)
 	}
-	return d // pod | vm | k8s | local | android | an external deploy substrate word
+	return d // pod | vm | kubernetes | local | android | an external deploy substrate word
 }
 
 // SetFleetCrossRef sets the deploy's cross-ref from a scalar discriminator value
@@ -56,7 +56,7 @@ func SetFleetCrossRef(dn *spec.FleetNode, disc, ref string, t spec.Threaded) {
 }
 
 // IsStandaloneResourceKind reports whether disc names one of the 5 substrate kinds
-// (pod/vm/k8s/local/android) — the kinds that are BOTH a standalone TEMPLATE (→ the typed
+// (pod/vm/kubernetes/local/android) — the kinds that are BOTH a standalone TEMPLATE (→ the typed
 // uf.Pod/uf.VM/… map) and a deploy (→ uf.Fleet). DATA-driven via t.DeployTraits — the SAME
 // kind-blind fact FleetTargetForDisc/SetFleetCrossRef resolve against — rather than a
 // hand-kept kind-word switch. group is a structural kind too but resolves false here — it
@@ -68,7 +68,7 @@ func IsStandaloneResourceKind(disc string, t spec.Threaded) bool {
 // FoldStandaloneTemplateReply folds candy/plugin-substrate's ECHOED template JSON into
 // acc.PluginKinds[disc][name] — the C2-substrate TEMPLATE fold arm (the standalone counterpart of
 // runPluginKind's deploy fold into acc.Fleet). GENERIC by construction: no per-kind-word switch —
-// every standalone-template kind (vm/pod/k8s/local/android) folds into the SAME map[disc][name]
+// every standalone-template kind (vm/pod/kubernetes/local/android) folds into the SAME map[disc][name]
 // shape PluginKinds already uses for every other templated kind (distro/builder/init/sidecar/
 // resource/agent), so a new standalone-template kind needs no core edit here. disc is validated by
 // the caller (foldSubstrateKind only reaches here for a kind IsStandaloneResourceKind already

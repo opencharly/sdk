@@ -561,7 +561,7 @@ func CandyProvidedByBox(boxName string, boxes map[string]*buildkit.ResolvedBox, 
 // resolved DEPLOY candy order when the target is systemd (a host/vm MachineVenue compile). On a
 // systemd target the OS init is the one and only init system — every candy's `service:` entries
 // render as systemd units — so pulling in supervisord is wrong (it lands installed-but-unused, a
-// second init). Pod/k8s deploys and OCI image builds keep supervisord (it IS their init), so this
+// second init). Pod/kubernetes deploys and OCI image builds keep supervisord (it IS their init), so this
 // only affects host/vm deploys. Candies that `require: supervisord` purely for graph ordering are
 // unaffected at runtime — their services run under systemd regardless of whether the supervisord
 // package is present.

@@ -10,7 +10,7 @@ import (
 // loader-materialize / loader-*-validate reverse legs (K1-LOADER RELOCATION, Unit B/D). It exists
 // because spec.UnifiedFile.PluginKinds is tagged `json:"-"` ("Host-internal — never serialized"): a plain
 // json.Marshal of a spec.UnifiedFile SILENTLY DROPS every standalone-template + plugin-kind entity
-// (uf.PluginKinds[disc][name] — the map uf.VM()/Local()/Android()/Pod()/K8s() and the check-bed /
+// (uf.PluginKinds[disc][name] — the map uf.VM()/Local()/Android()/Pod()/Kubernetes() and the check-bed /
 // android / preempt validators all read). Host-side that never matters (charly.LoadUnified mutates
 // ONE spec.UnifiedFile in place, no serialization). But the PLUGIN-side witness (execLoaderExecutor) round-
 // trips the spec.UnifiedFile through HostBuild's []byte payload, so without this helper the plugin-side uf

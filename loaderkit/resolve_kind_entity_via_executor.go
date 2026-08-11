@@ -65,15 +65,15 @@ func ResolveVmEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir, name
 	return reply.Resolved, nil
 }
 
-// ResolveK8sEntityViaExecutor loads the project and resolves the named kind:k8s template entity via
-// candy/plugin-substrate's OpResolve leg — the plugin-side self-load twin of the deleted
-// "deploy-entity-resolve" seam's kind="k8s" branch.
-func ResolveK8sEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir, name string) (*spec.ResolvedK8s, error) {
-	body, err := resolveKindTemplateBodyViaExecutor(ctx, ex, dir, "k8s", name)
+// ResolveKubernetesEntityViaExecutor loads the project and resolves the named kind:kubernetes
+// template entity via candy/plugin-substrate's OpResolve leg — the plugin-side self-load twin of
+// the deleted "deploy-entity-resolve" seam's kind="kubernetes" branch.
+func ResolveKubernetesEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir, name string) (*spec.ResolvedKubernetes, error) {
+	body, err := resolveKindTemplateBodyViaExecutor(ctx, ex, dir, "kubernetes", name)
 	if err != nil {
 		return nil, err
 	}
-	params, err := json.Marshal(spec.SubstrateTemplateResolveRequest{K8s: &spec.K8sResolveInput{K8s: body}})
+	params, err := json.Marshal(spec.SubstrateTemplateResolveRequest{Kubernetes: &spec.KubernetesResolveInput{Kubernetes: body}})
 	if err != nil {
 		return nil, err
 	}
@@ -81,10 +81,10 @@ func ResolveK8sEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir, nam
 	if err != nil {
 		return nil, err
 	}
-	var reply spec.K8sResolveReply
+	var reply spec.KubernetesResolveReply
 	if len(res) > 0 {
 		if err := json.Unmarshal(res, &reply); err != nil {
-			return nil, fmt.Errorf("k8s entity %q: decode resolve reply: %w", name, err)
+			return nil, fmt.Errorf("kubernetes entity %q: decode resolve reply: %w", name, err)
 		}
 	}
 	return reply.Resolved, nil

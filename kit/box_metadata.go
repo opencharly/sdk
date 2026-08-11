@@ -5,7 +5,7 @@ package kit
 // github.com/opencharly/spec/container/box_metadata_coneb.go). ExtractMetadata + the InspectLabels
 // testability var now live there; this file re-exports each so every existing kit.ExtractMetadata /
 // kit.InspectLabels call site (charly core's check harness, build_overlay.go, capabilities.go,
-// status_collector.go, k8s_deploy_preresolve.go, service.go, start.go + the candies) is unchanged.
+// status_collector.go, service.go, start.go + the candies) is unchanged.
 // New consumers reference spec/container directly. The R3 duplicate in sdk/deploykit/read_labels.go
 // is likewise collapsed to a re-export of the same canonical home (one source, R3).
 //

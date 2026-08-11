@@ -33,7 +33,7 @@ func TestBedVmDomains(t *testing.T) {
 	// Group with a vm member: the member's domain is keyed by the MEMBER KEY.
 	group := spec.FleetNode{Target: "group", Members: map[string]*spec.FleetNode{
 		"check-k8s-deploy-cluster":  {Target: "vm", From: "k3s-vm", Descent: vmDescent},
-		"check-k8s-deploy-workload": {Target: "k8s", Descent: &spec.DescentDescriptor{LeafOnly: true}},
+		"check-k8s-deploy-workload": {Target: "kubernetes", Descent: &spec.DescentDescriptor{LeafOnly: true}},
 	}}
 	if got := BedVmDomains("check-k8s-deploy", group); !reflect.DeepEqual(got, []string{"charly-check-k8s-deploy-cluster"}) {
 		t.Fatalf("group with a vm member: got %v, want [charly-check-k8s-deploy-cluster] (member-key domain)", got)

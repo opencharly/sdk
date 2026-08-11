@@ -98,7 +98,7 @@ func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error
 	// inference from a cross-ref). group:/host: are targetless venues.
 	dn.Target = FleetTargetForDisc(pn.Disc, t)
 	// A scalar discriminator value (`vm: pg-vm` / `pod: img`) is the deploy's cross-ref: pod →
-	// the image it runs; vm/k8s/local/android → the same-kind template it inherits (`from:`).
+	// the image it runs; vm/kubernetes/local/android → the same-kind template it inherits (`from:`).
 	dv, err := discValue(pn)
 	if err != nil {
 		return nil, err
@@ -135,12 +135,12 @@ func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error
 // decode (R3). Every pn.Children entry is an entity child by construction (the parse-time desugar
 // already separates step/data children into the plan/body fields before a spec.ParsedNode ever
 // reaches here — see charly/node_parse.go), so no discClass filter is needed. A non-resource
-// entity child is a hard error (deploy/resource children must be pod/vm/k8s/local/android/group).
+// entity child is a hard error (deploy/resource children must be pod/vm/kubernetes/local/android/group).
 func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) (map[string]*spec.FleetNode, error) {
 	var out map[string]*spec.FleetNode
 	for _, rk := range pn.Children {
 		if !IsResourceDisc(rk.Disc, t) {
-			return nil, fmt.Errorf("node %q: a %q child %q is not a resource member (deploy/resource children must be pod/vm/k8s/local/android)", pn.Name, rk.Disc, rk.Name)
+			return nil, fmt.Errorf("node %q: a %q child %q is not a resource member (deploy/resource children must be pod/vm/kubernetes/local/android)", pn.Name, rk.Disc, rk.Name)
 		}
 		member, err := BuildFleetNode(*rk, t)
 		if err != nil {
