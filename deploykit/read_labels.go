@@ -6,9 +6,10 @@ package deploykit
 // github.com/opencharly/spec/container/box_metadata_coneb.go). The former deploykit ExtractMetadata
 // body — an R3 DUPLICATE of kit/box_metadata.go's — is DELETED; one canonical home (R3
 // single-source). This file re-exports ExtractMetadata + InspectLabels so every existing
-// deploykit.ExtractMetadata / deploykit.InspectLabels call site (charly core's build_overlay.go,
-// host_build_pod_config_seams.go, init_def_label_test.go; candy/plugin-deploy-pod) is unchanged.
-// New consumers reference spec/container directly.
+// deploykit.ExtractMetadata / deploykit.InspectLabels call site (the candies — plugin-check,
+// plugin-deploy-pod, plugin-kube, plugin-pod) is unchanged. charly core no longer reads
+// base-image labels (K3-W2); kit's own re-export (sdk/kit/box_metadata.go) names its single
+// candy consumer. New consumers reference spec/container directly.
 //
 // Testability: override container.InspectLabels (the var container.ExtractMetadata reads) to stub
 // label reads in tests of the decode logic; the deploykit.InspectLabels re-export var is a
