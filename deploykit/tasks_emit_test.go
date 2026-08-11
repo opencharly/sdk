@@ -303,6 +303,12 @@ func TestEmitDownload_TarGz(t *testing.T) {
 	if !strings.Contains(out, `tar -xzf "$__c" -C /usr/local/bin app`) {
 		t.Errorf("missing tar -xzf from cache file with include filter:\n%s", out)
 	}
+	// The dest dir is created first (mkdir -p), so a download to a
+	// not-yet-existing directory (e.g. /opt/agentteams) works — the tar -C
+	// target must exist before tar runs. Matches `copy:`'s auto-create.
+	if !strings.Contains(out, `mkdir -p /usr/local/bin && tar -xzf "$__c"`) {
+		t.Errorf("download must mkdir -p the extract dest before tar:\n%s", out)
+	}
 	if !strings.Contains(out, "BUILD_ARCH=$(uname -m)") {
 		t.Errorf("should set BUILD_ARCH from uname:\n%s", out)
 	}
@@ -404,6 +410,24 @@ func TestEmitDownload_DownloadsCacheOwnership(t *testing.T) {
 	}
 	if strings.Contains(out, "charly-tmp-downloads-uid") {
 		t.Errorf("root stage must not get a uid-scoped cache id:\n%s", out)
+	}
+}
+
+// TestEmitDownload_NoneCreatesParentDir: extract:none's dest is a FILE (e.g.
+// /usr/local/bin/uv), so the download creates the parent dir (dirname), not the
+// dest itself — a download to a not-yet-existing directory tree works.
+func TestEmitDownload_NoneCreatesParentDir(t *testing.T) {
+	var b strings.Builder
+	err := EmitDownload(&b,
+		spec.Op{Download: "https://example.com/uv", Extract: "none", To: "/usr/local/bin/uv"},
+		testResolvedBox(),
+	)
+	if err != nil {
+		t.Fatalf("EmitDownload: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, `mkdir -p $(dirname /usr/local/bin/uv) && cp -f "$__c" /usr/local/bin/uv`) {
+		t.Errorf("extract:none must mkdir -p the parent dir before cp:\n%s", out)
 	}
 }
 

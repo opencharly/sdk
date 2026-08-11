@@ -276,17 +276,17 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 	var extractCmd string
 	switch extract {
 	case "tar.gz":
-		extractCmd = fmt.Sprintf(`tar -xzf "$__c"%s -C %s %s`, stripFlag, dest, strings.Join(t.ExtractInclude, " "))
+		extractCmd = fmt.Sprintf(`mkdir -p %s && tar -xzf "$__c"%s -C %s %s`, dest, stripFlag, dest, strings.Join(t.ExtractInclude, " "))
 	case "tar.xz":
-		extractCmd = fmt.Sprintf(`tar -xJf "$__c"%s -C %s %s`, stripFlag, dest, strings.Join(t.ExtractInclude, " "))
+		extractCmd = fmt.Sprintf(`mkdir -p %s && tar -xJf "$__c"%s -C %s %s`, dest, stripFlag, dest, strings.Join(t.ExtractInclude, " "))
 	case "tar.zst":
-		extractCmd = fmt.Sprintf(`tar --zstd -xf "$__c"%s -C %s %s`, stripFlag, dest, strings.Join(t.ExtractInclude, " "))
+		extractCmd = fmt.Sprintf(`mkdir -p %s && tar --zstd -xf "$__c"%s -C %s %s`, dest, stripFlag, dest, strings.Join(t.ExtractInclude, " "))
 	case "zip":
-		extractCmd = fmt.Sprintf(`unzip -o "$__c" -d %s`, dest)
+		extractCmd = fmt.Sprintf(`mkdir -p %s && unzip -o "$__c" -d %s`, dest, dest)
 	case "sh":
 		extractCmd = fmt.Sprintf(`%s sh "$__c"`, envForSh.String())
 	case "none":
-		extractCmd = fmt.Sprintf(`cp -f "$__c" %s`, dest)
+		extractCmd = fmt.Sprintf(`mkdir -p $(dirname %s) && cp -f "$__c" %s`, dest, dest)
 	default:
 		return fmt.Errorf("download %q: unknown extract %q", url, extract)
 	}
