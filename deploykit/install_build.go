@@ -97,6 +97,16 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 		plan.Steps = append(plan.Steps, pkgStep)
 	}
 
+	// 2.75. `extract:` entries — materialized onto a MACHINE venue (target:local /
+	// target:vm), where the built image filesystem is never used. Emitted BEFORE the
+	// candy's tasks, matching the image build where the extract COPY --from directives
+	// land before WriteCandySteps (generate.go: EmitBuilderArtifacts → EmitExtractedFiles
+	// → WriteCandySteps): a task that consumes an extracted binary finds it in place.
+	// The OCI/pod targets emit the Containerfile extract stages directly and never see
+	// these steps (CompileExtractSteps returns nil unless hostCtx.MachineVenue).
+	extractSteps := CompileExtractSteps(layer, hostCtx)
+	plan.Steps = append(plan.Steps, extractSteps...)
+
 	// 3. The install timeline: the candy plan's build/deploy-context run: steps,
 	// lowered into typed install steps (or generic OpSteps).
 	taskSteps, err := CompileOpSteps(ctx, ex, layer, img)
@@ -204,6 +214,36 @@ func CompileLocalPkgStep(layer CandyModel, img *ResolvedBox, _ HostContext) Inst
 		Format:      fmtName,
 		LocalPkg:    lp,
 	}
+}
+
+// CompileExtractSteps emits one ExtractStep per candy `extract:` entry, but ONLY for
+// MACHINE venues (hostCtx.MachineVenue) — a target:local / target:vm deploy where the
+// built image filesystem is never used and the install plan executes over the venue's
+// own filesystem. The OCI/pod targets emit the Containerfile extract stages directly
+// (EmitExtractStages / EmitExtractedFiles) and never see these steps.
+//
+// The step carries the candy's `extract:` triple verbatim (Source/Path/Dest) — the
+// executor replicates the COPY --from semantics on the venue (see RunVenueExtractStep).
+// Ownership is NOT handled here: the candy's own plan steps chown the extracted paths,
+// mirroring the build where COPY --chown is explicit per entry.
+func CompileExtractSteps(layer CandyModel, hostCtx HostContext) []InstallStep {
+	if !hostCtx.MachineVenue {
+		return nil
+	}
+	extracts := layer.Extract()
+	if len(extracts) == 0 {
+		return nil
+	}
+	out := make([]InstallStep, 0, len(extracts))
+	for _, e := range extracts {
+		out = append(out, &ExtractStep{
+			Source:    e.Source,
+			Path:      e.Path,
+			Dest:      e.Dest,
+			CandyName: layer.GetName(),
+		})
+	}
+	return out
 }
 
 // MergePlan combines a list of per-candy plans into one whole-image

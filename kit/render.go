@@ -167,8 +167,15 @@ func RenderOpCommand(op *spec.Op, ctxPath string, candyVars map[string]string) (
 		if mode == "" {
 			mode = "0644"
 		}
-		return fmt.Sprintf("install -m%s /dev/stdin %s <<'CHARLY_WRITE'\n%s\nCHARLY_WRITE",
-			mode, ShDoubleQuote(op.Write), op.Content), true
+		// Create the parent dir first: the container-venue write renders as a COPY
+		// (Docker auto-creates parents) and the download verb already emits
+		// `install -d` for its `to:` parent — the machine-venue write must match,
+		// or a write into a not-yet-existing dir (e.g. /etc/nginx/conf.d on a
+		// distro whose nginx package ships no conf.d) fails where the same candy
+		// succeeds on a container substrate. `install -d` is a no-op on an
+		// existing dir, so this is always safe.
+		return fmt.Sprintf("install -d -m0755 %s && install -m%s /dev/stdin %s <<'CHARLY_WRITE'\n%s\nCHARLY_WRITE",
+			ShDoubleQuote(filepath.Dir(op.Write)), mode, ShDoubleQuote(op.Write), op.Content), true
 	case op.Download != "":
 		return RenderDownloadScript(op, candyVars), true
 	case op.Plugin != "":

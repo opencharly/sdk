@@ -8,7 +8,7 @@ package kit
 //     ShellHook, ShellSnippet, ServicePackaged, ServiceCustom, RepoChange) the plugin
 //     renders + executes ITSELF via the F2 legs (RunSystem/RunUser/PutFile/GetFile), using
 //     the SHARED pure render helpers (render.go / profile.go).
-//   - HOST-ENGINE kinds (Builder, LocalPkgInstall, SystemPackages, an act-verb Op,
+//   - HOST-ENGINE kinds (Builder, LocalPkgInstall, SystemPackages, Extract, an act-verb Op,
 //     ExternalPlugin, and Reboot) the plugin CANNOT execute itself — they need in-core host
 //     machinery (podman/makepkg, the project DistroConfig, the provider registry, a nested
 //     broker, the deterministic boot_id reboot poll) — so it dials RunHostStep and the host
@@ -95,7 +95,7 @@ func WalkPlans(ctx context.Context, exec DeployExecutor, plans []spec.InstallPla
 func walkStep(ctx context.Context, exec DeployExecutor, step spec.InstallStepView) ([]spec.ReverseOp, error) {
 	switch step.Kind {
 	// ---- HOST-ENGINE kinds → RunHostStep (the host runs the in-core machinery). ----
-	case "Builder", "LocalPkgInstall", "SystemPackages":
+	case "Builder", "LocalPkgInstall", "SystemPackages", "Extract":
 		return exec.RunHostStep(ctx, step, nil)
 	case "ExternalPlugin":
 		return exec.RunHostStep(ctx, step, nil)

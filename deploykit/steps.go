@@ -49,6 +49,7 @@ type (
 	RebootStep          = spec.RebootStep
 	ExternalPluginStep  = spec.ExternalPluginStep
 	ExternalStep        = spec.ExternalStep
+	ExtractStep         = spec.ExtractStep
 )
 
 const (
@@ -82,6 +83,7 @@ const (
 	StepKindLocalPkgInstall = spec.StepKindLocalPkgInstall
 	StepKindReboot          = spec.StepKindReboot
 	StepKindExternalPlugin  = spec.StepKindExternalPlugin
+	StepKindExtract         = spec.StepKindExtract
 
 	ExternalStepKindPrefix = spec.ExternalStepKindPrefix
 
