@@ -16,7 +16,7 @@ func TestRenderOpCommand_Verbs(t *testing.T) {
 		wantHandle bool
 		wantSubstr string
 	}{
-		{"write", &spec.Op{Write: "/etc/marker", Mode: "0644", Content: "hi\n"}, true, "install -m0644 /dev/stdin"},
+		{"write", &spec.Op{Write: "/etc/marker", Mode: "0644", Content: "hi\n"}, true, `install -d -m0755 "/etc" && install -m0644 /dev/stdin "/etc/marker"`},
 		{"mkdir", &spec.Op{Mkdir: "/opt/x"}, true, "install -d -m0755"},
 		{"link", &spec.Op{Link: "/usr/local/bin/foo", Target: "/opt/foo"}, true, "ln -sfn"},
 		{"command", &spec.Op{Command: "echo hi"}, true, "echo hi"},

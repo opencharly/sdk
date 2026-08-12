@@ -447,6 +447,66 @@ func TestCompileServiceSteps_PerDistroFilter(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// CompileExtractSteps
+// ---------------------------------------------------------------------------
+
+// TestCompileExtractSteps_MachineVenueEmitsOneStepPerEntry proves a candy's `extract:` entries
+// lower to one ExtractStep each on a MACHINE venue compile (target:local / target:vm — where the
+// built image filesystem is never used and the content must be materialized onto the venue's own
+// filesystem), carrying Source/Path/Dest/CandyName verbatim. This is the step that FAILS without
+// the change: before CompileExtractSteps existed, a machine-venue deploy silently dropped every
+// `extract:` entry (the Containerfile COPY --from stages only ever ran at image build).
+func TestCompileExtractSteps_MachineVenueEmitsOneStepPerEntry(t *testing.T) {
+	layer := testCandy("agentteams-higress", spec.CandyModel{Extract: []spec.CandyExtract{
+		{Source: "higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:2.2.1", Path: "/usr/local/bin/envoy", Dest: "/usr/local/bin/envoy"},
+		{Source: "higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:2.2.1", Path: "/etc/istio", Dest: "/etc/istio"},
+	}}, spec.CandyView{})
+
+	steps := CompileExtractSteps(layer, HostContext{MachineVenue: true})
+	if len(steps) != 2 {
+		t.Fatalf("len(steps) = %d, want 2 (one ExtractStep per extract: entry); got %#v", len(steps), steps)
+	}
+	for i, want := range []struct{ src, path, dest string }{
+		{"higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:2.2.1", "/usr/local/bin/envoy", "/usr/local/bin/envoy"},
+		{"higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:2.2.1", "/etc/istio", "/etc/istio"},
+	} {
+		es, ok := steps[i].(*ExtractStep)
+		if !ok {
+			t.Fatalf("steps[%d] = %#v, want *ExtractStep", i, steps[i])
+		}
+		if es.Source != want.src || es.Path != want.path || es.Dest != want.dest {
+			t.Errorf("steps[%d] = %+v, want Source=%q Path=%q Dest=%q", i, es, want.src, want.path, want.dest)
+		}
+		if es.CandyName != "agentteams-higress" {
+			t.Errorf("steps[%d].CandyName = %q, want agentteams-higress (provenance for the ledger)", i, es.CandyName)
+		}
+	}
+}
+
+// TestCompileExtractSteps_ContainerCompileEmitsNothing proves the SAME candy yields NO extract
+// steps on a container-image compile (HostContext{} zero value, MachineVenue=false) — the OCI/pod
+// targets emit the Containerfile extract stages directly (EmitExtractStages / EmitExtractedFiles)
+// and must never see a machine-venue ExtractStep in their install plan.
+func TestCompileExtractSteps_ContainerCompileEmitsNothing(t *testing.T) {
+	layer := testCandy("agentteams-higress", spec.CandyModel{Extract: []spec.CandyExtract{
+		{Source: "higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:2.2.1", Path: "/usr/local/bin/envoy", Dest: "/usr/local/bin/envoy"},
+	}}, spec.CandyView{})
+
+	if steps := CompileExtractSteps(layer, HostContext{}); len(steps) != 0 {
+		t.Fatalf("len(steps) = %d, want 0 (container compile must not lower extract steps); got %#v", len(steps), steps)
+	}
+}
+
+// TestCompileExtractSteps_NoEntriesEmitsNothing proves the no-op path: a candy with no `extract:`
+// entries yields zero steps even on a machine venue (the common case — most candies never extract).
+func TestCompileExtractSteps_NoEntriesEmitsNothing(t *testing.T) {
+	layer := testCandy("plain", spec.CandyModel{}, spec.CandyView{})
+	if steps := CompileExtractSteps(layer, HostContext{MachineVenue: true}); len(steps) != 0 {
+		t.Fatalf("len(steps) = %d, want 0 (no extract: entries → no steps); got %#v", len(steps), steps)
+	}
+}
+
 // TestCompileServiceSteps_RendersCustomUnitViaSeamOnSystemd proves the render-service peer-dispatch
 // round trip (#55 W3 B4 — moved off HostBuild onto direct InvokeProvider): a custom exec: entry on
 // a MachineVenue compile with a resolved systemd ActiveInit InvokeProviders kind:init's OpResolve
