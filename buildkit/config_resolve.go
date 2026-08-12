@@ -85,6 +85,11 @@ func ResolveBox(cfg *spec.Config, name string, calverTag string, dir string, opt
 		ResolvedBox: spec.ResolvedBox{
 			Name:    name,
 			Version: img.Version,
+			// Box-authored OCI packaging (entrypoint/cmd baked into the image's OCI
+			// config — opt-in, empty by default). Box-authored, NOT inherited from
+			// base, exactly like env/security. Consumed by the Containerfile emitter.
+			Entrypoint: img.Entrypoint,
+			Cmd:        img.Cmd,
 			// boxes author no status; the effective rung (worst-of-candy-chain) is computed at
 			// generate time for the ai.opencharly.status label. resolveStatus("") always returned
 			// "testing" (charly's generate.go) — inlined directly since resolveStatus itself stays

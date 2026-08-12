@@ -139,6 +139,16 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 	}
 	fmt.Fprintf(b, "Image=%s\n", cfg.ImageRef)
 	fmt.Fprintf(b, "ContainerName=%s\n", name)
+	// Hostname parity with the direct-run path (--hostname <name>): the container's
+	// in-container hostname is its charly-network DNS name, so in-container
+	// `$HOSTNAME` resolves on the charly network and services that derive their
+	// reachable URL from the hostname (e.g. a controller children reach by
+	// container name) work identically under quadlet and direct-run deploys.
+	// NOTE: the quadlet [Container] key is `HostName` (camelCase) — quadlet maps
+	// it to podman's `--hostname`. The lowercase `Hostname=` is NOT a supported
+	// key and quadlet SKIPS the entire unit over it (no .service is generated),
+	// so `charly start` fails with "unit not found".
+	fmt.Fprintf(b, "HostName=%s\n", name)
 	workDir := ResolveWorkingDir(cfg.Volumes, cfg.BindMounts, cfg.Home, cfg.BoxName, cfg.Instance)
 	fmt.Fprintf(b, "WorkingDir=%s\n", workDir)
 	if cfg.PodName == "" {

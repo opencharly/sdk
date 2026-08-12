@@ -51,6 +51,8 @@ func ProjectResolvedBox(b *buildkit.ResolvedBox) spec.ResolvedBoxView {
 		Auto:                  b.Auto,
 		Network:               b.Network,
 		DataImage:             b.DataImage,
+		Entrypoint:            b.Entrypoint,
+		Cmd:                   b.Cmd,
 		IsExternalBase:        b.IsExternalBase,
 		FullTag:               b.FullTag,
 	}

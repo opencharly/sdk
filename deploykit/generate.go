@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,6 +143,25 @@ func (g *Generator) generateContainerfile(boxName string) error {
 		// leave as root — systemd handles user sessions
 	} else if !inUserMode || needsRootAfter {
 		fmt.Fprintf(&b, "USER %d\n", img.UID)
+	}
+
+	// Bake the box-authored OCI entrypoint/cmd into the image's OCI config. OPT-IN
+	// and empty by default: a normal charly image ships no baked command and the
+	// deploy-time init (supervisord/systemd) injects it. Declared ONLY when
+	// something spawns the image directly from its baked OCI config with no charly
+	// deploy in the loop (e.g. an embedded controller spawning child agents).
+	if len(img.Entrypoint) > 0 {
+		ep, _ := json.Marshal(img.Entrypoint)
+		fmt.Fprintf(&b, "ENTRYPOINT %s\n", ep)
+	}
+	if img.Cmd != nil {
+		cmd, _ := json.Marshal(img.Cmd)
+		fmt.Fprintf(&b, "CMD %s\n", cmd)
+	} else if len(img.Entrypoint) > 0 {
+		// A baked entrypoint with no explicit cmd: clear the base image's inherited
+		// default command so the entrypoint runs bare (an entrypoint that also ran
+		// `/usr/bin/bash` would double-launch).
+		b.WriteString("CMD []\n")
 	}
 
 	// Emit image metadata labels LAST. img.BakedMetadata is PRE-FILLED by render-prep

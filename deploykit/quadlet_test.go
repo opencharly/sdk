@@ -138,6 +138,7 @@ After=network-online.target
 [Container]
 Image=ghcr.io/opencharly/fedora-test:latest
 ContainerName=charly-fedora-test
+HostName=charly-fedora-test
 WorkingDir=/home/user
 PublishPort=127.0.0.1:8000:8000
 PublishPort=127.0.0.1:8080:8080
