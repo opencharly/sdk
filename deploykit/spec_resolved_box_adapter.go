@@ -55,6 +55,8 @@ func NewSpecResolvedBox(v spec.ResolvedBoxView, distro map[string]*spec.Resolved
 			Auto:                  v.Auto,
 			Network:               v.Network,
 			DataImage:             v.DataImage,
+			Entrypoint:            v.Entrypoint,
+			Cmd:                   v.Cmd,
 			IsExternalBase:        v.IsExternalBase,
 			FullTag:               v.FullTag,
 		},
