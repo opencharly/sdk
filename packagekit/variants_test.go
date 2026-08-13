@@ -31,11 +31,11 @@ func TestResolveVariant(t *testing.T) {
 	pkg := testPackaging()
 	cases := []struct {
 		format, variant, wantName string
-		wantPlugins              []string
+		wantPlugins               []string
 	}{
-		{"deb", "", "charly", []string{"plugin-doctor", "plugin-clean"}},          // default_variant → plain name
-		{"deb", "minimal", "charly-minimal", []string{"plugin-doctor"}},            // named variant → charly-<variant>
-		{"archlinux", "", "charly", []string{"plugin-doctor"}},                    // default_variant minimal → plain name
+		{"deb", "", "charly", []string{"plugin-doctor", "plugin-clean"}}, // default_variant → plain name
+		{"deb", "minimal", "charly-minimal", []string{"plugin-doctor"}},  // named variant → charly-<variant>
+		{"archlinux", "", "charly", []string{"plugin-doctor"}},           // default_variant minimal → plain name
 		{"archlinux", "full", "charly-full", []string{"plugin-doctor", "plugin-clean", "plugin-secrets"}},
 		{"rpm", "", "charly", []string{"plugin-doctor", "plugin-clean"}}, // no default_variant → "default" variant
 	}
