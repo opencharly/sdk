@@ -68,6 +68,7 @@ func (a *specCandyAdapter) Data() []DataYAML        { return a.m.Data }
 
 // maps / pointers
 func (a *specCandyAdapter) LocalPkg(format string) string { return a.m.LocalPkg[format] }
+func (a *specCandyAdapter) Packaging() *spec.Packaging    { return a.m.Packaging }
 func (a *specCandyAdapter) FormatSection(name string) *PackageSection {
 	if s, ok := a.m.FormatSections[name]; ok {
 		return &s

@@ -44,6 +44,14 @@ type Generator struct {
 	// disposable check-bed image builds. See RenderLocalPkgImageInstall (localpkg.go).
 	DevLocalPkg bool
 
+	// LocalPkgBuild is the dev-local-pkg build context: the in-development binary
+	// + plugins + CalVer + arch + charly.yml the generate-packages plugin builds
+	// the in-development package from (the `--dev-local-pkg` build path). Set by
+	// the check-bed runner (charly core) when DevLocalPkg is set; nil → the
+	// executor discovers defaults (os.Executable(), runtime.GOARCH,
+	// `<binary> version`, the baked plugins dir, `<CandyDir>/charly.yml`).
+	LocalPkgBuild *spec.LocalPkgBuildContext
+
 	// Config + InitConfig are the RESOLVE-side inputs the host render-prep pass
 	// (RenderPrepBox/RenderPrepAll in render_prep.go, K3-U3) reads to fill the
 	// per-box build-render caches (RenderCandyOrder/CandyCaps/ActiveInits/
@@ -124,11 +132,12 @@ type Generator struct {
 
 	// RenderLocalPkgImageInstall renders a candy's localpkg OS-package install for
 	// the image build. The PRODUCTION path is pure render (a curl+install RUN); the
-	// DevLocalPkg path builds the in-development package on the HOST (makepkg). This
+	// DevLocalPkg path builds the in-development package on the HOST via the
+	// generate-packages plugin (localPkgBuild; nil → discovered defaults). This
 	// is a PURE sdk/deploykit function now (W3, deploykit.RenderLocalPkgImageInstall
 	// in localpkg.go) — NOT a host-coupled seam like its siblings above; the bare
 	// constructor wires it directly (no core closure needed). Used by WriteCandySteps.
-	RenderLocalPkgImageInstall func(step *LocalPkgInstallStep, devLocalPkg bool, imageDir, boxName string) (string, error)
+	RenderLocalPkgImageInstall func(step *LocalPkgInstallStep, devLocalPkg bool, localPkgBuild *spec.LocalPkgBuildContext, imageDir, boxName string) (string, error)
 
 	// ResolveInlineBuilder OpResolves an externalized INLINE builder and returns its in-candy
 	// fragment (C10 InlineFragment) — plugin-side peer-dispatch since K-wave 2 cone R1, sharing the

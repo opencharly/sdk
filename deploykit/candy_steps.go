@@ -97,7 +97,7 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 	// no localpkg contract (the candy's own task: install is the fallback).
 	if step := CompileLocalPkgStep(layer, img, HostContext{}); step != nil {
 		if s, ok := step.(*LocalPkgInstallStep); ok {
-			run, err := g.RenderLocalPkgImageInstall(s, g.DevLocalPkg, filepath.Join(g.BuildDir, img.Name), img.Name)
+			run, err := g.RenderLocalPkgImageInstall(s, g.DevLocalPkg, g.LocalPkgBuild, filepath.Join(g.BuildDir, img.Name), img.Name)
 			if err != nil {
 				// RenderLocalPkgImageInstall's contract is fail-loudly, never a
 				// silent fallback. Emitting the error as a Containerfile COMMENT
