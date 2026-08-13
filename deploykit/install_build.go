@@ -21,7 +21,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -170,29 +169,30 @@ func CompileApkStep(layer CandyModel) InstallStep {
 
 // CompileLocalPkgStep turns a candy's `localpkg:` field into a single
 // LocalPkgInstallStep, or nil if the candy declares none. Like CompileApkStep
-// it is target-agnostic at compile time — the step carries the author's
-// PKGBUILD hint plus the candy dir AND the deploy project dir (os.Getwd, the
-// same handle compileServiceSteps reads) as the two anchors the emit-time
-// walk-up search uses to locate the PKGBUILD. Each DeployTarget decides whether
-// to build+install (localpkg-capable host/guest), skip (image build, non-pac
-// targets, android, kubernetes).
+// it is target-agnostic at compile time — the step carries the published
+// package name (from the candy's `packaging:` section) + the release CalVer
+// (the box's effective version) + the candy dir (the anchor for the candy's
+// charly.yml, the generate-packages plugin's --candy input). Each DeployTarget
+// decides whether to obtain+install (localpkg-capable host/guest), skip (image
+// build, non-pac targets, android, kubernetes).
 //
 // The localpkg mechanism is fully config-driven: the format's `local_pkg:`
 // block (resolved here via DistroDef.LocalPkgFormat, the SAME DistroDef the
-// system-package steps read) supplies the build/install templates, package
-// glob, foreign-deps query, probe, and dependency-builder name. BuilderImage is
-// resolved for that block's DepBuilder the same way builder steps resolve theirs
-// (resolveBuilderImage) so the executor can build the package's dependency
-// closure through the EXISTING builder before installing. When the distro
-// declares no localpkg-capable format, LocalPkg is nil and the executor skips;
-// when no dep builder resolves, BuilderImage is "" and the dep-build is skipped
-// with a clear log (the candy's own curl/COPY fallback still covers
-// non-localpkg targets).
+// system-package steps read) supplies the install/download templates, probe,
+// and dependency-builder name, while the candy's `packaging:` section (the
+// nFPM cutover's single source of package metadata) supplies the published
+// package name. BuilderImage is resolved for that block's dep builder the same
+// way builder steps resolve theirs (resolveBuilderImage) so the executor can
+// build the package's dependency closure through the EXISTING builder before
+// installing. When the distro declares no localpkg-capable format, LocalPkg is
+// nil and the executor skips; when no dep builder resolves, BuilderImage is ""
+// and the dep-build is skipped with a clear log (the candy's own curl/COPY
+// fallback still covers non-localpkg targets).
 func CompileLocalPkgStep(layer CandyModel, img *ResolvedBox, _ HostContext) InstallStep {
 	// The target distro must declare a localpkg-capable package format, AND the
-	// candy must point that format at a source dir. Resolve the format FIRST so
-	// the per-format `localpkg:` map picks the matching source (pac→pkg/arch,
-	// rpm→pkg/fedora, deb→pkg/debian). Either missing → no step (the candy's own
+	// candy must declare a `packaging:` section naming the published package.
+	// Resolve the format FIRST so the per-format `local_pkg:` block supplies the
+	// install/download templates. Either missing → no step (the candy's own
 	// curl/COPY task is the fallback on formats with no native package).
 	if img.DistroDef == nil {
 		return nil
@@ -201,16 +201,15 @@ func CompileLocalPkgStep(layer CandyModel, img *ResolvedBox, _ HostContext) Inst
 	if lp == nil {
 		return nil
 	}
-	ref := layer.LocalPkg(fmtName)
-	if ref == "" {
+	pkg := layer.Packaging()
+	if pkg == nil || pkg.Name == "" {
 		return nil
 	}
-	projectDir, _ := os.Getwd()
 	return &LocalPkgInstallStep{
-		PkgbuildRef: ref,
+		PackageName: pkg.Name,
+		Version:     img.EffectiveVersion,
 		CandyName:   layer.GetName(),
 		CandyDir:    layer.GetSourceDir(),
-		ProjectDir:  projectDir,
 		Format:      fmtName,
 		LocalPkg:    lp,
 	}

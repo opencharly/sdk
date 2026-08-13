@@ -265,9 +265,7 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	v.SubPathPrefix = "" // filled by the resolve projector for remote candies (#67), not at scan time
 	m.Reboot = ly.Reboot
 	m.Shell = ly.Shell
-	if len(ly.LocalPkg) > 0 {
-		m.LocalPkg = ly.LocalPkg
-	}
+	m.Packaging = ly.Packaging
 	if ly.Capability != nil {
 		v.Capabilities = &spec.CandyCapabilitiesView{PreserveUser: ly.Capability.PreserveUser}
 	}

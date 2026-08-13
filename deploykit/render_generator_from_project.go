@@ -149,7 +149,7 @@ func (c renderSeamCaller) renderService(entry *spec.ServiceEntry, def *spec.Reso
 // envelope + wires the host-coupled seams (the host callbacks the render still needs). It
 // returns the Generator (the build order is the caller's responsibility — plugin-build computes
 // it from the reply, plugin-deploy-pod computes the overlay candies from the live plans).
-func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *spec.ResolvedProject, dir string, devLocalPkg bool) (*Generator, error) {
+func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *spec.ResolvedProject, dir string, devLocalPkg bool, localPkgBuild *spec.LocalPkgBuildContext) (*Generator, error) {
 	if rp == nil {
 		return nil, fmt.Errorf("render: no resolved-project envelope")
 	}
@@ -162,6 +162,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	dg.GlobalOrder = rp.GlobalOrder
 	dg.RequestedBoxes = nil // the order is already filtered by the host
 	dg.DevLocalPkg = devLocalPkg
+	dg.LocalPkgBuild = localPkgBuild
 
 	// Build the CandyModel map from the envelope.
 	dg.Candies = make(map[string]CandyModel, len(rp.CandyModels))

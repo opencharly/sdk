@@ -3,8 +3,8 @@ package deploykit
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -12,105 +12,107 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// Tests for the localpkg subsystem relocated from charly core (W3): ResolveLocalPkgDir,
-// BuildLocalPkgOnHost, TransferAndInstallPkgs, VenueHasPkgManager, ExecLocalPkgInstall,
-// RenderLocalPkgImageInstall. Every test here is PURE — no *Config, no live *Candy graph, no
-// provider registry — matching the source file's own design (sdk/deploykit/localpkg.go).
+// Tests for the localpkg subsystem relocated from charly core (W3): the two
+// package-FILE legs (downloadLocalPkg / generateLocalPkg), the shared
+// transfer+install leg (TransferAndInstallPkgs), the venue gate
+// (VenueHasPkgManager), the deploy-time executor (ExecLocalPkgInstall), the
+// image-build render (RenderLocalPkgImageInstall), and the dep-builder
+// (BuildDepPkgsOnHost). Every test here is PURE — no *Config, no live *Candy
+// graph, no provider registry — matching the source file's own design
+// (sdk/deploykit/localpkg.go). The old SOURCE-BUILD machinery tests
+// (ResolveLocalPkgDir / BuildLocalPkgOnHost / stageLocalPkgSource) are GONE
+// with the machinery they proved — the nFPM cutover replaced source builds
+// with the two package-FILE legs below.
 
 // testPacLocalPkgDef returns a LocalPkgDef mirroring charly.yml's `pac.local_pkg`
 // block — the config that drives the localpkg mechanism. Tests use it so they
 // exercise the SAME config-driven path the loader produces, without parsing YAML.
+// PkgGlob/SourceSentinel/BuildTemplate/DepBuilder are GONE from the schema (the
+// generate-packages plugin builds packages now); the package-file glob is DERIVED
+// from the download_template URL (localPkgGlobFromDownload).
 func testPacLocalPkgDef() *LocalPkgDef {
 	return &LocalPkgDef{
-		PkgGlob:         "*.pkg.tar.zst",
-		SourceSentinel:  "PKGBUILD",
-		BuildTemplate:   "cd {{.SrcDir}} && PKGDEST={{.PkgDest}} makepkg -sf --noconfirm",
-		InstallTemplate: "pacman -U --noconfirm {{.StageDir}}/{{.Glob}}",
-		Probe:           "command -v pacman",
-		DepBuilder:      "aur",
+		DownloadTemplate: "https://opencharly.github.io/charly-arch/${ARCH}/charly-${ARCH}.pkg.tar.zst",
+		InstallTemplate:  "pacman -U --noconfirm {{.StageDir}}/{{.Glob}}",
+		Probe:            "command -v pacman",
 	}
 }
 
-// TestResolveLocalPkgDir covers source-dir resolution across the four branches
-// (absolute, candy-relative, project-relative, walk-up) AND the config-driven
-// per-format sentinel: PKGBUILD (plain file), *.spec (glob), debian/control
-// (sub-path). A missing sentinel returns "".
-func TestResolveLocalPkgDir(t *testing.T) {
-	root := t.TempDir()
-	// <root>/pkg/arch/PKGBUILD (superproject) and a nested project dir.
-	pkgArch := filepath.Join(root, "pkg", "arch")
-	if err := os.MkdirAll(pkgArch, 0o755); err != nil {
+// writeFakeCurl writes a fake `curl` executable into a temp dir and prepends the
+// dir to PATH. The fake writes the URL into the `-o` destination (so tests can
+// assert the resolved URL), fails when the URL contains "fail", and errors on a
+// missing -o/URL. downloadLocalPkg's exec.CommandContext("curl", …) resolves to
+// it via PATH.
+func writeFakeCurl(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+# fake curl for tests: writes the URL into the -o destination.
+# downloadLocalPkg invokes: curl -fsSL <url> -o <dst>.
+dst=""
+url=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then dst="$arg"; fi
+  if [ "$prev" = "-fsSL" ]; then url="$arg"; fi
+  prev="$arg"
+done
+if [ -z "$dst" ] || [ -z "$url" ]; then
+  echo "fake curl: missing -o or URL" >&2
+  exit 2
+fi
+case "$url" in
+  *fail*) echo "fake curl: download failed" >&2; exit 1 ;;
+esac
+printf 'package-content-from-%s\n' "$url" > "$dst"
+`
+	if err := os.WriteFile(filepath.Join(dir, "curl"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(pkgArch, "PKGBUILD"), []byte("pkgname=opencharly-git\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	nestedProject := filepath.Join(root, "image", "cachyos")
-	if err := os.MkdirAll(nestedProject, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// A candy dir that bundles its OWN PKGBUILD (candy-relative branch).
-	candyWithPkg := filepath.Join(root, "candy", "mytool")
-	if err := os.MkdirAll(filepath.Join(candyWithPkg, "arch"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(candyWithPkg, "arch", "PKGBUILD"), []byte("pkgname=mytool\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// rpm source dir (sentinel is a *.spec glob) and deb source dir (sentinel is
-	// a debian/control sub-path) — proving the generic sentinel match.
-	pkgFedora := filepath.Join(root, "pkg", "fedora")
-	if err := os.MkdirAll(pkgFedora, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pkgFedora, "opencharly.spec"), []byte("Name: opencharly\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	pkgDebian := filepath.Join(root, "pkg", "debian", "debian")
-	if err := os.MkdirAll(pkgDebian, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pkgDebian, "control"), []byte("Source: opencharly\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
 
-	// 1. Absolute ref (PKGBUILD sentinel).
-	if got := ResolveLocalPkgDir(pkgArch, "", "", "PKGBUILD"); got != pkgArch {
-		t.Errorf("absolute ref = %q, want %q", got, pkgArch)
+// writeFakeCharly writes a fake `charly` binary into a temp dir and returns its
+// path. `version` prints a CalVer; `generate-packages` writes a package file
+// matching the derived glob into --out, unless --arch is "none" (writes
+// nothing) or "fail" (exits 1). Tests pass the path as LocalPkgBuildContext.Binary.
+func writeFakeCharly(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+# fake charly binary for tests.
+if [ "$1" = "version" ]; then
+  echo "2026.225.1200"
+  exit 0
+fi
+if [ "$1" = "generate-packages" ]; then
+  out=""
+  arch=""
+  prev=""
+  for arg in "$@"; do
+    if [ "$prev" = "--out" ]; then out="$arg"; fi
+    if [ "$prev" = "--arch" ]; then arch="$arg"; fi
+    prev="$arg"
+  done
+  if [ -z "$out" ]; then
+    echo "fake charly: generate-packages missing --out" >&2
+    exit 2
+  fi
+  case "$arch" in
+    none) ;; # write nothing — the caller must error on an empty glob match
+    fail) echo "fake charly: generate-packages failed" >&2; exit 1 ;;
+    *) printf 'package-content\n' > "$out/charly-2026.225.1200-1-x86_64.pkg.tar.zst" ;;
+  esac
+  exit 0
+fi
+echo "fake charly: unknown command: $*" >&2
+exit 1
+`
+	path := filepath.Join(dir, "charly")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	// 2. Candy-relative.
-	if got := ResolveLocalPkgDir("arch", candyWithPkg, root, "PKGBUILD"); got != filepath.Join(candyWithPkg, "arch") {
-		t.Errorf("candy-relative = %q, want %q", got, filepath.Join(candyWithPkg, "arch"))
-	}
-	// 3. Project-relative (project dir == superproject root).
-	if got := ResolveLocalPkgDir("pkg/arch", "/no/such/layer", root, "PKGBUILD"); got != pkgArch {
-		t.Errorf("project-relative = %q, want %q", got, pkgArch)
-	}
-	// 4. Walk-up: project dir is the nested box/cachyos; pkg/arch is two levels up.
-	if got := ResolveLocalPkgDir("pkg/arch", "/no/such/layer", nestedProject, "PKGBUILD"); got != pkgArch {
-		t.Errorf("walk-up = %q, want %q (must find the superproject pkg/arch from a nested project dir)", got, pkgArch)
-	}
-	// 5. rpm glob sentinel (*.spec).
-	if got := ResolveLocalPkgDir("pkg/fedora", "/no/such/layer", root, "*.spec"); got != pkgFedora {
-		t.Errorf("rpm *.spec sentinel = %q, want %q", got, pkgFedora)
-	}
-	// 6. deb sub-path sentinel (debian/control).
-	wantDeb := filepath.Join(root, "pkg", "debian")
-	if got := ResolveLocalPkgDir("pkg/debian", "/no/such/layer", root, "debian/control"); got != wantDeb {
-		t.Errorf("deb debian/control sentinel = %q, want %q", got, wantDeb)
-	}
-	// 7. Missing sentinel → "".
-	if got := ResolveLocalPkgDir("does/not/exist", "/no/such/layer", nestedProject, "PKGBUILD"); got != "" {
-		t.Errorf("missing sentinel = %q, want empty (no-op fallback)", got)
-	}
-	// 8. Empty ref → "".
-	if got := ResolveLocalPkgDir("", candyWithPkg, root, "PKGBUILD"); got != "" {
-		t.Errorf("empty ref = %q, want empty", got)
-	}
-	// 9. Empty sentinel → "" (never matches).
-	if got := ResolveLocalPkgDir("pkg/arch", "", root, ""); got != "" {
-		t.Errorf("empty sentinel = %q, want empty", got)
-	}
+	return path
 }
 
 // localPkgRecExec records RunSystem scripts + PutFile dests so the install-body
@@ -159,6 +161,190 @@ func (e *localPkgRecExec) ResolveHome(context.Context, string) (string, error) {
 	return "/home/guest", nil
 }
 
+// TestLocalPkgGlobFromDownload proves the package-file glob is DERIVED from the
+// download_template URL's extension chain (the one stable signal shared by the
+// download leg, the build leg, and the install leg now that PkgGlob is gone).
+func TestLocalPkgGlobFromDownload(t *testing.T) {
+	for _, tc := range []struct {
+		url  string
+		want string
+	}{
+		{"https://opencharly.github.io/charly-arch/${ARCH}/charly-${ARCH}.pkg.tar.zst", "*.pkg.tar.zst"},
+		{"https://opencharly.github.io/charly-fedora/${ARCH}/charly-${ARCH}.rpm", "*.rpm"},
+		{"https://opencharly.github.io/charly-debian/pool/main/c/charly/charly-${ARCH}.deb", "*.deb"},
+		{"https://opencharly.github.io/charly-alpine/${ARCH}/charly-${ARCH}.apk", "*.apk"},
+		{"https://opencharly.github.io/charly-openwrt/${ARCH}/charly-${ARCH}.ipk", "*.ipk"},
+		// No ${ARCH} placeholder but a recognizable extension.
+		{"https://example.com/charly.pkg.tar.zst", "*.pkg.tar.zst"},
+		// No extension → no glob (the caller errors loudly, never a silent skip).
+		{"https://example.com/charly", ""},
+		{"", ""},
+	} {
+		if got := localPkgGlobFromDownload(tc.url); got != tc.want {
+			t.Errorf("localPkgGlobFromDownload(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}
+
+// TestCharlyFormatToNFPM proves the charly format-key → nFPM format-name mapping
+// the dev-local-pkg build uses to invoke the generate-packages plugin. A format
+// the plugin cannot build maps to "" (the caller errors loudly).
+func TestCharlyFormatToNFPM(t *testing.T) {
+	for _, tc := range []struct {
+		format string
+		want   string
+	}{
+		{"pac", "archlinux"},
+		{"deb", "deb"},
+		{"rpm", "rpm"},
+		{"apk", "apk"},
+		{"ipk", ""}, // charly has no ipk format key in the build vocabulary
+		{"", ""},
+	} {
+		if got := charlyFormatToNFPM(tc.format); got != tc.want {
+			t.Errorf("charlyFormatToNFPM(%q) = %q, want %q", tc.format, got, tc.want)
+		}
+	}
+}
+
+// TestDownloadLocalPkg proves the PRODUCTION leg downloads the published package
+// from the format's download_template URL on the HOST (via curl), resolves the
+// ${ARCH} placeholder to runtime.GOARCH, and names the file so it matches the
+// derived glob (the install template's {{.StageDir}}/{{.Glob}} must match it).
+func TestDownloadLocalPkg(t *testing.T) {
+	writeFakeCurl(t)
+	lp := testPacLocalPkgDef()
+	s := &LocalPkgInstallStep{CandyName: "charly", Format: "pac", LocalPkg: lp}
+
+	files, err := downloadLocalPkg(context.Background(), s, EmitOpts{})
+	if err != nil {
+		t.Fatalf("downloadLocalPkg: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("downloaded files = %v, want one", files)
+	}
+	// The filename must match the derived glob ("*.pkg.tar.zst" → "pkg.pkg.tar.zst").
+	if base := filepath.Base(files[0]); base != "pkg.pkg.tar.zst" {
+		t.Errorf("downloaded filename = %q, want pkg.pkg.tar.zst (glob-matching)", base)
+	}
+	// The URL was ${ARCH}-resolved to the host's own arch.
+	data, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantURL := strings.ReplaceAll(lp.DownloadTemplate, "${ARCH}", runtime.GOARCH)
+	if !strings.Contains(string(data), wantURL) {
+		t.Errorf("downloaded content = %q, want it to echo the resolved URL %q", data, wantURL)
+	}
+	// The temp dir is a Charly namespace (CleanupBuiltPackageFiles can release it).
+	if !strings.HasPrefix(filepath.Base(filepath.Dir(files[0])), "charly-localpkg-") {
+		t.Errorf("download dir = %q, want a charly-localpkg- namespace", filepath.Dir(files[0]))
+	}
+	if err := CleanupBuiltPackageFiles(files); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+}
+
+// TestDownloadLocalPkg_DryRunAndFailure proves DryRun never shells out (no curl
+// invocation, no artifacts) and a failing download is a loud error, never a
+// silent skip.
+func TestDownloadLocalPkg_DryRunAndFailure(t *testing.T) {
+	writeFakeCurl(t)
+	lp := testPacLocalPkgDef()
+	s := &LocalPkgInstallStep{CandyName: "charly", Format: "pac", LocalPkg: lp}
+
+	if files, err := downloadLocalPkg(context.Background(), s, EmitOpts{DryRun: true}); err != nil || files != nil {
+		t.Errorf("dry-run = (%v, %v), want (nil, nil)", files, err)
+	}
+
+	failing := &LocalPkgInstallStep{CandyName: "charly", Format: "pac", LocalPkg: &LocalPkgDef{
+		DownloadTemplate: "https://example.com/charly-${ARCH}.pkg.tar.zst/fail",
+		InstallTemplate:  lp.InstallTemplate,
+		Probe:            lp.Probe,
+	}}
+	if _, err := downloadLocalPkg(context.Background(), failing, EmitOpts{}); err == nil {
+		t.Error("failing download returned nil error")
+	}
+}
+
+// TestGenerateLocalPkg proves the DISPOSABLE-EVAL-BED leg invokes the
+// generate-packages plugin from the in-development binary + plugins with the
+// full flag surface, and globs the output dir for the derived package glob.
+func TestGenerateLocalPkg(t *testing.T) {
+	fakeCharly := writeFakeCharly(t)
+	lp := testPacLocalPkgDef()
+	s := &LocalPkgInstallStep{CandyName: "charly", CandyDir: t.TempDir(), Format: "pac", LocalPkg: lp}
+	build := &spec.LocalPkgBuildContext{Binary: fakeCharly}
+
+	files, err := generateLocalPkg(context.Background(), s, build, false)
+	if err != nil {
+		t.Fatalf("generateLocalPkg: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("built files = %v, want one", files)
+	}
+	if base := filepath.Base(files[0]); base != "charly-2026.225.1200-1-x86_64.pkg.tar.zst" {
+		t.Errorf("built file = %q, want the fake binary's package", base)
+	}
+	if err := CleanupBuiltPackageFiles(files); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+}
+
+// TestGenerateLocalPkg_DefaultsDiscovery proves the nil/partial build context
+// discovers defaults: CalVer from `<binary> version`, PluginsDir from the baked
+// plugins dir, CandyYAML from `<CandyDir>/charly.yml`, Arch from runtime.GOARCH.
+func TestGenerateLocalPkg_DefaultsDiscovery(t *testing.T) {
+	fakeCharly := writeFakeCharly(t)
+	lp := testPacLocalPkgDef()
+	s := &LocalPkgInstallStep{CandyName: "charly", CandyDir: t.TempDir(), Format: "pac", LocalPkg: lp}
+	// Binary set, everything else empty → CalVer/PluginsDir/CandyYAML/Arch discovered.
+	build := &spec.LocalPkgBuildContext{Binary: fakeCharly}
+
+	files, err := generateLocalPkg(context.Background(), s, build, false)
+	if err != nil {
+		t.Fatalf("generateLocalPkg with defaults discovery: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("built files = %v, want one", files)
+	}
+	if err := CleanupBuiltPackageFiles(files); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+}
+
+// TestGenerateLocalPkg_Errors proves the loud-failure contract: a format the
+// plugin cannot build, a plugin that produces no matching files, and a plugin
+// that fails all error — never a silent skip.
+func TestGenerateLocalPkg_Errors(t *testing.T) {
+	fakeCharly := writeFakeCharly(t)
+	lp := testPacLocalPkgDef()
+
+	// No nFPM format for the charly format key.
+	noFormat := &LocalPkgInstallStep{CandyName: "charly", CandyDir: t.TempDir(), Format: "ipk", LocalPkg: lp}
+	if _, err := generateLocalPkg(context.Background(), noFormat, &spec.LocalPkgBuildContext{Binary: fakeCharly}, false); err == nil {
+		t.Error("format with no nFPM mapping should error")
+	}
+
+	// Plugin runs but produces no matching files (--arch none).
+	noFiles := &LocalPkgInstallStep{CandyName: "charly", CandyDir: t.TempDir(), Format: "pac", LocalPkg: lp}
+	if _, err := generateLocalPkg(context.Background(), noFiles, &spec.LocalPkgBuildContext{Binary: fakeCharly, Arch: "none"}, false); err == nil {
+		t.Error("plugin producing no matching files should error")
+	}
+
+	// Plugin exits non-zero (--arch fail).
+	failing := &LocalPkgInstallStep{CandyName: "charly", CandyDir: t.TempDir(), Format: "pac", LocalPkg: lp}
+	if _, err := generateLocalPkg(context.Background(), failing, &spec.LocalPkgBuildContext{Binary: fakeCharly, Arch: "fail"}, false); err == nil {
+		t.Error("failing plugin should error")
+	}
+
+	// DryRun: logs the plan, never shells out. (Format validation still runs
+	// before the dry-run check — a dry-run must surface an unmappable format.)
+	if files, err := generateLocalPkg(context.Background(), noFiles, &spec.LocalPkgBuildContext{Binary: fakeCharly}, true); err != nil || files != nil {
+		t.Errorf("dry-run = (%v, %v), want (nil, nil)", files, err)
+	}
+}
+
 // TestVenueHasPkgManager confirms the gate runs the format's config-driven probe
 // (LocalPkgDef.Probe), treating only an exact "yes" as supported; DryRun assumes
 // true; a nil LocalPkgDef gates false (never assume a target can take a package).
@@ -183,11 +369,11 @@ func TestVenueHasPkgManager(t *testing.T) {
 }
 
 // TestExecLocalPkgInstall_SkipsUnsupported proves an unsupported venue is a
-// clean no-op: no build, no transfer, no install — the candy's curl/COPY task
-// installs it instead.
+// clean no-op: no download, no build, no transfer, no install — the candy's
+// curl/COPY task installs it instead.
 func TestExecLocalPkgInstall_SkipsUnsupported(t *testing.T) {
 	exec := &localPkgRecExec{}
-	s := &LocalPkgInstallStep{PkgbuildRef: "pkg/arch", CandyName: "charly", ProjectDir: t.TempDir(), Format: "pac", LocalPkg: testPacLocalPkgDef()}
+	s := &LocalPkgInstallStep{PackageName: "charly", CandyName: "charly", Format: "pac", LocalPkg: testPacLocalPkgDef()}
 	if err := ExecLocalPkgInstall(context.Background(), exec, s, false /* supported */, "host", EmitOpts{}); err != nil {
 		t.Fatalf("unsupported venue should be a clean no-op, got %v", err)
 	}
@@ -201,7 +387,7 @@ func TestExecLocalPkgInstall_SkipsUnsupported(t *testing.T) {
 // no-op even when the venue is reported supported.
 func TestExecLocalPkgInstall_SkipsNilLocalPkg(t *testing.T) {
 	exec := &localPkgRecExec{}
-	s := &LocalPkgInstallStep{PkgbuildRef: "pkg/arch", CandyName: "charly", ProjectDir: t.TempDir()} // LocalPkg nil
+	s := &LocalPkgInstallStep{PackageName: "charly", CandyName: "charly"} // LocalPkg nil
 	if err := ExecLocalPkgInstall(context.Background(), exec, s, true, "host", EmitOpts{}); err != nil {
 		t.Fatalf("nil LocalPkg should be a clean no-op, got %v", err)
 	}
@@ -210,37 +396,76 @@ func TestExecLocalPkgInstall_SkipsNilLocalPkg(t *testing.T) {
 	}
 }
 
-// TestExecLocalPkgInstall_SkipsMissingSource is the NON-BED arm: for an ordinary deploy a missing
-// source dir on a supported venue stays a clean no-op (fallback to the candy's curl/COPY task), not
-// an error that aborts the deploy. Its bed counterpart is
-// TestExecLocalPkgInstall_MissingSourceIsFatalOnABed below.
-func TestExecLocalPkgInstall_SkipsMissingSource(t *testing.T) {
+// TestExecLocalPkgInstall_SkipsEmptyDownloadTemplate proves a PRODUCTION deploy
+// whose format declares no download_template is a clean no-op (the candy's own
+// curl/COPY task covers it) — the download leg has no URL to fetch.
+func TestExecLocalPkgInstall_SkipsEmptyDownloadTemplate(t *testing.T) {
 	exec := &localPkgRecExec{}
-	s := &LocalPkgInstallStep{PkgbuildRef: "no/such/source", CandyName: "charly", ProjectDir: t.TempDir(), Format: "pac", LocalPkg: testPacLocalPkgDef()}
+	lp := &LocalPkgDef{InstallTemplate: "pacman -U --noconfirm {{.StageDir}}/{{.Glob}}", Probe: "command -v pacman"} // no DownloadTemplate
+	s := &LocalPkgInstallStep{PackageName: "charly", CandyName: "charly", Format: "pac", LocalPkg: lp}
 	if err := ExecLocalPkgInstall(context.Background(), exec, s, true /* supported */, "host", EmitOpts{}); err != nil {
-		t.Fatalf("missing source should be a clean no-op, got %v", err)
+		t.Fatalf("empty download_template should be a clean no-op, got %v", err)
 	}
 	if len(exec.systemScripts) != 0 || len(exec.putDests) != 0 {
-		t.Errorf("missing source must not install anything: systemScripts=%v putDests=%v", exec.systemScripts, exec.putDests)
+		t.Errorf("empty download_template must not install anything: systemScripts=%v putDests=%v", exec.systemScripts, exec.putDests)
 	}
 }
 
-// TestExecLocalPkgInstall_MissingSourceIsFatalOnABed is the BED arm, and the regression this fix
-// closes. The image path already hard-errored on exactly this condition
-// (renderLocalPkgImageDevInstall: "a disposable check bed must build the in-development package");
-// the deploy path printed a skip and returned nil even for a bed. That asymmetry let
-// check-fedora-vm quietly stop building its rpm when pkg/fedora was an uninitialized submodule —
-// the deploy looked benign and the bed failed much later at a live `rpm -q` that named neither the
-// missing source nor the skipped build.
-func TestExecLocalPkgInstall_MissingSourceIsFatalOnABed(t *testing.T) {
+// TestExecLocalPkgInstall_ProductionDownloadsAndInstalls proves the PRODUCTION
+// leg downloads the published package (fake curl) and ships it through the
+// shared transfer+install leg (PutFile + rendered install command).
+func TestExecLocalPkgInstall_ProductionDownloadsAndInstalls(t *testing.T) {
+	writeFakeCurl(t)
 	exec := &localPkgRecExec{}
-	s := &LocalPkgInstallStep{PkgbuildRef: "no/such/source", CandyName: "charly", ProjectDir: t.TempDir(), Format: "rpm", LocalPkg: testPacLocalPkgDef()}
-
-	err := ExecLocalPkgInstall(context.Background(), exec, s, true /* supported */, "vm:check-fedora-vm", EmitOpts{DevLocalPkg: true})
-	if err == nil {
-		t.Fatal("a bed deploy with no locatable package source returned nil — the bed would install nothing and claim success, then fail later at an unrelated live check")
+	s := &LocalPkgInstallStep{PackageName: "charly", CandyName: "charly", Format: "pac", LocalPkg: testPacLocalPkgDef()}
+	if err := ExecLocalPkgInstall(context.Background(), exec, s, true /* supported */, "host", EmitOpts{}); err != nil {
+		t.Fatalf("production localpkg install: %v", err)
 	}
-	for _, want := range []string{"dev-local-pkg", "charly", "no/such/source"} {
+	if len(exec.putDests) != 1 || !strings.HasPrefix(exec.putDests[0], localPkgGuestStage) {
+		t.Errorf("package not staged under %s: %v", localPkgGuestStage, exec.putDests)
+	}
+	// The install command is rendered from the config template against the
+	// DERIVED glob, not hardcoded.
+	wantCmd := "pacman -U --noconfirm " + localPkgGuestStage + "/*.pkg.tar.zst"
+	if len(exec.systemScripts) != 1 || strings.TrimSpace(exec.systemScripts[0]) != wantCmd {
+		t.Errorf("install command = %v, want rendered %q", exec.systemScripts, wantCmd)
+	}
+}
+
+// TestExecLocalPkgInstall_DevBuildsAndInstalls proves the DISPOSABLE-EVAL-BED
+// leg builds the IN-DEVELOPMENT package via the generate-packages plugin (fake
+// binary) and ships it through the same transfer+install leg.
+func TestExecLocalPkgInstall_DevBuildsAndInstalls(t *testing.T) {
+	fakeCharly := writeFakeCharly(t)
+	exec := &localPkgRecExec{}
+	s := &LocalPkgInstallStep{PackageName: "charly", CandyName: "charly", CandyDir: t.TempDir(), Format: "pac", LocalPkg: testPacLocalPkgDef()}
+	opts := EmitOpts{DevLocalPkg: true, LocalPkgBuild: &spec.LocalPkgBuildContext{Binary: fakeCharly}}
+	if err := ExecLocalPkgInstall(context.Background(), exec, s, true /* supported */, "vm:check-fedora-vm", opts); err != nil {
+		t.Fatalf("dev-local-pkg install: %v", err)
+	}
+	if len(exec.putDests) != 1 || !strings.HasPrefix(exec.putDests[0], localPkgGuestStage) {
+		t.Errorf("package not staged under %s: %v", localPkgGuestStage, exec.putDests)
+	}
+	wantCmd := "pacman -U --noconfirm " + localPkgGuestStage + "/*.pkg.tar.zst"
+	if len(exec.systemScripts) != 1 || strings.TrimSpace(exec.systemScripts[0]) != wantCmd {
+		t.Errorf("install command = %v, want rendered %q", exec.systemScripts, wantCmd)
+	}
+}
+
+// TestExecLocalPkgInstall_DevFailureIsFatal proves a bed whose in-development
+// package build fails is a HARD error — a bed must never silently skip the
+// localpkg install and claim success (the regression the DevLocalPkg flag
+// exists to close).
+func TestExecLocalPkgInstall_DevFailureIsFatal(t *testing.T) {
+	fakeCharly := writeFakeCharly(t)
+	exec := &localPkgRecExec{}
+	s := &LocalPkgInstallStep{PackageName: "charly", CandyName: "charly", CandyDir: t.TempDir(), Format: "pac", LocalPkg: testPacLocalPkgDef()}
+	opts := EmitOpts{DevLocalPkg: true, LocalPkgBuild: &spec.LocalPkgBuildContext{Binary: fakeCharly, Arch: "fail"}}
+	err := ExecLocalPkgInstall(context.Background(), exec, s, true /* supported */, "vm:check-fedora-vm", opts)
+	if err == nil {
+		t.Fatal("a bed whose in-development package build fails returned nil — the bed would install nothing and claim success")
+	}
+	for _, want := range []string{"dev-local-pkg", "charly"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, want it to name %q so the cause is readable at the point of failure", err, want)
 		}
@@ -250,41 +475,23 @@ func TestExecLocalPkgInstall_MissingSourceIsFatalOnABed(t *testing.T) {
 	}
 }
 
-// TestExecLocalPkgInstall_BedFlagDoesNotBreakTheOtherSkips guards the blast radius: the bed
-// discriminator changes ONE decision. A venue with no package manager, or a distro that declares no
-// localpkg-capable format at all, is still a legitimate no-op on a bed — neither is a missing
-// in-development source, and failing them would make beds unrunnable on those targets.
-func TestExecLocalPkgInstall_BedFlagDoesNotBreakTheOtherSkips(t *testing.T) {
-	bed := EmitOpts{DevLocalPkg: true}
-
-	exec := &localPkgRecExec{}
-	unsupported := &LocalPkgInstallStep{PkgbuildRef: "pkg/arch", CandyName: "charly", ProjectDir: t.TempDir(), Format: "pac", LocalPkg: testPacLocalPkgDef()}
-	if err := ExecLocalPkgInstall(context.Background(), exec, unsupported, false /* supported */, "host", bed); err != nil {
-		t.Errorf("an unsupported venue must stay a no-op on a bed, got %v", err)
-	}
-
-	exec = &localPkgRecExec{}
-	noFormat := &LocalPkgInstallStep{PkgbuildRef: "pkg/arch", CandyName: "charly", ProjectDir: t.TempDir()} // LocalPkg nil
-	if err := ExecLocalPkgInstall(context.Background(), exec, noFormat, true, "host", bed); err != nil {
-		t.Errorf("a distro with no localpkg-capable format must stay a no-op on a bed, got %v", err)
-	}
-}
-
 // TestTransferAndInstallPkgs proves the shared transfer+install leg stages the
 // dir, PutFiles each package, and renders the format's CONFIG-DRIVEN install
-// command (LocalPkgDef.InstallTemplate) against the staging glob — venue-agnostic.
+// command (LocalPkgDef.InstallTemplate) against the staging glob DERIVED from
+// the download_template — venue-agnostic.
 func TestTransferAndInstallPkgs(t *testing.T) {
 	exec := &localPkgRecExec{}
 	lp := testPacLocalPkgDef()
-	pkgs := []string{"/tmp/build/opencharly-git-2026.155.0001-1-x86_64.pkg.tar.zst"}
+	pkgs := []string{"/tmp/build/charly-2026.225.1200-1-x86_64.pkg.tar.zst"}
 	if err := TransferAndInstallPkgs(context.Background(), exec, lp, pkgs, EmitOpts{}); err != nil {
 		t.Fatalf("TransferAndInstallPkgs: %v", err)
 	}
 	if len(exec.putDests) != 1 || !strings.HasPrefix(exec.putDests[0], localPkgGuestStage) {
 		t.Errorf("package not staged under %s: %v", localPkgGuestStage, exec.putDests)
 	}
-	// The install command is rendered from the config template, not hardcoded.
-	wantCmd := "pacman -U --noconfirm " + localPkgGuestStage + "/" + lp.PkgGlob
+	// The install command is rendered from the config template against the
+	// DERIVED glob, not hardcoded.
+	wantCmd := "pacman -U --noconfirm " + localPkgGuestStage + "/*.pkg.tar.zst"
 	if len(exec.systemScripts) != 1 || strings.TrimSpace(exec.systemScripts[0]) != wantCmd {
 		t.Errorf("install command = %v, want rendered %q", exec.systemScripts, wantCmd)
 	}
@@ -296,166 +503,44 @@ func TestTransferAndInstallPkgs(t *testing.T) {
 	if err := TransferAndInstallPkgs(context.Background(), exec, nil, pkgs, EmitOpts{}); err == nil {
 		t.Error("TransferAndInstallPkgs(nil LocalPkgDef) should error")
 	}
+	// No download_template → no derivable glob → error.
+	noGlob := &LocalPkgDef{InstallTemplate: lp.InstallTemplate, Probe: lp.Probe}
+	if err := TransferAndInstallPkgs(context.Background(), exec, noGlob, pkgs, EmitOpts{}); err == nil {
+		t.Error("TransferAndInstallPkgs(no download_template) should error")
+	}
 }
 
-// TestBuildLocalPkgOnHost_DryRunAndEmpty proves the build leg renders the
-// CONFIG-DRIVEN build template (no hardcoded makepkg) and honors DryRun (no
-// shell-out), and that a nil/empty config errors rather than silently building.
-func TestBuildLocalPkgOnHost_DryRunAndEmpty(t *testing.T) {
+// TestBuildDepPkgsOnHost_DryRunAndEmpty proves the dep-builder leg validates its
+// inputs (empty packages is a no-op; nil/empty config errors rather than
+// silently building) and honors DryRun (no shell-out). The glob is DERIVED from
+// the format's download_template.
+func TestBuildDepPkgsOnHost_DryRunAndEmpty(t *testing.T) {
 	lp := testPacLocalPkgDef()
-	// DryRun: renders the template (proving config-driven) but never runs it.
-	if pkgs, err := BuildLocalPkgOnHost(context.Background(), lp, "/src/pkg/arch", EmitOpts{DryRun: true}); err != nil || pkgs != nil {
+	bDef := &BuilderDef{}
+	// Empty packages → (nil, nil): a no-op, never an error.
+	if pkgs, err := BuildDepPkgsOnHost(context.Background(), lp, "aur", bDef, "arch-builder", nil, "/src", nil, nil, EmitOpts{}); err != nil || pkgs != nil {
+		t.Errorf("empty packages = (%v, %v), want (nil, nil)", pkgs, err)
+	}
+	// DryRun: logs the plan, never shells out.
+	if pkgs, err := BuildDepPkgsOnHost(context.Background(), lp, "aur", bDef, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{DryRun: true}); err != nil || pkgs != nil {
 		t.Errorf("dry-run = (%v, %v), want (nil, nil)", pkgs, err)
 	}
 	// Nil LocalPkgDef → error.
-	if _, err := BuildLocalPkgOnHost(context.Background(), nil, "/src", EmitOpts{DryRun: true}); err == nil {
-		t.Error("BuildLocalPkgOnHost(nil) should error")
+	if _, err := BuildDepPkgsOnHost(context.Background(), nil, "aur", bDef, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
+		t.Error("BuildDepPkgsOnHost(nil LocalPkgDef) should error")
 	}
-	// Empty build template → error (config missing build_template).
-	empty := &LocalPkgDef{PkgGlob: "*.pkg.tar.zst"}
-	if _, err := BuildLocalPkgOnHost(context.Background(), empty, "/src", EmitOpts{DryRun: true}); err == nil {
-		t.Error("empty build_template should error")
+	// Empty builder image → error.
+	if _, err := BuildDepPkgsOnHost(context.Background(), lp, "aur", bDef, "", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
+		t.Error("BuildDepPkgsOnHost(empty builder image) should error")
 	}
-}
-
-func TestBuildLocalPkgOnHostUsesImmutableSourceCopy(t *testing.T) {
-	root := t.TempDir()
-	srcDir := filepath.Join(root, "pkg", "arch")
-	if err := os.MkdirAll(srcDir, 0o755); err != nil {
-		t.Fatal(err)
+	// Nil builder definition → error.
+	if _, err := BuildDepPkgsOnHost(context.Background(), lp, "aur", nil, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
+		t.Error("BuildDepPkgsOnHost(nil builder def) should error")
 	}
-	original := []byte("pkgver=committed\n")
-	if err := os.WriteFile(filepath.Join(srcDir, "PKGBUILD"), original, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "build-helper"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "project-marker"), []byte("project-input\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	lp := &LocalPkgDef{
-		PkgGlob: "*.pkg",
-		BuildTemplate: `set -eu
-test -x {{.SrcDir}}/build-helper
-test "$(cat {{.SourceDir}}/../../project-marker)" = project-input
-printf 'pkgver=mutated\n' > {{.SrcDir}}/PKGBUILD
-mkdir -p {{.SrcDir}}/src {{.SrcDir}}/pkg
-printf artifact > {{.PkgDest}}/opencharly.pkg`,
-	}
-	files, err := BuildLocalPkgOnHost(context.Background(), lp, srcDir, EmitOpts{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := CleanupBuiltPackageFiles(files); err != nil {
-			t.Error(err)
-		}
-	})
-	got, err := os.ReadFile(filepath.Join(srcDir, "PKGBUILD"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != string(original) {
-		t.Fatalf("authored PKGBUILD mutated: got %q, want %q", got, original)
-	}
-	for _, generated := range []string{"src", "pkg"} {
-		if _, err := os.Stat(filepath.Join(srcDir, generated)); !os.IsNotExist(err) {
-			t.Fatalf("build directory leaked into source at %s: %v", generated, err)
-		}
-	}
-	if len(files) != 1 {
-		t.Fatalf("built files = %v, want one artifact", files)
-	}
-}
-
-func TestBuildLocalPkgOnHostCleansStagingAfterFailure(t *testing.T) {
-	tempRoot := t.TempDir()
-	t.Setenv("TMPDIR", tempRoot)
-	srcDir := filepath.Join(t.TempDir(), "pkg")
-	if err := os.MkdirAll(srcDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(srcDir, "PKGBUILD"), []byte("unchanged\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	lp := &LocalPkgDef{PkgGlob: "*.pkg", BuildTemplate: "printf changed > {{.SrcDir}}/PKGBUILD; exit 19"}
-	if _, err := BuildLocalPkgOnHost(context.Background(), lp, srcDir, EmitOpts{}); err == nil {
-		t.Fatal("failing build returned nil error")
-	}
-	entries, err := os.ReadDir(tempRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("failed build leaked temporary staging: %v", entries)
-	}
-	got, err := os.ReadFile(filepath.Join(srcDir, "PKGBUILD"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "unchanged\n" {
-		t.Fatalf("failed build mutated authored source: %q", got)
-	}
-}
-
-func TestStageLocalPkgSourceRejectsEscapingSymlink(t *testing.T) {
-	root := t.TempDir()
-	srcDir := filepath.Join(root, "pkg")
-	if err := os.MkdirAll(srcDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("../outside", filepath.Join(srcDir, "escape")); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := stageLocalPkgSource(srcDir); err == nil || !strings.Contains(err.Error(), "escapes source") {
-		t.Fatalf("escaping symlink error = %v", err)
-	}
-}
-
-func TestStageLocalPkgSourceExcludesGitIgnoredBuildCaches(t *testing.T) {
-	srcDir := t.TempDir()
-	cmd := exec.Command("git", "init")
-	cmd.Dir = srcDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
-	for path, content := range map[string]string{
-		".gitignore":          "src/\npkg/\nsource-cache/\n",
-		"PKGBUILD":            "pkgname=fixture\n",
-		"local-input.patch":   "authored untracked input\n",
-		"src/stale-worktree":  "must not be staged\n",
-		"pkg/stale-artifact":  "must not be staged\n",
-		"source-cache/config": "must not be staged\n",
-	} {
-		fullPath := filepath.Join(srcDir, path)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	cmd = exec.Command("git", "add", ".gitignore", "PKGBUILD")
-	cmd.Dir = srcDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git add: %v: %s", err, output)
-	}
-
-	stageDir, release, err := stageLocalPkgSource(srcDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(release)
-	for _, included := range []string{".gitignore", "PKGBUILD", "local-input.patch"} {
-		if _, err := os.Stat(filepath.Join(stageDir, included)); err != nil {
-			t.Fatalf("authored source %s was not staged: %v", included, err)
-		}
-	}
-	for _, excluded := range []string{".git", "src", "pkg", "source-cache"} {
-		if _, err := os.Stat(filepath.Join(stageDir, excluded)); !os.IsNotExist(err) {
-			t.Fatalf("ignored build cache %s reached stage: %v", excluded, err)
-		}
+	// No download_template → no derivable glob → error.
+	noGlob := &LocalPkgDef{InstallTemplate: lp.InstallTemplate, Probe: lp.Probe}
+	if _, err := BuildDepPkgsOnHost(context.Background(), noGlob, "aur", bDef, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
+		t.Error("BuildDepPkgsOnHost(no download_template) should error")
 	}
 }
 
@@ -485,18 +570,17 @@ func TestCleanupBuiltPackageFilesIsScopedAndIdempotent(t *testing.T) {
 	}
 }
 
-// renderLocalPkgImageInstall: a PRODUCTION box build DOWNLOADS the candy's
+// RenderLocalPkgImageInstall: a PRODUCTION box build DOWNLOADS the candy's
 // PUBLISHED release package (latest released toolchain) and installs it via the
 // shared install template — never a COPY of a locally-built package.
 func TestRenderLocalPkgImageInstall_ProductionDownloadsRelease(t *testing.T) {
 	lp := testPacLocalPkgDef()
-	lp.DownloadTemplate = "https://github.com/opencharly/charly/releases/latest/download/opencharly-${ARCH}.pkg.tar.zst"
 	s := &LocalPkgInstallStep{CandyName: "charly", Format: "pac", LocalPkg: lp}
-	got, err := RenderLocalPkgImageInstall(s, false, "", "")
+	got, err := RenderLocalPkgImageInstall(s, false, nil, "", "")
 	if err != nil {
 		t.Fatalf("production render: %v", err)
 	}
-	if !strings.Contains(got, "curl -fsSL") || !strings.Contains(got, "releases/latest/download/opencharly-${ARCH}.pkg.tar.zst") {
+	if !strings.Contains(got, "curl -fsSL") || !strings.Contains(got, "charly-${ARCH}.pkg.tar.zst") {
 		t.Errorf("production mode must DOWNLOAD the published release; got:\n%s", got)
 	}
 	if !strings.Contains(got, "pacman -U --noconfirm") {
@@ -507,24 +591,70 @@ func TestRenderLocalPkgImageInstall_ProductionDownloadsRelease(t *testing.T) {
 	}
 }
 
-// renderLocalPkgImageInstall: a DISPOSABLE check bed (devLocalPkg=true) builds the
-// in-development package from LOCAL source. With no localpkg source dir present it
-// HARD ERRORS — it must NEVER silently fall back to the published release (R4: no
-// black-magic fallback that would let a bed test a stale binary).
-func TestRenderLocalPkgImageInstall_DevMissingSourceHardErrors(t *testing.T) {
-	lp := testPacLocalPkgDef()
-	lp.DownloadTemplate = "https://example.com/opencharly-${ARCH}.pkg.tar.zst"
-	s := &LocalPkgInstallStep{
-		CandyName:   "charly",
-		Format:      "pac",
-		PkgbuildRef: "pkg/arch",
-		CandyDir:    t.TempDir(), // no PKGBUILD sentinel here
-		ProjectDir:  t.TempDir(), // nor here
-		LocalPkg:    lp,
+// RenderLocalPkgImageInstall: a format with no download_template (or no
+// LocalPkg at all) is a clean no-op in BOTH modes — the candy's own task:
+// install is the fallback.
+func TestRenderLocalPkgImageInstall_EmptyDownloadTemplateNoop(t *testing.T) {
+	// Nil LocalPkg → "".
+	if got, err := RenderLocalPkgImageInstall(&LocalPkgInstallStep{CandyName: "charly"}, false, nil, "", ""); err != nil || got != "" {
+		t.Errorf("nil LocalPkg = (%q, %v), want (\"\", nil)", got, err)
 	}
-	_, err := RenderLocalPkgImageInstall(s, true, t.TempDir(), "charly-arch")
+	// Empty download_template → "" in both modes.
+	lp := &LocalPkgDef{InstallTemplate: "pacman -U --noconfirm {{.StageDir}}/{{.Glob}}", Probe: "command -v pacman"}
+	s := &LocalPkgInstallStep{CandyName: "charly", Format: "pac", LocalPkg: lp}
+	for _, dev := range []bool{false, true} {
+		if got, err := RenderLocalPkgImageInstall(s, dev, nil, "", ""); err != nil || got != "" {
+			t.Errorf("empty download_template (dev=%v) = (%q, %v), want (\"\", nil)", dev, got, err)
+		}
+	}
+}
+
+// RenderLocalPkgImageInstall: a DISPOSABLE check bed (devLocalPkg=true) builds
+// the in-development package via the generate-packages plugin (fake binary),
+// stages it into the image build context, and emits a COPY + the same
+// dep-resolving install.
+func TestRenderLocalPkgImageInstall_DevBuildsAndCopies(t *testing.T) {
+	fakeCharly := writeFakeCharly(t)
+	lp := testPacLocalPkgDef()
+	s := &LocalPkgInstallStep{CandyName: "charly", CandyDir: t.TempDir(), Format: "pac", LocalPkg: lp}
+	imageDir := t.TempDir()
+	build := &spec.LocalPkgBuildContext{Binary: fakeCharly}
+
+	got, err := RenderLocalPkgImageInstall(s, true, build, imageDir, "charly-arch")
+	if err != nil {
+		t.Fatalf("dev render: %v", err)
+	}
+	if !strings.Contains(got, "COPY ") || !strings.Contains(got, "pacman -U --noconfirm") {
+		t.Errorf("dev mode must COPY the built package + install via the template; got:\n%s", got)
+	}
+	if strings.Contains(got, "curl -fsSL") {
+		t.Errorf("dev mode must NOT download the published release; got:\n%s", got)
+	}
+	// The built package was staged into the image build context.
+	staged := filepath.Join(imageDir, "_localpkg", "charly", "charly-2026.225.1200-1-x86_64.pkg.tar.zst")
+	if _, err := os.Stat(staged); err != nil {
+		t.Errorf("built package not staged at %s: %v", staged, err)
+	}
+}
+
+// RenderLocalPkgImageInstall: a DISPOSABLE check bed whose in-development
+// package build FAILS is a HARD ERROR — it must NEVER silently fall back to the
+// published release (R4: no black-magic fallback that would let a bed test a
+// stale binary).
+func TestRenderLocalPkgImageInstall_DevFailureHardErrors(t *testing.T) {
+	lp := testPacLocalPkgDef()
+	s := &LocalPkgInstallStep{
+		CandyName: "charly",
+		Format:    "pac",
+		CandyDir:  t.TempDir(),
+		LocalPkg:  lp,
+	}
+	// A binary that cannot run (missing) with a pinned CalVer (so the failure is
+	// the generate-packages invocation, not the version probe).
+	build := &spec.LocalPkgBuildContext{Binary: "/no/such/binary", CalVer: "2026.225.1200"}
+	_, err := RenderLocalPkgImageInstall(s, true, build, t.TempDir(), "charly-arch")
 	if err == nil {
-		t.Fatalf("dev-local-pkg with no source dir must HARD ERROR (no silent fallback to the release); got nil")
+		t.Fatalf("dev-local-pkg with a failing build must HARD ERROR (no silent fallback to the release); got nil")
 	}
 	if !strings.Contains(err.Error(), "dev-local-pkg") {
 		t.Errorf("dev-mode error should name dev-local-pkg; got: %v", err)
