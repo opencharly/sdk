@@ -61,7 +61,7 @@ func buildOne(pkg *spec.Packaging, format string, opts BuildOptions) (string, er
 		return "", fmt.Errorf("create %s: %w", path, err)
 	}
 	if err := packager.Package(info, f); err != nil {
-		f.Close()
+		_ = f.Close() // best-effort close on the error path; the package error is primary
 		return "", fmt.Errorf("build %s package: %w", format, err)
 	}
 	if err := f.Close(); err != nil {

@@ -38,12 +38,12 @@ func testPacLocalPkgDef() *LocalPkgDef {
 	}
 }
 
-// writeFakeCurl writes a fake `curl` executable into a temp dir and returns the
-// dir. The fake writes the URL into the `-o` destination (so tests can assert
-// the resolved URL), fails when the URL contains "fail", and errors on a
-// missing -o/URL. Tests prepend the dir to PATH so downloadLocalPkg's
-// exec.CommandContext("curl", …) resolves to it.
-func writeFakeCurl(t *testing.T) string {
+// writeFakeCurl writes a fake `curl` executable into a temp dir and prepends the
+// dir to PATH. The fake writes the URL into the `-o` destination (so tests can
+// assert the resolved URL), fails when the URL contains "fail", and errors on a
+// missing -o/URL. downloadLocalPkg's exec.CommandContext("curl", …) resolves to
+// it via PATH.
+func writeFakeCurl(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
 	script := `#!/bin/sh
@@ -70,7 +70,6 @@ printf 'package-content-from-%s\n' "$url" > "$dst"
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return dir
 }
 
 // writeFakeCharly writes a fake `charly` binary into a temp dir and returns its
