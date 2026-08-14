@@ -20,14 +20,22 @@ type CycleError struct {
 }
 
 // layerEntersOrder reports whether a candy must enter the resolved install
-// order. A candy with content (env/ports/services/install files) always
-// enters; a pure-composition candy (no content) enters only when it carries a
-// spec — a plan or description — so its spec bakes into the
-// ai.opencharly.description label (ADE: every candy's plan is runnable
-// acceptance). A content-free, spec-free composing candy is a pure grouping
-// node and contributes nothing to the build.
+// order. A candy with content (env/ports/services/install files — note
+// HasContent counts RunOps but NOT plan steps) always enters. A
+// pure-composition candy enters when it carries a PLAN, so that plan bakes
+// into the ai.opencharly.description label (ADE: every candy's plan is
+// runnable acceptance); it contributes nothing to the build, since
+// HasContent()==false implies empty RunOps and so zero emitted steps.
+//
+// Deliberately NOT a term here: a non-empty description. ADE makes a
+// description mandatory on every candy, so admitting on it would admit every
+// composing candy unconditionally and make this predicate equivalent to
+// "always true" for local candies — a far wider change than the plan-baking
+// this exists for, and one no test could distinguish. Measured against the
+// current tree: 23 composing candies, 10 pure-composition-with-plan, and ZERO
+// that a description term would admit which the plan term does not.
 func layerEntersOrder(layer CandyModel) bool {
-	return layer.HasContent() || len(layer.PlanSteps()) > 0 || layer.GetDescription() != ""
+	return layer.HasContent() || len(layer.PlanSteps()) > 0
 }
 
 func (e *CycleError) Error() string {
@@ -36,7 +44,8 @@ func (e *CycleError) Error() string {
 
 // ExpandCandy expands candy composition references (candy: field in the candy manifest).
 // For each candy that has IncludedCandies, recursively inserts them into the result.
-// Candies without content (no install files, no env/ports/etc.) are omitted.
+// A composing candy itself is omitted unless layerEntersOrder admits it — i.e. it has
+// content, or it carries a plan whose steps must bake into the description label.
 // Returns a flat, deduplicated candy list.
 func ExpandCandy(requested []string, layers map[string]CandyModel) ([]string, error) {
 	var result []string
