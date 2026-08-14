@@ -337,6 +337,26 @@ func TestDependsOnComposingCandy(t *testing.T) {
 	}
 }
 
+func TestComposingCandyWithPlanEntersOrder(t *testing.T) {
+	// A pure-composition candy (no content) that carries a plan/description must
+	// still enter the resolved order so its spec bakes into the
+	// ai.opencharly.description label (ADE). It contributes nothing to the build.
+	layers := map[string]spec.CandyReader{
+		"charly": testCandy("charly", spec.CandyModel{Plan: []spec.Step{{Check: "the charly binary resolves", Op: cmdOp()}}}, spec.CandyView{}),
+		"snap":   testCandy("snap", spec.CandyModel{Plan: []spec.Step{{Check: "the snapshot command is registered", Op: cmdOp()}}}, spec.CandyView{IncludedCandy: []string{"charly"}}),
+	}
+
+	order, err := ResolveCandyOrder([]string{"snap"}, layers, nil)
+	if err != nil {
+		t.Fatalf("ResolveCandyOrder() error: %v", err)
+	}
+	// charly (composed) → snap (pure composition WITH a plan — must be present)
+	want := []string{"charly", "snap"}
+	if !reflect.DeepEqual(order, want) {
+		t.Errorf("order = %v, want %v", order, want)
+	}
+}
+
 func TestResolveImageLevels(t *testing.T) {
 	images := map[string]*buildkit.ResolvedBox{"base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "cuda": {ResolvedBox: spec.ResolvedBox{Name: "cuda", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "app": {ResolvedBox: spec.ResolvedBox{Name: "app", Base: "base", IsExternalBase: false}}, "ml": {ResolvedBox: spec.ResolvedBox{Name: "ml", Base: "cuda", IsExternalBase: false}}, "inference": {ResolvedBox: spec.ResolvedBox{Name: "inference", Base: "ml", IsExternalBase: false}}}
 

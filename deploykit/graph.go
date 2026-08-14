@@ -64,8 +64,12 @@ func ExpandCandy(requested []string, layers map[string]CandyModel) ([]string, er
 			}
 			expanding[name] = false
 			seen[name] = true
-			// Composing candies only appear in result if they also have content
-			if layer.HasContent() {
+			// Composing candies appear in result if they have content OR a spec
+			// (plan/description). A pure-composition candy with a plan must enter
+			// the closure so its spec bakes into the ai.opencharly.description
+			// label (ADE — every candy's plan is runnable acceptance); it is a
+			// no-op for the build (no env/ports/services to emit).
+			if layer.HasContent() || len(layer.PlanSteps()) > 0 || layer.GetDescription() != "" {
 				result = append(result, name)
 			}
 		} else {
@@ -143,8 +147,11 @@ func ResolveCandyOrder(requested []string, layers map[string]CandyModel, parentC
 		}
 
 		visiting[name] = false
-		// Composing candies without content don't need to be built
-		if len(layer.GetIncludedCandy()) == 0 || layer.HasContent() {
+		// Composing candies without content don't need to be built — but a
+		// plan/description-bearing one still enters the order so its spec bakes
+		// into the description label (ADE). It contributes nothing to the build.
+		if len(layer.GetIncludedCandy()) == 0 || layer.HasContent() ||
+			len(layer.PlanSteps()) > 0 || layer.GetDescription() != "" {
 			needed[name] = true
 		}
 		return nil
