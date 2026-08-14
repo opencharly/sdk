@@ -3,10 +3,12 @@ package buildkit
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"text/template"
 
 	"github.com/opencharly/sdk/kit"
@@ -44,7 +46,48 @@ type PrivilegedRun struct {
 	// OutputDest is the absolute host path where OutputPath is written.
 	// Required when OutputPath is set; ignored otherwise.
 	OutputDest string
+	// MinFreeBytes is the minimum free space required on BOTH the staging
+	// directory (where the container writes the output) and the OutputDest
+	// directory (where the output is copied). When > 0, RunPrivileged
+	// statfs's both locations before the container runs and fails with a
+	// clear error naming the directory, the free space, and the required
+	// space — instead of the container dying cryptically mid-write with
+	// "No space left on device". Callers that know their output size (a VM
+	// disk, a rootfs tarball) MUST set it; the image-build bootstrap sets a
+	// default floor.
+	MinFreeBytes int64
 }
+
+// checkFreeSpace verifies that the filesystem holding path has at least
+// minBytes of free space, returning an actionable error otherwise. The
+// staging dir lands on the root fs (proc.MkdirTempHeld honors $TMPDIR), so a
+// full disk used to surface only as a cryptic "gzip: stdout: No space left on
+// device" from inside the container — this check turns that into a clear
+// pre-flight failure naming the exact directory and the shortfall.
+func checkFreeSpace(path string, minBytes int64) error {
+	if minBytes <= 0 {
+		return nil
+	}
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return fmt.Errorf("checking free space on %s: %w", path, err)
+	}
+	free := int64(st.Bavail) * int64(st.Bsize)
+	if free < minBytes {
+		return fmt.Errorf("insufficient free space on %s: %.1f GiB free, %.1f GiB required (%.0f bytes free, %d bytes required); free disk space and retry",
+			path, float64(free)/gib, float64(minBytes)/gib, float64(free), minBytes)
+	}
+	return nil
+}
+
+const gib = 1 << 30
+
+// RootfsOutputFloor is the MinFreeBytes floor for a privileged rootfs build: the output is a
+// gzipped rootfs tarball (typically 1-3 GiB for pacstrap/debootstrap), so require 4 GiB of free
+// space on the staging + destination filesystems. A full disk used to fail cryptically inside
+// the container ("gzip: stdout: No space left on device"). Shared by the OCI-image bootstrap
+// (candy/plugin-build) and the VM-bootstrap engine (candy/plugin-vm) — one floor, R3.
+const RootfsOutputFloor = 4 << 30
 
 // RunPrivileged executes the container described by p. Returns an error when the container
 // exits non-zero or when the output file capture fails. Stdout/stderr stream live to the
@@ -92,6 +135,13 @@ func RunPrivileged(p PrivilegedRun) error {
 		defer releaseStaging()
 		defer proc.UnregisterTempCleanup(hostStaging)
 		stagingDir = filepath.Dir(p.OutputPath)
+		// Fail fast with a clear error before the container runs: the output is
+		// written into this staging dir, and a full disk used to surface only as
+		// a cryptic in-container "No space left on device".
+		if err := checkFreeSpace(hostStaging, p.MinFreeBytes); err != nil {
+			_ = os.RemoveAll(hostStaging)
+			return err
+		}
 		args = append(args, "-v", fmt.Sprintf("%s:%s", hostStaging, stagingDir))
 	}
 	args = append(args, p.Image, "bash", "-s")
@@ -151,6 +201,13 @@ func RunPrivileged(p PrivilegedRun) error {
 			_ = os.RemoveAll(hostStaging)
 			return fmt.Errorf("creating output destination dir: %w", err)
 		}
+		// The copy materializes the same bytes on the OutputDest filesystem —
+		// check it too, so a full OutputDest disk fails clearly instead of
+		// mid-copy.
+		if err := checkFreeSpace(filepath.Dir(p.OutputDest), p.MinFreeBytes); err != nil {
+			_ = os.RemoveAll(hostStaging)
+			return err
+		}
 		if err := CopyFileBytes(srcPath, p.OutputDest); err != nil {
 			_ = os.RemoveAll(hostStaging)
 			return fmt.Errorf("capturing privileged output %s -> %s: %w", srcPath, p.OutputDest, err)
@@ -160,14 +217,26 @@ func RunPrivileged(p PrivilegedRun) error {
 	return nil
 }
 
-// CopyFileBytes is a small helper that mirrors os.CopyFile (Go 1.21+), kept inline to avoid an
-// extra dependency on a newer stdlib version.
+// CopyFileBytes copies src to dst, streaming (io.Copy) rather than reading the
+// whole file into memory — the privileged outputs can be multi-GiB (a VM disk
+// qcow2, a rootfs tarball), and the former os.ReadFile approach allocated the
+// full file size in RAM, an OOM risk for a 20G+ disk.
 func CopyFileBytes(src, dst string) error {
-	in, err := os.ReadFile(src)
+	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, in, 0o644)
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
 }
 
 // RenderBootstrapScript renders the install template for a privileged bootstrap builder

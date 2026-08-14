@@ -58,6 +58,38 @@ func TestCopyFileBytes(t *testing.T) {
 	})
 }
 
+func TestCheckFreeSpace(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("zero min is a no-op", func(t *testing.T) {
+		if err := checkFreeSpace(dir, 0); err != nil {
+			t.Errorf("checkFreeSpace(dir, 0) = %v, want nil", err)
+		}
+		if err := checkFreeSpace(dir, -1); err != nil {
+			t.Errorf("checkFreeSpace(dir, -1) = %v, want nil", err)
+		}
+	})
+
+	t.Run("small min passes on a real filesystem", func(t *testing.T) {
+		if err := checkFreeSpace(dir, 1<<20); err != nil {
+			t.Errorf("checkFreeSpace(dir, 1MiB) = %v, want nil (temp dir has free space)", err)
+		}
+	})
+
+	t.Run("impossible min fails with the actionable error", func(t *testing.T) {
+		err := checkFreeSpace(dir, 1<<60)
+		if err == nil {
+			t.Fatal("expected an error for an impossible free-space requirement")
+		}
+		msg := err.Error()
+		for _, want := range []string{"insufficient free space on", "GiB free", "GiB required", "free disk space and retry"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("error %q missing expected fragment %q", msg, want)
+			}
+		}
+	})
+}
+
 func TestRenderBootstrapScript(t *testing.T) {
 	t.Run("resolves ctx fields + funcs into the rendered script", func(t *testing.T) {
 		builder := &BuilderDef{
