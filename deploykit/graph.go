@@ -19,6 +19,17 @@ type CycleError struct {
 	Cycle []string
 }
 
+// layerEntersOrder reports whether a candy must enter the resolved install
+// order. A candy with content (env/ports/services/install files) always
+// enters; a pure-composition candy (no content) enters only when it carries a
+// spec — a plan or description — so its spec bakes into the
+// ai.opencharly.description label (ADE: every candy's plan is runnable
+// acceptance). A content-free, spec-free composing candy is a pure grouping
+// node and contributes nothing to the build.
+func layerEntersOrder(layer CandyModel) bool {
+	return layer.HasContent() || len(layer.PlanSteps()) > 0 || layer.GetDescription() != ""
+}
+
 func (e *CycleError) Error() string {
 	return fmt.Sprintf("circular dependency: %s", strings.Join(e.Cycle, " -> "))
 }
@@ -65,11 +76,8 @@ func ExpandCandy(requested []string, layers map[string]CandyModel) ([]string, er
 			expanding[name] = false
 			seen[name] = true
 			// Composing candies appear in result if they have content OR a spec
-			// (plan/description). A pure-composition candy with a plan must enter
-			// the closure so its spec bakes into the ai.opencharly.description
-			// label (ADE — every candy's plan is runnable acceptance); it is a
-			// no-op for the build (no env/ports/services to emit).
-			if layer.HasContent() || len(layer.PlanSteps()) > 0 || layer.GetDescription() != "" {
+			// (plan/description) — see layerEntersOrder.
+			if layerEntersOrder(layer) {
 				result = append(result, name)
 			}
 		} else {
@@ -150,8 +158,7 @@ func ResolveCandyOrder(requested []string, layers map[string]CandyModel, parentC
 		// Composing candies without content don't need to be built — but a
 		// plan/description-bearing one still enters the order so its spec bakes
 		// into the description label (ADE). It contributes nothing to the build.
-		if len(layer.GetIncludedCandy()) == 0 || layer.HasContent() ||
-			len(layer.PlanSteps()) > 0 || layer.GetDescription() != "" {
+		if len(layer.GetIncludedCandy()) == 0 || layerEntersOrder(layer) {
 			needed[name] = true
 		}
 		return nil
