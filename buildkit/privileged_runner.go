@@ -72,7 +72,7 @@ func checkFreeSpace(path string, minBytes int64) error {
 	if err := syscall.Statfs(path, &st); err != nil {
 		return fmt.Errorf("checking free space on %s: %w", path, err)
 	}
-	free := int64(st.Bavail) * int64(st.Bsize)
+	free := int64(st.Bavail) * st.Bsize
 	if free < minBytes {
 		return fmt.Errorf("insufficient free space on %s: %.1f GiB free, %.1f GiB required (%.0f bytes free, %d bytes required); free disk space and retry",
 			path, float64(free)/gib, float64(minBytes)/gib, float64(free), minBytes)
@@ -226,7 +226,7 @@ func CopyFileBytes(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer in.Close() //nolint:errcheck // read-only handle; the write path's Close is checked below
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
