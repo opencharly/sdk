@@ -84,8 +84,8 @@ func ExpandCandy(requested []string, layers map[string]CandyModel) ([]string, er
 			}
 			expanding[name] = false
 			seen[name] = true
-			// Composing candies appear in result if they have content OR a spec
-			// (plan/description) — see layerEntersOrder.
+			// Composing candies appear in result if they have content OR a plan
+			// — see layerEntersOrder.
 			if layerEntersOrder(layer) {
 				result = append(result, name)
 			}
@@ -165,8 +165,8 @@ func ResolveCandyOrder(requested []string, layers map[string]CandyModel, parentC
 
 		visiting[name] = false
 		// Composing candies without content don't need to be built — but a
-		// plan/description-bearing one still enters the order so its spec bakes
-		// into the description label (ADE). It contributes nothing to the build.
+		// plan-bearing one still enters the order so its plan bakes into the
+		// description label (ADE). It contributes nothing to the build.
 		if len(layer.GetIncludedCandy()) == 0 || layerEntersOrder(layer) {
 			needed[name] = true
 		}
