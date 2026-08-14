@@ -337,6 +337,53 @@ func TestDependsOnComposingCandy(t *testing.T) {
 	}
 }
 
+func TestComposingCandyWithPlanEntersOrder(t *testing.T) {
+	// A pure-composition candy (no content) that carries a PLAN must still enter
+	// the resolved order so its plan bakes into the ai.opencharly.description
+	// label (ADE). It contributes nothing to the build.
+	layers := map[string]spec.CandyReader{
+		"charly": testCandy("charly", spec.CandyModel{Plan: []spec.Step{{Check: "the charly binary resolves", Op: cmdOp()}}}, spec.CandyView{}),
+		"snap":   testCandy("snap", spec.CandyModel{Plan: []spec.Step{{Check: "the snapshot command is registered", Op: cmdOp()}}}, spec.CandyView{IncludedCandy: []string{"charly"}}),
+	}
+
+	order, err := ResolveCandyOrder([]string{"snap"}, layers, nil)
+	if err != nil {
+		t.Fatalf("ResolveCandyOrder() error: %v", err)
+	}
+	// charly (composed) → snap (pure composition WITH a plan — must be present)
+	want := []string{"charly", "snap"}
+	if !reflect.DeepEqual(order, want) {
+		t.Errorf("order = %v, want %v", order, want)
+	}
+}
+
+func TestComposingCandyWithOnlyDescriptionIsOmitted(t *testing.T) {
+	// The negative arm, and the reason layerEntersOrder does NOT admit on a
+	// non-empty description: admission is keyed to the PLAN alone. A description
+	// is mandatory on every candy under ADE, so a description term would admit
+	// every composing candy unconditionally — a far wider behaviour than the
+	// plan-baking this predicate exists for. A content-free candy carrying only a
+	// description is therefore still omitted, as a pure grouping node.
+	//
+	// Without this test the description term is unfalsifiable: removing it from
+	// the predicate leaves the whole suite green, because every fixture that
+	// exercises admission also carries a plan.
+	layers := map[string]spec.CandyReader{
+		"charly": testCandy("charly", spec.CandyModel{Plan: []spec.Step{{Check: "the charly binary resolves", Op: cmdOp()}}}, spec.CandyView{}),
+		"group":  testCandy("group", spec.CandyModel{}, spec.CandyView{IncludedCandy: []string{"charly"}, Description: "a pure grouping node — no content, no plan"}),
+	}
+
+	order, err := ResolveCandyOrder([]string{"group"}, layers, nil)
+	if err != nil {
+		t.Fatalf("ResolveCandyOrder() error: %v", err)
+	}
+	// Only the composed candy survives; "group" contributes nothing and is dropped.
+	want := []string{"charly"}
+	if !reflect.DeepEqual(order, want) {
+		t.Errorf("order = %v, want %v — a description alone must not admit a composing candy", order, want)
+	}
+}
+
 func TestResolveImageLevels(t *testing.T) {
 	images := map[string]*buildkit.ResolvedBox{"base": {ResolvedBox: spec.ResolvedBox{Name: "base", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "cuda": {ResolvedBox: spec.ResolvedBox{Name: "cuda", Base: "quay.io/fedora/fedora:43", IsExternalBase: true}}, "app": {ResolvedBox: spec.ResolvedBox{Name: "app", Base: "base", IsExternalBase: false}}, "ml": {ResolvedBox: spec.ResolvedBox{Name: "ml", Base: "cuda", IsExternalBase: false}}, "inference": {ResolvedBox: spec.ResolvedBox{Name: "inference", Base: "ml", IsExternalBase: false}}}
 
