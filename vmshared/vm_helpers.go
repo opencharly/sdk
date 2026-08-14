@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 )
 
@@ -83,17 +82,8 @@ func VmDiskDir(vmName string) string {
 // KillQemuByPID force-kills a direct-QEMU VM by the PID recorded in its state dir (the last-resort
 // path when QMP graceful/force shutdown is unavailable). Pure OS process kill — no govmm.
 func KillQemuByPID(stateDir string) {
-	pidFile := filepath.Join(stateDir, "qemu.pid")
-	data, err := os.ReadFile(pidFile)
-	if err != nil {
-		return
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
+	proc, _, ok := qemuProcFromStateDir(stateDir)
+	if !ok {
 		return
 	}
 	_ = proc.Kill()
