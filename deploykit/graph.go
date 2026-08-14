@@ -32,7 +32,7 @@ type CycleError struct {
 // composing candy unconditionally and make this predicate equivalent to
 // "always true" for local candies — a far wider change than the plan-baking
 // this exists for, and one no test could distinguish. Measured against the
-// current tree: 23 composing candies, 10 pure-composition-with-plan, and ZERO
+// current tree: 23 composing candies, 9 pure-composition-with-plan, and ZERO
 // that a description term would admit which the plan term does not.
 func layerEntersOrder(layer CandyModel) bool {
 	return layer.HasContent() || len(layer.PlanSteps()) > 0
