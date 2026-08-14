@@ -83,14 +83,14 @@ func RunVenueBuilderStep(ctx context.Context, exec DeployExecutor, venueHome str
 	// VENUE — config-driven, not a hardcoded distro/builder-name check.
 	if !VenueHasPkgManager(ctx, exec, s.LocalPkg, opts) {
 		return fmt.Errorf("builder %q (candy=%s) builds %s package files but the venue has no %s package manager (local_pkg.probe %q failed); cannot install the built packages",
-			s.Builder, s.CandyName, s.LocalPkg.DepBuilder, s.LocalPkg.DepBuilder, s.LocalPkg.Probe)
+			s.Builder, s.CandyName, s.Builder, s.Builder, s.LocalPkg.Probe)
 	}
 
 	// Build the aur packages on the HOST through the SHARED host-side dep-build helper
 	// (R3) — the builder runs on the host (podman); the venue never needs a container
 	// runtime. The package glob comes from the format config. The image resolve/ensure
 	// seams are the caller's INJECTED closures (BuildDepPkgsOnHost imports no *Config).
-	matches, err := BuildDepPkgsOnHost(ctx, s.LocalPkg, s.BuilderDef, image, ExtractStringSlice(s.RawStageContext, "packages"), s.CandyDir,
+	matches, err := BuildDepPkgsOnHost(ctx, s.LocalPkg, s.Builder, s.BuilderDef, image, ExtractStringSlice(s.RawStageContext, "packages"), s.CandyDir,
 		resolveImage, ensureImage, opts)
 	if err != nil {
 		return fmt.Errorf("venue aur builder: %w", err)

@@ -38,13 +38,13 @@ func TestLibvirtListeners_OpaqueNotExpander(t *testing.T) {
 	}
 }
 
-// TestLocalPkgMapRejectsScalar proves the candy-manifest localpkg: field is CUE-CLOSED to the
-// per-format map shape (schema/candy.cue: `localpkg?: {pac?: string, rpm?: string, deb?:
-// string}`) — a legacy scalar form is rejected at CUE decode time (struct vs string type
-// mismatch), and the per-format map decodes into CandyYAML.LocalPkg. The rejection moved from a
-// hand-written LocalPkgMap.UnmarshalYAML (deleted with *Candy) to the schema itself (SDD): the
-// decode path is the SAME DecodeEntityViaCUE every candy manifest goes through.
-func TestLocalPkgMapRejectsScalar(t *testing.T) {
+// TestPackagingRejectsScalar proves the candy-manifest packaging: field is CUE-CLOSED to the
+// #Packaging shape (schema/candy.cue) — a scalar form is rejected at CUE decode time (struct vs
+// string type mismatch), and a proper map decodes into CandyYAML.Packaging. The old localpkg:
+// per-format map (deleted with the nFPM cutover) had the same closed-shape test; the packaging:
+// section replaced it as the single source of package metadata. The decode path is the SAME
+// DecodeEntityViaCUE every candy manifest goes through.
+func TestPackagingRejectsScalar(t *testing.T) {
 	decode := func(body string) (spec.CandyYAML, error) {
 		var doc yaml.Node
 		if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
@@ -59,15 +59,36 @@ func TestLocalPkgMapRejectsScalar(t *testing.T) {
 		return ly, err
 	}
 
-	if _, err := decode("name: t\nlocalpkg: pkg/arch\n"); err == nil {
-		t.Error("scalar localpkg: should be rejected by CUE (per-format map shape), got nil error")
+	if _, err := decode("name: t\npackaging: charly\n"); err == nil {
+		t.Error("scalar packaging: should be rejected by CUE (#Packaging struct shape), got nil error")
 	}
 
-	ly, err := decode("name: t\nlocalpkg:\n  pac: pkg/arch\n  rpm: pkg/fedora\n")
+	ly, err := decode(`name: t
+packaging:
+  name: charly
+  description: The charly CLI
+  maintainer: OpenCharly
+  variants:
+    minimal:
+      description: Minimal charly
+      plugins: [command:box]
+  formats:
+    deb:
+      depends: [curl]
+`)
 	if err != nil {
 		t.Fatalf("map form should decode, got %v", err)
 	}
-	if ly.LocalPkg["pac"] != "pkg/arch" || ly.LocalPkg["rpm"] != "pkg/fedora" {
-		t.Errorf("decoded map = %v", ly.LocalPkg)
+	if ly.Packaging == nil {
+		t.Fatal("decoded packaging = nil")
+	}
+	if ly.Packaging.Name != "charly" || ly.Packaging.Maintainer != "OpenCharly" {
+		t.Errorf("decoded packaging = %+v, want name=charly maintainer=OpenCharly", ly.Packaging)
+	}
+	if ly.Packaging.Variants["minimal"] == nil || len(ly.Packaging.Variants["minimal"].Plugins) != 1 {
+		t.Errorf("decoded variants = %+v, want minimal with one plugin", ly.Packaging.Variants)
+	}
+	if ly.Packaging.Formats["deb"] == nil || len(ly.Packaging.Formats["deb"].Depends) != 1 {
+		t.Errorf("decoded formats = %+v, want deb with one dep", ly.Packaging.Formats)
 	}
 }
