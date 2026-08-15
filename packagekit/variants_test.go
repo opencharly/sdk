@@ -9,7 +9,8 @@ import (
 
 func testPackaging() *spec.Packaging {
 	return &spec.Packaging{
-		Name: "charly",
+		Name:       "charly",
+		Maintainer: "Test Maintainer <test@example.com>",
 		Variants: map[string]*spec.PackagingVariant{
 			"default": {Plugins: []string{"plugin-doctor", "plugin-clean"}},
 			"minimal": {Plugins: []string{"plugin-doctor"}},
