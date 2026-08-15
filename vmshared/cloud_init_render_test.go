@@ -183,6 +183,38 @@ func TestComposeRunCmd(t *testing.T) {
 	}
 }
 
+// TestComposeRunCmd_AlpineOpenRC is the regression test for the OpenRC sshd-start branch:
+// Alpine has no systemd, so composeRunCmd must emit the rc-update/rc-service pair instead of
+// the systemctl unmask+enable, and the hardening drop-in must still run first. The branch fires
+// on the effectiveDistro inference (empty distro + base_user: alpine) as well as an explicit
+// distro: alpine.
+func TestComposeRunCmd_AlpineOpenRC(t *testing.T) {
+	cases := []struct {
+		name string
+		spec *VmSpec
+	}{
+		{"explicit distro", &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "alpine", BaseUser: "alpine"}}},
+		{"base_user inference", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "alpine"}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := composeRunCmd(c.spec, &VmCloudInit{RunCmd: []string{"echo hi"}})
+			if len(got) != 3 {
+				t.Fatalf("composeRunCmd() = %v, want 3 entries", got)
+			}
+			if got[0] != sshHardeningDropInCmd {
+				t.Errorf("composeRunCmd()[0] = %v, want the sshd hardening drop-in command", got[0])
+			}
+			if got[1] != "rc-update add sshd default && rc-service sshd start" {
+				t.Errorf("composeRunCmd()[1] = %v, want the OpenRC sshd start", got[1])
+			}
+			if got[2] != "echo hi" {
+				t.Errorf("composeRunCmd()[2] = %v, want the user's own runcmd entry", got[2])
+			}
+		})
+	}
+}
+
 // TestComposeBootCmd_MasksSshSocket is the regression test for the D18 mask half of the fix: the
 // mask must be the FIRST bootcmd entry (bootcmd runs earliest, before write_files/packages/
 // runcmd), and the user's own bootcmd entries must still be preserved after it.
@@ -513,6 +545,47 @@ func TestRenderCloudInit_ExplicitNonPacmanDistro_UnaffectedByInference(t *testin
 	}
 }
 
+func TestRenderCloudInit_Alpine_OpenRC(t *testing.T) {
+	// The Alpine nocloud cloud image (kind: cloud_image, base_user: alpine, no distro:)
+	// must render the OpenRC sshd-start branch: packages on the packages:-key path
+	// (openssh/curl/tar — NOT a pacman command), runcmd with the rc-update/rc-service
+	// pair instead of the systemctl unmask+enable, and the adopt-path user entry for
+	// the pre-existing alpine account.
+	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "alpine"}}
+	ci := &VmCloudInit{Package: []string{"sudo"}, RunCmd: []string{"echo user-cmd"}}
+	spec.CloudInit = ci
+	rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid", Hostname: "testvm"}
+	userData, _, _, err := RenderCloudInit(spec, rt)
+	if err != nil {
+		t.Fatalf("RenderCloudInit: %v", err)
+	}
+	um := parseUserData(t, userData)
+
+	pkgs, _ := um["packages"].([]any)
+	wantPkgs := []any{"openssh", "curl", "tar", "sudo"}
+	if len(pkgs) != len(wantPkgs) {
+		t.Fatalf("packages = %v, want %v (alpine must stay on the packages:-key path — no pacman command)", pkgs, wantPkgs)
+	}
+	rc, _ := um["runcmd"].([]any)
+	wantRC := []any{sshHardeningDropInCmd, "rc-update add sshd default && rc-service sshd start", "echo user-cmd"}
+	if len(rc) != len(wantRC) {
+		t.Fatalf("runcmd = %v, want %v (alpine must use the OpenRC sshd start, never systemctl)", rc, wantRC)
+	}
+	for i := range wantRC {
+		if rc[i] != wantRC[i] {
+			t.Errorf("runcmd[%d] = %v, want %v", i, rc[i], wantRC[i])
+		}
+	}
+	users, _ := um["users"].([]any)
+	if len(users) != 2 {
+		t.Fatalf("users = %v, want [default, alpine adopt entry]", users)
+	}
+	adopt, _ := users[1].(map[string]any)
+	if adopt["name"] != "alpine" {
+		t.Errorf("users[1] = %v, want the adopt-path entry for the pre-existing alpine account", users[1])
+	}
+}
+
 func TestEffectiveDistro(t *testing.T) {
 	cases := []struct {
 		name string
@@ -522,8 +595,9 @@ func TestEffectiveDistro(t *testing.T) {
 		{"nil spec", nil, ""},
 		{"explicit wins", &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "debian", BaseUser: "arch"}}, "debian"},
 		{"inferred from cloud_image+arch base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "arch"}}, "arch"},
+		{"inferred from cloud_image+alpine base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "alpine"}}, "alpine"},
 		{"no inference for non-cloud_image kind", &VmSpec{Source: VmSource{Kind: "bootc", BaseUser: "arch"}}, ""},
-		{"no inference for non-arch base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "ubuntu"}}, ""},
+		{"no inference for non-arch/alpine base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "ubuntu"}}, ""},
 		{"no inference with no base_user", &VmSpec{Source: VmSource{Kind: "cloud_image"}}, ""},
 	}
 	for _, c := range cases {

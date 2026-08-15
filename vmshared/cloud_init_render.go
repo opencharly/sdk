@@ -328,13 +328,15 @@ func applySSHDefaults(entry map[string]any, rt CloudInitRuntimeParams) {
 	}
 }
 
-// effectiveDistro resolves spec.Source.Distro, inferring "arch" for the ONE
-// case this codebase already documents as supported-by-convention
+// effectiveDistro resolves spec.Source.Distro, inferring the distro for the
+// cloud_image cases this codebase documents as supported-by-convention
 // (resolveCloudInitSSHUser's own comment: "arch" for cloud_image works out
 // of the box) but that the CUE schema leaves Distro optional for: a
 // cloud_image source with no explicit `distro:` and `base_user: arch` (e.g.
 // a plain Arch Linux cloud image entity — see the D15 doc comment above for
-// why this matters to the pacman-family package-delivery branch). Strictly
+// why this matters to the pacman-family package-delivery branch) or
+// `base_user: alpine` (the Alpine nocloud cloud image — see composeRunCmd
+// for why this matters to the OpenRC sshd-start branch). Strictly
 // narrower than the pre-existing accidental behavior: composePackages'
 // distro switch already defaulted an empty/unrecognized distro to the
 // Arch/Fedora {openssh, sshd} shape, so this inference can never change what
@@ -349,8 +351,13 @@ func effectiveDistro(spec *VmSpec) string {
 	if spec.Source.Distro != "" {
 		return spec.Source.Distro
 	}
-	if spec.Source.Kind == "cloud_image" && spec.Source.BaseUser == "arch" {
-		return "arch"
+	if spec.Source.Kind == "cloud_image" {
+		switch spec.Source.BaseUser {
+		case "arch":
+			return "arch"
+		case "alpine":
+			return "alpine"
+		}
 	}
 	return ""
 }
@@ -450,12 +457,25 @@ const sshHardeningDropInCmd = `sh -c 'echo "PerSourcePenalties no" > ` + sshHard
 // could accept a connection against a guest cloud-init hasn't finished configuring yet.
 func composeRunCmd(spec *VmSpec, ci *VmCloudInit) []any {
 	runcmd := make([]any, 0, 3+len(ci.RunCmd))
-	sshUnit := sshUnitForDistro(spec.Source.Distro)
-	runcmd = append(runcmd,
-		sshHardeningDropInCmd,
-		"systemctl unmask ssh.socket || true",
-		fmt.Sprintf("systemctl enable --now %s", sshUnit),
-	)
+	if effectiveDistro(spec) == "alpine" {
+		// Alpine uses OpenRC, not systemd: there is no ssh.socket to unmask and
+		// no systemctl to enable with. The OpenSSH package ships an /etc/init.d/sshd
+		// script — rc-update registers it for the default runlevel (so it survives
+		// reboot) and rc-service starts it now. The hardening drop-in above is plain
+		// shell and distro-agnostic, so it still runs first, exactly as on systemd
+		// distros.
+		runcmd = append(runcmd,
+			sshHardeningDropInCmd,
+			"rc-update add sshd default && rc-service sshd start",
+		)
+	} else {
+		sshUnit := sshUnitForDistro(spec.Source.Distro)
+		runcmd = append(runcmd,
+			sshHardeningDropInCmd,
+			"systemctl unmask ssh.socket || true",
+			fmt.Sprintf("systemctl enable --now %s", sshUnit),
+		)
+	}
 
 	for _, cmd := range ci.RunCmd {
 		runcmd = append(runcmd, cmd)
