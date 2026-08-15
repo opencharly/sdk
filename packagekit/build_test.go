@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/goreleaser/nfpm/v2"
 )
 
 // TestBuild exercises the full nFPM build for every registered format from a
@@ -73,5 +75,29 @@ func TestBuildDefaultVariant(t *testing.T) {
 	}
 	if !strings.Contains(filepath.Base(written[0]), "charly_2026.225.1200") {
 		t.Errorf("default-variant package name = %s, want charly_2026.225.1200", filepath.Base(written[0]))
+	}
+}
+
+// TestApplyPassphrases verifies the NFPM_*_PASSPHRASE env vars reach the
+// nfpm.Info signing fields (the struct-direct path skips nFPM's Parse-time
+// env expansion). Precedence: the general NFPM_PASSPHRASE fills deb/rpm/apk,
+// and the per-format override wins.
+func TestApplyPassphrases(t *testing.T) {
+	t.Setenv("NFPM_PASSPHRASE", "general")
+	t.Setenv("NFPM_APK_PASSPHRASE", "apk-only")
+	t.Setenv("NFPM_MSIX_PASSPHRASE", "msix-only")
+	info := &nfpm.Info{}
+	applyPassphrases(info)
+	if info.Deb.Signature.KeyPassphrase != "general" {
+		t.Errorf("deb passphrase = %q, want general", info.Deb.Signature.KeyPassphrase)
+	}
+	if info.RPM.Signature.KeyPassphrase != "general" {
+		t.Errorf("rpm passphrase = %q, want general", info.RPM.Signature.KeyPassphrase)
+	}
+	if info.APK.Signature.KeyPassphrase != "apk-only" {
+		t.Errorf("apk passphrase = %q, want apk-only (per-format override)", info.APK.Signature.KeyPassphrase)
+	}
+	if info.MSIX.Signature.KeyPassphrase != "msix-only" {
+		t.Errorf("msix passphrase = %q, want msix-only", info.MSIX.Signature.KeyPassphrase)
 	}
 }

@@ -48,6 +48,7 @@ func buildOne(pkg *spec.Packaging, format string, opts BuildOptions) (string, er
 	if err != nil {
 		return "", err
 	}
+	applyPassphrases(info)
 	info = nfpm.WithDefaults(info)
 	if err := nfpm.Validate(info); err != nil {
 		return "", fmt.Errorf("validate %s package: %w", format, err)
@@ -74,4 +75,30 @@ func buildOne(pkg *spec.Packaging, format string, opts BuildOptions) (string, er
 		}
 	}
 	return path, nil
+}
+
+// applyPassphrases mirrors nFPM's Parse-time env expansion for the
+// struct-direct path: buildOne calls WithDefaults (not Parse), so the
+// NFPM_*_PASSPHRASE env vars would otherwise never be read and a
+// passphrase-protected signing key would fail with "key is encrypted but no
+// passphrase was provided". Precedence matches nFPM: the general
+// NFPM_PASSPHRASE fills deb/rpm/apk, and the per-format
+// NFPM_DEB/RPM/APK/MSIX_PASSPHRASE overrides it.
+func applyPassphrases(info *nfpm.Info) {
+	general := os.Getenv("NFPM_PASSPHRASE")
+	info.Deb.Signature.KeyPassphrase = general
+	info.RPM.Signature.KeyPassphrase = general
+	info.APK.Signature.KeyPassphrase = general
+	if v := os.Getenv("NFPM_DEB_PASSPHRASE"); v != "" {
+		info.Deb.Signature.KeyPassphrase = v
+	}
+	if v := os.Getenv("NFPM_RPM_PASSPHRASE"); v != "" {
+		info.RPM.Signature.KeyPassphrase = v
+	}
+	if v := os.Getenv("NFPM_APK_PASSPHRASE"); v != "" {
+		info.APK.Signature.KeyPassphrase = v
+	}
+	if v := os.Getenv("NFPM_MSIX_PASSPHRASE"); v != "" {
+		info.MSIX.Signature.KeyPassphrase = v
+	}
 }
