@@ -35,7 +35,7 @@ func CollectShell(cfg *spec.Config, layers map[string]CandyModel, boxName string
 		set.Candy = append(set.Candy, *entry)
 	}
 
-	if img, ok := cfg.BoxConfig(boxName); ok {
+	if _, _, img, ok := BoxOwner(cfg, boxName); ok {
 		if img.Shell != nil {
 			entry := shellConfigToEntry(img.Shell, "box:"+boxName)
 			if entry != nil {

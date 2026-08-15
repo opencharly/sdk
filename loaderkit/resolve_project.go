@@ -123,7 +123,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 	// dg.Generate(order) hits a box not in dg.Boxes and panics. The collectors read
 	// cfg+layers by name and work for intermediates (render-prep's buildBakedMetadata
 	// already used them for every gen.Box); an intermediate has no authored Plan/alias,
-	// which deploykit.ProjectBoxAggregates skips via the cfg.BoxConfig(name) ok-check. A no-op range
+	// which deploykit.ProjectBoxAggregates skips via the BoxOwner(cfg, name) ok-check. A no-op range
 	// when preResolvedBoxes is nil (the validate/inspect path passes nil).
 	for name, resolved := range preResolvedBoxes {
 		if _, exists := rp.Boxes[name]; exists {

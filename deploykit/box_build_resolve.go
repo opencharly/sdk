@@ -17,7 +17,7 @@ import (
 // traversal — aliases are leaf-box specific. Candy aliases come first; box-level entries override
 // by name. Relocated from charly/alias_collect.go.
 func CollectBoxAlias(cfg *spec.Config, layers map[string]spec.CandyReader, boxName string) ([]spec.CollectedAlias, error) {
-	img, ok := cfg.BoxConfig(boxName)
+	_, _, img, ok := BoxOwner(cfg, boxName)
 	if !ok {
 		return nil, fmt.Errorf("box %q not found in charly.yml", boxName)
 	}
@@ -74,7 +74,7 @@ func CollectBoxAlias(cfg *spec.Config, layers map[string]spec.CandyReader, boxNa
 // FleetNode.Engine via ResolveBoxEngineForDeploy / ResolveBoxEngineFromMeta. Relocated from
 // charly/engine.go (build-side resolve; distinct from the deploy-side ForDeploy/FromMeta twins).
 func ResolveBoxEngine(cfg *spec.Config, layers map[string]spec.CandyReader, boxName string, globalRunEngine string) string {
-	img, ok := cfg.BoxConfig(boxName)
+	_, _, img, ok := BoxOwner(cfg, boxName)
 	if !ok {
 		return globalRunEngine
 	}
