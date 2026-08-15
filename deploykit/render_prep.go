@@ -167,8 +167,8 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 	// Security: collected from candies + image config.
 	meta.Security = CollectSecurity(g.Config, g.Candies, boxName)
 
-	// Image-level env vars.
-	imgCfg, _ := g.Config.BoxConfig(boxName)
+	// Image-level env vars (namespace-aware entry — boxName may be qualified).
+	_, _, imgCfg, _ := BoxOwner(g.Config, boxName)
 	meta.Env = imgCfg.Env
 
 	// Hooks.

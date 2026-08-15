@@ -95,8 +95,8 @@ func CollectDescriptions(cfg *spec.Config, layers map[string]spec.CandyReader, b
 		})
 	}
 
-	// Box-level description + plan.
-	if img, ok := cfg.BoxConfig(boxName); ok {
+	// Box-level description + plan (namespace-aware entry — boxName may be qualified).
+	if _, _, img, ok := BoxOwner(cfg, boxName); ok {
 		baked := BakeableSteps(img.Plan)
 		if img.Description != "" || len(baked) > 0 {
 			set.Box = append(set.Box, spec.LabeledDescription{
