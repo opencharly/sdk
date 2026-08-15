@@ -23,6 +23,10 @@ import (
 // ErrImageNotLocal is the canonical image-not-in-local-storage sentinel (spec/spec/image_errors.go).
 var ErrImageNotLocal = spec.ErrImageNotLocal
 
+// ErrStaleLocalImage is the canonical stale-short-name-resolve sentinel (spec/spec/image_errors.go),
+// returned by ResolveBuiltImageRef.
+var ErrStaleLocalImage = spec.ErrStaleLocalImage
+
 // LooksLikeFullRef returns true if the image ref contains a registry segment
 // (a "/" before any ":") — e.g. "ghcr.io/org/name:tag" — so it can be pulled
 // without charly.yml resolution.
@@ -39,8 +43,23 @@ var ListLocalImages = container.ListLocalImages
 var ParseLocalImagesJSON = container.ParseLocalImagesJSON
 
 // ResolveLocalImageRef resolves a user-supplied image reference against the
-// engine's local storage — never reads charly.yml.
+// engine's local storage — never reads charly.yml. The LENIENT form: it elects a ref and says
+// nothing about what it passed over.
 var ResolveLocalImageRef = container.ResolveLocalImageRef
+
+// LocalImageResolution is the full-answer form of a local-image resolve: the elected ref plus the
+// newest local BUILD of the same short name.
+type LocalImageResolution = container.LocalImageResolution
+
+// ResolveLocalImage is ResolveLocalImageRef's full-answer form (elected ref + newest build ref).
+var ResolveLocalImage = container.ResolveLocalImage
+
+// ResolveBuiltImageRef resolves like ResolveLocalImageRef and REFUSES when the elected image is
+// not the newest local build of that short name. The resolver for every verb that pronounces a
+// VERDICT on a built artifact (`charly check box`, `charly box feature run`, `charly box labels`):
+// a green verdict against a stale artifact is indistinguishable from a real one, so the ambiguity
+// is an error rather than a silent choice.
+var ResolveBuiltImageRef = container.ResolveBuiltImageRef
 
 // ExtractCalVerTag returns the CalVer portion of a ref's tag, or "" if the tag
 // is not a recognisable CalVer (`YYYY.DDD.HHMM`).
