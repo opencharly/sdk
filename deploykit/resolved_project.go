@@ -91,14 +91,15 @@ func RawCandyPair(r spec.CandyReader) (spec.CandyModel, spec.CandyView, bool) {
 
 // ProjectBoxAggregates fills the box-AUTHORED + box-AGGREGATE fields on a ResolvedBoxView
 // from the authored BoxConfig + the cross-candy collectors. The authored surfaces (Plan,
-// AuthoredAliases) come from cfg.BoxConfig(name) and are SKIPPED for auto-intermediate boxes
+// AuthoredAliases) come from BoxOwner(cfg, name) — namespace-aware, since the build path keys
+// preResolvedBoxes by the QUALIFIED name — and are SKIPPED for auto-intermediate boxes
 // (which have no authored config). The aggregates (Ports/Volumes/Aliases/Engine) read
 // cfg+layers by name and work for authored boxes AND intermediates — render-prep's
 // buildBakedMetadata already used the same collectors for every gen.Box. A collector error
 // leaves that aggregate empty (a read-only projection never fails the whole load). Shared by
 // the pre-resolved (build-prep), fresh-resolve (validate), and auto-intermediate passes (R3).
 func ProjectBoxAggregates(cfg *spec.Config, layers map[string]spec.CandyReader, name string, resolved *buildkit.ResolvedBox, view *spec.ResolvedBoxView) {
-	if img, ok := cfg.BoxConfig(name); ok {
+	if _, _, img, ok := BoxOwner(cfg, name); ok {
 		view.Plan = img.Plan
 		view.AuthoredAliases = img.Alias
 		// K5-Unit-1 (#67 keystone): the box-AUTHORED deploy-overlay surfaces ExportAllBox reads

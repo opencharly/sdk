@@ -93,8 +93,14 @@ func (g *Generator) generateContainerfile(boxName string) error {
 	// Collect and write environment variables from candies
 	g.WriteCandyEnv(&b, candyOrder, img)
 
-	// Emit EXPOSE directives for the box's inherited candy ports
-	g.WriteExpose(&b, img.Name)
+	// Emit EXPOSE directives for the box's inherited candy ports. Keyed by boxName (the
+	// QUALIFIED key every other seam in this function uses), NOT img.Name: pullNamespacedBox
+	// stores an imported box under its fully-qualified key while ResolveBox sets Name to the
+	// LEAF (which must stay bare — it is what the registry image ref is built from). Reading the
+	// port seam by img.Name missed the envelope entry for every imported box, so the image got
+	// an ai.opencharly.port label but NO EXPOSE — the exact divergence between the two that
+	// deriving both from one collected set exists to prevent.
+	g.WriteExpose(&b, boxName)
 
 	// Copy builder artifacts — fully config-driven from the embedded builder: vocabulary
 	g.EmitBuilderArtifacts(&b, img, candyOrder)

@@ -272,7 +272,7 @@ func ResourceCapArgs(sec spec.SecurityConfig) []string {
 // core-min wave-3 build-cluster split (Config = spec.Config, BoxDirectCandies is an sdk mechanism,
 // so the whole aggregator is pure).
 func CollectSecurity(cfg *spec.Config, layers map[string]CandyModel, boxName string) SecurityConfig {
-	img, ok := cfg.BoxConfig(boxName)
+	_, _, img, ok := BoxOwner(cfg, boxName)
 	if !ok {
 		return SecurityConfig{}
 	}
