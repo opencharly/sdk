@@ -423,42 +423,38 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 	return meta
 }
 
-// collectChainDataEntries walks the full image chain (like CollectBoxVolume) collecting data
-// entries from candies in parent/intermediate images — the former writeLabels data-entries block.
+// collectChainDataEntries walks the full image chain collecting data entries from candies in
+// parent/intermediate images — the former writeLabels data-entries block.
+//
+// It walks via the SHARED BoxCandyChain, exactly like its sibling chain collectors
+// (CollectBoxVolume / CollectBoxPorts / CollectDescriptions / CollectHooks / CollectShell /
+// CollectSkills). It previously hand-rolled that identical walk — `for { imgDef :=
+// cfg.BoxConfig(current); …; current = imgDef.Base }` — which is the duplicate BoxCandyChain
+// exists to replace (R3), and carrying a private copy is what let it keep the namespace-unaware
+// entry after every other collector was fixed: `BoxConfig(current)` missed on a qualified boxName
+// exactly as `BoxConfig(boxName)` did elsewhere, so an imported box emitted NO ai.opencharly.data
+// entries. Reusing the shared walk fixes the namespace entry, removes the duplicate, and inherits
+// its cycle guard (the hand-rolled loop had none, so a base cycle spun forever).
+//
+// Dedupe is unchanged: BoxCandyChain already de-duplicates candy keys first-occurrence-wins across
+// the whole chain, which is what the local seenDataCandies set did.
 func (g *Generator) collectChainDataEntries(boxName string) []spec.LabelDataEntry {
 	var dataEntries []spec.LabelDataEntry
-	seenDataCandies := make(map[string]bool)
-	current := boxName
-	for {
-		imgDef, ok := g.Config.BoxConfig(current)
-		if !ok {
-			break
+	candyNames, _ := BoxCandyChain(g.Config, g.Candies, boxName)
+	for _, candyName := range candyNames {
+		layer, ok := g.Candies[candyName]
+		if !ok || !layer.HasData() {
+			continue
 		}
-		resolved, _ := ResolveCandyOrder(imgDef.Candy, g.Candies, nil)
-		for _, candyName := range resolved {
-			if seenDataCandies[candyName] {
-				continue
-			}
-			seenDataCandies[candyName] = true
-			layer, ok := g.Candies[candyName]
-			if !ok || !layer.HasData() {
-				continue
-			}
-			for _, d := range layer.Data() {
-				staging := "/data/" + d.Volume + "/"
-				if d.Dest != "" {
-					staging += d.Dest
-					if !strings.HasSuffix(staging, "/") {
-						staging += "/"
-					}
+		for _, d := range layer.Data() {
+			staging := "/data/" + d.Volume + "/"
+			if d.Dest != "" {
+				staging += d.Dest
+				if !strings.HasSuffix(staging, "/") {
+					staging += "/"
 				}
-				dataEntries = append(dataEntries, spec.LabelDataEntry{Volume: d.Volume, Staging: staging, Candy: candyName, Dest: d.Dest})
 			}
-		}
-		if baseImg, isInternal := g.Config.BoxConfig(imgDef.Base); isInternal && baseImg.IsEnabled() {
-			current = imgDef.Base
-		} else {
-			break
+			dataEntries = append(dataEntries, spec.LabelDataEntry{Volume: d.Volume, Staging: staging, Candy: candyName, Dest: d.Dest})
 		}
 	}
 	return dataEntries

@@ -46,6 +46,9 @@ func nsFixture() (*spec.Config, map[string]CandyModel) {
 		"sshd": NewSpecCandyModel(
 			spec.CandyModel{
 				Port: []spec.PortSpec{{Port: 2222}},
+				// A data candy on the BASE box, so the data entries must be reached through the
+				// base-chain walk, not just the leaf's own candies.
+				Data: []spec.CandyData{{Src: "etc/sshd", Volume: "sshconf", Dest: "keys"}},
 				Plan: []spec.Step{{Check: "sshd listens", Op: spec.Op{
 					Plugin: "port", PluginInput: map[string]any{"port": 2222},
 				}}},
@@ -234,6 +237,41 @@ func TestCollectBoxAlias_ImportedBoxCollectsCandyAndBoxAliases(t *testing.T) {
 	}
 	if names["app"] != "/usr/bin/app" {
 		t.Errorf("aliases = %+v, want the imported box's own `app` alias", got)
+	}
+}
+
+// TestCollectChainDataEntries_ImportedBoxCollectsChainData covers the ELEVENTH site — the one a
+// token-keyed grep for `BoxConfig(boxName)` missed, because it spelled the same lookup
+// `BoxConfig(current)` inside a hand-rolled copy of the base-chain walk. Pre-fix an imported box
+// emitted NO ai.opencharly.data entries at all.
+//
+// The assertions are on the entry's CONTENT (volume / staging / candy / dest), not on mere
+// non-emptiness: a length check alone would pass on a wrongly-derived staging path, and the whole
+// point of this label is that a deploy reads the staging path back.
+func TestCollectChainDataEntries_ImportedBoxCollectsChainData(t *testing.T) {
+	root, layers := nsFixture()
+	g := NewRenderGenerator()
+	g.Config = root
+	g.Candies = layers
+
+	got := g.collectChainDataEntries("distro.app")
+	if len(got) != 1 {
+		t.Fatalf("collectChainDataEntries(distro.app) = %+v, want the base chain's one sshd data entry", got)
+	}
+	e := got[0]
+	if e.Volume != "sshconf" {
+		t.Errorf("Volume = %q, want %q", e.Volume, "sshconf")
+	}
+	if e.Candy != "sshd" {
+		t.Errorf("Candy = %q, want %q (the entry must be attributed to the BASE box's candy)", e.Candy, "sshd")
+	}
+	if e.Dest != "keys" {
+		t.Errorf("Dest = %q, want %q", e.Dest, "keys")
+	}
+	// The staging path is what the deploy reads back to find the staged tree; a trailing slash is
+	// load-bearing for the COPY that consumes it.
+	if e.Staging != "/data/sshconf/keys/" {
+		t.Errorf("Staging = %q, want %q", e.Staging, "/data/sshconf/keys/")
 	}
 }
 
