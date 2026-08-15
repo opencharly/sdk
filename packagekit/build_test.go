@@ -78,6 +78,39 @@ func TestBuildDefaultVariant(t *testing.T) {
 	}
 }
 
+// TestBuildOneAppliesPassphrases proves the buildOne wiring: the env-var
+// passphrase must reach the nfpm.Info that buildOne constructs (via buildInfo).
+// It fails if the applyPassphrases call is removed from the build path —
+// TestApplyPassphrases alone would not catch that, since it exercises the
+// helper in isolation.
+func TestBuildOneAppliesPassphrases(t *testing.T) {
+	t.Setenv("NFPM_PASSPHRASE", "general")
+	t.Setenv("NFPM_APK_PASSPHRASE", "apk-only")
+	binary, pluginsDir := fixtureInputs(t)
+	opts := BuildOptions{
+		Binary:     binary,
+		PluginsDir: pluginsDir,
+		Version:    "2026.225.1200",
+		Arch:       "amd64",
+		Variant:    "minimal",
+		Out:        t.TempDir(),
+	}
+	deb, err := buildInfo(testPackaging(), "deb", opts)
+	if err != nil {
+		t.Fatalf("buildInfo(deb): %v", err)
+	}
+	if deb.Deb.Signature.KeyPassphrase != "general" {
+		t.Errorf("deb passphrase = %q, want general (from the buildOne wiring)", deb.Deb.Signature.KeyPassphrase)
+	}
+	apk, err := buildInfo(testPackaging(), "apk", opts)
+	if err != nil {
+		t.Fatalf("buildInfo(apk): %v", err)
+	}
+	if apk.APK.Signature.KeyPassphrase != "apk-only" {
+		t.Errorf("apk passphrase = %q, want apk-only (per-format override)", apk.APK.Signature.KeyPassphrase)
+	}
+}
+
 // TestApplyPassphrases verifies the NFPM_*_PASSPHRASE env vars reach the
 // nfpm.Info signing fields (the struct-direct path skips nFPM's Parse-time
 // env expansion). Precedence: the general NFPM_PASSPHRASE fills deb/rpm/apk,

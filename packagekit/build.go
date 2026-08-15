@@ -44,12 +44,10 @@ func buildOne(pkg *spec.Packaging, format string, opts BuildOptions) (string, er
 	if err != nil {
 		return "", err
 	}
-	info, err := BuildInfo(pkg, format, opts)
+	info, err := buildInfo(pkg, format, opts)
 	if err != nil {
 		return "", err
 	}
-	applyPassphrases(info)
-	info = nfpm.WithDefaults(info)
 	if err := nfpm.Validate(info); err != nil {
 		return "", fmt.Errorf("validate %s package: %w", format, err)
 	}
@@ -75,6 +73,19 @@ func buildOne(pkg *spec.Packaging, format string, opts BuildOptions) (string, er
 		}
 	}
 	return path, nil
+}
+
+// buildInfo constructs the nfpm.Info for one (pkg, format, opts) and applies
+// the NFPM_*_PASSPHRASE env vars. buildOne is the only caller — the wiring is
+// covered by TestBuildOneAppliesPassphrases, which fails if the
+// applyPassphrases call is removed from the build path.
+func buildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Info, error) {
+	info, err := BuildInfo(pkg, format, opts)
+	if err != nil {
+		return nil, err
+	}
+	applyPassphrases(info)
+	return nfpm.WithDefaults(info), nil
 }
 
 // applyPassphrases mirrors nFPM's Parse-time env expansion for the
