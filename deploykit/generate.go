@@ -206,10 +206,11 @@ func (g *Generator) generateDataImageContainerfile(boxName string, img *buildkit
 	g.WriteDataStaging(&b, candyOrder, img)
 
 	// Minimal labels (no init, no services, no ports). Content-derived
-	// EffectiveVersion (not the per-build tag).
+	// EffectiveVersion (not the per-build tag), and the box's LEAF name — the identifier the
+	// image ref is built from, never the namespace-qualified map key (see buildBakedMetadata).
 	b.WriteString("# Image metadata\n")
 	fmt.Fprintf(&b, "LABEL %s=%q\n", spec.LabelVersion, img.EffectiveVersion)
-	fmt.Fprintf(&b, "LABEL %s=%q\n", spec.LabelBox, boxName)
+	fmt.Fprintf(&b, "LABEL %s=%q\n", spec.LabelBox, spec.LeafName(boxName))
 	if img.Registry != "" {
 		fmt.Fprintf(&b, "LABEL %s=%q\n", spec.LabelRegistry, img.Registry)
 	}
