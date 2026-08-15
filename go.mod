@@ -12,7 +12,7 @@ require (
 	github.com/klauspost/compress v1.19.2
 	github.com/opencharly/charly/candy/plugin-egress v0.0.0-20260806230842-5cda00cb0fbc
 	github.com/opencharly/charly/candy/plugin-init v0.0.0-20260806230842-5cda00cb0fbc
-	github.com/opencharly/spec v0.2026227.1854
+	github.com/opencharly/spec v0.2026227.2226
 	golang.org/x/term v0.43.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af

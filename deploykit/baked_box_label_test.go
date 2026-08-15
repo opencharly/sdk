@@ -3,8 +3,8 @@ package deploykit
 import (
 	"testing"
 
-	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/sdk/buildkit"
+	"github.com/opencharly/spec/spec"
 )
 
 // TestBuildBakedMetadata_BoxLabelIsLeafName is the regression gate for the stale-artifact
