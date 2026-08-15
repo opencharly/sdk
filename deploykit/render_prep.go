@@ -99,7 +99,15 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 
 	// Always-present scalars (the formatter emits them unconditionally).
 	meta.Version = img.EffectiveVersion
-	meta.Box = boxName
+	// ai.opencharly.box carries the box's LEAF name — the same identifier the image ref is built
+	// from (buildkit.ResolveBox descends into the namespace and names FullTag `<registry>/<leaf>`),
+	// NOT this map key, which for an imported box is namespace-qualified (`fedora.fedora-nonfree`).
+	// The label and the ref name MUST agree: every consumer keys the two together — the local-image
+	// resolver's label family (spec/container.ResolveLocalImage) and `charly clean`'s retention
+	// groups. When they disagreed, a namespaced build was invisible to a resolve of its own ref
+	// name and an older bare-labelled image won, so `charly check box <box>` certified a stale
+	// artifact and passed.
+	meta.Box = spec.LeafName(boxName)
 	meta.UID = img.UID
 	meta.GID = img.GID
 	meta.User = img.User
