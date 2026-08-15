@@ -76,9 +76,20 @@ func (g *Generator) WriteBootstrap(b *strings.Builder, img *buildkit.ResolvedBox
 	if img.UserAdopted {
 		fmt.Fprintf(b, "# User %s (uid=%d) adopted from base image (declared in the embedded distro.base_user) — no useradd needed\n\n", img.User, img.UID)
 	} else {
+		// User creation must work on both shadow-utils bases (Fedora/Debian/Arch:
+		// groupadd/useradd) and busybox bases (Alpine: addgroup/adduser). The
+		// emitted shell probes for the shadow-utils tool rather than branching on
+		// a distro name, so any base with either userland works. The login shell
+		// is probed the same way — Alpine ships no /bin/bash.
 		fmt.Fprintf(b, "RUN if ! getent passwd %d >/dev/null 2>&1; then \\\n", img.UID)
-		fmt.Fprintf(b, "      (getent group %d >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.GID, img.User)
-		fmt.Fprintf(b, "      useradd -m -u %d -g %d -s /bin/bash %s; \\\n", img.UID, img.GID, img.User)
+		b.WriteString("      LOGIN_SHELL=/bin/sh; [ -x /bin/bash ] && LOGIN_SHELL=/bin/bash; \\\n")
+		b.WriteString("      if command -v useradd >/dev/null 2>&1; then \\\n")
+		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.GID, img.User)
+		fmt.Fprintf(b, "        useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s; \\\n", img.UID, img.GID, img.User)
+		b.WriteString("      else \\\n")
+		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || addgroup -g %d %s) && \\\n", img.GID, img.GID, img.User)
+		fmt.Fprintf(b, "        adduser -D -h %s -u %d -G %s -s \"$LOGIN_SHELL\" %s; \\\n", img.Home, img.UID, img.User, img.User)
+		b.WriteString("      fi; \\\n")
 		b.WriteString("    fi\n\n")
 	}
 
