@@ -328,13 +328,15 @@ func applySSHDefaults(entry map[string]any, rt CloudInitRuntimeParams) {
 	}
 }
 
-// effectiveDistro resolves spec.Source.Distro, inferring "arch" for the ONE
-// case this codebase already documents as supported-by-convention
+// effectiveDistro resolves spec.Source.Distro, inferring the distro for the
+// cloud_image cases this codebase documents as supported-by-convention
 // (resolveCloudInitSSHUser's own comment: "arch" for cloud_image works out
 // of the box) but that the CUE schema leaves Distro optional for: a
 // cloud_image source with no explicit `distro:` and `base_user: arch` (e.g.
 // a plain Arch Linux cloud image entity — see the D15 doc comment above for
-// why this matters to the pacman-family package-delivery branch). Strictly
+// why this matters to the pacman-family package-delivery branch) or
+// `base_user: alpine` (the Alpine nocloud cloud image — see composeRunCmd
+// for why this matters to the OpenRC sshd-start branch). Strictly
 // narrower than the pre-existing accidental behavior: composePackages'
 // distro switch already defaulted an empty/unrecognized distro to the
 // Arch/Fedora {openssh, sshd} shape, so this inference can never change what
@@ -349,8 +351,13 @@ func effectiveDistro(spec *VmSpec) string {
 	if spec.Source.Distro != "" {
 		return spec.Source.Distro
 	}
-	if spec.Source.Kind == "cloud_image" && spec.Source.BaseUser == "arch" {
-		return "arch"
+	if spec.Source.Kind == "cloud_image" {
+		switch spec.Source.BaseUser {
+		case "arch":
+			return "arch"
+		case "alpine":
+			return "alpine"
+		}
 	}
 	return ""
 }
@@ -410,9 +417,13 @@ const sshHardeningDropInPath = "/etc/ssh/sshd_config.d/99-charly-guest-hardening
 // from accepting connections before cloud-init has finished configuring the guest (host-key
 // regen, user creation, the sshd hardening drop-in below). `|| true`: masking a unit name the
 // image doesn't ship (Arch/Fedora typically have no ssh.socket at all) is a harmless no-op, never
-// a boot failure. runcmd (composeRunCmd, below) is the matching unmask + enable step, run only
-// after cloud-init's OWN work is complete — an orderly key-regen-before-accept sequence instead
-// of "sshd (or its socket) is reachable the instant the kernel finishes booting."
+// a boot failure — which is also why this stays unbranched on a non-systemd guest: on Alpine
+// (OpenRC) there is no ssh.socket and no systemctl, so the `|| true` swallows it and the mask is
+// vacuous. runcmd (composeRunCmd, below) carries the matching START step, run only after
+// cloud-init's OWN work is complete — an orderly key-regen-before-accept sequence instead of
+// "sshd (or its socket) is reachable the instant the kernel finishes booting." That start step is
+// per-init: `systemctl unmask` + `enable --now` on systemd, `rc-update add` + `rc-service start`
+// on OpenRC.
 func composeBootCmd(ci *VmCloudInit) []any {
 	bootcmd := make([]any, 0, 1+len(ci.BootCmd))
 	bootcmd = append(bootcmd, "systemctl mask ssh.socket || true")
@@ -434,8 +445,10 @@ func composeBootCmd(ci *VmCloudInit) []any {
 // guest OpenSSH that rejects the unknown directive is NEVER left with a config sshd refuses to
 // start against — fail-safe to the pre-fix behavior (the original penalty risk stands on an old
 // guest), never a bricked sshd. Runs in runcmd (after packages are installed, so the `sshd`
-// binary this depends on exists) and BEFORE the unmask+enable step so sshd's first-ever start
-// already reads a validated config.
+// binary this depends on exists) and BEFORE the sshd-start step — whichever init's form of it
+// composeRunCmd emits — so sshd's first-ever start already reads a validated config. The drop-in
+// itself is distro-agnostic: it writes into sshd_config.d, which OpenSSH Includes on both
+// systemd and OpenRC guests, and self-validates with `sshd -t`.
 const sshHardeningDropInCmd = `sh -c 'echo "PerSourcePenalties no" > ` + sshHardeningDropInPath + ` && sshd -t || rm -f ` + sshHardeningDropInPath + `'`
 
 // composeRunCmd prepends charly's minimum boot tasks and appends the user's runcmd. charly is NOT
@@ -443,19 +456,36 @@ const sshHardeningDropInCmd = `sh -c 'echo "PerSourcePenalties no" > ` + sshHard
 // charly_install.strategy (auto/scp stage the host binary; skip verifies presence).
 //
 // D18 (bed-robustness batch item 3, the RCA'd kex-reset wedge class): the sshd hardening drop-in
-// is written+validated FIRST, then sshd (or its socket, masked by composeBootCmd above) is
-// unmasked and enabled — the LAST charly runcmd step before the user's own — so it starts only
+// is written+validated FIRST, then sshd is started — the LAST charly runcmd step before the
+// user's own. The start is per-init: on systemd the socket masked by composeBootCmd above is
+// unmasked and the unit enabled; on OpenRC (Alpine) the service is added to the default runlevel
+// and started. Both orderings are the same contract — drop-in first, start second — so it starts
+// only
 // after cloud-init's package/user/write_files work AND the drop-in write have completed: an
 // orderly key-regen-before-accept sequence, closing the window where a socket-activated sshd
 // could accept a connection against a guest cloud-init hasn't finished configuring yet.
 func composeRunCmd(spec *VmSpec, ci *VmCloudInit) []any {
 	runcmd := make([]any, 0, 3+len(ci.RunCmd))
-	sshUnit := sshUnitForDistro(spec.Source.Distro)
-	runcmd = append(runcmd,
-		sshHardeningDropInCmd,
-		"systemctl unmask ssh.socket || true",
-		fmt.Sprintf("systemctl enable --now %s", sshUnit),
-	)
+	// The hardening drop-in is ALWAYS first and is the same on every guest — it is plain
+	// shell writing into sshd_config.d, which OpenSSH Includes regardless of init system.
+	// Hoisted above the branch so that invariant is structural rather than a duplicated
+	// line each arm has to remember (R3): only the START of sshd is per-init.
+	runcmd = append(runcmd, sshHardeningDropInCmd)
+	if effectiveDistro(spec) == "alpine" {
+		// Alpine uses OpenRC, not systemd: there is no ssh.socket to unmask and
+		// no systemctl to enable with. The OpenSSH package ships an /etc/init.d/sshd
+		// script — rc-update registers it for the default runlevel (so it survives
+		// reboot) and rc-service starts it now.
+		runcmd = append(runcmd,
+			"rc-update add sshd default && rc-service sshd start",
+		)
+	} else {
+		sshUnit := sshUnitForDistro(spec.Source.Distro)
+		runcmd = append(runcmd,
+			"systemctl unmask ssh.socket || true",
+			fmt.Sprintf("systemctl enable --now %s", sshUnit),
+		)
+	}
 
 	for _, cmd := range ci.RunCmd {
 		runcmd = append(runcmd, cmd)

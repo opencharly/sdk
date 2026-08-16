@@ -67,14 +67,29 @@ func (g *Generator) WriteBootstrap(b *strings.Builder, img *buildkit.ResolvedBox
 	b.WriteString("{ [ -L /usr/local ] && mkdir -p \"$(readlink /usr/local)\"; mkdir -p /usr/local/bin; } && \\\n")
 	b.WriteString("    ARCH=$(uname -m) && \\\n")
 	b.WriteString("    case \"$ARCH\" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac && \\\n")
-	b.WriteString("    curl -fsSL \"https://github.com/go-task/task/releases/latest/download/task_linux_${ARCH}.tar.gz\" | tar -xzf - -C /usr/local/bin task\n\n")
+	// The go-task install must work on bases without curl (e.g. Alpine, which ships
+	// busybox wget but no curl): try curl first, fall back to wget. The URL is held
+	// in a shell var so both downloaders hit the same target.
+	b.WriteString("    TASK_URL=\"https://github.com/go-task/task/releases/latest/download/task_linux_${ARCH}.tar.gz\" && \\\n")
+	b.WriteString("    (curl -fsSL \"$TASK_URL\" || wget -qO- \"$TASK_URL\") | tar -xzf - -C /usr/local/bin task\n\n")
 
 	if img.UserAdopted {
 		fmt.Fprintf(b, "# User %s (uid=%d) adopted from base image (declared in the embedded distro.base_user) — no useradd needed\n\n", img.User, img.UID)
 	} else {
+		// User creation must work on both shadow-utils bases (Fedora/Debian/Arch:
+		// groupadd/useradd) and busybox bases (Alpine: addgroup/adduser). The
+		// emitted shell probes for the shadow-utils tool rather than branching on
+		// a distro name, so any base with either userland works. The login shell
+		// is probed the same way — Alpine ships no /bin/bash.
 		fmt.Fprintf(b, "RUN if ! getent passwd %d >/dev/null 2>&1; then \\\n", img.UID)
-		fmt.Fprintf(b, "      (getent group %d >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.GID, img.User)
-		fmt.Fprintf(b, "      useradd -m -u %d -g %d -s /bin/bash %s; \\\n", img.UID, img.GID, img.User)
+		b.WriteString("      LOGIN_SHELL=/bin/sh; [ -x /bin/bash ] && LOGIN_SHELL=/bin/bash; \\\n")
+		b.WriteString("      if command -v useradd >/dev/null 2>&1; then \\\n")
+		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.GID, img.User)
+		fmt.Fprintf(b, "        useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s; \\\n", img.UID, img.GID, img.User)
+		b.WriteString("      else \\\n")
+		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || addgroup -g %d %s) && \\\n", img.GID, img.GID, img.User)
+		fmt.Fprintf(b, "        adduser -D -h %s -u %d -G %s -s \"$LOGIN_SHELL\" %s; \\\n", img.Home, img.UID, img.User, img.User)
+		b.WriteString("      fi; \\\n")
 		b.WriteString("    fi\n\n")
 	}
 
