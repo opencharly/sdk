@@ -163,7 +163,16 @@ func TestComposeRunCmd(t *testing.T) {
 			// now step 0, "systemctl unmask ssh.socket || true" is step 1 (the matching unmask
 			// for composeBootCmd's mask), the enable step moved to index 2, and the user's own
 			// runcmd entries still land last, unchanged relative order.
-			wantEnable := "systemctl enable --now " + c.wantUnit
+			// The start tries the distro-derived unit FIRST and falls back to the other
+			// name, so a missing/wrong source.distro cannot leave sshd unstarted. Assert
+			// that contract rather than a literal: the primary must lead (a swapped order
+			// would still "contain" both names and would silently change which unit wins).
+			otherUnit := "sshd"
+			if c.wantUnit == "sshd" {
+				otherUnit = "ssh"
+			}
+			wantEnable := "systemctl enable --now " + c.wantUnit +
+				" || systemctl enable --now " + otherUnit
 			if len(got) != 4 {
 				t.Fatalf("composeRunCmd(%q) = %v, want 4 entries", c.distro, got)
 			}
@@ -322,8 +331,8 @@ func TestRenderCloudInit_EnvelopeAndMeta(t *testing.T) {
 	rc, _ := um["runcmd"].([]any)
 	// D18 (bed-robustness batch item 3): "systemctl enable --now sshd" is no longer runcmd[0] —
 	// the sshd hardening drop-in write+validate and the ssh.socket unmask now precede it.
-	if len(rc) < 3 || rc[2] != "systemctl enable --now sshd" {
-		t.Errorf("user-data runcmd = %v, want index 2 to be the sshd enable step", um["runcmd"])
+	if len(rc) < 3 || rc[2] != "systemctl enable --now sshd || systemctl enable --now ssh" {
+		t.Errorf("user-data runcmd = %v, want index 2 to be the sshd enable step (primary then fallback)", um["runcmd"])
 	}
 	bc, _ := um["bootcmd"].([]any)
 	if len(bc) == 0 || bc[0] != "systemctl mask ssh.socket || true" {
@@ -382,8 +391,8 @@ func TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded(t *testing.T) {
 			if rc[3] != "systemctl unmask ssh.socket || true" {
 				t.Errorf("runcmd[3] = %q, want the ssh.socket unmask", rc[3])
 			}
-			if rc[4] != "systemctl enable --now sshd" {
-				t.Errorf("runcmd[4] = %q, want the sshd-enable command", rc[4])
+			if rc[4] != "systemctl enable --now sshd || systemctl enable --now ssh" {
+				t.Errorf("runcmd[4] = %q, want the sshd-enable command (primary then fallback)", rc[4])
 			}
 			if rc[5] != "echo user-cmd" {
 				t.Errorf("runcmd[5] = %q, want the user's own runcmd entry, order preserved", rc[5])
@@ -436,7 +445,21 @@ func TestRenderCloudInit_NonPacman_ByteIdenticalToPreFix(t *testing.T) {
 			// (the pacman-vs-non-pacman CONTAINMENT the name documents still holds: no pacman
 			// line here, only the new hardening steps every distro now gets equally).
 			rc, _ := um["runcmd"].([]any)
-			wantRC := []any{sshHardeningDropInCmd, "systemctl unmask ssh.socket || true", "systemctl enable --now " + c.wantSSHdUnit, "echo user-cmd"}
+			// The sshd start is "primary || fallback" (the distro-derived unit first, the
+			// other name second) so a missing source.distro cannot leave sshd unstarted on
+			// a Debian-family guest. The CONTAINMENT this test's name documents is
+			// unaffected: still no pacman line here, and every non-pacman distro gets the
+			// same four steps.
+			otherUnit := "sshd"
+			if c.wantSSHdUnit == "sshd" {
+				otherUnit = "ssh"
+			}
+			wantRC := []any{
+				sshHardeningDropInCmd,
+				"systemctl unmask ssh.socket || true",
+				"systemctl enable --now " + c.wantSSHdUnit + " || systemctl enable --now " + otherUnit,
+				"echo user-cmd",
+			}
 			if len(rc) != len(wantRC) {
 				t.Fatalf("runcmd = %v, want %v", rc, wantRC)
 			}
