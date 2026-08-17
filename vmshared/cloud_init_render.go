@@ -56,8 +56,19 @@ type CloudInitRuntimeParams = spec.CloudInitRuntimeParams
 //     long-term fix is schema-level (distro required, or defaulted at
 //     entity-resolve time, for every cloud_image source) — tracked separately,
 //     not attempted here.
-//  3. Minimum runcmd: {systemctl enable --now sshd} prepended (after the
-//     pacman install command on pacman-family distros, per #2)
+//  3. Minimum runcmd: the sshd START prepended (after the pacman install command
+//     on pacman-family distros, per #2). On systemd it is
+//     `systemctl enable --now <unit> || systemctl enable --now <other-unit>` —
+//     `ssh` on Debian/Ubuntu, `sshd` elsewhere, with the other name as a FALLBACK
+//     because sshUnitForDistro can only know which from an EXPLICIT source.distro
+//     (effectiveDistro infers arch/alpine, never debian/ubuntu). Without the
+//     fallback a Debian-family cloud_image omitting `distro:` got
+//     `enable --now sshd`, which does not exist there; together with composeBootCmd's
+//     `mask ssh.socket` that left a socket-activated sshd masked and never started,
+//     and the guest booted permanently unreachable — presenting as the SAME
+//     "reset during kex_exchange_identification, guest otherwise idle" signature
+//     described in #2, from an unrelated cause. On OpenRC (Alpine) it is
+//     `rc-update add sshd default && rc-service sshd start`.
 //  4. charly_install: NOT a cloud-init concern — the vm deploy's PrepareVenue delivers charly
 //     post-boot (auto/scp stage it; skip verifies). No charly download runcmd.
 //  5. VmCloudInit.Extra: raw cloud-config YAML appended as a second
@@ -406,6 +417,16 @@ func sshUnitForDistro(distro string) string {
 	}
 }
 
+// otherSSHUnit returns the OTHER of the two OpenSSH systemd unit names, so the
+// start can fall back when source.distro is unset or wrong. There are exactly two
+// names in play across every distro charly renders cloud-init for.
+func otherSSHUnit(unit string) string {
+	if unit == "ssh" {
+		return "sshd"
+	}
+	return "ssh"
+}
+
 // sshHardeningDropInPath is the sshd_config.d drop-in charly writes on every cloud_image VM (D18,
 // bed-robustness batch item 3). Named to sort last among any operator-authored drop-ins.
 const sshHardeningDropInPath = "/etc/ssh/sshd_config.d/99-charly-guest-hardening.conf"
@@ -480,10 +501,23 @@ func composeRunCmd(spec *VmSpec, ci *VmCloudInit) []any {
 			"rc-update add sshd default && rc-service sshd start",
 		)
 	} else {
+		// The unit is named `ssh` on Debian/Ubuntu and `sshd` elsewhere, and
+		// sshUnitForDistro can only know that when source.distro is set EXPLICITLY —
+		// effectiveDistro infers arch/alpine from base_user but never debian/ubuntu.
+		// So a Debian-family cloud_image that omits `distro:` used to get
+		// `enable --now sshd`, which does not exist there. Combined with the
+		// bootcmd mask above, that leaves a socket-activated sshd MASKED and never
+		// started, and the VM boots permanently unreachable — the symptom being a
+		// port-forward that accepts TCP and then resets
+		// (`kex_exchange_identification: Connection reset by peer`), which points
+		// nowhere near cloud-init. Try the other name as a fallback so a missing
+		// `distro:` can never brick SSH; the distro-derived name still goes first,
+		// so the common case runs exactly one command.
 		sshUnit := sshUnitForDistro(spec.Source.Distro)
 		runcmd = append(runcmd,
 			"systemctl unmask ssh.socket || true",
-			fmt.Sprintf("systemctl enable --now %s", sshUnit),
+			fmt.Sprintf("systemctl enable --now %s || systemctl enable --now %s",
+				sshUnit, otherSSHUnit(sshUnit)),
 		)
 	}
 
