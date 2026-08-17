@@ -163,6 +163,8 @@ func TestComposeRunCmd(t *testing.T) {
 			// now step 0, "systemctl unmask ssh.socket || true" is step 1 (the matching unmask
 			// for composeBootCmd's mask), the enable step moved to index 2, and the user's own
 			// runcmd entries still land last, unchanged relative order.
+			// source.distro is required and closed, so the unit is known exactly —
+			// one command, no fallback.
 			wantEnable := "systemctl enable --now " + c.wantUnit
 			if len(got) != 4 {
 				t.Fatalf("composeRunCmd(%q) = %v, want 4 entries", c.distro, got)
@@ -185,16 +187,16 @@ func TestComposeRunCmd(t *testing.T) {
 
 // TestComposeRunCmd_AlpineOpenRC is the regression test for the OpenRC sshd-start branch:
 // Alpine has no systemd, so composeRunCmd must emit the rc-update/rc-service pair instead of
-// the systemctl unmask+enable, and the hardening drop-in must still run first. The branch fires
-// on the effectiveDistro inference (empty distro + base_user: alpine) as well as an explicit
-// distro: alpine.
+// the systemctl unmask+enable, and the hardening drop-in must still run first. The branch is
+// selected by the required `distro: alpine` alone — the base_user inference that used to also
+// reach it is deleted, so base_user is varied here to prove it no longer participates.
 func TestComposeRunCmd_AlpineOpenRC(t *testing.T) {
 	cases := []struct {
 		name string
 		spec *VmSpec
 	}{
 		{"explicit distro", &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "alpine", BaseUser: "alpine"}}},
-		{"base_user inference", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "alpine"}}},
+		{"distro alone selects the branch", &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "alpine", BaseUser: "operator"}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -392,11 +394,17 @@ func TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded(t *testing.T) {
 	}
 }
 
-// TestRenderCloudInit_NonPacman_ByteIdenticalToPreFix locks the EXACT rendered
-// user-data for every non-pacman distro — this is the containment proof: the
-// pacman-family branch must be provably unreachable for rpm/deb, so these
-// distros need no new runtime (bed) proof, only this pure-function golden.
-func TestRenderCloudInit_NonPacman_ByteIdenticalToPreFix(t *testing.T) {
+// TestRenderCloudInit_NonPacmanUsesPackagesKey asserts the CONTAINMENT that matters
+// for non-pacman distros: packages are delivered via the `packages:` cloud-config key
+// and the pacman-family runcmd branch is unreachable for them.
+//
+// It replaces a test named "…_ByteIdenticalToPreFix", which pinned the rendered output
+// against a historical baseline rather than against a behaviour. That framing was wrong
+// twice over: "pre-fix" named a moment nobody can look up, and the assertion had to be
+// re-baselined by every legitimate change — it had already accumulated a comment
+// explaining why its own name was no longer true. A test whose name must be explained
+// away is pinning an accident. What is worth pinning is the containment itself.
+func TestRenderCloudInit_NonPacmanUsesPackagesKey(t *testing.T) {
 	cases := []struct {
 		distro       string
 		wantSSHPkg   string
@@ -436,7 +444,14 @@ func TestRenderCloudInit_NonPacman_ByteIdenticalToPreFix(t *testing.T) {
 			// (the pacman-vs-non-pacman CONTAINMENT the name documents still holds: no pacman
 			// line here, only the new hardening steps every distro now gets equally).
 			rc, _ := um["runcmd"].([]any)
-			wantRC := []any{sshHardeningDropInCmd, "systemctl unmask ssh.socket || true", "systemctl enable --now " + c.wantSSHdUnit, "echo user-cmd"}
+			// The containment: no pacman line for these distros, and all four steps
+			// identical across them apart from the distro-derived sshd unit name.
+			wantRC := []any{
+				sshHardeningDropInCmd,
+				"systemctl unmask ssh.socket || true",
+				"systemctl enable --now " + c.wantSSHdUnit,
+				"echo user-cmd",
+			}
 			if len(rc) != len(wantRC) {
 				t.Fatalf("runcmd = %v, want %v", rc, wantRC)
 			}
@@ -470,88 +485,13 @@ func TestRenderCloudInit_ExtraSecondDocument(t *testing.T) {
 	}
 }
 
-// --- effectiveDistro inference (second R10 bed finding, same wedge): the
-// first cut of the pacman-family fix silently never fired for eval-vm,
-// because its charly.yml source: block declares no distro: field —
-// Source.Distro was simply "". These lock the inference's three edges. ---
-
-func TestRenderCloudInit_InferredArch_RunsPacmanNeeded(t *testing.T) {
-	// No explicit distro: — exactly eval-vm's real charly.yml shape
-	// (kind: cloud_image, base_user: arch, no distro:).
-	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "arch"}}
-	ci := &VmCloudInit{Package: []string{"htop"}, RunCmd: []string{"echo user-cmd"}}
-	spec.CloudInit = ci
-	rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid", Hostname: "testvm"}
-	userData, _, _, err := RenderCloudInit(spec, rt)
-	if err != nil {
-		t.Fatalf("RenderCloudInit: %v", err)
-	}
-	um := parseUserData(t, userData)
-
-	if _, has := um["packages"]; has {
-		t.Errorf("inferred-arch render must OMIT the packages: key, got %v", um["packages"])
-	}
-	rc, _ := um["runcmd"].([]any)
-	wantPacman := "pacman -Sy --needed --noconfirm openssh curl tar htop"
-	if len(rc) != 6 || rc[0] != wantPacman {
-		t.Fatalf("runcmd = %v, want [%q, sshd-resync, hardening-dropin, unmask, sshd-enable, echo user-cmd] (empty distro + base_user=arch must infer pacman-family)", rc, wantPacman)
-	}
-}
-
-func TestRenderCloudInit_EmptyDistroNonArchBaseUser_StaysNonPacman(t *testing.T) {
-	// The safe side of the inference: an unrecognized image (no distro:, and
-	// base_user isn't "arch") must NEVER get a pacman command — falls through
-	// to the untouched, pre-fix packages:-key path exactly as before.
-	cases := []string{"", "ubuntu", "someotheruser"}
-	for _, baseUser := range cases {
-		t.Run("base_user="+baseUser, func(t *testing.T) {
-			spec := &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: baseUser}}
-			ci := &VmCloudInit{Package: []string{"htop"}, RunCmd: []string{"echo user-cmd"}}
-			spec.CloudInit = ci
-			rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid", Hostname: "testvm"}
-			userData, _, _, err := RenderCloudInit(spec, rt)
-			if err != nil {
-				t.Fatalf("RenderCloudInit: %v", err)
-			}
-			um := parseUserData(t, userData)
-
-			pkgs, _ := um["packages"].([]any)
-			wantPkgs := []any{"openssh", "curl", "tar", "htop"}
-			if len(pkgs) != len(wantPkgs) {
-				t.Fatalf("packages = %v, want %v (must stay on the packages:-key path — no pacman command for an unrecognized image)", pkgs, wantPkgs)
-			}
-			rc, _ := um["runcmd"].([]any)
-			wantRC := []any{sshHardeningDropInCmd, "systemctl unmask ssh.socket || true", "systemctl enable --now sshd", "echo user-cmd"}
-			if len(rc) != len(wantRC) || rc[0] != wantRC[0] {
-				t.Errorf("runcmd = %v, want %v (no pacman line ever prepended)", rc, wantRC)
-			}
-		})
-	}
-}
-
-func TestRenderCloudInit_ExplicitNonPacmanDistro_UnaffectedByInference(t *testing.T) {
-	// An EXPLICIT non-pacman distro must never be overridden by the base_user
-	// inference, even in the contrived case base_user happens to be "arch".
-	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "fedora", BaseUser: "arch"}}
-	rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid"}
-	userData, _, _, err := RenderCloudInit(spec, rt)
-	if err != nil {
-		t.Fatalf("RenderCloudInit: %v", err)
-	}
-	um := parseUserData(t, userData)
-	pkgs, _ := um["packages"].([]any)
-	if len(pkgs) == 0 || pkgs[0] != "openssh" {
-		t.Errorf("explicit distro=fedora must keep the packages: key (openssh first), got %v", um["packages"])
-	}
-}
-
+// TestRenderCloudInit_Alpine_OpenRC covers the OpenRC sshd-start branch, which is NOT
+// inference coverage and survives the removal of effectiveDistro: Alpine is the one
+// distro whose sshd start uses rc-update/rc-service instead of systemctl, and the branch
+// still exists. It now declares `distro: alpine` explicitly, because that field is
+// required — the original fixture relied on the deleted base_user inference.
 func TestRenderCloudInit_Alpine_OpenRC(t *testing.T) {
-	// The Alpine nocloud cloud image (kind: cloud_image, base_user: alpine, no distro:)
-	// must render the OpenRC sshd-start branch: packages on the packages:-key path
-	// (openssh/curl/tar — NOT a pacman command), runcmd with the rc-update/rc-service
-	// pair instead of the systemctl unmask+enable, and the adopt-path user entry for
-	// the pre-existing alpine account.
-	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "alpine"}}
+	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "alpine", Distro: "alpine"}}
 	ci := &VmCloudInit{Package: []string{"sudo"}, RunCmd: []string{"echo user-cmd"}}
 	spec.CloudInit = ci
 	rt := CloudInitRuntimeParams{SSHPublicKey: testPubKey, InjectKeyViaCloudInit: true, InstanceID: "iid", Hostname: "testvm"}
@@ -564,12 +504,12 @@ func TestRenderCloudInit_Alpine_OpenRC(t *testing.T) {
 	pkgs, _ := um["packages"].([]any)
 	wantPkgs := []any{"openssh", "curl", "tar", "sudo"}
 	if len(pkgs) != len(wantPkgs) {
-		t.Fatalf("packages = %v, want %v (alpine must stay on the packages:-key path — no pacman command)", pkgs, wantPkgs)
+		t.Fatalf("packages = %v, want %v (alpine stays on the packages:-key path — no pacman command)", pkgs, wantPkgs)
 	}
 	rc, _ := um["runcmd"].([]any)
 	wantRC := []any{sshHardeningDropInCmd, "rc-update add sshd default && rc-service sshd start", "echo user-cmd"}
 	if len(rc) != len(wantRC) {
-		t.Fatalf("runcmd = %v, want %v (alpine must use the OpenRC sshd start, never systemctl)", rc, wantRC)
+		t.Fatalf("runcmd = %v, want %v (alpine uses the OpenRC sshd start, never systemctl)", rc, wantRC)
 	}
 	for i := range wantRC {
 		if rc[i] != wantRC[i] {
@@ -583,28 +523,5 @@ func TestRenderCloudInit_Alpine_OpenRC(t *testing.T) {
 	adopt, _ := users[1].(map[string]any)
 	if adopt["name"] != "alpine" {
 		t.Errorf("users[1] = %v, want the adopt-path entry for the pre-existing alpine account", users[1])
-	}
-}
-
-func TestEffectiveDistro(t *testing.T) {
-	cases := []struct {
-		name string
-		spec *VmSpec
-		want string
-	}{
-		{"nil spec", nil, ""},
-		{"explicit wins", &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "debian", BaseUser: "arch"}}, "debian"},
-		{"inferred from cloud_image+arch base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "arch"}}, "arch"},
-		{"inferred from cloud_image+alpine base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "alpine"}}, "alpine"},
-		{"no inference for non-cloud_image kind", &VmSpec{Source: VmSource{Kind: "bootc", BaseUser: "arch"}}, ""},
-		{"no inference for non-arch/alpine base_user", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "ubuntu"}}, ""},
-		{"no inference with no base_user", &VmSpec{Source: VmSource{Kind: "cloud_image"}}, ""},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := effectiveDistro(c.spec); got != c.want {
-				t.Errorf("effectiveDistro = %q, want %q", got, c.want)
-			}
-		})
 	}
 }

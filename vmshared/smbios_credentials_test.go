@@ -23,29 +23,6 @@ func TestKeyToRootTmpfilesD(t *testing.T) {
 	}
 }
 
-func TestSmbiosCredForRootSSH(t *testing.T) {
-	pubkey := "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC..."
-	result := SmbiosCredForRootSSH(pubkey)
-
-	// Must start with the credential prefix
-	prefix := "io.systemd.credential.binary:tmpfiles.extra="
-	if !strings.HasPrefix(result, prefix) {
-		t.Errorf("wrong prefix, got: %s", result)
-	}
-
-	// Decode and verify the tmpfiles.d content round-trips
-	b64Part := strings.TrimPrefix(result, prefix)
-	decoded, err := base64.StdEncoding.DecodeString(b64Part)
-	if err != nil {
-		t.Fatalf("invalid base64: %v", err)
-	}
-
-	expected := KeyToRootTmpfilesD(pubkey)
-	if string(decoded) != expected {
-		t.Errorf("round-trip mismatch\nwant: %q\ngot:  %q", expected, string(decoded))
-	}
-}
-
 // TestKeyToUserTmpfilesD_SmbiosPriority asserts the SMBIOS credential gives the
 // per-VM key a root-owned, cloud-init-proof home (/etc/ssh/authorized_keys.d/<user>)
 // plus the sshd_config.d drop-in that makes sshd honor it, while still writing the

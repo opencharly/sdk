@@ -130,7 +130,7 @@ func EmitMkdirBatch(b *strings.Builder, tasks []vmshared.Op, img *buildkit.Resol
 		}
 		parts = append(parts, fmt.Sprintf("chmod %s %s", m, strings.Join(byMode[m], " ")))
 	}
-	b.WriteString("RUN " + strings.Join(parts, " && ") + "\n")
+	fmt.Fprintf(b, "RUN %s\n", strings.Join(parts, " && "))
 }
 
 // EmitCopy emits a COPY --from=<layer-stage> for an existing file in the candy dir.
@@ -176,7 +176,7 @@ func EmitLinkBatch(b *strings.Builder, tasks []vmshared.Op, img *buildkit.Resolv
 		target := TaskSubstPath(t.Target, img)
 		parts = append(parts, fmt.Sprintf("ln -sf %s %s", target, link))
 	}
-	b.WriteString("RUN " + strings.Join(parts, " && ") + "\n")
+	fmt.Fprintf(b, "RUN %s\n", strings.Join(parts, " && "))
 }
 
 // EmitSetcapBatch emits a single RUN setcap … for a batch of adjacent setcap tasks
@@ -194,7 +194,7 @@ func EmitSetcapBatch(b *strings.Builder, tasks []vmshared.Op, img *buildkit.Reso
 			parts = append(parts, fmt.Sprintf("setcap %s %s", t.Caps, pth))
 		}
 	}
-	b.WriteString("RUN " + strings.Join(parts, " && ") + "\n")
+	fmt.Fprintf(b, "RUN %s\n", strings.Join(parts, " && "))
 }
 
 // TaskCacheMounts renders a task's candy-declared `cache:` paths as BuildKit
@@ -314,13 +314,35 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		mounts = append(mounts, buildkit.OwnedCacheMount("/tmp/downloads", img.UID, img.GID).String())
 	}
 	mounts = append(mounts, cacheMounts...)
-	b.WriteString("RUN " + strings.Join(mounts, " ") + " bash -c " + spec.ShellQuote(cmd) + "\n")
+	fmt.Fprintf(b, "RUN %s %s %s\n", strings.Join(mounts, " "), BuildStepShellDashC(), spec.ShellQuote(cmd))
 	return nil
+}
+
+// BuildStepShellDashC is the `-c`-form shell prefix every emitted build step
+// runs its command under: a POSIX `sh` stub that prefers /bin/bash and falls
+// back to /bin/sh. The authored command is passed as $1 and re-exec'd, so
+// author `$(cmd)` / `${VAR}` reach the chosen shell unchanged.
+//
+// A hardcoded "bash" makes EVERY candy shell step unbuildable on a busybox base
+// (Alpine ships no bash), which is the same assumption WriteBootstrap already
+// probes for with its LOGIN_SHELL dance. One helper for both emit sites (R3):
+// EmitDownload's `-c` form here, EmitCmd's heredoc form via
+// BuildStepShellHeredoc.
+func BuildStepShellDashC() string {
+	return `sh -c 'SH=/bin/sh; [ -x /bin/bash ] && SH=/bin/bash; exec "$SH" -c "$1"' sh`
+}
+
+// BuildStepShellHeredoc is the heredoc-form counterpart: the same bash-preferred
+// probe, but exec'd WITHOUT -c so the chosen shell reads the script from stdin.
+// exec preserves stdin, so the caller's `<<'OVCMD'` body feeds bash or sh.
+func BuildStepShellHeredoc() string {
+	return `sh -c 'SH=/bin/sh; [ -x /bin/bash ] && SH=/bin/bash; exec "$SH"' sh`
 }
 
 // EmitCmd emits a single RUN for a cmd task, with the layer-stage /ctx bind mount
 // plus cache mounts appropriate to the user (distro format caches for root, npm
-// cache for non-root). Shell is bash via a single-quoted heredoc so authors'
+// cache for non-root). Shell is bash-if-present, POSIX sh otherwise (see
+// BuildStepShellHeredoc), via a single-quoted heredoc so authors'
 // $(cmd) / ${VAR} stay intact for bash; BUILD_ARCH is injected as a shell var.
 func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit.ResolvedBox, userIsRoot bool) {
 	var mounts []string
@@ -340,9 +362,9 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 
 	b.WriteString("RUN ")
 	for _, m := range mounts {
-		b.WriteString(m + " ")
+		fmt.Fprintf(b, "%s ", m)
 	}
-	b.WriteString("bash <<'OVCMD'\n")
+	fmt.Fprintf(b, "%s <<'OVCMD'\n", BuildStepShellHeredoc())
 	b.WriteString(BuildArchExports())
 	if len(t.Env) > 0 {
 		keys := make([]string, 0, len(t.Env))

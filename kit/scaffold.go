@@ -86,7 +86,7 @@ func ScaffoldCandy(dir, name, calver string) error {
         version: %s
         description: |
             TODO: one-line purpose of the %s candy
-        # Add packages:  charly candy add-rpm %s <pkg>   (also add-deb / add-pac / add-aur)
+        # Add packages:  charly candy add-rpm %s <pkg>   (also add-deb / add-pac / add-aur / add-apk)
         plan:
             - check: the /etc/os-release marker exists (replace with a real check)
               file: /etc/os-release
