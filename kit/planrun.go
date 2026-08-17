@@ -192,7 +192,8 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 		// Per-probe never-hang: bound THIS attempt so a wedged probe is cancelled individually
 		// and the pass continues. RunWithEventually calls dispatch once per attempt, so each
 		// retry gets a FRESH bound; the author's timeout:/eventually: operate inside it.
-		ctx, cancel := context.WithTimeout(ctx, pc.ProbeNeverHang(&expanded))
+		neverHang := pc.ProbeNeverHang(&expanded)
+		ctx, cancel := context.WithTimeout(ctx, neverHang)
 		defer cancel()
 		var dr CheckResult
 		// do-mode branch: a do:act state-provision verb executes its create/configure. Action
@@ -214,6 +215,15 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 		// re-run a probe that will only re-hang and re-hit the same deadline.
 		if ctx.Err() == context.DeadlineExceeded {
 			dr.DeadlineExceeded = true
+			// NAME the deadline in the message. The exec layer reports only
+			// "process terminated by signal (signal: killed)", which describes the
+			// mechanism of death and not its cause — so a step killed by THIS bound
+			// reads as a crash in whatever the step was running, and the reader goes
+			// looking for a bug in their own command. The bound is known right here;
+			// not saying so is what makes it a diagnostic dead end. A legitimately
+			// slow step raises it with `timeout:` (ProbeNeverHang honours a longer
+			// authored value), which is the mechanism's own parameter.
+			dr.Message = AnnotateNeverHangKill(dr.Message, neverHang)
 		}
 		return dr
 	}
