@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,8 +19,15 @@ import (
 // built an image SILENTLY missing every package the candy declared — the
 // failure only surfaced much later as an absent binary at runtime.
 //
-// These tests pin the loud behaviour. Against the pre-fix emitter all three
-// return no error and emit nothing, so each fails without the change.
+// These tests pin the loud behaviour. Against the pre-fix emitter each returns
+// no error and emits nothing, so each fails without the change.
+//
+// The package-resolution paths are only four of the five swallowed failures.
+// The fifth — an EmitTasks error written into the Containerfile as a comment —
+// is pinned by TestWriteCandySteps_EmitTasksFailureIsLoud at the bottom of this
+// file. It was missed on the first pass precisely because the four above look
+// like a complete set: they are the failures of ONE function, and the fifth
+// belongs to the call BELOW them in the same emitter.
 
 // installBox returns a box whose primary format's install_template is the
 // caller's, so a test can drive the render outcome directly.
@@ -105,5 +113,68 @@ func TestWriteCandySteps_NoPackagesStillRenders(t *testing.T) {
 	}
 	if strings.Contains(b.String(), "apk add") {
 		t.Errorf("a candy declaring no packages must emit no install; got %q", b.String())
+	}
+}
+
+// pluginCandy returns a generator whose one candy carries a single `plugin:` op,
+// with EmitPluginOp driven by the caller — the seam that decides whether the
+// task-emit leg succeeds or fails.
+func pluginCandy(emit func(op *spec.Op, img *spec.ResolvedBox) (string, bool, error)) *Generator {
+	g := &Generator{Candies: map[string]CandyModel{
+		"task-candy": newTestCandy("task-candy", spec.CandyModel{
+			RunOps: []spec.Op{{Plugin: "no-such-verb", RunAs: "root"}},
+		}),
+	}}
+	g.EmitPluginOp = emit
+	return g
+}
+
+// The fifth swallowed failure: WriteCandySteps calls EmitTasks and used to write
+// its error into the Containerfile as `# emitTasks error: …`. A comment is not a
+// failure — podman builds it happily, the image ships without those steps, and
+// the defect surfaces later as a missing file at runtime. Exactly the shape of
+// the four above, one call further down.
+//
+// This is the case a validator caught by mutation after the first round claimed
+// the family was complete: reverting the hard error to the comment left the
+// whole suite green.
+func TestWriteCandySteps_EmitTasksFailureIsLoud(t *testing.T) {
+	g := pluginCandy(func(op *spec.Op, _ *spec.ResolvedBox) (string, bool, error) {
+		return "", false, fmt.Errorf("verb %q: no provider registered", op.Plugin)
+	})
+	var b strings.Builder
+	_, err := g.WriteCandySteps(&b, "task-candy", testResolvedBox(), false)
+	if err == nil {
+		t.Fatalf("a task-emit failure must be a hard error, got nil (emitted %q)", b.String())
+	}
+	// Naming the candy and the image is what makes the error actionable — the
+	// author gets told WHERE, not just that something failed.
+	for _, want := range []string{"task-candy", "test-img"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %q so the author can find it; got: %v", want, err)
+		}
+	}
+	// The pre-fix form is specifically a Containerfile COMMENT. Assert the
+	// emitted text never carries one: a future refactor could restore the error
+	// return AND keep writing the comment, which would satisfy the check above
+	// while still shipping a misleading Containerfile.
+	if strings.Contains(b.String(), "# emitTasks error") {
+		t.Errorf("the failure was written into the Containerfile as a comment; emitted:\n%s", b.String())
+	}
+}
+
+// Presence control for the test above. Without it, "any candy carrying a plugin
+// op errors" would satisfy it just as well — and that would break every image
+// that uses a plugin verb, which is most of them.
+func TestWriteCandySteps_SucceedingPluginOpStillRenders(t *testing.T) {
+	g := pluginCandy(func(*spec.Op, *spec.ResolvedBox) (string, bool, error) {
+		return "RUN echo ok", false, nil // ActScript=false → spliced verbatim
+	})
+	var b strings.Builder
+	if _, err := g.WriteCandySteps(&b, "task-candy", testResolvedBox(), false); err != nil {
+		t.Fatalf("a plugin op whose provider resolves must render cleanly, got: %v", err)
+	}
+	if !strings.Contains(b.String(), "RUN echo ok") {
+		t.Errorf("the provider's fragment did not reach the Containerfile; emitted:\n%s", b.String())
 	}
 }
