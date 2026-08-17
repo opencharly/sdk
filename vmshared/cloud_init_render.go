@@ -23,54 +23,42 @@ type CloudInitRuntimeParams = spec.CloudInitRuntimeParams
 // - networkCfg → written to cidata/network-config (optional; empty if unset)
 //
 // Defaults applied automatically (D15):
+//
 //  1. VmSSH.User added to users: with sudo + ssh_authorized_keys
 //     (if the key-injection channel is enabled AND SSHPublicKey != "")
-//  2. Minimum packages: {openssh, curl, tar} unioned with user's Packages —
-//     delivered via the `packages:` cloud-config key on every distro EXCEPT
-//     pacman-family (arch/cachyos/manjaro/endeavouros), where it is instead
-//     PREPENDED to runcmd as `pacman -Sy --needed --noconfirm <union>` (db refresh + install-only; a bare -S 404s on rotated mirrors, and a full -Syu destabilizes the live guest — see the runcmd comment) and the
-//     `packages:` key is omitted entirely (R10 bed finding: cloud-init's own
-//     package-install module invokes `pacman -S` without `--needed`, so on an
-//     image that already ships the minimum set — e.g. every Arch cloud image —
-//     it unconditionally REINSTALLS them; reinstalling openssh re-triggers its
-//     post-install host-key-regen hook while the base image's own
-//     socket-activated sshd is already listening, racing a live key-file
-//     rewrite against new connections — the observed "reset during
-//     kex_exchange_identification, guest otherwise idle" signature. apt/dnf
-//     installs are naturally no-op-idempotent when the package is already
-//     present, so only the pacman-family path needs this rewrite; every other
-//     distro's render is BYTE-IDENTICAL to before this fix). Source.Distro is
-//     an OPTIONAL yaml field — a cloud_image source (e.g. eval-vm) commonly
-//     omits it, relying on base_user alone (a second live-bed finding: the
-//     first cut of this fix silently never fired for exactly that reason).
-//     effectiveDistro fills the ONE narrow gap this codebase already
-//     documents as supported-by-convention (resolveCloudInitSSHUser's own
-//     "arch" cloud_image fallback, below): empty Distro + kind=="cloud_image"
-//     + base_user=="arch" infers "arch". This is STRICTLY NARROWER than (and
-//     makes explicit) the pre-existing accidental behavior — composePackages'
-//     distro switch already defaulted an empty/unrecognized distro to the
-//     Arch/Fedora-shaped {openssh, sshd} output, so no caller this inference
-//     newly matches was ever getting anything else. Any other empty-distro
-//     image (base_user != "arch") stays on the safe, unchanged non-pacman
-//     path — an unknown image never gets a pacman command. The proper
-//     long-term fix is schema-level (distro required, or defaulted at
-//     entity-resolve time, for every cloud_image source) — tracked separately,
-//     not attempted here.
-//  3. Minimum runcmd: the sshd START prepended (after the pacman install command
-//     on pacman-family distros, per #2). On systemd it is
-//     `systemctl enable --now <unit> || systemctl enable --now <other-unit>` —
-//     `ssh` on Debian/Ubuntu, `sshd` elsewhere, with the other name as a FALLBACK
-//     because sshUnitForDistro can only know which from an EXPLICIT source.distro
-//     (effectiveDistro infers arch/alpine, never debian/ubuntu). Without the
-//     fallback a Debian-family cloud_image omitting `distro:` got
-//     `enable --now sshd`, which does not exist there; together with composeBootCmd's
-//     `mask ssh.socket` that left a socket-activated sshd masked and never started,
-//     and the guest booted permanently unreachable — presenting as the SAME
-//     "reset during kex_exchange_identification, guest otherwise idle" signature
-//     described in #2, from an unrelated cause. On OpenRC (Alpine) it is
-//     `rc-update add sshd default && rc-service sshd start`.
+//
+//  2. Minimum packages: {<ssh-pkg>, curl, tar} unioned with the user's Packages,
+//     where <ssh-pkg> is `openssh-server` on debian/ubuntu and `openssh` elsewhere.
+//     Delivered via the `packages:` cloud-config key on every distro EXCEPT
+//     pacman-family (arch/archarm/manjaro/endeavouros/cachyos), where it is instead
+//     PREPENDED to runcmd as `pacman -Sy --needed --noconfirm <union>` (db refresh +
+//     install-only; a bare -S 404s on rotated mirrors, and a full -Syu destabilizes
+//     the live guest — see the runcmd comment) and the `packages:` key is omitted
+//     entirely. Why: cloud-init's own package-install module invokes `pacman -S`
+//     without `--needed`, so on an image that already ships the minimum set it
+//     REINSTALLS them, and reinstalling openssh re-triggers its host-key-regen hook
+//     while the base image's socket-activated sshd is already listening — racing a
+//     live key-file rewrite against new connections. apt/dnf installs are naturally
+//     no-op-idempotent when the package is present, so only the pacman-family path
+//     needs the rewrite.
+//
+//     The branch reads Source.Distro DIRECTLY. That field is REQUIRED and closed to
+//     #DistroID (schema/vm.cue), so there is nothing to infer: an omitted or
+//     misspelled distro is a validation error at author time. An earlier revision
+//     left it optional and inferred `arch`/`alpine` from base_user, defaulting
+//     everything else to Arch/Fedora conventions — which rendered `openssh` and
+//     `enable --now sshd` onto Debian-family guests and left them unreachable. That
+//     inference is DELETED, not narrowed — the renderer no longer guesses a distro.
+//
+//  3. Minimum runcmd: the sshd START prepended (after the pacman install command on
+//     pacman-family distros, per #2). On systemd it is
+//     `systemctl enable --now <unit>` — `ssh` on debian/ubuntu, `sshd` elsewhere,
+//     chosen by sshUnitForDistro from the required Source.Distro. On OpenRC (Alpine)
+//     it is `rc-update add sshd default && rc-service sshd start`.
+//
 //  4. charly_install: NOT a cloud-init concern — the vm deploy's PrepareVenue delivers charly
 //     post-boot (auto/scp stage it; skip verifies). No charly download runcmd.
+//
 //  5. VmCloudInit.Extra: raw cloud-config YAML appended as a second
 //     document (separated by ---) if non-empty
 func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaData, networkConfig string, err error) {
@@ -137,7 +125,7 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 
 	userMap["users"] = composeUsers(spec, ci, rt)
 
-	distro := effectiveDistro(spec)
+	distro := spec.Source.Distro
 	packages := composePackages(ci.Package, distro)
 	pacmanFamily := hostenv.FormatForDistroID(distro) == "pac"
 	if len(packages) > 0 && !pacmanFamily {
@@ -287,9 +275,10 @@ func composeUsers(spec *VmSpec, ci *VmCloudInit, rt CloudInitRuntimeParams) []an
 //  1. Explicit spec.ssh.user
 //  2. spec.source.base_user (adopt path — cloud_image sources with a
 //     declared upstream account)
-//  3. Source-kind fallback ("root" for bootc, "arch" for cloud_image —
-//     the latter works for Arch cloud images out of the box; for
-//     other distros users MUST set base_user or ssh.user explicitly)
+//  3. Source-kind fallback: "root" for bootc. There is NO cloud_image fallback —
+//     an earlier revision guessed "arch", and the guess is gone: a cloud_image
+//     without ssh.user or base_user returns "" so the caller fails loudly rather
+//     than attempting an account the image may not have.
 //
 // RCA #13 (FINAL/K5 unit 6a): a check command must never SIGSEGV on any
 // input — nil spec (an unresolved vm entity, e.g. an upstream entity-
@@ -339,40 +328,6 @@ func applySSHDefaults(entry map[string]any, rt CloudInitRuntimeParams) {
 	}
 }
 
-// effectiveDistro resolves spec.Source.Distro, inferring the distro for the
-// cloud_image cases this codebase documents as supported-by-convention
-// (resolveCloudInitSSHUser's own comment: "arch" for cloud_image works out
-// of the box) but that the CUE schema leaves Distro optional for: a
-// cloud_image source with no explicit `distro:` and `base_user: arch` (e.g.
-// a plain Arch Linux cloud image entity — see the D15 doc comment above for
-// why this matters to the pacman-family package-delivery branch) or
-// `base_user: alpine` (the Alpine nocloud cloud image — see composeRunCmd
-// for why this matters to the OpenRC sshd-start branch). Strictly
-// narrower than the pre-existing accidental behavior: composePackages'
-// distro switch already defaulted an empty/unrecognized distro to the
-// Arch/Fedora {openssh, sshd} shape, so this inference can never change what
-// a caller already effectively got — it only makes the SAME assumption
-// explicit enough for hostenv.FormatForDistroID to positively match "pac". Any
-// other empty-distro image (a different or absent base_user) returns "" and
-// stays on the safe, unchanged non-pacman path.
-func effectiveDistro(spec *VmSpec) string {
-	if spec == nil {
-		return ""
-	}
-	if spec.Source.Distro != "" {
-		return spec.Source.Distro
-	}
-	if spec.Source.Kind == "cloud_image" {
-		switch spec.Source.BaseUser {
-		case "arch":
-			return "arch"
-		case "alpine":
-			return "alpine"
-		}
-	}
-	return ""
-}
-
 // composePackages unions charly's minimum SSH+curl+tar package set with
 // the user's declared packages, preserving the user's order for extras.
 //
@@ -409,22 +364,7 @@ func composePackages(userPkgs []string, distro string) []string {
 // Debian/Ubuntu (where the systemd unit is named `ssh.service` — `sshd.service` is just a
 // symlink that systemd refuses to enable).
 func sshUnitForDistro(distro string) string {
-	switch distro {
-	case "debian", "ubuntu":
-		return "ssh"
-	default:
-		return "sshd"
-	}
-}
-
-// otherSSHUnit returns the OTHER of the two OpenSSH systemd unit names, so the
-// start can fall back when source.distro is unset or wrong. There are exactly two
-// names in play across every distro charly renders cloud-init for.
-func otherSSHUnit(unit string) string {
-	if unit == "ssh" {
-		return "sshd"
-	}
-	return "ssh"
+	return spec.DistroSSHUnits[distro]
 }
 
 // sshHardeningDropInPath is the sshd_config.d drop-in charly writes on every cloud_image VM (D18,
@@ -492,7 +432,7 @@ func composeRunCmd(spec *VmSpec, ci *VmCloudInit) []any {
 	// Hoisted above the branch so that invariant is structural rather than a duplicated
 	// line each arm has to remember (R3): only the START of sshd is per-init.
 	runcmd = append(runcmd, sshHardeningDropInCmd)
-	if effectiveDistro(spec) == "alpine" {
+	if distroInit(spec.Source.Distro) == "openrc" {
 		// Alpine uses OpenRC, not systemd: there is no ssh.socket to unmask and
 		// no systemctl to enable with. The OpenSSH package ships an /etc/init.d/sshd
 		// script — rc-update registers it for the default runlevel (so it survives
@@ -501,23 +441,11 @@ func composeRunCmd(spec *VmSpec, ci *VmCloudInit) []any {
 			"rc-update add sshd default && rc-service sshd start",
 		)
 	} else {
-		// The unit is named `ssh` on Debian/Ubuntu and `sshd` elsewhere, and
-		// sshUnitForDistro can only know that when source.distro is set EXPLICITLY —
-		// effectiveDistro infers arch/alpine from base_user but never debian/ubuntu.
-		// So a Debian-family cloud_image that omits `distro:` used to get
-		// `enable --now sshd`, which does not exist there. Combined with the
-		// bootcmd mask above, that leaves a socket-activated sshd MASKED and never
-		// started, and the VM boots permanently unreachable — the symptom being a
-		// port-forward that accepts TCP and then resets
-		// (`kex_exchange_identification: Connection reset by peer`), which points
-		// nowhere near cloud-init. Try the other name as a fallback so a missing
-		// `distro:` can never brick SSH; the distro-derived name still goes first,
-		// so the common case runs exactly one command.
-		sshUnit := sshUnitForDistro(spec.Source.Distro)
+		// source.distro is REQUIRED and closed to #DistroID, so the unit name is
+		// known exactly — no inference, and no try-both fallback.
 		runcmd = append(runcmd,
 			"systemctl unmask ssh.socket || true",
-			fmt.Sprintf("systemctl enable --now %s || systemctl enable --now %s",
-				sshUnit, otherSSHUnit(sshUnit)),
+			fmt.Sprintf("systemctl enable --now %s", sshUnitForDistro(spec.Source.Distro)),
 		)
 	}
 
@@ -582,4 +510,17 @@ func ResolveKeyInjectionChannels(spec *VmSpec) (smbios, cloudInit bool) {
 		cloudInit = false
 	}
 	return smbios, cloudInit
+}
+
+// distroInit returns the guest init system declared for a distro id, from the generated
+// spec.DistroInits table (schema/distro_vocab.cue's #Distros). It is the ONLY thing that
+// decides how a service is enabled and started in a guest.
+//
+// This replaced `if spec.Source.Distro == "alpine"`. A branch on a distro NAME encodes an
+// init system as a hardcoded fact about one distro: it cannot be enumerated, cannot be
+// validated, silently treats every unlisted distro as systemd, and has to be found and
+// edited again for the next OpenRC distro. The init system is a trait of the distro, so it
+// is declared alongside its package format and ssh unit.
+func distroInit(distro string) string {
+	return spec.DistroInits[distro]
 }
