@@ -40,12 +40,29 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 	// resolves repo/options/etc. most-specific-wins. Emits the PRIMARY format
 	// (img.Pkg) install; non-primary build formats (the `aur` builder) emit from
 	// their own format section below.
-	if pkgs, raw, matched := ResolveCascadePackages(layer, img); (matched || len(pkgs) > 0) && img.DistroDef != nil {
-		if formatDef := img.DistroDef.Format[img.Pkg]; formatDef != nil {
+	// Every unrenderable case is a LOUD failure (R4): a candy that resolved
+	// packages for this box and then emits no install would ship an image
+	// SILENTLY missing them, and the Containerfile looks legitimate — the
+	// failure only surfaces later as a missing binary at runtime. A candy that
+	// resolved NO packages for this box falls through untouched (the common
+	// per-distro case: a `distro:` map with no section for this box's distro).
+	if pkgs, raw, matched := ResolveCascadePackages(layer, img); matched || len(pkgs) > 0 {
+		if len(pkgs) == 0 {
+			// A tag section matched but contributed no packages (it carried only
+			// repo/option keys). Nothing to install, nothing to fail on.
+		} else if img.DistroDef == nil {
+			return asUser, fmt.Errorf("candy %s: resolved %d package(s) %v but box %s has no distro definition to install them with",
+				candyName, len(pkgs), pkgs, img.Name)
+		} else if formatDef := img.DistroDef.Format[img.Pkg]; formatDef == nil {
+			return asUser, fmt.Errorf("candy %s: resolved %d package(s) %v but box %s's primary build format %q has no format definition in its distro (declare it, or set the box's build: to a format the distro defines)",
+				candyName, len(pkgs), pkgs, img.Name, img.Pkg)
+		} else {
 			ctx := buildkit.NewInstallContext(raw, formatDef.CacheMount)
-			if rendered, err := buildkit.RenderTemplate(img.Pkg+"-install", formatDef.InstallTemplate, ctx); err == nil {
-				b.WriteString(rendered)
+			rendered, err := buildkit.RenderTemplate(img.Pkg+"-install", formatDef.InstallTemplate, ctx)
+			if err != nil {
+				return asUser, fmt.Errorf("candy %s: rendering the %s install template for box %s failed: %w", candyName, img.Pkg, img.Name, err)
 			}
+			b.WriteString(rendered)
 		}
 	}
 
@@ -120,8 +137,12 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 		contextRelPrefix := filepath.ToSlash(filepath.Join(".build", boxName))
 		finalUser, err := g.EmitTasks(b, layer, img, layer.RunOps(), buildDir, contextRelPrefix)
 		if err != nil {
-			// Phase 0: log but continue; validator should catch this earlier.
-			fmt.Fprintf(b, "# emitTasks error: %v\n", err)
+			// Hard-error, for the same reason the localpkg render above does: a
+			// task-emit failure written as a Containerfile COMMENT ships an image
+			// missing those steps while the build reports success, and the defect
+			// only surfaces later as absent files at runtime. The validator is the
+			// earlier gate, not a substitute for this one.
+			return asUser, fmt.Errorf("candy %q: emitting tasks for image %q: %w", candyName, img.Name, err)
 		}
 		if finalUser != "0" && finalUser != "root" {
 			// Tasks ended in non-root state; reset for builders/user.yml that
