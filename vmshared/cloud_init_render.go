@@ -67,6 +67,12 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 		ci = &VmCloudInit{}
 	}
 
+	// The FIFTH silent drop, checked ONCE at the entry point that can carry an error rather than
+	// threading a result type through composeRunCmd's []any signature. See validateDistroVocabulary.
+	if err := validateDistroVocabulary(spec.Source.Distro); err != nil {
+		return "", "", "", err
+	}
+
 	// --- meta-data ---
 
 	hostname := rt.Hostname
@@ -365,6 +371,32 @@ func composePackages(userPkgs []string, distro string) []string {
 // symlink that systemd refuses to enable).
 func sshUnitForDistro(distro string) string {
 	return spec.DistroSSHUnits[distro]
+}
+
+// validateDistroVocabulary rejects an id the generated tables do not carry.
+//
+// `sshUnitForDistro` and `distroInit` are bare lookups, so an unknown id yields "" — and "" renders
+// `systemctl enable --now ` with no unit name, or falls to the systemd arm on an OpenRC guest. Both
+// produce a guest that boots and is unreachable, with nothing in the output saying why. That is the
+// same silent-drop class as the four this cutover converted to hard errors in the emitter; this one
+// simply was not counted among them.
+//
+// The vm kind's OpValidate rejects an unknown id at author time, so this is defence in depth rather
+// than the primary gate — it catches a spec that reached the renderer without passing that gate.
+func validateDistroVocabulary(distro string) error {
+	if distro == "" {
+		return nil // absence is OpValidate's business; this function is about WRONG ids
+	}
+	if _, ok := spec.DistroSSHUnits[distro]; !ok {
+		return fmt.Errorf("cloud-init render: source.distro %q is not in the distro vocabulary, so the "+
+			"sshd unit name would render EMPTY and the guest would boot unreachable; valid ids are %v",
+			distro, spec.DistroIDs)
+	}
+	if _, ok := spec.DistroInits[distro]; !ok {
+		return fmt.Errorf("cloud-init render: source.distro %q has no init system in the vocabulary, so "+
+			"the guest would silently take the systemd path; valid ids are %v", distro, spec.DistroIDs)
+	}
+	return nil
 }
 
 // sshHardeningDropInPath is the sshd_config.d drop-in charly writes on every cloud_image VM (D18,
