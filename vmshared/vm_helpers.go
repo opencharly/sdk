@@ -91,7 +91,8 @@ func KillQemuByPID(stateDir string) {
 
 // LibvirtSessionSocket returns the path to the user's libvirt session socket. Modern libvirt (≥ 8.0)
 // uses per-driver modular daemons (virtqemud-sock); legacy libvirt (< 8.0) uses the monolithic
-// libvirt-sock. Probe the modular socket first (every current distro), fall back to legacy.
+// libvirt-sock. Probe the modular socket first (every current distro), then the monolithic one.
+// Returns "" when neither exists — never a path that was not found.
 func LibvirtSessionSocket() string {
 	picked, _ := LibvirtSessionSocketWithProbes()
 	return picked
@@ -115,7 +116,12 @@ func LibvirtSessionSocketWithProbes() (picked string, probed []string) {
 	if _, err := os.Stat(legacy); err == nil {
 		return legacy, probed
 	}
-	return legacy, probed
+	// Neither socket exists: return "" rather than a path that is not there. The previous
+	// `return legacy` handed callers a nonexistent path as though it had been found, which
+	// made status_vm's own `if sock == ""` guard DEAD CODE and turned "libvirt is not
+	// running" into a stat failure on a monolithic socket the host may never have used.
+	// `probed` still carries both candidates for the diagnostic trail.
+	return "", probed
 }
 
 // WriteJSON encodes v as indented JSON to w (the `--json` output helper; the
