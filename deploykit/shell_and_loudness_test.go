@@ -96,7 +96,7 @@ func TestProvisionFromRunnableImage_UsesPosixShell(t *testing.T) {
 	}
 	for _, sh := range shells {
 		if sh == "bash" {
-			t.Errorf("the data-image seeder asks for `bash -c` inside the user's image; the command "+
+			t.Errorf("the data-image seeder asks for `bash -c` inside the user's image; the command " +
 				"is pure POSIX (mkdir -p, &&, cp) and a busybox-based data image has no /bin/bash")
 		}
 	}
