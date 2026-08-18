@@ -141,28 +141,44 @@ func (g *Generator) EmitInitAssembly(b *strings.Builder, img *buildkit.ResolvedB
 
 		// System-level service enablement (e.g., systemctl enable sshd).
 		// Collect every use_packaged: entry across the candy chain — these
-		// are the distro-shipped systemd units the init system must enable.
-		var systemUnits []string
-		for _, candyName := range candyOrder {
-			layer := g.Candies[candyName]
-			for i := range layer.Service() {
-				entry := &layer.Service()[i]
-				if entry.IsPackaged() && entry.EffectiveScope() == "system" &&
-					ServiceEntryAppliesToDistro(entry, img.Distro) {
-					systemUnits = append(systemUnits, entry.UsePackaged)
+		// are the distro-shipped units the init system must enable.
+		//
+		// This runs for the image's RESOLVED init system ONLY (img.InitSystem,
+		// from InitConfig.ResolveInitSystem), never for every ACTIVE init.
+		// activeInits is a SET: a candy chain routinely contributes fragments
+		// for several inits at once, and each one legitimately gets its own
+		// fragment scratch stage and assembly step above. Enablement is
+		// different in kind — a distro-shipped unit is enabled by the ONE init
+		// that actually boots the image, so rendering the shared unit list
+		// through every active init emitted one enable command PER init into a
+		// single Containerfile: a supervisord container carrying both an openrc
+		// and a systemd fragment got `rc-update add` AND `systemctl enable` for
+		// the same units, and the build died with `rc-update: command not
+		// found` on a base that has neither. Fragments and post-assembly stay
+		// per-init; only this block narrows.
+		if initName == img.InitSystem {
+			var systemUnits []string
+			for _, candyName := range candyOrder {
+				layer := g.Candies[candyName]
+				for i := range layer.Service() {
+					entry := &layer.Service()[i]
+					if entry.IsPackaged() && entry.EffectiveScope() == "system" &&
+						ServiceEntryAppliesToDistro(entry, img.Distro) {
+						systemUnits = append(systemUnits, entry.UsePackaged)
+					}
 				}
 			}
-		}
-		sysEnable, err := InitRenderSystemEnableTemplate(def, systemUnits)
-		if err != nil {
-			return fmt.Errorf("rendering system enable for %s: %w", initName, err)
-		}
-		if sysEnable != "" {
-			b.WriteString(sysEnable)
-			if !strings.HasSuffix(sysEnable, "\n") {
+			sysEnable, err := InitRenderSystemEnableTemplate(def, systemUnits)
+			if err != nil {
+				return fmt.Errorf("rendering system enable for %s: %w", initName, err)
+			}
+			if sysEnable != "" {
+				b.WriteString(sysEnable)
+				if !strings.HasSuffix(sysEnable, "\n") {
+					b.WriteString("\n")
+				}
 				b.WriteString("\n")
 			}
-			b.WriteString("\n")
 		}
 
 		// Post-assembly step (e.g., bootc container lint)
