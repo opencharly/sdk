@@ -232,6 +232,70 @@ func taskRunsAsRoot(runAs string, img *buildkit.ResolvedBox) bool {
 	return directive == "0"
 }
 
+// WrapUnlessExists and WrapUnlessExistsBlock wrap cmd in the `unless_exists` build-time capability
+// GATE, or return cmd unchanged when the guard is empty. They share the gate's SEMANTICS and differ
+// only in how the guarded list is terminated, because their two call sites sit in genuinely
+// different lexical contexts:
+//
+//   - WrapUnlessExists      `else { cmd; }; fi`   — one line. EmitDownload's payload is a
+//     single-quoted argument on ONE Containerfile RUN line, where a literal newline would end the
+//     instruction, so `;` is the only terminator available.
+//   - WrapUnlessExistsBlock `else {\ncmd\n}; fi` — EmitCmd's payload is a heredoc body, already
+//     multi-line by construction, where a newline costs nothing.
+//
+// One form cannot serve both, and the attempt is what produced two rounds of broken emission.
+// `;` is a COMMAND separator, so appending it is safe only when the preceding text is a complete
+// simple command — and three ordinary authored shapes are not: a trailing `# comment` swallows the
+// `; }; fi` into itself so the brace never closes; a body ending in a heredoc needs its terminator
+// alone on a line, so `EOT; }; fi` never ends the heredoc; and a body already ending in `;` yields
+// `;;`, the case-clause token. No amount of trimming turns any of those into a command position.
+// A NEWLINE is the other terminator `{ list; }` accepts and the one that is unconditionally safe,
+// because it ends whatever lexical construct the last line opened.
+//
+// The gate itself is evaluated IN THE IMAGE at build time, which is what makes it a capability
+// check rather than a distro filter: on a distro that packages the tool, `distro:` package sections
+// compile into the plan at phase 1 and `plan:` steps at phase 3 (BuildDeployPlan), so the path
+// already exists by the time the step runs. A distro that later gains a package is picked up with
+// no edit. A distro-NAME filter is not available for this at all — `exclude_distro:` is read by the
+// check runner (sdk/kit/planrun.go), never by the build emitter.
+//
+// The guard is shell-quoted in BOTH positions. Interpolating it raw into the echo, as the first
+// draft did, meant a path containing a double quote emitted a shell syntax error, and one
+// containing $(…) command-substituted in the message while the [ -e ] test used the literal — so
+// the skip line could name a different path than the one actually tested.
+//
+// verb names the step kind in the skip message ("download", "run"), because a Containerfile that
+// prints "skipping: X already present" for three different reasons is worse than one that says
+// which step declined to run.
+func WrapUnlessExists(cmd, guard, verb string) string {
+	return wrapUnlessExists(cmd, guard, verb, " : ; ", "; ")
+}
+
+// WrapUnlessExistsBlock is the newline-terminated form, for a payload that is already multi-line.
+func WrapUnlessExistsBlock(cmd, guard, verb string) string {
+	return wrapUnlessExists(strings.TrimRight(cmd, "\n"), guard, verb, "\n:\n", "\n")
+}
+
+func wrapUnlessExists(cmd, guard, verb, prefix, term string) string {
+	g := strings.TrimSpace(guard)
+	if g == "" {
+		return cmd
+	}
+	q := spec.ShellQuote(g)
+	head := fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else `, q, verb, q)
+	// `{ list; }` requires a NON-EMPTY list — the same rule as the terminator, on its other end.
+	// A `run:` step whose command is empty or comment-only would otherwise emit `{ }` and fail the
+	// build, turning a working no-op step into a syntax error the moment a guard is added to it.
+	// The leading `:` in prefix is the shell no-op: it guarantees at least one command in the list
+	// for every body, and is invisible for every other shape. A body that is nothing BUT
+	// whitespace has no command for the terminator to follow either, so it collapses to the no-op
+	// alone.
+	if strings.TrimSpace(cmd) == "" {
+		return head + "{ :; }; fi"
+	}
+	return head + fmt.Sprintf("{%s%s%s}; fi", prefix, cmd, term)
+}
+
 // EmitDownload emits one RUN per download task: fetch to a content-addressed
 // /tmp/downloads cache, then extract. Honors candy-declared `cache:` mounts.
 func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) error {
@@ -299,6 +363,11 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 			cmd += fmt.Sprintf(" && chmod -R %s %s", t.Mode, dest)
 		}
 	}
+
+	// unless_exists wraps the WHOLE step — fetch, extract AND chmod. Guarding only the fetch
+	// would still pay the extract, and a chmod outside the guard would fail on a path that
+	// was never created.
+	cmd = WrapUnlessExists(cmd, t.UnlessExists, "download")
 
 	cacheMounts := TaskCacheMounts(t, img)
 	mounts := make([]string, 0, 1+len(cacheMounts))
@@ -377,10 +446,16 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 		}
 	}
 	b.WriteString("set -e\n")
-	b.WriteString(t.Command)
-	if !strings.HasSuffix(t.Command, "\n") {
-		b.WriteString("\n")
+	// The guard wraps the WHOLE authored command, inside the heredoc, so a multi-line command
+	// is skipped as one unit rather than line by line.
+	body := t.Command
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
 	}
+	if strings.TrimSpace(t.UnlessExists) != "" {
+		body = WrapUnlessExistsBlock(body, t.UnlessExists, "run") + "\n"
+	}
+	b.WriteString(body)
 	b.WriteString("OVCMD\n")
 }
 

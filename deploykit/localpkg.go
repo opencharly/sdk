@@ -163,6 +163,11 @@ func charlyFormatToNFPM(format string) string {
 // plugins dir, `<CandyDir>/charly.yml`). Returns the produced package-file paths
 // in a per-call temp dir. Shared by the deploy-time dev leg (ExecLocalPkgInstall)
 // and the image-build dev leg (renderLocalPkgImageDevInstall) — R3.
+//
+// The child runs under the project that OWNS the candy being packaged (candyProjectDir), with the
+// parent's project scope replaced by the candy's (spec.ChildProjectEnv) and every path argument
+// absolutised — see those helpers for why the parent's scope is not merely unnecessary here but
+// actively wrong.
 func generateLocalPkg(ctx context.Context, s *LocalPkgInstallStep, build *spec.LocalPkgBuildContext, dryRun bool) ([]string, error) {
 	if build == nil {
 		build = &spec.LocalPkgBuildContext{}
@@ -175,9 +180,26 @@ func generateLocalPkg(ctx context.Context, s *LocalPkgInstallStep, build *spec.L
 	if pluginsDir == "" {
 		pluginsDir = bakedPluginDir
 	}
+	candyYAML := build.CandyYAML
+	if candyYAML == "" {
+		candyYAML = filepath.Join(s.CandyDir, spec.UnifiedFileName)
+	}
+	// Every path handed to the child must be absolute: the child resolves its own project scope
+	// and chdirs into it, so a path relative to OUR cwd would resolve against a different
+	// directory there. Absolutise against the parent's cwd, which is what they were relative to.
+	binary = absFromHere(binary)
+	pluginsDir = absFromHere(pluginsDir)
+	candyYAML = absFromHere(candyYAML)
+	// The packaging child's project scope is the project that OWNS the candy being packaged —
+	// never the parent's, which is about the BOX being built and may be a submodule that vendors
+	// no candies (and therefore declares no `generate-packages` command plugin).
+	childDir := candyProjectDir(candyYAML)
+	childEnv := spec.ChildProjectEnv(os.Environ(), childDir)
 	calVer := build.CalVer
 	if calVer == "" {
-		out, err := exec.CommandContext(ctx, binary, "version").Output()
+		verCmd := exec.CommandContext(ctx, binary, "version")
+		verCmd.Dir, verCmd.Env = childDir, childEnv
+		out, err := verCmd.Output()
 		if err != nil {
 			return nil, fmt.Errorf("dev-local-pkg: resolving in-development CalVer from %q version: %w", binary, err)
 		}
@@ -186,10 +208,6 @@ func generateLocalPkg(ctx context.Context, s *LocalPkgInstallStep, build *spec.L
 	arch := build.Arch
 	if arch == "" {
 		arch = runtime.GOARCH
-	}
-	candyYAML := build.CandyYAML
-	if candyYAML == "" {
-		candyYAML = filepath.Join(s.CandyDir, "charly.yml")
 	}
 	nfpmFormat := charlyFormatToNFPM(s.Format)
 	if nfpmFormat == "" {
@@ -215,6 +233,7 @@ func generateLocalPkg(ctx context.Context, s *LocalPkgInstallStep, build *spec.L
 		return nil, nil
 	}
 	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Dir, cmd.Env = childDir, childEnv
 	cmd.Stdout = os.Stderr // surface plugin output (operator debugging) without polluting stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -229,6 +248,50 @@ func generateLocalPkg(ctx context.Context, s *LocalPkgInstallStep, build *spec.L
 		return nil, fmt.Errorf("dev-local-pkg: generate-packages produced no %s in %s (candy=%s)", glob, outDir, s.CandyName)
 	}
 	return matches, nil
+}
+
+// absFromHere resolves p against the CURRENT working directory. Used on every path the packaging
+// child is handed, because that child resolves its own project scope and chdirs into it — a path
+// still relative when it crosses the process boundary would resolve against the child's directory,
+// not ours. A path that is already absolute (os.Executable(), MkdirTemp, bakedPluginDir) is
+// returned unchanged; an unresolvable one is left as authored so the child reports it verbatim.
+func absFromHere(p string) string {
+	if p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
+}
+
+// candyProjectDir returns the project directory that OWNS the candy manifest at candyYAML — the
+// nearest ANCESTOR directory (above the candy's own dir) that holds a charly.yml. Returns "" when
+// no ancestor does.
+//
+// This is the project scope the `charly generate-packages` child must run under. The word
+// `generate-packages` is contributed by an out-of-process COMMAND plugin, and on the dev path the
+// CLI learns that word by pre-scanning the project's discovered candies — so the child only parses
+// its own verb when its project is one that declares the plugin. The project that declares it is
+// the same one that declares the candy whose `packaging:` section the child is about to read: both
+// come from the one tree the `--candy` path points into. Inheriting the PARENT's project instead
+// (a box submodule, which vendors no candies) leaves the word unregistered and the child dies on
+// `unexpected argument generate-packages` — the packaging inputs all arrive as explicit flags, so
+// the parent's scope was never anything the child needed, only something it happened to be handed.
+//
+// Ancestors only: the candy dir itself holds the candy manifest, which is a charly.yml too.
+func candyProjectDir(candyYAML string) string {
+	dir := filepath.Dir(candyYAML)
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "" // filesystem root, no enclosing project
+		}
+		dir = parent
+		if st, err := os.Stat(filepath.Join(dir, spec.UnifiedFileName)); err == nil && !st.IsDir() {
+			return dir
+		}
+	}
 }
 
 // downloadLocalPkg downloads the PUBLISHED package for a LocalPkgInstallStep from
