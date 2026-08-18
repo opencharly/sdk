@@ -2,6 +2,7 @@ package deploykit
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -735,4 +736,201 @@ func TestEmitTasks_PluginVerb_ActScriptWrappedInRun(t *testing.T) {
 	if !strings.Contains(out, "RUN") || !strings.Contains(out, "groupadd -f docker") {
 		t.Errorf("an ActScript act-shell must be EmitCmd-wrapped into a RUN:\n%s", out)
 	}
+}
+
+// assertShellParses runs `bash -n` over a fragment the emitters produced. Substring and index
+// assertions all pass on a string that cannot be executed — which is exactly how a `;` landing at
+// the start of its own line survived review — so every guard test parses what it asserts on.
+func assertShellParses(t *testing.T, label, script string) {
+	t.Helper()
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skipf("bash not available: %v", err)
+	}
+	f := filepath.Join(t.TempDir(), "probe.sh")
+	if err := os.WriteFile(f, []byte(script+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("bash", "-n", f).CombinedOutput()
+	if err != nil {
+		t.Errorf("%s does not parse as shell: %v\n--- bash -n ---\n%s\n--- script ---\n%s",
+			label, err, out, script)
+	}
+}
+
+// TestEmitDownload_UnlessExists is the discriminating coverage for the `unless_exists` gate:
+// delete the wrap from EmitDownload and the first subtest fails on the missing `if [ -e ]`, while
+// the second proves the emission is byte-identical to the unguarded form when the field is absent
+// — so the test cannot pass by wrapping everything unconditionally.
+func TestEmitDownload_UnlessExists(t *testing.T) {
+	base := spec.Op{
+		Download: "https://example.invalid/tool-1.0.tar.gz",
+		Extract:  "tar.gz",
+		To:       "/usr",
+		Mode:     "0755",
+	}
+
+	t.Run("guard present wraps fetch, extract AND chmod", func(t *testing.T) {
+		op := base
+		op.UnlessExists = "/usr/bin/tool"
+		var b strings.Builder
+		if err := EmitDownload(&b, op, testResolvedBox()); err != nil {
+			t.Fatalf("EmitDownload() error = %v", err)
+		}
+		got := b.String()
+		// The whole RUN body is shell-quoted by the outer `sh -c` wrapper, so assert on the
+		// structure that survives that escaping rather than on a literal quoting style.
+		for _, want := range []string{
+			"if [ -e ",
+			"/usr/bin/tool",
+			"skipping download:",
+			"already present",
+			"else {",
+			"; fi",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("emission is missing %q:\n%s", want, got)
+			}
+		}
+		// The chmod must be INSIDE the guard — outside it, a skipped step chmods a path it
+		// never created and the build fails on the success case.
+		guardStart := strings.Index(got, "if [ -e ")
+		chmod := strings.Index(got, "chmod")
+		fi := strings.LastIndex(got, "; fi")
+		if guardStart < 0 || chmod < guardStart || chmod > fi {
+			t.Errorf("chmod is not inside the guard (guard@%d chmod@%d fi@%d):\n%s",
+				guardStart, chmod, fi, got)
+		}
+		assertShellParses(t, "the guarded download payload", unquoteSingle(got[guardStart:fi+len("; fi")]))
+		// The one-line form exists BECAUSE this payload is a single-quoted argument on ONE
+		// Containerfile RUN line: a literal newline would end the instruction. That constraint is
+		// the whole reason the guard has two entry points, so it is asserted rather than assumed.
+		if body := strings.TrimSuffix(got, "\n"); strings.Contains(body, "\n") {
+			t.Errorf("the emitted download RUN must be a single line; it contains a newline:\n%s", got)
+		}
+	})
+
+	t.Run("guard absent emits byte-identically to before", func(t *testing.T) {
+		var withField, without strings.Builder
+		op := base
+		op.UnlessExists = "   " // whitespace-only is not a guard
+		if err := EmitDownload(&withField, op, testResolvedBox()); err != nil {
+			t.Fatalf("EmitDownload() error = %v", err)
+		}
+		if err := EmitDownload(&without, base, testResolvedBox()); err != nil {
+			t.Fatalf("EmitDownload() error = %v", err)
+		}
+		if withField.String() != without.String() {
+			t.Errorf("a blank unless_exists changed the emission:\n--- with ---\n%s\n--- without ---\n%s",
+				withField.String(), without.String())
+		}
+		if strings.Contains(without.String(), "if [ -e ") {
+			t.Errorf("unguarded emission grew a guard:\n%s", without.String())
+		}
+	})
+}
+
+// TestWrapUnlessExists_QuotesBothPositions pins the fix for a defect in the first draft: the guard
+// was ShellQuote'd for the `[ -e ]` test and interpolated RAW into the echo. A path containing a
+// double quote made the emitted RUN a shell syntax error; one containing $(…) substituted in the
+// message while the test used the literal, so the skip line named a different path than the one
+// checked.
+func TestWrapUnlessExists_QuotesBothPositions(t *testing.T) {
+	got := WrapUnlessExists("true", `/opt/a"b$(id)`, "download")
+	if strings.Count(got, `'/opt/a"b$(id)'`) != 2 {
+		t.Errorf("the guard must appear shell-quoted in BOTH the test and the echo; got:\n%s", got)
+	}
+	if strings.Contains(got, `"skipping download: /opt/a`) {
+		t.Errorf("the guard was interpolated raw into the echo:\n%s", got)
+	}
+	if WrapUnlessExists("true", "  ", "download") != "true" {
+		t.Error("a blank guard must return the command unchanged")
+	}
+}
+
+// TestEmitCmd_UnlessExists covers the gate on the `run:` verb, TABLE-DRIVEN over the command
+// shapes a candy can actually author.
+//
+// One fixture is not enough here and that is the lesson, not a detail. An earlier revision
+// terminated the guarded list with `;` and passed a single `"make install\nldconfig\n"` fixture
+// while three ordinary shapes emitted shell bash refuses: a trailing `# comment` swallows the
+// `; }; fi` into itself so the brace never closes; a body ending in a heredoc needs its terminator
+// alone on a line, so `EOT; }; fi` never ends it; and a body already ending in `;` yields `;;`, the
+// case-clause token. Every one of those satisfied the substring and ordering assertions.
+//
+// The schema documents unless_exists as a gate for "an install step", so honouring it in one
+// emitter would make it a silent no-op everywhere else. It is honoured by the two emitters that
+// produce ONE RUN for ONE op (download, cmd); the batch emitters fold MANY ops into a single RUN
+// and copy/write emit a COPY, so those are rejected at validation rather than ignored.
+func TestEmitCmd_UnlessExists(t *testing.T) {
+	img := testResolvedBox()
+
+	shapes := []struct{ name, command string }{
+		{"plain multi-line", "make install\nldconfig\n"},
+		{"single line without newline", "make install"},
+		{"trailing comment", "make install\n# done installing\n"},
+		{"ends with a heredoc", "cat >/tmp/f <<'EOT'\nhello\nEOT\n"},
+		{"already semicolon-terminated", "make install;\n"},
+		{"trailing blank lines", "make install\n\n\n"},
+		{"trailing line continuation", "make \\\n  install\n"},
+		{"ends with case/esac", "case $x in\n  a) echo a ;;\nesac\n"},
+		{"ends with if/fi", "if [ -d /opt ]; then echo yes; fi\n"},
+		{"ends with a function definition", "f() {\n  echo hi\n}\n"},
+		{"comment-only body", "# nothing to do\n"},
+		{"empty body", "\n"},
+		{"whitespace-only body", "  \t\n\n"},
+	}
+
+	for _, sh := range shapes {
+		t.Run(sh.name, func(t *testing.T) {
+			var guarded strings.Builder
+			EmitCmd(&guarded, spec.Op{Command: sh.command, UnlessExists: "/usr/bin/tool"},
+				"layer0", img, true)
+			got := guarded.String()
+			for _, want := range []string{"if [ -e ", "/usr/bin/tool", "skipping run:", "; fi"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("guarded emission is missing %q:\n%s", want, got)
+				}
+			}
+			// The emitted heredoc body must PARSE. Substring and ordering checks are all
+			// satisfied by shell bash refuses to run, which is how the `;` form survived review.
+			assertShellParses(t, "the guarded run: body ("+sh.name+")", heredocBody(got))
+		})
+	}
+
+	// The whole authored command must sit INSIDE the guard — a multi-line command is skipped as
+	// one unit, not line by line.
+	var multi strings.Builder
+	EmitCmd(&multi, spec.Op{Command: "make install\nldconfig\n", UnlessExists: "/usr/bin/tool"},
+		"layer0", img, true)
+	got := multi.String()
+	if i, j := strings.Index(got, "if [ -e "), strings.LastIndex(got, "; fi"); i < 0 ||
+		strings.Index(got, "make install") < i || strings.Index(got, "ldconfig") > j {
+		t.Errorf("the authored command is not fully inside the guard:\n%s", got)
+	}
+
+	// An absent guard must leave the emission untouched, so the test cannot pass by wrapping
+	// everything — and the unguarded body must still parse.
+	var plain strings.Builder
+	EmitCmd(&plain, spec.Op{Command: "make install\nldconfig\n"}, "layer0", img, true)
+	if strings.Contains(plain.String(), "if [ -e ") {
+		t.Errorf("an unguarded run: step grew a guard:\n%s", plain.String())
+	}
+	assertShellParses(t, "the unguarded run: body", heredocBody(plain.String()))
+}
+
+// heredocBody extracts what EmitCmd wrote between its `<<'OVCMD'` marker and the closing `OVCMD`.
+func heredocBody(emitted string) string {
+	const open, close = "<<'OVCMD'\n", "\nOVCMD\n"
+	i := strings.Index(emitted, open)
+	j := strings.LastIndex(emitted, close)
+	if i < 0 || j < 0 {
+		return emitted
+	}
+	return emitted[i+len(open) : j]
+}
+
+// unquoteSingle undoes the '\” escaping the emitters apply when a payload is passed as a
+// single-quoted `sh -c` argument, recovering the script the shell actually receives.
+func unquoteSingle(s string) string {
+	return strings.ReplaceAll(s, `'\''`, `'`)
 }
