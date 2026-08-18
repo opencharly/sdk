@@ -136,12 +136,39 @@ func TestInitConfigResolveInitSystem(t *testing.T) {
 		}
 	})
 
-	t.Run("explicit override wins outright, bypassing auto-detect", func(t *testing.T) {
+	t.Run("explicit override selects among triggered inits", func(t *testing.T) {
+		// An override SELECTS among the inits candies already trigger; it cannot
+		// INTRODUCE one. Resolution must always name a key of ActiveInit, because
+		// EmitInitAssembly enables system units through the resolved init only
+		// (`if initName == img.InitSystem`) — a resolved name that is not active
+		// matches nothing and silently enables no units at all.
 		want := &ResolvedInit{Model: "explicit-def"}
 		ic := &InitConfig{Init: map[string]*ResolvedInit{"systemd": want}}
-		name, def := ic.ResolveInitSystem(nil, nil, "systemd")
+		layers := map[string]spec.CandyReader{
+			"a": &fakeCandyReader{hasInit: map[string]bool{"systemd": true}},
+		}
+		name, def := ic.ResolveInitSystem(layers, []string{"a"}, "systemd")
 		if name != "systemd" || def != want {
 			t.Errorf("ResolveInitSystem(explicit) = (%q, %v), want (systemd, %v)", name, def, want)
+		}
+	})
+
+	t.Run("explicit override naming an untriggered init falls through", func(t *testing.T) {
+		// The contract narrowing this pins: previously an override consulted
+		// ic.Init directly, so an operator could force an init NO candy triggers.
+		// It now consults the triggered-and-capability-satisfied candidate set, so
+		// an untriggered override falls through to auto-detect — the same treatment
+		// an override naming an unknown init has always received (subtest below).
+		ic := &InitConfig{Init: map[string]*ResolvedInit{
+			"systemd":     {},
+			"supervisord": {},
+		}}
+		layers := map[string]spec.CandyReader{
+			"a": &fakeCandyReader{hasInit: map[string]bool{"supervisord": true}},
+		}
+		name, _ := ic.ResolveInitSystem(layers, []string{"a"}, "systemd")
+		if name != "supervisord" {
+			t.Errorf("ResolveInitSystem(untriggered explicit) = %q, want supervisord (auto-detect)", name)
 		}
 	})
 
