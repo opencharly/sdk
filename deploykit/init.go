@@ -115,10 +115,16 @@ func MapToKeyValueSlice(m map[string]string) []spec.KeyValue {
 	return out
 }
 
-// EmitInitAssembly emits the assembly_template, system_enable_template, and
-// post_assembly_template RUN steps for each active init system. Relocated from
-// charly (P8); byte-identical. initHasFragments gates the assembly step (a
-// fragment-less init contributed no scratch stage to bind-mount from).
+// EmitInitAssembly emits the assembly_template and post_assembly_template RUN steps
+// for EACH active init system, and the system_enable_template for the image's RESOLVED
+// init system ONLY (img.InitSystem). Relocated from charly (P8). initHasFragments gates
+// the assembly step (a fragment-less init contributed no scratch stage to bind-mount
+// from).
+//
+// The enable step is deliberately narrower than the other two: assembly and
+// post-assembly are per-init because each active init owns its own fragment stage,
+// whereas enabling a distro-shipped unit is the job of the single init that boots the
+// image. See the comment on the enable block below for what emitting it per-init broke.
 func (g *Generator) EmitInitAssembly(b *strings.Builder, img *buildkit.ResolvedBox, candyOrder []string, activeInits map[string]*spec.ResolvedInit, initHasFragments map[string]bool) error {
 	for initName, def := range activeInits {
 		// assembly_template bind-mounts from the scratch stage emitted above;
@@ -141,28 +147,44 @@ func (g *Generator) EmitInitAssembly(b *strings.Builder, img *buildkit.ResolvedB
 
 		// System-level service enablement (e.g., systemctl enable sshd).
 		// Collect every use_packaged: entry across the candy chain — these
-		// are the distro-shipped systemd units the init system must enable.
-		var systemUnits []string
-		for _, candyName := range candyOrder {
-			layer := g.Candies[candyName]
-			for i := range layer.Service() {
-				entry := &layer.Service()[i]
-				if entry.IsPackaged() && entry.EffectiveScope() == "system" &&
-					ServiceEntryAppliesToDistro(entry, img.Distro) {
-					systemUnits = append(systemUnits, entry.UsePackaged)
+		// are the distro-shipped units the init system must enable.
+		//
+		// This runs for the image's RESOLVED init system ONLY (img.InitSystem,
+		// from InitConfig.ResolveInitSystem), never for every ACTIVE init.
+		// activeInits is a SET: a candy chain routinely contributes fragments
+		// for several inits at once, and each one legitimately gets its own
+		// fragment scratch stage and assembly step above. Enablement is
+		// different in kind — a distro-shipped unit is enabled by the ONE init
+		// that actually boots the image, so rendering the shared unit list
+		// through every active init emitted one enable command PER init into a
+		// single Containerfile: a supervisord container carrying both an openrc
+		// and a systemd fragment got `rc-update add` AND `systemctl enable` for
+		// the same units, and the build died with `rc-update: command not
+		// found` on a base that has neither. Fragments and post-assembly stay
+		// per-init; only this block narrows.
+		if initName == img.InitSystem {
+			var systemUnits []string
+			for _, candyName := range candyOrder {
+				layer := g.Candies[candyName]
+				for i := range layer.Service() {
+					entry := &layer.Service()[i]
+					if entry.IsPackaged() && entry.EffectiveScope() == "system" &&
+						ServiceEntryAppliesToDistro(entry, img.Distro) {
+						systemUnits = append(systemUnits, entry.UsePackaged)
+					}
 				}
 			}
-		}
-		sysEnable, err := InitRenderSystemEnableTemplate(def, systemUnits)
-		if err != nil {
-			return fmt.Errorf("rendering system enable for %s: %w", initName, err)
-		}
-		if sysEnable != "" {
-			b.WriteString(sysEnable)
-			if !strings.HasSuffix(sysEnable, "\n") {
+			sysEnable, err := InitRenderSystemEnableTemplate(def, systemUnits)
+			if err != nil {
+				return fmt.Errorf("rendering system enable for %s: %w", initName, err)
+			}
+			if sysEnable != "" {
+				b.WriteString(sysEnable)
+				if !strings.HasSuffix(sysEnable, "\n") {
+					b.WriteString("\n")
+				}
 				b.WriteString("\n")
 			}
-			b.WriteString("\n")
 		}
 
 		// Post-assembly step (e.g., bootc container lint)
