@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/opencharly/spec/spec"
@@ -330,4 +331,20 @@ func (r *Runner) Run(ctx context.Context, checks []spec.Op) []CheckResult {
 		results = append(results, RunOne(ctx, r, &checks[i]))
 	}
 	return results
+}
+
+// AnnotateNeverHangKill names the per-attempt never-hang bound in a step's failure
+// message. The exec layer reports only "process terminated by signal (signal: killed)",
+// which describes the mechanism of death and not its cause — so a step killed by the
+// bound reads as a crash in whatever the step was running, and the reader goes looking
+// for a bug in their own command. The bound is known at the moment the deadline fires;
+// not saying so is what makes it a diagnostic dead end.
+//
+// A legitimately slow step raises the ceiling with `timeout:`, which ProbeNeverHang
+// honours over the floor — the mechanism's own parameter, not a workaround.
+func AnnotateNeverHangKill(msg string, bound time.Duration) string {
+	return strings.TrimSpace(fmt.Sprintf(
+		"%s\nkilled by the per-attempt never-hang bound of %s — the step ran longer than that, "+
+			"it did not crash. If it is legitimately this slow, declare `timeout:` on the step "+
+			"(a longer value is honoured over the bound).", msg, bound))
 }

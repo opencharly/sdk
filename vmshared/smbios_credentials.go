@@ -55,7 +55,7 @@ func KeyToUserTmpfilesD(user, home, pubkey string) string {
 
 // SmbiosCredForSSH generates the SMBIOS type 11 credential string that
 // delivers a per-VM SSH key to the named user via systemd-tmpfiles. When
-// user == "" or user == "root", the legacy /root/.ssh path is used.
+// user == "" or user == "root", the key is delivered to /root/.ssh.
 // Returns: "io.systemd.credential.binary:tmpfiles.extra=<base64>"
 func SmbiosCredForSSH(user, home, pubkey string) string {
 	var tmpfiles string
@@ -66,10 +66,4 @@ func SmbiosCredForSSH(user, home, pubkey string) string {
 	}
 	encoded := base64.StdEncoding.EncodeToString([]byte(tmpfiles))
 	return fmt.Sprintf("io.systemd.credential.binary:tmpfiles.extra=%s", encoded)
-}
-
-// SmbiosCredForRootSSH is preserved as a compatibility wrapper for the
-// existing call sites in vm.go (legacy bootc paths).
-func SmbiosCredForRootSSH(pubkey string) string {
-	return SmbiosCredForSSH("root", "", pubkey)
 }

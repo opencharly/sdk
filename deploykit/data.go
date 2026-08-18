@@ -269,7 +269,11 @@ func provisionFromRunnableImage(engine string, imageRef string, meta *spec.BoxMe
 	// reads it without keep-id, so the seeder must write with the same
 	// identity.
 
-	args = append(args, imageRef, "bash", "-c",
+	// POSIX `sh`, not bash: this runs inside the USER'S data image, which may be
+	// busybox-based with no /bin/bash — the same assumption the Containerfile emitter
+	// was fixed for. The command below is pure POSIX (mkdir -p, &&, cp, 2>&1), so
+	// there is nothing to prefer bash for and no probe is warranted.
+	args = append(args, imageRef, "sh", "-c",
 		fmt.Sprintf("mkdir -p %q && %s %s. %q/ 2>&1", contDest, cpFlag, entry.Staging, contDest))
 
 	return dataCmdRun(args[0], args[1:]...)
