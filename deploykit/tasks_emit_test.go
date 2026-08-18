@@ -841,44 +841,72 @@ func TestWrapUnlessExists_QuotesBothPositions(t *testing.T) {
 	}
 }
 
-// TestEmitCmd_UnlessExists covers the gate on the `run:` verb. The schema documents
-// unless_exists as a gate for "an install step", so honouring it in exactly one emitter would
-// make it a silent no-op everywhere else — the shape a reader has no way to detect.
+// TestEmitCmd_UnlessExists covers the gate on the `run:` verb, TABLE-DRIVEN over the command
+// shapes a candy can actually author.
 //
-// It is honoured by the two emitters that produce ONE RUN for ONE op (download, cmd). The batch
-// emitters (mkdir/link/setcap) fold MANY ops into a single RUN, so a per-op guard has no
-// expressible position there, and copy/write emit a COPY instruction, which no shell test can
-// wrap. Those are rejected at validation rather than silently ignored.
+// One fixture is not enough here and that is the lesson, not a detail. An earlier revision
+// terminated the guarded list with `;` and passed a single `"make install\nldconfig\n"` fixture
+// while three ordinary shapes emitted shell bash refuses: a trailing `# comment` swallows the
+// `; }; fi` into itself so the brace never closes; a body ending in a heredoc needs its terminator
+// alone on a line, so `EOT; }; fi` never ends it; and a body already ending in `;` yields `;;`, the
+// case-clause token. Every one of those satisfied the substring and ordering assertions.
+//
+// The schema documents unless_exists as a gate for "an install step", so honouring it in one
+// emitter would make it a silent no-op everywhere else. It is honoured by the two emitters that
+// produce ONE RUN for ONE op (download, cmd); the batch emitters fold MANY ops into a single RUN
+// and copy/write emit a COPY, so those are rejected at validation rather than ignored.
 func TestEmitCmd_UnlessExists(t *testing.T) {
 	img := testResolvedBox()
 
-	var guarded strings.Builder
-	EmitCmd(&guarded, spec.Op{
-		Command:      "make install\nldconfig\n",
-		UnlessExists: "/usr/bin/tool",
-	}, "layer0", img, true)
-
-	got := guarded.String()
-	for _, want := range []string{"if [ -e ", "/usr/bin/tool", "skipping run:", "; fi"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("guarded emission is missing %q:\n%s", want, got)
-		}
+	shapes := []struct{ name, command string }{
+		{"plain multi-line", "make install\nldconfig\n"},
+		{"single line without newline", "make install"},
+		{"trailing comment", "make install\n# done installing\n"},
+		{"ends with a heredoc", "cat >/tmp/f <<'EOT'\nhello\nEOT\n"},
+		{"already semicolon-terminated", "make install;\n"},
+		{"trailing blank lines", "make install\n\n\n"},
+		{"trailing line continuation", "make \\\n  install\n"},
+		{"ends with case/esac", "case $x in\n  a) echo a ;;\nesac\n"},
+		{"ends with if/fi", "if [ -d /opt ]; then echo yes; fi\n"},
+		{"ends with a function definition", "f() {\n  echo hi\n}\n"},
 	}
-	// Both authored lines must sit INSIDE the guard — a multi-line command is skipped as one
-	// unit, not line by line.
+
+	for _, sh := range shapes {
+		t.Run(sh.name, func(t *testing.T) {
+			var guarded strings.Builder
+			EmitCmd(&guarded, spec.Op{Command: sh.command, UnlessExists: "/usr/bin/tool"},
+				"layer0", img, true)
+			got := guarded.String()
+			for _, want := range []string{"if [ -e ", "/usr/bin/tool", "skipping run:", "; fi"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("guarded emission is missing %q:\n%s", want, got)
+				}
+			}
+			// The emitted heredoc body must PARSE. Substring and ordering checks are all
+			// satisfied by shell bash refuses to run, which is how the `;` form survived review.
+			assertShellParses(t, "the guarded run: body ("+sh.name+")", heredocBody(got))
+		})
+	}
+
+	// The whole authored command must sit INSIDE the guard — a multi-line command is skipped as
+	// one unit, not line by line.
+	var multi strings.Builder
+	EmitCmd(&multi, spec.Op{Command: "make install\nldconfig\n", UnlessExists: "/usr/bin/tool"},
+		"layer0", img, true)
+	got := multi.String()
 	if i, j := strings.Index(got, "if [ -e "), strings.LastIndex(got, "; fi"); i < 0 ||
 		strings.Index(got, "make install") < i || strings.Index(got, "ldconfig") > j {
 		t.Errorf("the authored command is not fully inside the guard:\n%s", got)
 	}
-	// The heredoc body is emitted verbatim, so it must PARSE. Substring and ordering checks above
-	// are all satisfied by shell that bash refuses to run.
-	assertShellParses(t, "the guarded run: heredoc body", heredocBody(got))
 
+	// An absent guard must leave the emission untouched, so the test cannot pass by wrapping
+	// everything — and the unguarded body must still parse.
 	var plain strings.Builder
 	EmitCmd(&plain, spec.Op{Command: "make install\nldconfig\n"}, "layer0", img, true)
 	if strings.Contains(plain.String(), "if [ -e ") {
 		t.Errorf("an unguarded run: step grew a guard:\n%s", plain.String())
 	}
+	assertShellParses(t, "the unguarded run: body", heredocBody(plain.String()))
 }
 
 // heredocBody extracts what EmitCmd wrote between its `<<'OVCMD'` marker and the closing `OVCMD`.

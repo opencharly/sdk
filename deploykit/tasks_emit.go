@@ -232,15 +232,32 @@ func taskRunsAsRoot(runAs string, img *buildkit.ResolvedBox) bool {
 	return directive == "0"
 }
 
-// WrapUnlessExists returns cmd wrapped in the `unless_exists` build-time capability GATE, or cmd
-// unchanged when the guard is empty.
+// WrapUnlessExists and WrapUnlessExistsBlock wrap cmd in the `unless_exists` build-time capability
+// GATE, or return cmd unchanged when the guard is empty. They share the gate's SEMANTICS and differ
+// only in how the guarded list is terminated, because their two call sites sit in genuinely
+// different lexical contexts:
 //
-// The gate is evaluated IN THE IMAGE at build time, which is what makes it a capability check
-// rather than a distro filter: on a distro that packages the tool, `distro:` package sections
+//   - WrapUnlessExists      `else { cmd; }; fi`   — one line. EmitDownload's payload is a
+//     single-quoted argument on ONE Containerfile RUN line, where a literal newline would end the
+//     instruction, so `;` is the only terminator available.
+//   - WrapUnlessExistsBlock `else {\ncmd\n}; fi` — EmitCmd's payload is a heredoc body, already
+//     multi-line by construction, where a newline costs nothing.
+//
+// One form cannot serve both, and the attempt is what produced two rounds of broken emission.
+// `;` is a COMMAND separator, so appending it is safe only when the preceding text is a complete
+// simple command — and three ordinary authored shapes are not: a trailing `# comment` swallows the
+// `; }; fi` into itself so the brace never closes; a body ending in a heredoc needs its terminator
+// alone on a line, so `EOT; }; fi` never ends the heredoc; and a body already ending in `;` yields
+// `;;`, the case-clause token. No amount of trimming turns any of those into a command position.
+// A NEWLINE is the other terminator `{ list; }` accepts and the one that is unconditionally safe,
+// because it ends whatever lexical construct the last line opened.
+//
+// The gate itself is evaluated IN THE IMAGE at build time, which is what makes it a capability
+// check rather than a distro filter: on a distro that packages the tool, `distro:` package sections
 // compile into the plan at phase 1 and `plan:` steps at phase 3 (BuildDeployPlan), so the path
 // already exists by the time the step runs. A distro that later gains a package is picked up with
-// no edit. A distro-NAME filter is not available for this at all — `exclude_distro:` is read by
-// the check runner (sdk/kit/planrun.go), never by the build emitter.
+// no edit. A distro-NAME filter is not available for this at all — `exclude_distro:` is read by the
+// check runner (sdk/kit/planrun.go), never by the build emitter.
 //
 // The guard is shell-quoted in BOTH positions. Interpolating it raw into the echo, as the first
 // draft did, meant a path containing a double quote emitted a shell syntax error, and one
@@ -251,20 +268,22 @@ func taskRunsAsRoot(runAs string, img *buildkit.ResolvedBox) bool {
 // prints "skipping: X already present" for three different reasons is worse than one that says
 // which step declined to run.
 func WrapUnlessExists(cmd, guard, verb string) string {
+	return wrapUnlessExists(cmd, guard, verb, " ", "; ")
+}
+
+// WrapUnlessExistsBlock is the newline-terminated form, for a payload that is already multi-line.
+func WrapUnlessExistsBlock(cmd, guard, verb string) string {
+	return wrapUnlessExists(strings.TrimRight(cmd, "\n"), guard, verb, "\n", "\n")
+}
+
+func wrapUnlessExists(cmd, guard, verb, open, term string) string {
 	g := strings.TrimSpace(guard)
 	if g == "" {
 		return cmd
 	}
 	q := spec.ShellQuote(g)
-	// `{ list; }` requires the list to be terminated by `;` OR a newline before the closing brace.
-	// EmitDownload passes a one-line `;`-joined string, EmitCmd a multi-line heredoc body that
-	// already ends in a newline — appending `;` to the latter put the terminator at the START of
-	// its own line with no command before it, which is a shell syntax error. Trimming trailing
-	// whitespace first makes ONE form correct for both shapes: the `;` always follows a real
-	// command. The two guard tests run `bash -n` over the emitted body, so this cannot regress
-	// into a string that reads correctly and does not parse.
-	return fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else { %s; }; fi`,
-		q, verb, q, strings.TrimRight(cmd, " \t\n"))
+	return fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else {%s%s%s}; fi`,
+		q, verb, q, open, cmd, term)
 }
 
 // EmitDownload emits one RUN per download task: fetch to a content-addressed
@@ -424,7 +443,7 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 		body += "\n"
 	}
 	if strings.TrimSpace(t.UnlessExists) != "" {
-		body = WrapUnlessExists("\n"+body, t.UnlessExists, "run") + "\n"
+		body = WrapUnlessExistsBlock(body, t.UnlessExists, "run") + "\n"
 	}
 	b.WriteString(body)
 	b.WriteString("OVCMD\n")
