@@ -268,22 +268,32 @@ func taskRunsAsRoot(runAs string, img *buildkit.ResolvedBox) bool {
 // prints "skipping: X already present" for three different reasons is worse than one that says
 // which step declined to run.
 func WrapUnlessExists(cmd, guard, verb string) string {
-	return wrapUnlessExists(cmd, guard, verb, " ", "; ")
+	return wrapUnlessExists(cmd, guard, verb, " : ; ", "; ")
 }
 
 // WrapUnlessExistsBlock is the newline-terminated form, for a payload that is already multi-line.
 func WrapUnlessExistsBlock(cmd, guard, verb string) string {
-	return wrapUnlessExists(strings.TrimRight(cmd, "\n"), guard, verb, "\n", "\n")
+	return wrapUnlessExists(strings.TrimRight(cmd, "\n"), guard, verb, "\n:\n", "\n")
 }
 
-func wrapUnlessExists(cmd, guard, verb, open, term string) string {
+func wrapUnlessExists(cmd, guard, verb, prefix, term string) string {
 	g := strings.TrimSpace(guard)
 	if g == "" {
 		return cmd
 	}
 	q := spec.ShellQuote(g)
-	return fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else {%s%s%s}; fi`,
-		q, verb, q, open, cmd, term)
+	head := fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else `, q, verb, q)
+	// `{ list; }` requires a NON-EMPTY list — the same rule as the terminator, on its other end.
+	// A `run:` step whose command is empty or comment-only would otherwise emit `{ }` and fail the
+	// build, turning a working no-op step into a syntax error the moment a guard is added to it.
+	// The leading `:` in prefix is the shell no-op: it guarantees at least one command in the list
+	// for every body, and is invisible for every other shape. A body that is nothing BUT
+	// whitespace has no command for the terminator to follow either, so it collapses to the no-op
+	// alone.
+	if strings.TrimSpace(cmd) == "" {
+		return head + "{ :; }; fi"
+	}
+	return head + fmt.Sprintf("{%s%s%s}; fi", prefix, cmd, term)
 }
 
 // EmitDownload emits one RUN per download task: fetch to a content-addressed

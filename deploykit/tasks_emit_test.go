@@ -801,6 +801,12 @@ func TestEmitDownload_UnlessExists(t *testing.T) {
 				guardStart, chmod, fi, got)
 		}
 		assertShellParses(t, "the guarded download payload", unquoteSingle(got[guardStart:fi+len("; fi")]))
+		// The one-line form exists BECAUSE this payload is a single-quoted argument on ONE
+		// Containerfile RUN line: a literal newline would end the instruction. That constraint is
+		// the whole reason the guard has two entry points, so it is asserted rather than assumed.
+		if body := strings.TrimSuffix(got, "\n"); strings.Contains(body, "\n") {
+			t.Errorf("the emitted download RUN must be a single line; it contains a newline:\n%s", got)
+		}
 	})
 
 	t.Run("guard absent emits byte-identically to before", func(t *testing.T) {
@@ -869,6 +875,9 @@ func TestEmitCmd_UnlessExists(t *testing.T) {
 		{"ends with case/esac", "case $x in\n  a) echo a ;;\nesac\n"},
 		{"ends with if/fi", "if [ -d /opt ]; then echo yes; fi\n"},
 		{"ends with a function definition", "f() {\n  echo hi\n}\n"},
+		{"comment-only body", "# nothing to do\n"},
+		{"empty body", "\n"},
+		{"whitespace-only body", "  \t\n\n"},
 	}
 
 	for _, sh := range shapes {
