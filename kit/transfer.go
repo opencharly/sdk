@@ -60,25 +60,11 @@ func TransferToRootful(imageRef string) error {
 	}
 	fmt.Fprintf(os.Stderr, "Transferring %s into rootful podman storage (rootless build → sudo run)\n", imageRef)
 
-	save := exec.Command("podman", "save", imageRef)
-	load := exec.Command("sudo", "-n", "podman", "load")
-
-	pipe, err := save.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("creating pipe: %w", err)
-	}
-	load.Stdin = pipe
-	load.Stderr = os.Stderr
-	save.Stderr = os.Stderr
-
-	if err := load.Start(); err != nil {
-		return fmt.Errorf("starting sudo podman load: %w", err)
-	}
-	if err := save.Run(); err != nil {
-		return fmt.Errorf("podman save %s: %w", imageRef, err)
-	}
-	if err := load.Wait(); err != nil {
-		return fmt.Errorf("sudo podman load: %w", err)
+	if err := container.StreamLoad(
+		exec.Command("podman", "save", imageRef),
+		exec.Command("sudo", "-n", "podman", "load"),
+	); err != nil {
+		return err
 	}
 
 	fmt.Fprintf(os.Stderr, "Transferred %s into rootful storage\n", imageRef)
