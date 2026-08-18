@@ -234,6 +234,33 @@ func taskRunsAsRoot(runAs string, img *buildkit.ResolvedBox) bool {
 
 // EmitDownload emits one RUN per download task: fetch to a content-addressed
 // /tmp/downloads cache, then extract. Honors candy-declared `cache:` mounts.
+// WrapUnlessExists returns cmd wrapped in the `unless_exists` build-time capability GATE, or cmd
+// unchanged when the guard is empty.
+//
+// The gate is evaluated IN THE IMAGE at build time, which is what makes it a capability check
+// rather than a distro filter: on a distro that packages the tool, `distro:` package sections
+// compile into the plan at phase 1 and `plan:` steps at phase 3 (BuildDeployPlan), so the path
+// already exists by the time the step runs. A distro that later gains a package is picked up with
+// no edit. A distro-NAME filter is not available for this at all — `exclude_distro:` is read by
+// the check runner (sdk/kit/planrun.go), never by the build emitter.
+//
+// The guard is shell-quoted in BOTH positions. Interpolating it raw into the echo, as the first
+// draft did, meant a path containing a double quote emitted a shell syntax error, and one
+// containing $(…) command-substituted in the message while the [ -e ] test used the literal — so
+// the skip line could name a different path than the one actually tested.
+//
+// verb names the step kind in the skip message ("download", "run"), because a Containerfile that
+// prints "skipping: X already present" for three different reasons is worse than one that says
+// which step declined to run.
+func WrapUnlessExists(cmd, guard, verb string) string {
+	g := strings.TrimSpace(guard)
+	if g == "" {
+		return cmd
+	}
+	q := spec.ShellQuote(g)
+	return fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else { %s; }; fi`, q, verb, q, cmd)
+}
+
 func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) error {
 	url := t.Download
 	dest := TaskSubstPath(t.To, img)
@@ -300,16 +327,10 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		}
 	}
 
-	// unless_exists — a capability GATE evaluated in the image at build time, wrapping the
-	// WHOLE step (fetch, extract AND chmod). The point is to skip the download entirely
-	// when the artifact is already present: on a distro that packages the tool, `distro:`
-	// package sections compile into the plan at phase 1 and plan: steps at phase 3, so the
-	// path exists by the time this runs. Guarding only the fetch would still pay the
-	// extract, and chmod outside the guard would fail on a path that was never created.
-	if g := strings.TrimSpace(t.UnlessExists); g != "" {
-		q := spec.ShellQuote(g)
-		cmd = fmt.Sprintf(`if [ -e %s ]; then echo "skipping download: %s already present"; else { %s; }; fi`, q, g, cmd)
-	}
+	// unless_exists wraps the WHOLE step — fetch, extract AND chmod. Guarding only the fetch
+	// would still pay the extract, and a chmod outside the guard would fail on a path that
+	// was never created.
+	cmd = WrapUnlessExists(cmd, t.UnlessExists, "download")
 
 	cacheMounts := TaskCacheMounts(t, img)
 	mounts := make([]string, 0, 1+len(cacheMounts))
@@ -388,10 +409,16 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 		}
 	}
 	b.WriteString("set -e\n")
-	b.WriteString(t.Command)
-	if !strings.HasSuffix(t.Command, "\n") {
-		b.WriteString("\n")
+	// The guard wraps the WHOLE authored command, inside the heredoc, so a multi-line command
+	// is skipped as one unit rather than line by line.
+	body := t.Command
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
 	}
+	if strings.TrimSpace(t.UnlessExists) != "" {
+		body = WrapUnlessExists("\n"+body, t.UnlessExists, "run") + "\n"
+	}
+	b.WriteString(body)
 	b.WriteString("OVCMD\n")
 }
 

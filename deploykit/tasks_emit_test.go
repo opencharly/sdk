@@ -736,3 +736,123 @@ func TestEmitTasks_PluginVerb_ActScriptWrappedInRun(t *testing.T) {
 		t.Errorf("an ActScript act-shell must be EmitCmd-wrapped into a RUN:\n%s", out)
 	}
 }
+
+// TestEmitDownload_UnlessExists is the discriminating coverage for the `unless_exists` gate:
+// delete the wrap from EmitDownload and the first subtest fails on the missing `if [ -e ]`, while
+// the second proves the emission is byte-identical to the unguarded form when the field is absent
+// — so the test cannot pass by wrapping everything unconditionally.
+func TestEmitDownload_UnlessExists(t *testing.T) {
+	base := spec.Op{
+		Download: "https://example.invalid/tool-1.0.tar.gz",
+		Extract:  "tar.gz",
+		To:       "/usr",
+		Mode:     "0755",
+	}
+
+	t.Run("guard present wraps fetch, extract AND chmod", func(t *testing.T) {
+		op := base
+		op.UnlessExists = "/usr/bin/tool"
+		var b strings.Builder
+		if err := EmitDownload(&b, op, testResolvedBox()); err != nil {
+			t.Fatalf("EmitDownload() error = %v", err)
+		}
+		got := b.String()
+		// The whole RUN body is shell-quoted by the outer `sh -c` wrapper, so assert on the
+		// structure that survives that escaping rather than on a literal quoting style.
+		for _, want := range []string{
+			"if [ -e ",
+			"/usr/bin/tool",
+			"skipping download:",
+			"already present",
+			"else {",
+			"; fi",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("emission is missing %q:\n%s", want, got)
+			}
+		}
+		// The chmod must be INSIDE the guard — outside it, a skipped step chmods a path it
+		// never created and the build fails on the success case.
+		guardStart := strings.Index(got, "if [ -e ")
+		chmod := strings.Index(got, "chmod")
+		fi := strings.LastIndex(got, "; fi")
+		if guardStart < 0 || chmod < guardStart || chmod > fi {
+			t.Errorf("chmod is not inside the guard (guard@%d chmod@%d fi@%d):\n%s",
+				guardStart, chmod, fi, got)
+		}
+	})
+
+	t.Run("guard absent emits byte-identically to before", func(t *testing.T) {
+		var withField, without strings.Builder
+		op := base
+		op.UnlessExists = "   " // whitespace-only is not a guard
+		if err := EmitDownload(&withField, op, testResolvedBox()); err != nil {
+			t.Fatalf("EmitDownload() error = %v", err)
+		}
+		if err := EmitDownload(&without, base, testResolvedBox()); err != nil {
+			t.Fatalf("EmitDownload() error = %v", err)
+		}
+		if withField.String() != without.String() {
+			t.Errorf("a blank unless_exists changed the emission:\n--- with ---\n%s\n--- without ---\n%s",
+				withField.String(), without.String())
+		}
+		if strings.Contains(without.String(), "if [ -e ") {
+			t.Errorf("unguarded emission grew a guard:\n%s", without.String())
+		}
+	})
+}
+
+// TestWrapUnlessExists_QuotesBothPositions pins the fix for a defect in the first draft: the guard
+// was ShellQuote'd for the `[ -e ]` test and interpolated RAW into the echo. A path containing a
+// double quote made the emitted RUN a shell syntax error; one containing $(…) substituted in the
+// message while the test used the literal, so the skip line named a different path than the one
+// checked.
+func TestWrapUnlessExists_QuotesBothPositions(t *testing.T) {
+	got := WrapUnlessExists("true", `/opt/a"b$(id)`, "download")
+	if strings.Count(got, `'/opt/a"b$(id)'`) != 2 {
+		t.Errorf("the guard must appear shell-quoted in BOTH the test and the echo; got:\n%s", got)
+	}
+	if strings.Contains(got, `"skipping download: /opt/a`) {
+		t.Errorf("the guard was interpolated raw into the echo:\n%s", got)
+	}
+	if WrapUnlessExists("true", "  ", "download") != "true" {
+		t.Error("a blank guard must return the command unchanged")
+	}
+}
+
+// TestEmitCmd_UnlessExists covers the gate on the `run:` verb. The schema documents
+// unless_exists as a gate for "an install step", so honouring it in exactly one emitter would
+// make it a silent no-op everywhere else — the shape a reader has no way to detect.
+//
+// It is honoured by the two emitters that produce ONE RUN for ONE op (download, cmd). The batch
+// emitters (mkdir/link/setcap) fold MANY ops into a single RUN, so a per-op guard has no
+// expressible position there, and copy/write emit a COPY instruction, which no shell test can
+// wrap. Those are rejected at validation rather than silently ignored.
+func TestEmitCmd_UnlessExists(t *testing.T) {
+	img := testResolvedBox()
+
+	var guarded strings.Builder
+	EmitCmd(&guarded, spec.Op{
+		Command:      "make install\nldconfig\n",
+		UnlessExists: "/usr/bin/tool",
+	}, "layer0", img, true)
+
+	got := guarded.String()
+	for _, want := range []string{"if [ -e ", "/usr/bin/tool", "skipping run:", "; fi"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("guarded emission is missing %q:\n%s", want, got)
+		}
+	}
+	// Both authored lines must sit INSIDE the guard — a multi-line command is skipped as one
+	// unit, not line by line.
+	if i, j := strings.Index(got, "if [ -e "), strings.LastIndex(got, "; fi"); i < 0 ||
+		strings.Index(got, "make install") < i || strings.Index(got, "ldconfig") > j {
+		t.Errorf("the authored command is not fully inside the guard:\n%s", got)
+	}
+
+	var plain strings.Builder
+	EmitCmd(&plain, spec.Op{Command: "make install\nldconfig\n"}, "layer0", img, true)
+	if strings.Contains(plain.String(), "if [ -e ") {
+		t.Errorf("an unguarded run: step grew a guard:\n%s", plain.String())
+	}
+}
