@@ -300,6 +300,17 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		}
 	}
 
+	// unless_exists — a capability GATE evaluated in the image at build time, wrapping the
+	// WHOLE step (fetch, extract AND chmod). The point is to skip the download entirely
+	// when the artifact is already present: on a distro that packages the tool, `distro:`
+	// package sections compile into the plan at phase 1 and plan: steps at phase 3, so the
+	// path exists by the time this runs. Guarding only the fetch would still pay the
+	// extract, and chmod outside the guard would fail on a path that was never created.
+	if g := strings.TrimSpace(t.UnlessExists); g != "" {
+		q := spec.ShellQuote(g)
+		cmd = fmt.Sprintf(`if [ -e %s ]; then echo "skipping download: %s already present"; else { %s; }; fi`, q, g, cmd)
+	}
+
 	cacheMounts := TaskCacheMounts(t, img)
 	mounts := make([]string, 0, 1+len(cacheMounts))
 	// The downloads cache follows the task's stage user exactly like a
