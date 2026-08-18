@@ -165,7 +165,7 @@ func charlyFormatToNFPM(format string) string {
 // and the image-build dev leg (renderLocalPkgImageDevInstall) — R3.
 //
 // The child runs under the project that OWNS the candy being packaged (candyProjectDir), with the
-// parent's project scope stripped from its environment (charlyChildEnv) and every path argument
+// parent's project scope replaced by the candy's (spec.ChildProjectEnv) and every path argument
 // absolutised — see those helpers for why the parent's scope is not merely unnecessary here but
 // actively wrong.
 func generateLocalPkg(ctx context.Context, s *LocalPkgInstallStep, build *spec.LocalPkgBuildContext, dryRun bool) ([]string, error) {
@@ -194,7 +194,7 @@ func generateLocalPkg(ctx context.Context, s *LocalPkgInstallStep, build *spec.L
 	// never the parent's, which is about the BOX being built and may be a submodule that vendors
 	// no candies (and therefore declares no `generate-packages` command plugin).
 	childDir := candyProjectDir(candyYAML)
-	childEnv := charlyChildEnv(childDir)
+	childEnv := spec.ChildProjectEnv(os.Environ(), childDir)
 	calVer := build.CalVer
 	if calVer == "" {
 		verCmd := exec.CommandContext(ctx, binary, "version")
@@ -292,27 +292,6 @@ func candyProjectDir(candyYAML string) string {
 			return dir
 		}
 	}
-}
-
-// charlyChildEnv returns the environment for a charly child process that must run under projectDir
-// (or, when projectDir is "", under no inherited project scope at all). It strips BOTH project-scope
-// variables from the inherited environment before setting the one that applies: they are mutually
-// exclusive in the CLI, so leaving an inherited --repo beside an explicit --dir makes the child exit
-// on "--repo and --dir are mutually exclusive" instead of running.
-func charlyChildEnv(projectDir string) []string {
-	inherited := os.Environ()
-	env := make([]string, 0, len(inherited)+1)
-	for _, kv := range inherited {
-		name, _, _ := strings.Cut(kv, "=")
-		if name == spec.ProjectDirEnv || name == spec.ProjectRepoEnv {
-			continue
-		}
-		env = append(env, kv)
-	}
-	if projectDir != "" {
-		env = append(env, spec.ProjectDirEnv+"="+projectDir)
-	}
-	return env
 }
 
 // downloadLocalPkg downloads the PUBLISHED package for a LocalPkgInstallStep from
