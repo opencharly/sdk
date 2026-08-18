@@ -660,3 +660,216 @@ func TestRenderLocalPkgImageInstall_DevFailureHardErrors(t *testing.T) {
 		t.Errorf("dev-mode error should name dev-local-pkg; got: %v", err)
 	}
 }
+
+// writeProjectFile creates dir/name (with parents) holding body — the scaffolding for the
+// project trees the child-scope test needs.
+func writeProjectFile(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeFakeCharlyScoped wraps writeFakeCharly's package-building fake with the SCOPE GATE the
+// real CLI applies before it ever reaches the packaging work, so a test can assert the child's
+// invocation instead of only its output. The gate mirrors three real mechanisms:
+//
+//   - `generate-packages` is an out-of-process COMMAND plugin whose word enters the Kong grammar
+//     only by pre-scanning the candies of the child's OWN project, so a project that declares no
+//     such candy rejects the verb outright (`unexpected argument generate-packages`);
+//   - CHARLY_PROJECT_DIR and CHARLY_PROJECT_REPO are mutually exclusive — a child handed both
+//     exits before it parses anything;
+//   - the child chdirs into its project, so a path argument still relative on arrival names a
+//     different file there than the parent meant.
+//
+// It delegates to the plain fake for the actual build, so the two share one implementation.
+func writeFakeCharlyScoped(t *testing.T) string {
+	t.Helper()
+	plain := writeFakeCharly(t)
+	dir := t.TempDir()
+	script := `#!/bin/sh
+# fake charly with the CLI's project-scope gate in front of the plain fake.
+if [ -n "$CHARLY_PROJECT_REPO" ] && [ -n "$CHARLY_PROJECT_DIR" ]; then
+  echo "charly: --repo and --dir are mutually exclusive" >&2
+  exit 2
+fi
+proj="${CHARLY_PROJECT_DIR:-$PWD}"
+for arg in "$@"; do
+  case "$arg" in
+    --candy|--binary|--plugins|--out) expect_path=1; continue ;;
+  esac
+  if [ "$expect_path" = 1 ]; then
+    expect_path=0
+    case "$arg" in
+      /*) ;;
+      *) echo "charly: relative path argument $arg (cwd $PWD)" >&2; exit 2 ;;
+    esac
+  fi
+done
+if [ "$1" = "generate-packages" ] && [ ! -f "$proj/candy/generate-packages/charly.yml" ]; then
+  echo "charly: error: unexpected argument generate-packages" >&2
+  exit 1
+fi
+exec "` + plain + `" "$@"
+`
+	path := filepath.Join(dir, "charly")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestGenerateLocalPkg_ChildRunsInCandysProject is the regression guard for the packaging child's
+// project scope. Each case reproduces a parent state that a real bed run leaves behind, and proves
+// the child is nonetheless run under the project that OWNS the candy it is packaging, with the
+// inherited scope stripped and every path argument absolute.
+//
+// Before the fix the child inherited CHARLY_PROJECT_DIR (and cwd) from the parent, so on every bed
+// whose image composes candy/charly from a box submodule the word `generate-packages` was never in
+// the child's grammar and --dev-local-pkg died at image-build time with
+// `charly: error: unexpected argument generate-packages`.
+func TestGenerateLocalPkg_ChildRunsInCandysProject(t *testing.T) {
+	cases := []struct {
+		name string
+		// dirEnv/repoEnv are the parent's project-scope environment; cwdIsSubmodule says whether
+		// the parent had already chdir'd into the box submodule (main() chdirs on -C/--dir).
+		dirEnv, repoEnv string
+		cwdIsSubmodule  bool
+	}{
+		// `charly -C box/cachyos check run <bed>` from the superproject root: main() sets the env
+		// from the flag and chdirs. This is the reported failure — the child looked for its verb
+		// in a submodule that vendors no candies.
+		{name: "dir flag and chdir", dirEnv: "submodule", cwdIsSubmodule: true},
+		// cwd genuinely elsewhere: the env names the submodule while the process sits somewhere
+		// unrelated, so neither source can be trusted to name the candy's project.
+		{name: "dir env with unrelated cwd", dirEnv: "submodule"},
+		// `cd box/cachyos && charly check run <bed>`: no env at all, scope carried by cwd alone.
+		{name: "cwd only", cwdIsSubmodule: true},
+		// A --repo parent: both variables present in the child would abort it on
+		// "--repo and --dir are mutually exclusive" the moment we set a dir of our own.
+		{name: "repo env", repoEnv: "opencharly/charly", cwdIsSubmodule: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// The project that owns the charly candy AND declares the generate-packages command
+			// plugin.
+			owner := t.TempDir()
+			writeProjectFile(t, owner, spec.UnifiedFileName, "discover:\n    - path: candy\n")
+			writeProjectFile(t, filepath.Join(owner, "candy", "generate-packages"), spec.UnifiedFileName, "generate-packages:\n")
+			candyDir := filepath.Join(owner, "candy", "charly")
+			writeProjectFile(t, candyDir, spec.UnifiedFileName, "charly:\n")
+
+			// The box submodule the bed is actually being built from: a project of its own,
+			// vendoring no candies — so it declares no command plugin and cannot serve the verb.
+			submodule := t.TempDir()
+			writeProjectFile(t, submodule, spec.UnifiedFileName, "boxes:\n")
+
+			cwd := t.TempDir() // "genuinely elsewhere" unless the case chdirs into the submodule
+			if tc.cwdIsSubmodule {
+				cwd = submodule
+			}
+			relPlugins := "plugins-rel"
+			writeProjectFile(t, filepath.Join(cwd, relPlugins), "keep", "")
+
+			// The parent's state at the moment it spawns the child.
+			t.Chdir(cwd)
+			t.Setenv(spec.ProjectDirEnv, "")
+			t.Setenv(spec.ProjectRepoEnv, "")
+			if tc.dirEnv != "" {
+				t.Setenv(spec.ProjectDirEnv, submodule)
+			}
+			if tc.repoEnv != "" {
+				t.Setenv(spec.ProjectRepoEnv, tc.repoEnv)
+			}
+
+			s := &LocalPkgInstallStep{CandyName: "charly", CandyDir: candyDir, Format: "pac", LocalPkg: testPacLocalPkgDef()}
+			// PluginsDir relative to the parent's cwd — it must reach the child absolute, because
+			// the child resolves its own project and chdirs away from here.
+			build := &spec.LocalPkgBuildContext{Binary: writeFakeCharlyScoped(t), PluginsDir: relPlugins}
+
+			files, err := generateLocalPkg(context.Background(), s, build, false)
+			if err != nil {
+				t.Fatalf("generateLocalPkg from a box-submodule parent scope: %v", err)
+			}
+			if len(files) != 1 {
+				t.Fatalf("built files = %v, want one", files)
+			}
+			if err := CleanupBuiltPackageFiles(files); err != nil {
+				t.Fatalf("cleanup: %v", err)
+			}
+		})
+	}
+}
+
+// TestCandyProjectDir proves the scope resolution itself: the nearest ANCESTOR holding a
+// charly.yml wins, the candy's own manifest never counts as its project, and a candy with no
+// enclosing project resolves to "" (the child then runs with no project scope at all rather than
+// inheriting the parent's).
+func TestCandyProjectDir(t *testing.T) {
+	root := t.TempDir()
+	writeProjectFile(t, root, spec.UnifiedFileName, "boxes:\n")
+	candyDir := filepath.Join(root, "candy", "charly")
+	writeProjectFile(t, candyDir, spec.UnifiedFileName, "charly:\n")
+	if got := candyProjectDir(filepath.Join(candyDir, spec.UnifiedFileName)); got != root {
+		t.Errorf("candyProjectDir = %q, want %q", got, root)
+	}
+
+	// A nested project (a worktree, or a submodule with its own charly.yml) wins over the outer one.
+	inner := filepath.Join(root, "box", "cachyos")
+	writeProjectFile(t, inner, spec.UnifiedFileName, "boxes:\n")
+	innerCandy := filepath.Join(inner, "candy", "local-thing")
+	writeProjectFile(t, innerCandy, spec.UnifiedFileName, "local-thing:\n")
+	if got := candyProjectDir(filepath.Join(innerCandy, spec.UnifiedFileName)); got != inner {
+		t.Errorf("candyProjectDir nested = %q, want %q", got, inner)
+	}
+
+	// No enclosing project.
+	orphan := t.TempDir()
+	writeProjectFile(t, orphan, spec.UnifiedFileName, "orphan:\n")
+	if got := candyProjectDir(filepath.Join(orphan, spec.UnifiedFileName)); got != "" {
+		t.Errorf("candyProjectDir orphan = %q, want \"\"", got)
+	}
+}
+
+// TestCharlyChildEnv proves both project-scope variables are stripped from the inherited
+// environment before the applicable one is set — leaving an inherited CHARLY_PROJECT_REPO beside
+// an explicit CHARLY_PROJECT_DIR makes the child exit on "mutually exclusive" instead of running.
+func TestCharlyChildEnv(t *testing.T) {
+	t.Setenv(spec.ProjectDirEnv, "/parent/project")
+	t.Setenv(spec.ProjectRepoEnv, "opencharly/charly")
+	t.Setenv("CHARLY_PROJECT_DIR_LOOKALIKE", "keep-me")
+
+	env := charlyChildEnv("/candy/project")
+	var sawDir, sawRepo, sawLookalike int
+	for _, kv := range env {
+		switch {
+		case kv == spec.ProjectDirEnv+"=/candy/project":
+			sawDir++
+		case strings.HasPrefix(kv, spec.ProjectDirEnv+"="):
+			t.Errorf("inherited project dir survived: %q", kv)
+		case strings.HasPrefix(kv, spec.ProjectRepoEnv+"="):
+			sawRepo++
+		case strings.HasPrefix(kv, "CHARLY_PROJECT_DIR_LOOKALIKE="):
+			sawLookalike++
+		}
+	}
+	if sawDir != 1 {
+		t.Errorf("child project dir set %d times, want exactly 1", sawDir)
+	}
+	if sawRepo != 0 {
+		t.Errorf("project repo survived into the child env (%d entries)", sawRepo)
+	}
+	if sawLookalike != 1 {
+		t.Errorf("unrelated env var dropped (matched %d times, want 1)", sawLookalike)
+	}
+
+	// With no project to name, BOTH are stripped and none is set.
+	for _, kv := range charlyChildEnv("") {
+		if strings.HasPrefix(kv, spec.ProjectDirEnv+"=") || strings.HasPrefix(kv, spec.ProjectRepoEnv+"=") {
+			t.Errorf("scopeless child env still carries %q", kv)
+		}
+	}
+}
