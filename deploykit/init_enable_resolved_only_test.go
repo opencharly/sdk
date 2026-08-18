@@ -31,6 +31,10 @@ func TestEmitInitAssemblyEnablesOnlyResolvedInit(t *testing.T) {
 	// supervisord declares NO system_enable_template — the correct emission for a
 	// supervisord container is no enable command at all.
 	supervisord := &spec.ResolvedInit{}
+	// Both foreign inits also carry a post-assembly step, so the test below can prove the
+	// enable guard did not swallow the rest of the loop body.
+	openrc.PostAssemblyTemplate = "RUN openrc-post-assembly\n"
+	systemd.PostAssemblyTemplate = "RUN bootc container lint\n"
 
 	activeInits := map[string]*spec.ResolvedInit{
 		"supervisord": supervisord,
@@ -77,5 +81,60 @@ func TestEmitInitAssemblyEnablesOnlyResolvedInit(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestEmitInitAssemblyKeepsPostAssemblyPerInit pins the half the enable guard must NOT
+// change: assembly and post-assembly stay per-ACTIVE-init.
+//
+// This exists because the guard was first written as `continue`, which would also have
+// skipped the post_assembly_template emitted below it — and the entire deploykit suite
+// stayed green with that bug in place, because nothing else in the package references
+// PostAssemblyTemplate. Reading the code confirmed the wrap; nothing FAILED on the
+// short-circuit. This test does.
+func TestEmitInitAssemblyKeepsPostAssemblyPerInit(t *testing.T) {
+	openrc := &spec.ResolvedInit{
+		SystemEnableTemplate: "RUN rc-update add x default\n",
+		PostAssemblyTemplate: "RUN openrc-post-assembly\n",
+	}
+	systemd := &spec.ResolvedInit{
+		SystemEnableTemplate: "RUN systemctl enable x\n",
+		PostAssemblyTemplate: "RUN bootc container lint\n",
+	}
+	activeInits := map[string]*spec.ResolvedInit{
+		"supervisord": {},
+		"openrc":      openrc,
+		"systemd":     systemd,
+	}
+
+	g := &Generator{
+		Candies: map[string]CandyModel{
+			"virt": NewSpecCandyModel(spec.CandyModel{
+				Name: "virt",
+				Service: []spec.ServiceEntry{
+					{Name: "virtqemud", UsePackaged: "virtqemud.socket", Scope: "system"},
+				},
+			}, spec.CandyView{}),
+		},
+	}
+
+	// Resolved init is supervisord, so NEITHER foreign init may contribute an enable
+	// command — but BOTH must still contribute their post-assembly step.
+	img := &buildkit.ResolvedBox{InitSystem: "supervisord"}
+	var b strings.Builder
+	if err := g.EmitInitAssembly(&b, img, []string{"virt"}, activeInits, map[string]bool{}); err != nil {
+		t.Fatalf("EmitInitAssembly() error = %v", err)
+	}
+	got := b.String()
+
+	for _, want := range []string{"openrc-post-assembly", "bootc container lint"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("post-assembly for a non-resolved active init was dropped: missing %q in:\n%s", want, got)
+		}
+	}
+	for _, reject := range []string{"rc-update", "systemctl enable"} {
+		if strings.Contains(got, reject) {
+			t.Errorf("enable command %q leaked from a non-resolved init in:\n%s", reject, got)
+		}
 	}
 }

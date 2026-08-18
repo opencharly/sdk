@@ -115,10 +115,16 @@ func MapToKeyValueSlice(m map[string]string) []spec.KeyValue {
 	return out
 }
 
-// EmitInitAssembly emits the assembly_template, system_enable_template, and
-// post_assembly_template RUN steps for each active init system. Relocated from
-// charly (P8); byte-identical. initHasFragments gates the assembly step (a
-// fragment-less init contributed no scratch stage to bind-mount from).
+// EmitInitAssembly emits the assembly_template and post_assembly_template RUN steps
+// for EACH active init system, and the system_enable_template for the image's RESOLVED
+// init system ONLY (img.InitSystem). Relocated from charly (P8). initHasFragments gates
+// the assembly step (a fragment-less init contributed no scratch stage to bind-mount
+// from).
+//
+// The enable step is deliberately narrower than the other two: assembly and
+// post-assembly are per-init because each active init owns its own fragment stage,
+// whereas enabling a distro-shipped unit is the job of the single init that boots the
+// image. See the comment on the enable block below for what emitting it per-init broke.
 func (g *Generator) EmitInitAssembly(b *strings.Builder, img *buildkit.ResolvedBox, candyOrder []string, activeInits map[string]*spec.ResolvedInit, initHasFragments map[string]bool) error {
 	for initName, def := range activeInits {
 		// assembly_template bind-mounts from the scratch stage emitted above;
