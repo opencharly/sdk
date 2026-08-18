@@ -115,10 +115,11 @@ func MapToKeyValueSlice(m map[string]string) []spec.KeyValue {
 	return out
 }
 
-// EmitInitAssembly emits the assembly_template, system_enable_template, and
-// post_assembly_template RUN steps for each active init system. Relocated from
-// charly (P8); byte-identical. initHasFragments gates the assembly step (a
-// fragment-less init contributed no scratch stage to bind-mount from).
+// EmitInitAssembly emits the assembly_template and post_assembly_template RUN steps for each
+// ACTIVE init system, and the system_enable_template for the image's RESOLVED init only.
+// initHasFragments gates the assembly step (a fragment-less init contributed no scratch stage
+// to bind-mount from); see the system-enable block below for why that one step is narrower
+// than the loop it sits in.
 func (g *Generator) EmitInitAssembly(b *strings.Builder, img *buildkit.ResolvedBox, candyOrder []string, activeInits map[string]*spec.ResolvedInit, initHasFragments map[string]bool) error {
 	for initName, def := range activeInits {
 		// assembly_template bind-mounts from the scratch stage emitted above;
@@ -139,30 +140,50 @@ func (g *Generator) EmitInitAssembly(b *strings.Builder, img *buildkit.ResolvedB
 			}
 		}
 
-		// System-level service enablement (e.g., systemctl enable sshd).
-		// Collect every use_packaged: entry across the candy chain — these
-		// are the distro-shipped systemd units the init system must enable.
-		var systemUnits []string
-		for _, candyName := range candyOrder {
-			layer := g.Candies[candyName]
-			for i := range layer.Service() {
-				entry := &layer.Service()[i]
-				if entry.IsPackaged() && entry.EffectiveScope() == "system" &&
-					ServiceEntryAppliesToDistro(entry, img.Distro) {
-					systemUnits = append(systemUnits, entry.UsePackaged)
+		// System-level service enablement (e.g., systemctl enable sshd), emitted for the
+		// image's RESOLVED init ONLY — the one that is actually PID 1 and whose name the
+		// image carries in ai.opencharly.init.
+		//
+		// A `use_packaged:` entry names a unit the DISTRO ships, so exactly one init can
+		// own it. Rendering it for every ACTIVE init enabled the same units twice, through
+		// two different tools: an image whose resolved init is supervisord but which also
+		// activates openrc (any candy contributing openrc fragments, or relay ports while
+		// openrc declares a relay_template) emitted `rc-update add virtqemud.socket
+		// default` into a container that has no OpenRC at all, failing the build at
+		// "rc-update: command not found" — twenty lines above its own
+		// LABEL ai.opencharly.init="supervisord". Every image composing the charly
+		// toolchain on an Arch/CachyOS base was unbuildable that way.
+		//
+		// The other active inits are not skipped as a special case: they contribute
+		// FRAGMENTS and relay wiring, which is what makes them active, and neither has
+		// anything to do with enabling a distro-shipped system unit. An init with no
+		// system_enable_template (supervisord) still renders nothing, exactly as before —
+		// its mixed-entry `exec:` sibling is how that daemon runs under supervision.
+		if initName == img.InitSystem {
+			// Collect every use_packaged: entry across the candy chain — these are the
+			// distro-shipped units the resolved init must enable.
+			var systemUnits []string
+			for _, candyName := range candyOrder {
+				layer := g.Candies[candyName]
+				for i := range layer.Service() {
+					entry := &layer.Service()[i]
+					if entry.IsPackaged() && entry.EffectiveScope() == "system" &&
+						ServiceEntryAppliesToDistro(entry, img.Distro) {
+						systemUnits = append(systemUnits, entry.UsePackaged)
+					}
 				}
 			}
-		}
-		sysEnable, err := InitRenderSystemEnableTemplate(def, systemUnits)
-		if err != nil {
-			return fmt.Errorf("rendering system enable for %s: %w", initName, err)
-		}
-		if sysEnable != "" {
-			b.WriteString(sysEnable)
-			if !strings.HasSuffix(sysEnable, "\n") {
+			sysEnable, err := InitRenderSystemEnableTemplate(def, systemUnits)
+			if err != nil {
+				return fmt.Errorf("rendering system enable for %s: %w", initName, err)
+			}
+			if sysEnable != "" {
+				b.WriteString(sysEnable)
+				if !strings.HasSuffix(sysEnable, "\n") {
+					b.WriteString("\n")
+				}
 				b.WriteString("\n")
 			}
-			b.WriteString("\n")
 		}
 
 		// Post-assembly step (e.g., bootc container lint)

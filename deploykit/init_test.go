@@ -153,3 +153,59 @@ func TestGenerateRelayInitFragments(t *testing.T) {
 		t.Error("socat should not have a supervisor config")
 	}
 }
+
+// TestEmitInitAssemblySystemEnableIsResolvedInitOnly pins the rule that a `use_packaged:`
+// system unit is enabled by the image's RESOLVED init and by no other ACTIVE init.
+//
+// The regression it guards is not hypothetical. `use_packaged:` names a unit the DISTRO ships,
+// so exactly one init can own it — but EmitInitAssembly used to render every active init's
+// system_enable_template against the same unit list. An image whose resolved init is
+// supervisord while openrc is merely ACTIVE (a candy contributing openrc fragments, or relay
+// ports while openrc declares a relay_template) therefore emitted
+// `rc-update add virtqemud.socket default` into a container with no OpenRC installed, and the
+// build died at "rc-update: command not found" twenty lines above its own
+// LABEL ai.opencharly.init="supervisord". Every image composing the charly toolchain on an
+// Arch/CachyOS base was unbuildable that way.
+//
+// The fixture is that exact shape: two active inits, both carrying a system_enable_template,
+// and one packaged system unit.
+func TestEmitInitAssemblySystemEnableIsResolvedInitOnly(t *testing.T) {
+	g := &Generator{
+		Candies: map[string]CandyModel{
+			"virt": NewSpecCandyModel(spec.CandyModel{
+				Name: "virt",
+				Service: []spec.ServiceEntry{
+					{Name: "virtqemud", UsePackaged: "virtqemud.socket", Scope: "system"},
+					{Name: "virtqemud", Exec: "/usr/sbin/virtqemud --timeout 0"},
+				},
+			}, spec.CandyView{}),
+		},
+	}
+	img := &ResolvedBox{ResolvedBox: spec.ResolvedBox{Distro: []string{"cachyos", "arch"}}, InitSystem: "supervisord"}
+	activeInits := map[string]*spec.ResolvedInit{
+		"supervisord": {Model: "fragment_assembly"},
+		"openrc": {
+			Model:                "file_copy",
+			SystemEnableTemplate: "RUN{{range $i, $unit := .Units}}{{if $i}} && {{else}} {{end}}rc-update add {{$unit}} default{{end}}\n",
+		},
+	}
+
+	var b strings.Builder
+	if err := g.EmitInitAssembly(&b, img, []string{"virt"}, activeInits, map[string]bool{}); err != nil {
+		t.Fatalf("EmitInitAssembly() error = %v", err)
+	}
+	if got := b.String(); strings.Contains(got, "rc-update") {
+		t.Errorf("openrc is ACTIVE but not RESOLVED, yet its system_enable_template rendered:\n%s", got)
+	}
+
+	// Control, so the test cannot pass by emitting nothing at all: make openrc the RESOLVED
+	// init and the same template must appear.
+	img.InitSystem = "openrc"
+	var b2 strings.Builder
+	if err := g.EmitInitAssembly(&b2, img, []string{"virt"}, activeInits, map[string]bool{}); err != nil {
+		t.Fatalf("EmitInitAssembly() error = %v", err)
+	}
+	if got := b2.String(); !strings.Contains(got, "rc-update add virtqemud.socket default") {
+		t.Errorf("openrc is the RESOLVED init, so its system_enable_template must render; got:\n%s", got)
+	}
+}
