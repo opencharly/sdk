@@ -232,8 +232,6 @@ func taskRunsAsRoot(runAs string, img *buildkit.ResolvedBox) bool {
 	return directive == "0"
 }
 
-// EmitDownload emits one RUN per download task: fetch to a content-addressed
-// /tmp/downloads cache, then extract. Honors candy-declared `cache:` mounts.
 // WrapUnlessExists returns cmd wrapped in the `unless_exists` build-time capability GATE, or cmd
 // unchanged when the guard is empty.
 //
@@ -258,9 +256,19 @@ func WrapUnlessExists(cmd, guard, verb string) string {
 		return cmd
 	}
 	q := spec.ShellQuote(g)
-	return fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else { %s; }; fi`, q, verb, q, cmd)
+	// `{ list; }` requires the list to be terminated by `;` OR a newline before the closing brace.
+	// EmitDownload passes a one-line `;`-joined string, EmitCmd a multi-line heredoc body that
+	// already ends in a newline — appending `;` to the latter put the terminator at the START of
+	// its own line with no command before it, which is a shell syntax error. Trimming trailing
+	// whitespace first makes ONE form correct for both shapes: the `;` always follows a real
+	// command. The two guard tests run `bash -n` over the emitted body, so this cannot regress
+	// into a string that reads correctly and does not parse.
+	return fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else { %s; }; fi`,
+		q, verb, q, strings.TrimRight(cmd, " \t\n"))
 }
 
+// EmitDownload emits one RUN per download task: fetch to a content-addressed
+// /tmp/downloads cache, then extract. Honors candy-declared `cache:` mounts.
 func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) error {
 	url := t.Download
 	dest := TaskSubstPath(t.To, img)

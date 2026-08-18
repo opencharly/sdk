@@ -2,6 +2,7 @@ package deploykit
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -737,6 +738,25 @@ func TestEmitTasks_PluginVerb_ActScriptWrappedInRun(t *testing.T) {
 	}
 }
 
+// assertShellParses runs `bash -n` over a fragment the emitters produced. Substring and index
+// assertions all pass on a string that cannot be executed — which is exactly how a `;` landing at
+// the start of its own line survived review — so every guard test parses what it asserts on.
+func assertShellParses(t *testing.T, label, script string) {
+	t.Helper()
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skipf("bash not available: %v", err)
+	}
+	f := filepath.Join(t.TempDir(), "probe.sh")
+	if err := os.WriteFile(f, []byte(script+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("bash", "-n", f).CombinedOutput()
+	if err != nil {
+		t.Errorf("%s does not parse as shell: %v\n--- bash -n ---\n%s\n--- script ---\n%s",
+			label, err, out, script)
+	}
+}
+
 // TestEmitDownload_UnlessExists is the discriminating coverage for the `unless_exists` gate:
 // delete the wrap from EmitDownload and the first subtest fails on the missing `if [ -e ]`, while
 // the second proves the emission is byte-identical to the unguarded form when the field is absent
@@ -780,6 +800,7 @@ func TestEmitDownload_UnlessExists(t *testing.T) {
 			t.Errorf("chmod is not inside the guard (guard@%d chmod@%d fi@%d):\n%s",
 				guardStart, chmod, fi, got)
 		}
+		assertShellParses(t, "the guarded download payload", unquoteSingle(got[guardStart:fi+len("; fi")]))
 	})
 
 	t.Run("guard absent emits byte-identically to before", func(t *testing.T) {
@@ -849,10 +870,30 @@ func TestEmitCmd_UnlessExists(t *testing.T) {
 		strings.Index(got, "make install") < i || strings.Index(got, "ldconfig") > j {
 		t.Errorf("the authored command is not fully inside the guard:\n%s", got)
 	}
+	// The heredoc body is emitted verbatim, so it must PARSE. Substring and ordering checks above
+	// are all satisfied by shell that bash refuses to run.
+	assertShellParses(t, "the guarded run: heredoc body", heredocBody(got))
 
 	var plain strings.Builder
 	EmitCmd(&plain, spec.Op{Command: "make install\nldconfig\n"}, "layer0", img, true)
 	if strings.Contains(plain.String(), "if [ -e ") {
 		t.Errorf("an unguarded run: step grew a guard:\n%s", plain.String())
 	}
+}
+
+// heredocBody extracts what EmitCmd wrote between its `<<'OVCMD'` marker and the closing `OVCMD`.
+func heredocBody(emitted string) string {
+	const open, close = "<<'OVCMD'\n", "\nOVCMD\n"
+	i := strings.Index(emitted, open)
+	j := strings.LastIndex(emitted, close)
+	if i < 0 || j < 0 {
+		return emitted
+	}
+	return emitted[i+len(open) : j]
+}
+
+// unquoteSingle undoes the '\” escaping the emitters apply when a payload is passed as a
+// single-quoted `sh -c` argument, recovering the script the shell actually receives.
+func unquoteSingle(s string) string {
+	return strings.ReplaceAll(s, `'\''`, `'`)
 }
