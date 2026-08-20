@@ -86,7 +86,7 @@ func constructOpStep(ctx context.Context, ex *sdk.Executor, op *spec.Op, layer C
 // generic OpStep (existing emit + Reverse). Moved verbatim from the tail of the former
 // charly/install_build_act.go:compileActOp — fully portable, no core-only dependency.
 // Snapshot layer.Vars() so the host/local renderer can emit `export K=V` (build-time
-// gets these via Containerfile ENV). Tokenize a home-relative `to:` so each DeployTarget
+// gets these via Containerfile ENV). Tokenize a home-relative `to:` so each EmitTarget
 // resolves it against the real destination home at emit.
 func buildGenericOpStep(op *spec.Op, layer CandyModel, img *ResolvedBox) InstallStep {
 	userDir, _ := ResolveUserSpec(op.RunAs, img)
