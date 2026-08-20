@@ -14,7 +14,7 @@ import (
 // WriteCandySteps used to swallow every reason a resolved package set could
 // fail to render: a nil DistroDef, a primary build format with no definition in
 // the box's distro, and (the one that actually shipped) a text/template error
-// from the format's install_template, dropped by an `if err == nil` with no
+// from the format's phase.install.container template, dropped by an `if err == nil` with no
 // else. Each produced a Containerfile that looked legitimate, exited 0, and
 // built an image SILENTLY missing every package the candy declared — the
 // failure only surfaced much later as an absent binary at runtime.
@@ -29,7 +29,7 @@ import (
 // like a complete set: they are the failures of ONE function, and the fifth
 // belongs to the call BELOW them in the same emitter.
 
-// installBox returns a box whose primary format's install_template is the
+// installBox returns a box whose primary format's phase.install.container is the
 // caller's, so a test can drive the render outcome directly.
 func installBox(format, template string) *buildkit.ResolvedBox {
 	return &buildkit.ResolvedBox{
@@ -39,7 +39,11 @@ func installBox(format, template string) *buildkit.ResolvedBox {
 		},
 		DistroDef: &spec.ResolvedDistro{
 			Format: map[string]*spec.Format{
-				format: {InstallTemplate: template},
+				format: {
+					Phases: &spec.PhaseSet{
+						Install: &spec.PhaseTemplates{Container: template},
+					},
+				},
 			},
 		},
 	}
@@ -52,14 +56,14 @@ func packagedCandy(t *testing.T) *Generator {
 	}}
 }
 
-func TestWriteCandySteps_UnrenderableInstallTemplateIsLoud(t *testing.T) {
+func TestWriteCandySteps_UnrenderableInstallPhaseIsLoud(t *testing.T) {
 	g := packagedCandy(t)
 	var b strings.Builder
 	// `base` is not in buildkit.TemplateFuncs — exactly the defect that shipped
-	// in the alpine apk install_template and rendered nothing, silently.
+	// in the alpine apk phase.install.container template and rendered nothing, silently.
 	_, err := g.WriteCandySteps(&b, "pkg-candy", installBox("apk", "RUN install {{base .key}}\n"), false)
 	if err == nil {
-		t.Fatalf("an install_template that cannot render must be a hard error, got nil (emitted %q)", b.String())
+		t.Fatalf("an install.container template that cannot render must be a hard error, got nil (emitted %q)", b.String())
 	}
 	for _, want := range []string{"pkg-candy", "apk", "install-img"} {
 		if !strings.Contains(err.Error(), want) {

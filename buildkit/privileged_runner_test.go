@@ -93,8 +93,10 @@ func TestCheckFreeSpace(t *testing.T) {
 func TestRenderBootstrapScript(t *testing.T) {
 	t.Run("resolves ctx fields + funcs into the rendered script", func(t *testing.T) {
 		builder := &BuilderDef{
-			Inline:          true,
-			InstallTemplate: `home={{.Home}} pkgs={{join .Packages ","}} q={{quote .Quoted}}`,
+			Inline: true,
+			Phases: &spec.PhaseSet{
+				Install: &spec.PhaseTemplates{Container: `home={{.Home}} pkgs={{join .Packages ","}} q={{quote .Quoted}}`},
+			},
 		}
 		ctx := struct {
 			Home     string
@@ -115,10 +117,9 @@ func TestRenderBootstrapScript(t *testing.T) {
 		}
 	})
 
-	t.Run("uses the phase.install.container template over the legacy fallback when both set", func(t *testing.T) {
+	t.Run("uses the phase.install.container template", func(t *testing.T) {
 		builder := &BuilderDef{
-			Inline:          true,
-			InstallTemplate: "legacy={{.X}}",
+			Inline: true,
 			Phases: &spec.PhaseSet{
 				Install: &spec.PhaseTemplates{Container: "phased={{.X}}"},
 			},
@@ -144,19 +145,27 @@ func TestRenderBootstrapScript(t *testing.T) {
 		}
 	})
 
-	t.Run("InstallTemplate set but Inline false does not fall back (multi-stage builders resolve via their plugin, not this legacy path)", func(t *testing.T) {
-		builder := &BuilderDef{InstallTemplate: "should-not-render={{.X}}"}
-		_, err := RenderBootstrapScript(builder, struct{ X string }{X: "v"})
-		if err == nil {
-			t.Fatal("expected an error: non-inline builders must not use the legacy InstallTemplate fallback")
+	t.Run("the phase cell is authoritative regardless of Inline", func(t *testing.T) {
+		// RenderBootstrapScript reads the phase.install.container cell — the single
+		// source of truth since the legacy install_template field was removed (R5).
+		// Multi-stage builders simply never reach this renderer (their callers guard
+		// on Inline); a non-inline builder that carries a cell renders it.
+		builder := &BuilderDef{
+			Phases: &spec.PhaseSet{
+				Install: &spec.PhaseTemplates{Container: "cell={{.X}}"},
+			},
 		}
-		if !strings.Contains(err.Error(), "no phase.install.container template") {
-			t.Errorf("error %q missing expected diagnostic text", err.Error())
+		got, err := RenderBootstrapScript(builder, struct{ X string }{X: "v"})
+		if err != nil {
+			t.Fatalf("RenderBootstrapScript: %v", err)
+		}
+		if got != "cell=v" {
+			t.Errorf("RenderBootstrapScript = %q, want %q", got, "cell=v")
 		}
 	})
 
 	t.Run("malformed template text is a parse error", func(t *testing.T) {
-		builder := &BuilderDef{Inline: true, InstallTemplate: "{{ .Unclosed "}
+		builder := &BuilderDef{Inline: true, Phases: &spec.PhaseSet{Install: &spec.PhaseTemplates{Container: "{{ .Unclosed "}}}
 		_, err := RenderBootstrapScript(builder, struct{}{})
 		if err == nil {
 			t.Fatal("expected a template parse error")
@@ -167,7 +176,7 @@ func TestRenderBootstrapScript(t *testing.T) {
 	})
 
 	t.Run("referencing a field absent from ctx is an execute error", func(t *testing.T) {
-		builder := &BuilderDef{Inline: true, InstallTemplate: "{{.NoSuchField}}"}
+		builder := &BuilderDef{Inline: true, Phases: &spec.PhaseSet{Install: &spec.PhaseTemplates{Container: "{{.NoSuchField}}"}}}
 		ctx := struct{ Present string }{Present: "x"}
 		_, err := RenderBootstrapScript(builder, ctx)
 		if err == nil {

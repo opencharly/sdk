@@ -58,7 +58,7 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 				candyName, len(pkgs), pkgs, img.Name, img.Pkg)
 		} else {
 			ctx := buildkit.NewInstallContext(raw, formatDef.CacheMount)
-			rendered, err := buildkit.RenderTemplate(img.Pkg+"-install", formatDef.InstallTemplate, ctx)
+			rendered, err := buildkit.RenderTemplate(img.Pkg+"-install", buildkit.FormatPhaseTemplate(formatDef, spec.PhaseInstall, spec.VenueContainerBuilder), ctx)
 			if err != nil {
 				return asUser, fmt.Errorf("candy %s: rendering the %s install template for box %s failed: %w", candyName, img.Pkg, img.Name, err)
 			}
@@ -91,12 +91,12 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 				Packages:    section.Packages,
 				StageName:   fmt.Sprintf("%s-%s-build", layer.GetName(), format),
 			}
-			if rendered, err := buildkit.RenderTemplate(format+"-install", formatDef.InstallTemplate, ctx); err == nil {
+			if rendered, err := buildkit.RenderTemplate(format+"-install", buildkit.FormatPhaseTemplate(formatDef, spec.PhaseInstall, spec.VenueContainerBuilder), ctx); err == nil {
 				b.WriteString(rendered)
 			}
 		} else {
 			ctx := buildkit.NewInstallContext(section.Raw, formatDef.CacheMount)
-			if rendered, err := buildkit.RenderTemplate(format+"-install", formatDef.InstallTemplate, ctx); err == nil {
+			if rendered, err := buildkit.RenderTemplate(format+"-install", buildkit.FormatPhaseTemplate(formatDef, spec.PhaseInstall, spec.VenueContainerBuilder), ctx); err == nil {
 				b.WriteString(rendered)
 			}
 		}
@@ -162,7 +162,7 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 				continue
 			}
 			external := g.ExternalizedBuilders[bName]
-			if !external && bDef.InstallTemplate == "" {
+			if !external && buildkit.BuilderPhaseTemplate(bDef, spec.PhaseInstall, spec.VenueContainerBuilder) == "" {
 				continue
 			}
 			if !g.CandyNeedsBuilder(img, layer, bDef) {
@@ -186,7 +186,7 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 				b.WriteString(frag)
 				continue
 			}
-			rendered, err := buildkit.RenderTemplate(bName+"-inline", bDef.InstallTemplate, ctx)
+			rendered, err := buildkit.RenderTemplate(bName+"-inline", buildkit.BuilderPhaseTemplate(bDef, spec.PhaseInstall, spec.VenueContainerBuilder), ctx)
 			if err != nil {
 				return asUser, fmt.Errorf("candy %q: rendering inline builder %q: %w", candyName, bName, err)
 			}

@@ -32,6 +32,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/opencharly/spec/calver"
 	"github.com/opencharly/spec/refs"
 	"github.com/opencharly/spec/spec"
 )
@@ -124,11 +125,11 @@ func cacheBehindHead(path string) bool {
 	if err != nil {
 		return true // no charly.yml → never-migrated → migrate
 	}
-	cv, ok := spec.ParseCalVer(spec.FirstYAMLVersionLine(data))
+	cv, ok := calver.ParseCalVer(spec.FirstYAMLVersionLine(data))
 	if !ok {
 		return true
 	}
-	return cv.Less(spec.LatestSchemaCalVer())
+	return cv.Less(calver.LatestSchemaCalVer())
 }
 
 // EnsureRepoDownloaded downloads the repo if not already cached. Returns the cache path. The cache

@@ -24,7 +24,7 @@ type CloudInitRuntimeParams = spec.CloudInitRuntimeParams
 //
 // Defaults applied automatically (D15):
 //
-//  1. VmSSH.User added to users: with sudo + ssh_authorized_keys
+//  1. VmSsh.User added to users: with sudo + ssh_authorized_keys
 //     (if the key-injection channel is enabled AND SSHPublicKey != "")
 //
 //  2. Minimum packages: {<ssh-pkg>, curl, tar} unioned with the user's Packages,

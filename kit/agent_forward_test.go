@@ -60,7 +60,7 @@ func TestResolveSSHAgentForward_NonexistentSocket(t *testing.T) {
 func TestResolveAgentForwarding_Disabled(t *testing.T) {
 	rt := &ResolvedRuntime{
 		ForwardGpgAgent: false,
-		ForwardSshAgent: false,
+		ForwardSSHAgent: false,
 	}
 	result := ResolveAgentForwarding(rt, nil, "/home/testuser")
 	if len(result.Volumes) != 0 {
@@ -75,12 +75,12 @@ func TestResolveAgentForwarding_DeployOverride(t *testing.T) {
 	// Global: enabled. Deploy: disabled.
 	rt := &ResolvedRuntime{
 		ForwardGpgAgent: true,
-		ForwardSshAgent: true,
+		ForwardSSHAgent: true,
 	}
 	f := false
 	deploy := &spec.FleetNode{
 		ForwardGpgAgent: &f,
-		ForwardSshAgent: &f,
+		ForwardSSHAgent: &f,
 	}
 
 	// Even with SSH_AUTH_SOCK set, deploy override should suppress forwarding

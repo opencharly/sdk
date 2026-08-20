@@ -1,44 +1,44 @@
 package vmshared
 
 // poll_reexport.go — the poll/readiness primitive moved to the floor-legal
-// package spec (spec/poll.go + spec/readiness.go) so kernel-floor charly files
+// package spec (spec/poll (poll.go + readiness.go)) so kernel-floor charly files
 // reach these bounds without a vmshared import. These thin re-exports keep every
 // existing vmshared.X consumer (sdk/deploykit, sdk/kit, the VM/check/preempt/spice
 // plugins) compiling unchanged — the SAME sdk-side re-export pattern as
-// spec_aliases.go. ONE home per symbol: the definitions live in spec.
+// spec_aliases.go. ONE home per symbol: the definitions live in poll.
 
-import "github.com/opencharly/spec/spec"
+import "github.com/opencharly/spec/poll"
 
 type (
-	PollCondition     = spec.PollCondition
-	PollConfig        = spec.PollConfig
-	PollClass         = spec.PollClass
-	ResolvedReadiness = spec.ResolvedReadiness
+	PollCondition     = poll.PollCondition
+	PollConfig        = poll.PollConfig
+	PollClass         = poll.PollClass
+	ResolvedReadiness = poll.ResolvedReadiness
 )
 
 var (
-	ErrPollStalled     = spec.ErrPollStalled
-	ErrPollCapExceeded = spec.ErrPollCapExceeded
-	ErrPollFatal       = spec.ErrPollFatal
-	ErrPollConfig      = spec.ErrPollConfig
+	ErrPollStalled     = poll.ErrPollStalled
+	ErrPollCapExceeded = poll.ErrPollCapExceeded
+	ErrPollFatal       = poll.ErrPollFatal
+	ErrPollConfig      = poll.ErrPollConfig
 
 	// ResolveReadiness + PollUntil are re-exported functions (the resolver + the
 	// poll driver).
-	ResolveReadiness = spec.ResolveReadiness
-	PollUntil        = spec.PollUntil
+	ResolveReadiness = poll.ResolveReadiness
+	PollUntil        = poll.PollUntil
 )
 
 const (
-	PollLocal  = spec.PollLocal
-	PollRemote = spec.PollRemote
-	PollHeavy  = spec.PollHeavy
+	PollLocal  = poll.PollLocal
+	PollRemote = poll.PollRemote
+	PollHeavy  = poll.PollHeavy
 
-	ReadinessAbsoluteCapFallback     = spec.ReadinessAbsoluteCapFallback
-	ReadinessIntervalHeavyFallback   = spec.ReadinessIntervalHeavyFallback
-	ReadinessIntervalLocalFallback   = spec.ReadinessIntervalLocalFallback
-	ReadinessIntervalRemoteFallback  = spec.ReadinessIntervalRemoteFallback
-	ReadinessNoProgressFallback      = spec.ReadinessNoProgressFallback
-	ReadinessPerAttemptFallback      = spec.ReadinessPerAttemptFallback
-	ReadinessPerAttemptHeavyFallback = spec.ReadinessPerAttemptHeavyFallback
-	ReadinessStopGraceFallback       = spec.ReadinessStopGraceFallback
+	ReadinessAbsoluteCapFallback     = poll.ReadinessAbsoluteCapFallback
+	ReadinessIntervalHeavyFallback   = poll.ReadinessIntervalHeavyFallback
+	ReadinessIntervalLocalFallback   = poll.ReadinessIntervalLocalFallback
+	ReadinessIntervalRemoteFallback  = poll.ReadinessIntervalRemoteFallback
+	ReadinessNoProgressFallback      = poll.ReadinessNoProgressFallback
+	ReadinessPerAttemptFallback      = poll.ReadinessPerAttemptFallback
+	ReadinessPerAttemptHeavyFallback = poll.ReadinessPerAttemptHeavyFallback
+	ReadinessStopGraceFallback       = poll.ReadinessStopGraceFallback
 )

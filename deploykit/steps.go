@@ -29,7 +29,7 @@ type (
 	BuilderRunOpts = spec.BuilderRunOpts
 	InstallPlan    = spec.InstallPlan
 	StepBatch      = spec.StepBatch
-	DeployTarget   = spec.DeployTarget
+	EmitTarget     = spec.EmitTarget
 
 	// The step VOCABULARY (relocated to spec, #55 step-4 — in-proc IR).
 	RepoSpec            = spec.RepoSpec

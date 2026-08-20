@@ -1,7 +1,7 @@
 package deploykit
 
 import (
-	"github.com/opencharly/spec/spec"
+	"github.com/opencharly/spec/fleet"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,10 +29,10 @@ import (
 // plugin-side bedCheckLevel (candy/plugin-check/bed_session.go) follows the SAME already-inlined
 // pattern, never calling back into this wrapper. Zero remaining callers, confirmed by grep.
 
-// The host-rooted descent predicate is now spec.HostRooted (#55 U4 — a pure #Deploy-tree read
+// The host-rooted descent predicate is now fleet.HostRooted (#55 U4 — a pure #Deploy-tree read
 // over the wire-stamped node.Descent, promoted so DeployNestedLocalChildren and this file's
 // bed-session apply path share ONE predicate over the spec value type). Callers below reference
-// spec.HostRooted directly.
+// fleet.HostRooted directly.
 
 // PersistBedDeployOverrides seeds the per-host charly.yml with a kind:check bed's
 // project-declared deploy-shaped fields (port / volume / env / tunnel / security / network),
@@ -79,7 +79,7 @@ func PersistBedDeployOverrides(name string, node FleetNode, externalInPlace bool
 	// every OTHER project (validateCheckBeds: "references local template … which is not
 	// defined"), poisoning concurrent/cross-project bed runs. Local deploys persist via the
 	// install ledger, not this fleet-map path, so skipping is also lossless.
-	if spec.HostRooted(&node) || externalInPlace {
+	if fleet.HostRooted(&node) || externalInPlace {
 		return
 	}
 	SaveDeployState(name, "", SaveDeployStateInput{
@@ -105,7 +105,7 @@ func PersistBedDeployOverrides(name string, node FleetNode, externalInPlace bool
 	}, marshalNode, read)
 }
 
-// DeployNestedLocalChildren is now spec.DeployNestedLocalChildren (#55 U4 — a pure dotted-path
+// DeployNestedLocalChildren is now fleet.DeployNestedLocalChildren (#55 U4 — a pure dotted-path
 // tree walk over the spec value types, promoted with HostRooted). deploykit keeps a re-export
 // forwarder (deploy_fleet_ops_aliases.go) so its charly callers compile unchanged.
 

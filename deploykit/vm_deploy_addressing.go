@@ -25,8 +25,8 @@ import (
 func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
 	var persisted int
 	if sp.SSH != nil && sp.SSH.PortAuto {
-		if entry, ok := LoadDeployConfigForRead("charly vm ssh-port").LookupKey("vm:" + vmName); ok && entry.VmState != nil && entry.VmState.SshPort > 0 {
-			persisted = entry.VmState.SshPort
+		if entry, ok := LoadDeployConfigForRead("charly vm ssh-port").LookupKey("vm:" + vmName); ok && entry.VmState != nil && entry.VmState.SSHPort > 0 {
+			persisted = entry.VmState.SSHPort
 		}
 	}
 	return kit.ResolveVmSshPort(sp, vmName, persisted)

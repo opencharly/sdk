@@ -13,6 +13,7 @@ package loaderkit
 import (
 	"fmt"
 
+	"github.com/opencharly/spec/merge"
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
@@ -65,7 +66,7 @@ func MaterializeLoadedProject(lp *spec.LoadedProject, merged *spec.UnifiedFile, 
 		// Imports are already resolved + flattened into lp.Docs by the walk — drop the sub's Import
 		// so the merge never re-processes them (the former mergeUnifiedDocs cleared sub.Import too).
 		sub.Import = nil
-		spec.MergeUnified(merged, &sub, d.SrcDir)
+		merge.MergeUnified(merged, &sub, d.SrcDir)
 	}
 	// 2. Discovered manifests (explicit-entry-wins), applied after the documents.
 	if err := seams.FoldDiscoveredManifests(lp.Discovered, merged); err != nil {

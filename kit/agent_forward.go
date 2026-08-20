@@ -41,9 +41,9 @@ func ResolveAgentForwarding(rt *ResolvedRuntime, deploy *spec.FleetNode, contain
 	var result AgentForwardMounts
 
 	// SSH agent forwarding
-	forwardSSH := rt.ForwardSshAgent
-	if deploy != nil && deploy.ForwardSshAgent != nil {
-		forwardSSH = *deploy.ForwardSshAgent
+	forwardSSH := rt.ForwardSSHAgent
+	if deploy != nil && deploy.ForwardSSHAgent != nil {
+		forwardSSH = *deploy.ForwardSSHAgent
 	}
 	if forwardSSH {
 		if vol, env, ok := resolveSSHAgentForward(); ok {

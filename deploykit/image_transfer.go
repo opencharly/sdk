@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/spec/container"
-	spec "github.com/opencharly/spec/spec"
+	"github.com/opencharly/spec/shellquote"
 )
 
 // image_transfer.go — the VENUE-GENERIC verified image delivery path.
@@ -119,7 +119,7 @@ func TransferImageToVenue(ctx context.Context, v ImageVenue, hostEngine, ref, as
 
 // VenueHasImage reports whether the venue's store holds the image by name.
 func VenueHasImage(ctx context.Context, v ImageVenue, ref string) bool {
-	_, _, code, err := v.Exec.RunCapture(ctx, v.PodmanCmd+" image exists "+spec.ShellQuote(ref))
+	_, _, code, err := v.Exec.RunCapture(ctx, v.PodmanCmd+" image exists "+shellquote.ShellQuote(ref))
 	return err == nil && code == 0
 }
 
@@ -133,7 +133,7 @@ func VenueHasImage(ctx context.Context, v ImageVenue, ref string) bool {
 // this is an integrity check, not an entrypoint test.
 func VenueImageCorrupt(ctx context.Context, v ImageVenue, ref string) bool {
 	stdout, stderr, code, err := v.Exec.RunCapture(ctx,
-		v.PodmanCmd+" run --rm --entrypoint /usr/bin/true "+spec.ShellQuote(ref))
+		v.PodmanCmd+" run --rm --entrypoint /usr/bin/true "+shellquote.ShellQuote(ref))
 	if err == nil && code == 0 {
 		return false
 	}
@@ -150,7 +150,7 @@ func removeVenueImages(ctx context.Context, v ImageVenue, refs ...string) {
 		if r == "" {
 			continue
 		}
-		_, _, _, _ = v.Exec.RunCapture(ctx, v.PodmanCmd+" rmi -f "+spec.ShellQuote(r))
+		_, _, _, _ = v.Exec.RunCapture(ctx, v.PodmanCmd+" rmi -f "+shellquote.ShellQuote(r))
 	}
 }
 
@@ -169,7 +169,7 @@ func streamAndTag(ctx context.Context, v ImageVenue, hostEngine, ref, as string,
 	if as == "" {
 		return nil
 	}
-	tag := v.PodmanCmd + " tag " + spec.ShellQuote(ref) + " " + spec.ShellQuote(as)
+	tag := v.PodmanCmd + " tag " + shellquote.ShellQuote(ref) + " " + shellquote.ShellQuote(as)
 	var tagErr error
 	if v.Rootless {
 		tagErr = v.Exec.RunUser(ctx, tag, opts)

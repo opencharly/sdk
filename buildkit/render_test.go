@@ -7,21 +7,22 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// TestRpmTemplateWithModules / TestPacTemplateBasic / TestAurInstallTemplate were
+// TestRpmTemplateWithModules / TestPacTemplateBasic / TestAurInstallPhase were
 // relocated here from charly/generate_test.go (K3 cone2 test closure): the tests
 // exercise RenderTemplate — already a pure buildkit function taking only
 // `*spec.Format`/`*spec.InstallContext` — but the ORIGINAL charly-side tests built
 // their `*spec.Format` fixture via `testDistroDef(tag).Format["fmt"]`, which loads
 // charly/testdata/build.yml through charly's own `LoadBuildConfigForBox` (a
 // charly-core-only loader, unreachable from sdk/buildkit). Each fixture below is a
-// literal `*spec.Format` carrying the SAME `install_template:` TEXT the testdata
+// literal `*spec.Format` carrying the SAME `phase.install.container` TEXT the testdata
 // distro vocabulary declares for that format (rpm/pac/aur), so the render
 // assertions are byte-for-byte the same test, decoupled from the charly loader.
 
 func TestRpmTemplateWithModules(t *testing.T) {
 	rpm := &spec.Format{
 		CacheMount: []spec.CacheMount{{Dst: "/var/cache/libdnf5", Sharing: "locked"}},
-		InstallTemplate: `RUN {{cacheMounts .CacheMounts}} \
+		Phases: &spec.PhaseSet{
+			Install: &spec.PhaseTemplates{Container: `RUN {{cacheMounts .CacheMounts}} \
 {{- range .Repos}}{{if .rpm}}
     dnf install -y {{quote .rpm}} && \
 {{- end}}{{end}}
@@ -49,14 +50,15 @@ func TestRpmTemplateWithModules(t *testing.T) {
 {{- range .Copr}} && \
     dnf5 config-manager setopt "copr:copr.fedorainfracloud.org:{{replace . "/" ":"}}.enabled=0"
 {{- end}}
-`,
+`},
+		},
 	}
 	ctx := &spec.InstallContext{
 		CacheMounts: rpm.CacheMount,
 		Packages:    []string{"valkey"},
 		Modules:     []string{"valkey:remi-9.0"},
 	}
-	out, err := RenderTemplate("rpm-test", rpm.InstallTemplate, ctx)
+	out, err := RenderTemplate("rpm-test", rpm.Phases.Install.Container, ctx)
 	if err != nil {
 		t.Fatalf("render error: %v", err)
 	}
@@ -78,7 +80,8 @@ func TestRpmTemplateWithModules(t *testing.T) {
 func TestPacTemplateBasic(t *testing.T) {
 	pac := &spec.Format{
 		CacheMount: []spec.CacheMount{{Dst: "/var/cache/pacman/pkg", Sharing: "locked"}},
-		InstallTemplate: `RUN {{cacheMounts .CacheMounts}} \
+		Phases: &spec.PhaseSet{
+			Install: &spec.PhaseTemplates{Container: `RUN {{cacheMounts .CacheMounts}} \
 {{- range .Keys}}
     pacman-key --recv-keys {{.}} && pacman-key --lsign-key {{.}} && \
 {{- end}}
@@ -92,13 +95,14 @@ func TestPacTemplateBasic(t *testing.T) {
 {{- range .Options}} {{.}}{{end}}
 {{- range .Packages}} \
       {{.}}{{end}}
-`,
+`},
+		},
 	}
 	ctx := &spec.InstallContext{
 		CacheMounts: pac.CacheMount,
 		Packages:    []string{"neovim", "ripgrep"},
 	}
-	out, err := RenderTemplate("pac-test", pac.InstallTemplate, ctx)
+	out, err := RenderTemplate("pac-test", pac.Phases.Install.Container, ctx)
 	if err != nil {
 		t.Fatalf("render error: %v", err)
 	}
@@ -113,20 +117,22 @@ func TestPacTemplateBasic(t *testing.T) {
 	}
 }
 
-func TestAurInstallTemplate(t *testing.T) {
+func TestAurInstallPhase(t *testing.T) {
 	aur := &spec.Format{
 		CacheMount: []spec.CacheMount{{Dst: "/var/cache/pacman/pkg", Sharing: "locked"}},
-		InstallTemplate: `COPY --from={{.StageName}} /tmp/aur-pkgs/ /tmp/aur-pkgs/
+		Phases: &spec.PhaseSet{
+			Install: &spec.PhaseTemplates{Container: `COPY --from={{.StageName}} /tmp/aur-pkgs/ /tmp/aur-pkgs/
 RUN {{cacheMounts .CacheMounts}} \
     pacman -U --noconfirm /tmp/aur-pkgs/*.pkg.tar.zst && \
     rm -rf /tmp/aur-pkgs
-`,
+`},
+		},
 	}
 	ctx := &spec.InstallContext{
 		CacheMounts: aur.CacheMount,
 		StageName:   "my-tool-aur-build",
 	}
-	out, err := RenderTemplate("aur-install-test", aur.InstallTemplate, ctx)
+	out, err := RenderTemplate("aur-install-test", aur.Phases.Install.Container, ctx)
 	if err != nil {
 		t.Fatalf("render error: %v", err)
 	}

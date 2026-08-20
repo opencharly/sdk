@@ -58,7 +58,7 @@ func TestComposeUsers_AdoptBaseUser(t *testing.T) {
 
 func TestComposeUsers_CreateNewUser(t *testing.T) {
 	// ssh.user set, no matching base_user → full create entry.
-	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "arch"}, SSH: &VmSSH{User: "charly"}}
+	spec := &VmSpec{Source: VmSource{Kind: "cloud_image", Distro: "arch"}, SSH: &VmSsh{User: "charly"}}
 	users := composeUsers(spec, &VmCloudInit{}, keyInject(testPubKey))
 
 	u := findUserEntry(users, "charly")
@@ -244,9 +244,9 @@ func TestResolveKeyInjectionChannels(t *testing.T) {
 	}{
 		{"cloud_image defaults", &VmSpec{Source: VmSource{Kind: "cloud_image"}}, true, true},
 		{"bootc defaults", &VmSpec{Source: VmSource{Kind: "bootc"}}, true, false},
-		{"cloud_image disable cloud_init", &VmSpec{Source: VmSource{Kind: "cloud_image"}, SSH: &VmSSH{KeyInjection: &VmKeyInjection{CloudInit: disabled}}}, true, false},
-		{"bootc enable cloud_init", &VmSpec{Source: VmSource{Kind: "bootc"}, SSH: &VmSSH{KeyInjection: &VmKeyInjection{CloudInit: enabled}}}, true, true},
-		{"disable smbios", &VmSpec{Source: VmSource{Kind: "cloud_image"}, SSH: &VmSSH{KeyInjection: &VmKeyInjection{SMBIOS: disabled}}}, false, true},
+		{"cloud_image disable cloud_init", &VmSpec{Source: VmSource{Kind: "cloud_image"}, SSH: &VmSsh{KeyInjection: &VmKeyInjection{CloudInit: disabled}}}, true, false},
+		{"bootc enable cloud_init", &VmSpec{Source: VmSource{Kind: "bootc"}, SSH: &VmSsh{KeyInjection: &VmKeyInjection{CloudInit: enabled}}}, true, true},
+		{"disable smbios", &VmSpec{Source: VmSource{Kind: "cloud_image"}, SSH: &VmSsh{KeyInjection: &VmKeyInjection{SMBIOS: disabled}}}, false, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -264,7 +264,7 @@ func TestResolveCloudInitSSHUser(t *testing.T) {
 		spec *VmSpec
 		want string
 	}{
-		{"explicit ssh.user wins", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "arch"}, SSH: &VmSSH{User: "charly"}}, "charly"},
+		{"explicit ssh.user wins", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "arch"}, SSH: &VmSsh{User: "charly"}}, "charly"},
 		{"base_user adopt", &VmSpec{Source: VmSource{Kind: "cloud_image", BaseUser: "ubuntu"}}, "ubuntu"},
 		{"bootc fallback root", &VmSpec{Source: VmSource{Kind: "bootc"}}, "root"},
 		{"cloud_image no base → empty", &VmSpec{Source: VmSource{Kind: "cloud_image"}}, ""},

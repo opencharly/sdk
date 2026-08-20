@@ -11,6 +11,7 @@ import (
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/proc"
+	"github.com/opencharly/spec/shellquote"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -225,7 +226,7 @@ func RunVenueHomeArtifactBuilder(ctx context.Context, dexec DeployExecutor, venu
 	}
 	// Extract AS THE VENUE USER so the home artifacts (~/.npm-global, ~/.cargo, ~/.pixi)
 	// end up owned by the venue user, not root.
-	extractScript := fmt.Sprintf("set -e\nmkdir -p \"$HOME\"\ntar -C \"$HOME\" -xzf %s\n", spec.ShellQuote(venueTar))
+	extractScript := fmt.Sprintf("set -e\nmkdir -p \"$HOME\"\ntar -C \"$HOME\" -xzf %s\n", shellquote.ShellQuote(venueTar))
 	if err := dexec.RunUser(ctx, extractScript, opts); err != nil {
 		return fmt.Errorf("extracting builder artifacts on venue: %w", err)
 	}
@@ -233,7 +234,7 @@ func RunVenueHomeArtifactBuilder(ctx context.Context, dexec DeployExecutor, venu
 	// root-owned, and /tmp is sticky (1777) — the venue user can't remove a root-owned
 	// file there. Cleaning up as root avoids leaving a root-owned tarball behind (and
 	// previously aborted the deploy under the extract script's `set -e`).
-	if err := dexec.RunSystem(ctx, fmt.Sprintf("rm -f %s\n", spec.ShellQuote(venueTar)), opts); err != nil {
+	if err := dexec.RunSystem(ctx, fmt.Sprintf("rm -f %s\n", shellquote.ShellQuote(venueTar)), opts); err != nil {
 		return fmt.Errorf("removing builder tarball on venue: %w", err)
 	}
 	return nil

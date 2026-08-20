@@ -10,19 +10,19 @@ package kit
 // (sdk/loaderkit's discover.go/walk.go, sdk/deploykit, candy/plugin-box,
 // sdk/kit/scaffold.go) keeps compiling unchanged (R3 — ONE copy, in spec now).
 
-import "github.com/opencharly/spec/spec"
+import "github.com/opencharly/spec/loader"
 
 // FindEntityDirs walks a scan root and returns every directory that contains
-// the given canonical filename. See spec.FindEntityDirs.
-var FindEntityDirs = spec.FindEntityDirs
+// the given canonical filename. See loader.FindEntityDirs.
+var FindEntityDirs = loader.FindEntityDirs
 
 // DiscoverSkipDir reports whether a directory name is a VCS or build-artifact
-// dir that never contains a discoverable charly.yml manifest. See spec.DiscoverSkipDir.
-var DiscoverSkipDir = spec.DiscoverSkipDir
+// dir that never contains a discoverable charly.yml manifest. See loader.DiscoverSkipDir.
+var DiscoverSkipDir = loader.DiscoverSkipDir
 
-// DirExists reports whether path exists and is a directory. See spec.DirExists.
-var DirExists = spec.DirExists
+// DirExists reports whether path exists and is a directory. See loader.DirExists.
+var DirExists = loader.DirExists
 
 // FileExists reports whether path exists and is a regular (non-dir) file.
-// See spec.FileExists.
-var FileExists = spec.FileExists
+// See loader.FileExists.
+var FileExists = loader.FileExists

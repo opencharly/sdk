@@ -10,7 +10,10 @@ package kit
 // sdk/deploykit, the ~85 plugins) compiling unchanged (R3, single source — the
 // buildkit/vmshared re-export pattern).
 
-import "github.com/opencharly/spec/exec"
+import (
+	"github.com/opencharly/spec/exec"
+	"github.com/opencharly/spec/poll"
+)
 
 type (
 	ShellExecutor         = exec.ShellExecutor
@@ -18,7 +21,7 @@ type (
 	NestedExecutor        = exec.NestedExecutor
 	NestedJump            = exec.NestedJump
 	JumpKind              = exec.JumpKind
-	PollCond              = exec.PollCond
+	PollCond              = poll.PollCondition
 	PollFunc              = exec.PollFunc
 	SSHArgs               = exec.SSHArgs
 	CharlyInstallStrategy = exec.CharlyInstallStrategy

@@ -15,7 +15,6 @@ package deploykit
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 
 	"github.com/opencharly/sdk/vmshared"
@@ -67,15 +66,7 @@ func (a *specCandyAdapter) HasData() bool           { return len(a.m.Data) > 0 }
 func (a *specCandyAdapter) Data() []DataYAML        { return a.m.Data }
 
 // maps / pointers
-// LocalPkg returns the deprecated localpkg source-build map entry for a format.
-// Interface-mandated: spec.CandyReader still declares it (deprecated) in
-// v0.2026225.1800; the sdk's consumers are migrated off (zero callers — the
-// nFPM cutover replaced source builds with the download/dev legs). Kept only to
-// satisfy the interface; removed when the spec drops it from CandyReader.
-//
-//nolint:staticcheck // SA1019: a.m.LocalPkg is deprecated (interface-mandated, see above)
-func (a *specCandyAdapter) LocalPkg(format string) string { return a.m.LocalPkg[format] }
-func (a *specCandyAdapter) Packaging() *spec.Packaging    { return a.m.Packaging }
+func (a *specCandyAdapter) Packaging() *spec.Packaging { return a.m.Packaging }
 func (a *specCandyAdapter) FormatSection(name string) *PackageSection {
 	if s, ok := a.m.FormatSections[name]; ok {
 		return &s
@@ -223,25 +214,6 @@ func (a *specCandyAdapter) AgentProvide() []spec.AgentRuntimeCapability { return
 func (a *specCandyAdapter) HasAgentProvides() bool                      { return len(a.v.AgentProvide) > 0 }
 func (a *specCandyAdapter) TerminalProfiles() map[string]spec.TerminalProfile {
 	return a.v.TerminalProfiles
-}
-
-// LocalPkgFormats returns the sorted list of package formats with a bundled local source
-// (localpkg: map keys). Interface-mandated: spec.CandyReader still declares it (deprecated)
-// in v0.2026225.1800; the sdk's consumers are migrated off (zero callers — the nFPM cutover
-// replaced source builds with the download/dev legs). Kept only to satisfy the interface;
-// removed when the spec drops it from CandyReader.
-//
-//nolint:staticcheck // SA1019: a.m.LocalPkg is deprecated (interface-mandated, see above)
-func (a *specCandyAdapter) LocalPkgFormats() []string {
-	if len(a.m.LocalPkg) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(a.m.LocalPkg))
-	for f := range a.m.LocalPkg {
-		out = append(out, f)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // Port returns the OCI/publish-oriented port list — bare "8080", or "47998/udp" ONLY when

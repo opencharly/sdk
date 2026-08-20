@@ -52,8 +52,8 @@ type VmRuntimeParams struct {
 	// Cpus is the resolved vCPU count (VmSpec.Cpus with defaults applied).
 	Cpus int
 
-	// SshPort is the host port forwarded to guest :22.
-	SshPort int
+	// SSHPort is the host port forwarded to guest :22.
+	SSHPort int
 
 	// ExtraPortForwards are additional "host:guest" TCP forwards on
 	// top of the SSH port. Used with user-mode networking.

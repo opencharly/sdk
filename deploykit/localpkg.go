@@ -64,6 +64,7 @@ import (
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/proc"
+	"github.com/opencharly/spec/shellquote"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -487,7 +488,7 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, builderName string, 
 		"# build tree, so the inner script's find may run after the tree is\n" +
 		"# already wiped. Broaden the search if /tmp/aur-pkgs is still empty.\n" +
 		"if [ -z \"$(ls -A /tmp/aur-pkgs 2>/dev/null)\" ]; then\n" +
-		"  find / -name " + spec.ShellQuote(glob) + " 2>/dev/null -exec cp {} /tmp/aur-pkgs/ \\;\n" +
+		"  find / -name " + shellquote.ShellQuote(glob) + " 2>/dev/null -exec cp {} /tmp/aur-pkgs/ \\;\n" +
 		"fi\n" +
 		"# Rootless-podman userns fix: files created by container user\n" +
 		"# 1000 land in the host's subuid range and become unreadable to\n" +

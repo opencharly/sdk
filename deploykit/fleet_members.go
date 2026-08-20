@@ -11,7 +11,7 @@ package deploykit
 // audit found the ACTUAL duplication risk was narrower than "the whole engine" — it was the
 // venue-CLASSIFICATION predicate (isVmMember/isPodMember, formerly reading core's private
 // nodeTraits): a naive lift would have added a FOURTH copy. Resolved by promoting
-// spec.IsVmVenue/spec.IsContainerVenue (mirroring the already-promoted spec.HostRooted, #55 U4)
+// fleet.IsVmVenue/fleet.IsContainerVenue (mirroring the already-promoted fleet.HostRooted, #55 U4)
 // as the ONE shared predicate — every node BringUpMembers/TearDownMembers sees comes from an
 // already-loaded, Descent-stamped project (foldMembers marks only the folded top-level copy), so
 // the registry-fallback branch core's OWN nodeTraits carried is dead weight here, exactly as it
@@ -34,6 +34,7 @@ import (
 	"fmt"
 
 	specexec "github.com/opencharly/spec/exec"
+	"github.com/opencharly/spec/fleet"
 	"github.com/opencharly/spec/hostenv"
 	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
@@ -67,7 +68,7 @@ func BringUpMembers(node *spec.FleetNode, imageTag string) error {
 	for _, memberKey := range spec.SortedMemberKeys(node.Members) {
 		memberNode := node.Members[memberKey]
 		switch {
-		case spec.IsVmVenue(memberNode):
+		case fleet.IsVmVenue(memberNode):
 			// VM member: full libvirt lifecycle, mirroring the isVM bed root
 			// (candy/plugin-check/bed_session.go's bedSetup). The VM disk is built by the caller's build step
 			// (the group bed's build arm); here we (re)create + wait for ssh +
@@ -90,12 +91,12 @@ func BringUpMembers(node *spec.FleetNode, imageTag string) error {
 			}
 			// Same nested-local-child gap the isVM bed root closes: plugin-deploy-vm's
 			// PostApply skips target:local children, so deploy them into the guest here.
-			if err := spec.DeployNestedLocalChildren(memberKey, memberNode.Children, func(childKey, dotted string) error {
+			if err := fleet.DeployNestedLocalChildren(memberKey, memberNode.Children, func(childKey, dotted string) error {
 				return proc.RunCharlySubcommand("fleet", "add", dotted)
 			}); err != nil {
 				return fmt.Errorf("peer %q: %w", memberKey, err)
 			}
-		case spec.IsContainerVenue(memberNode):
+		case fleet.IsContainerVenue(memberNode):
 			for _, step := range [][]string{{"config", memberKey}, {"start", memberKey}} {
 				if err := proc.RunCharlySubcommand(withMemberTag(step, imageTag)...); err != nil {
 					return fmt.Errorf("peer %q (%v): %w", memberKey, step, err)
@@ -127,7 +128,7 @@ func TearDownMembers(node *spec.FleetNode) error {
 		memberNode := node.Members[memberKey]
 		var err error
 		switch {
-		case spec.IsVmVenue(memberNode):
+		case fleet.IsVmVenue(memberNode):
 			// `vm destroy` removes the libvirt domain (named after the MEMBER deploy, not the shared
 			// entity — P33), but bring-up ALSO registered the member in the deploy ledger via
 			// `fleet add`. Reverse that too, or a ledger record survives every teardown and they
@@ -135,7 +136,7 @@ func TearDownMembers(node *spec.FleetNode) error {
 			destroyErr := proc.RunCharlySubcommand("vm", "destroy", memberNode.From, "--domain", spec.VmDomainIdentity(memberKey), "--if-exists")
 			delErr := proc.RunCharlySubcommand(spec.FleetDelArgv(memberKey)...)
 			err = errors.Join(destroyErr, delErr)
-		case spec.IsContainerVenue(memberNode):
+		case fleet.IsContainerVenue(memberNode):
 			err = proc.RunCharlySubcommand("remove", memberKey, "--purge")
 		default:
 			err = proc.RunCharlySubcommand(spec.FleetDelArgv(memberKey)...)
