@@ -9,7 +9,7 @@ package deploykit
 //
 // This function is intentionally pure: given the same inputs, it produces
 // the same InstallPlan regardless of filesystem or environment. Side
-// effects happen later, inside DeployTarget.Emit implementations.
+// effects happen later, inside EmitTarget.Emit implementations.
 //
 // Logic here replaces the per-candy walk inside writeCandySteps
 // (generate.go:1075-1208). Instead of emitting Containerfile text
@@ -133,7 +133,7 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 	// 6. Android apps: the candy manifest `apk:` package format. Compiled into ONE
 	// ApkInstallStep regardless of target; the android deploy preresolver reads it
 	// host-side (collectAndroidInstalls) and the external deploy:android plugin
-	// installs the apps — every DeployTarget records a skip. See ApkInstallStep.
+	// installs the apps — every EmitTarget records a skip. See ApkInstallStep.
 	if apkStep := CompileApkStep(layer); apkStep != nil {
 		plan.Steps = append(plan.Steps, apkStep)
 	}
@@ -153,7 +153,7 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 // CompileApkStep turns a candy's `apk:` package list into a single
 // ApkInstallStep, or nil if the candy declares no apk packages. The `apk`
 // format is target-agnostic at compile time — the step carries the specs and
-// each DeployTarget decides whether to execute (android) or skip (everything
+// each EmitTarget decides whether to execute (android) or skip (everything
 // else), exactly as the IR intends for venue-specific work.
 func CompileApkStep(layer CandyModel) InstallStep {
 	apks := layer.Apk()
@@ -172,7 +172,7 @@ func CompileApkStep(layer CandyModel) InstallStep {
 // it is target-agnostic at compile time — the step carries the published
 // package name (from the candy's `packaging:` section) + the release CalVer
 // (the box's effective version) + the candy dir (the anchor for the candy's
-// charly.yml, the generate-packages plugin's --candy input). Each DeployTarget
+// charly.yml, the generate-packages plugin's --candy input). Each EmitTarget
 // decides whether to obtain+install (localpkg-capable host/guest), skip (image
 // build, non-pac targets, android, kubernetes).
 //
@@ -320,7 +320,7 @@ func PrimaryDistroTag(img *ResolvedBox, hostCtx HostContext) string {
 // path_append: fields, or nil if the candy contributes neither.
 //
 // Home resolution is DEFERRED: `~`/`$HOME` are rewritten to the literal
-// `{{.Home}}` token rather than expanded against img.Home. Each DeployTarget
+// `{{.Home}}` token rather than expanded against img.Home. Each EmitTarget
 // resolves the token at emit time against the home of the actual deploy
 // destination — img.Home for the OCI/pod-overlay build, the host home for
 // the local deploy target, and the GUEST home (via the SSH executor's ResolveHome)
@@ -364,7 +364,7 @@ func CompileShellHookStep(layer CandyModel, _ *ResolvedBox) *ShellHookStep {
 //
 // path_append entries are rendered into the snippet body using
 // shell-appropriate syntax (PATH=... for bash/zsh/sh, fish_add_path for
-// fish) before the step is emitted, so each DeployTarget emitter can
+// fish) before the step is emitted, so each EmitTarget emitter can
 // write the snippet bytes verbatim.
 //
 // Destination resolution is target-aware:
