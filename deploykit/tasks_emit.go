@@ -10,6 +10,7 @@ import (
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/shellquote"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -281,7 +282,7 @@ func wrapUnlessExists(cmd, guard, verb, prefix, term string) string {
 	if g == "" {
 		return cmd
 	}
-	q := spec.ShellQuote(g)
+	q := shellquote.ShellQuote(g)
 	head := fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else `, q, verb, q)
 	// `{ list; }` requires a NON-EMPTY list — the same rule as the terminator, on its other end.
 	// A `run:` step whose command is empty or comment-only would otherwise emit `{ }` and fail the
@@ -314,8 +315,8 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(&envPrefix, " export %s=%s;", k, spec.ShellQuote(t.Env[k]))
-			fmt.Fprintf(&envForSh, " %s=%s", k, spec.ShellQuote(t.Env[k]))
+			fmt.Fprintf(&envPrefix, " export %s=%s;", k, shellquote.ShellQuote(t.Env[k]))
+			fmt.Fprintf(&envForSh, " %s=%s", k, shellquote.ShellQuote(t.Env[k]))
 		}
 	}
 
@@ -383,7 +384,7 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		mounts = append(mounts, buildkit.OwnedCacheMount("/tmp/downloads", img.UID, img.GID).String())
 	}
 	mounts = append(mounts, cacheMounts...)
-	fmt.Fprintf(b, "RUN %s %s %s\n", strings.Join(mounts, " "), BuildStepShellDashC(), spec.ShellQuote(cmd))
+	fmt.Fprintf(b, "RUN %s %s %s\n", strings.Join(mounts, " "), BuildStepShellDashC(), shellquote.ShellQuote(cmd))
 	return nil
 }
 
@@ -442,7 +443,7 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(b, "export %s=%s\n", k, spec.ShellQuote(t.Env[k]))
+			fmt.Fprintf(b, "export %s=%s\n", k, shellquote.ShellQuote(t.Env[k]))
 		}
 	}
 	b.WriteString("set -e\n")

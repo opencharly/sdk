@@ -22,9 +22,9 @@ type StepKindName = checkstep.StepKindName
 
 const (
 	// StepKindServicePackaged — the `service` verb (enable a packaged unit; load-bearing reversals).
-	StepKindServicePackaged = checkstep.StepKindServicePackaged
+	StepKindServicePackaged = checkstep.StepKindNameServicePackaged
 	// StepKindSystemPackages — the `package` verb (install system packages).
-	StepKindSystemPackages = checkstep.StepKindSystemPackages
+	StepKindSystemPackages = checkstep.StepKindNameSystemPackages
 )
 
 // ServicePackagedDesc is the candy-decodable construction input for a service-packaged step.

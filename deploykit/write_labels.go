@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/opencharly/spec/shellquote"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -213,9 +214,9 @@ func (g *Generator) WriteLabels(b *strings.Builder, meta *spec.BakedLabelSet, bo
 		// Single-quote (NOT %q): a description may legitimately mention a ${VAR} (e.g.
 		// ${HOST:<subject>}), and the %q double-quoted form lets buildah try to expand it —
 		// which fails with "Unsupported modifier" on, e.g., the `<` in ${HOST:<subject>}.
-		// spec.ShellQuote matches how every JSON label is emitted (no shell/Dockerfile
+		// shellquote.ShellQuote matches how every JSON label is emitted (no shell/Dockerfile
 		// expansion).
-		fmt.Fprintf(b, "LABEL %s=%s\n", spec.LabelInfo, spec.ShellQuote(meta.Info))
+		fmt.Fprintf(b, "LABEL %s=%s\n", spec.LabelInfo, shellquote.ShellQuote(meta.Info))
 	}
 
 	// Candy versions: map of candy name -> CalVer for candies with version set
@@ -250,5 +251,5 @@ func writeJSONLabel[T any](b *strings.Builder, key string, value T) {
 	// Wrap in single-quoted form with proper '\'' escaping so embedded single quotes (common
 	// inside test command strings like awk '{print $1}') don't terminate the LABEL value and
 	// trip podman's key=value parser.
-	fmt.Fprintf(b, "LABEL %s=%s\n", key, spec.ShellQuote(s))
+	fmt.Fprintf(b, "LABEL %s=%s\n", key, shellquote.ShellQuote(s))
 }

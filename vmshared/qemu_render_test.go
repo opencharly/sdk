@@ -17,7 +17,7 @@ func TestRenderQemuNic_ForwardsFromResolvedRtOnly(t *testing.T) {
 		Network: &VmNetwork{Mode: "user", PortForwards: []string{"auto:6443", "16443:6443"}},
 	}
 	rt := VmRuntimeParams{
-		SshPort: 2299,
+		SSHPort: 2299,
 		// The orchestrator resolved auto:6443 → an allocated host port and passes
 		// the concrete strings here. This is the ONLY forward source the renderer reads.
 		ExtraPortForwards: []string{"45000:6443"},

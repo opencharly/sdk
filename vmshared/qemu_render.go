@@ -298,10 +298,10 @@ func renderQemuNic(spec *VmSpec, rt VmRuntimeParams) []string {
 		// QEMU doesn't have a first-class nat; fall through to user.
 		fallthrough
 	default:
-		fwds := []string{fmt.Sprintf("hostfwd=tcp::%d-:22", rt.SshPort)}
+		fwds := []string{fmt.Sprintf("hostfwd=tcp::%d-:22", rt.SSHPort)}
 		// Extra forwards come from rt.ExtraPortForwards — the RESOLVED "host:guest"
 		// strings the orchestrator produced (auto sentinels already allocated to
-		// concrete host ports, host-side). Like rt.SshPort, the renderer reads the
+		// concrete host ports, host-side). Like rt.SSHPort, the renderer reads the
 		// resolved rt value, never spec.Network.PortForwards directly.
 		for _, pf := range rt.ExtraPortForwards {
 			host, guest := splitPortForward(pf)

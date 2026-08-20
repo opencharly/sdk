@@ -164,7 +164,7 @@ type (
 	VmSnapshotState            = spec.VmSnapshotState
 	VmSource                   = spec.VmSource
 	VmSpec                     = spec.ResolvedVm
-	VmSSH                      = spec.VmSSH
+	VmSsh                      = spec.VmSsh
 	VolumeYAML                 = spec.VolumeYAML
 
 	// --- nested types renamed in spec (charly name != cue-def name) ---

@@ -352,7 +352,7 @@ type FleetConfig = spec.FleetConfig
 // not nil, bool != false, numeric != 0). This makes adding a new field to
 // FleetNode automatically merge-correct — the pre-2026-05 hand-rolled
 // per-field merge silently dropped 19+ fields (ResolvedPort, Description,
-// Secret, Sidecar, Shell, Kubernetes, ForwardGpgAgent, ForwardSshAgent,
+// Secret, Sidecar, Shell, Kubernetes, ForwardGpgAgent, ForwardSSHAgent,
 // Kind, Replica, Restart, Schedule, Resources, Expose, Storage, Probes,
 // Cpus, Ram, DiskSize) whenever any merge → save cycle ran.
 //

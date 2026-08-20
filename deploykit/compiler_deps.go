@@ -7,12 +7,13 @@ import (
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/vmshared"
+	"github.com/opencharly/spec/shellquote"
 	"github.com/opencharly/spec/spec"
 )
 
 var (
 	ExpandPath         = kit.ExpandPath
-	shellQuote         = spec.ShellQuote
+	shellQuote         = shellquote.ShellQuote
 	KwRun              = kit.KwRun
 	extractStringSlice = ExtractStringSlice
 	toMapSlice         = buildkit.ToMapSlice

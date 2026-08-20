@@ -10,7 +10,7 @@ import (
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/proc"
-	"github.com/opencharly/spec/spec"
+	"github.com/opencharly/spec/shellquote"
 )
 
 // venue_extract.go — the VENUE-AGNOSTIC ExtractStep execution path: the machine-venue
@@ -140,14 +140,14 @@ func RunVenueExtractStep(ctx context.Context, dexec DeployExecutor, resolveImage
 		return fmt.Errorf("extract %s:%s (candy=%s): transfer: %w", s.Source, s.Path, s.CandyName, err)
 	}
 	extractScript := fmt.Sprintf("set -e\nmkdir -p %s\ntar -C %s -xzf %s\n",
-		spec.ShellQuote(venueExtractDir), spec.ShellQuote(venueExtractDir), spec.ShellQuote(venueTar))
+		shellquote.ShellQuote(venueExtractDir), shellquote.ShellQuote(venueExtractDir), shellquote.ShellQuote(venueTar))
 	if err := dexec.RunSystem(ctx, extractScript, opts); err != nil {
 		return fmt.Errorf("extract %s:%s (candy=%s): extract on venue: %w", s.Source, s.Path, s.CandyName, err)
 	}
 	// Remove the tarball AS ROOT: PutFile placed it via `sudo install`, so it is
 	// root-owned, and /tmp is sticky (1777) — the venue user can't remove a root-owned
 	// file there. Mirrors the builder tarball cleanup in RunVenueHomeArtifactBuilder.
-	if err := dexec.RunSystem(ctx, fmt.Sprintf("rm -f %s\n", spec.ShellQuote(venueTar)), opts); err != nil {
+	if err := dexec.RunSystem(ctx, fmt.Sprintf("rm -f %s\n", shellquote.ShellQuote(venueTar)), opts); err != nil {
 		return fmt.Errorf("extract %s:%s (candy=%s): remove tarball on venue: %w", s.Source, s.Path, s.CandyName, err)
 	}
 	return nil

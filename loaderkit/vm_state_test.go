@@ -14,10 +14,10 @@ import (
 func TestVmStateFromFleetConfig(t *testing.T) {
 	// A present entry yields its VmState.
 	dc := &spec.FleetConfig{Fleet: map[string]spec.FleetNode{
-		"vm:arch": {VmState: &spec.VmDeployState{SshPort: 2244}},
+		"vm:arch": {VmState: &spec.VmDeployState{SSHPort: 2244}},
 	}}
-	if got := VmStateFromFleetConfig(dc, "arch"); got == nil || got.SshPort != 2244 {
-		t.Fatalf("VmStateFromFleetConfig(arch) = %+v, want SshPort=2244", got)
+	if got := VmStateFromFleetConfig(dc, "arch"); got == nil || got.SSHPort != 2244 {
+		t.Fatalf("VmStateFromFleetConfig(arch) = %+v, want SSHPort=2244", got)
 	}
 	// A missing entity degrades to nil.
 	if got := VmStateFromFleetConfig(dc, "missing"); got != nil {

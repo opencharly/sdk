@@ -4,6 +4,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -73,6 +74,6 @@ func EnvPairsToMap(pairs []string) map[string]string {
 // pairs (the OCI-label wire + env-resolution chain form). RELOCATED to the spec/spec fabric
 // slice (#55 coneB build-render cone, Class A — github.com/opencharly/spec/spec/env_pairs_coneb.go);
 // re-exported here so every existing kit.EnvMapToPairs call site (sdk/deploykit's deploy_file.go
-// + read_labels.go, kit/box_metadata.go) is unchanged. New consumers reference spec.EnvMapToPairs
+// + read_labels.go, kit/box_metadata.go) is unchanged. New consumers reference proc.EnvMapToPairs
 // directly.
-var EnvMapToPairs = spec.EnvMapToPairs
+var EnvMapToPairs = proc.EnvMapToPairs

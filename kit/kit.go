@@ -92,10 +92,10 @@ func Passf(format string, a ...any) Result { return Pass(fmt.Sprintf(format, a..
 func Failf(format string, a ...any) Result { return Fail(fmt.Sprintf(format, a...)) }
 func Skipf(format string, a ...any) Result { return Skip(fmt.Sprintf(format, a...)) }
 
-// ShellQuote moved to the fabric slice github.com/opencharly/spec/spec
+// ShellQuote moved to the fabric slice github.com/opencharly/spec/shellquote
 // (shellquote.go, #55 step1) — a pure stdlib POSIX single-quoter is a fabric
 // primitive single-sourced in the spec contract module; every former
-// spec.ShellQuote caller now calls spec.ShellQuote.
+// ShellQuote caller now calls shellquote.ShellQuote.
 
 // TrimPreview truncates s to a 200-char preview — homed in the fabric slice
 // github.com/opencharly/spec/spec (the same fabric-primitive class as ShellQuote),

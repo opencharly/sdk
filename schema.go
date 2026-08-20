@@ -12,6 +12,7 @@ import (
 	"github.com/opencharly/spec/climodel"
 	pb "github.com/opencharly/spec/proto"
 	"github.com/opencharly/spec/schemaconcat"
+	"github.com/opencharly/spec/spec"
 )
 
 // ProvidedCapability is one capability a plugin serves plus the CUE def that
@@ -35,9 +36,10 @@ type CLISubcommand = climodel.CLISubcommand
 // declared install-step Scope/Venue/Gate. Reverse is NOT declared (an external step's
 // teardown ops are recorded dynamically from its OpExecute reply).
 //
-// Relocated to spec/capability (#55 import-purity); re-exported here so plugin candy call
-// sites compile UNCHANGED.
-type StepContract = capability.StepContract
+// The typed spec.StepContract is the single canonical form (the former string-form
+// StepContract was deleted in the strict-cleanup cutover — R3); re-exported here so
+// plugin candy call sites compile UNCHANGED.
+type StepContract = spec.StepContract
 
 // BuildCapabilities is the serve-side half of the "every plugin ships its own CUE
 // schema" contract. It concatenates the plugin's embedded schema/*.cue via the SAME
@@ -95,7 +97,7 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 			pc.CommandModelJson = model
 		}
 		if c.StepContract != nil {
-			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope, Venue: int32(c.StepContract.Venue), Gate: c.StepContract.Gate, Emits: c.StepContract.Emits}
+			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope.String(), Venue: int32(c.StepContract.Venue), Gate: string(c.StepContract.Gate), Emits: c.StepContract.Emits}
 		}
 		for _, sc := range c.Subcommands {
 			pc.Subcommands = append(pc.Subcommands, &pb.CLISubcommand{Name: sc.Name, Help: sc.Help, Hidden: sc.Hidden})

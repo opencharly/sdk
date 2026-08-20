@@ -21,13 +21,13 @@ func TestResolveVmSshPort(t *testing.T) {
 		t.Fatalf("default: got (%d, %v), want (2222, nil)", p, err)
 	}
 	// Explicit fixed port.
-	if p, err := ResolveVmSshPort(&spec.ResolvedVm{SSH: &spec.VmSSH{Port: 2244}}, "vm-ssh-port-fixed-zzz"); err != nil || p != 2244 {
+	if p, err := ResolveVmSshPort(&spec.ResolvedVm{SSH: &spec.VmSsh{Port: 2244}}, "vm-ssh-port-fixed-zzz"); err != nil || p != 2244 {
 		t.Fatalf("fixed: got (%d, %v), want (2244, nil)", p, err)
 	}
 	// port_auto with a VM name absent from the (redirected, empty) overlay → allocate a free
 	// port. (The ephemeral range is high, so it is never the 2222 default — a default here would
 	// mean the port_auto branch silently did nothing.)
-	p, err := ResolveVmSshPort(&spec.ResolvedVm{SSH: &spec.VmSSH{PortAuto: true}}, "vm-ssh-port-auto-nonexistent-zzz")
+	p, err := ResolveVmSshPort(&spec.ResolvedVm{SSH: &spec.VmSsh{PortAuto: true}}, "vm-ssh-port-auto-nonexistent-zzz")
 	if err != nil {
 		t.Fatalf("port_auto: unexpected error: %v", err)
 	}
@@ -51,8 +51,8 @@ func TestResolveVmSshPort(t *testing.T) {
 func TestPruneStaleVmDottedTwin(t *testing.T) {
 	t.Run("removes a matching dotted twin", func(t *testing.T) {
 		dc := &FleetConfig{Fleet: map[string]FleetNode{
-			"check-sidecar-pod.check-sidecar-pod-ephvm":    {Target: "vm", VmState: &spec.VmDeployState{SshPort: 45551}},
-			"vm:check-sidecar-pod-check-sidecar-pod-ephvm": {Target: "vm", VmState: &spec.VmDeployState{SshPort: 33799}},
+			"check-sidecar-pod.check-sidecar-pod-ephvm":    {Target: "vm", VmState: &spec.VmDeployState{SSHPort: 45551}},
+			"vm:check-sidecar-pod-check-sidecar-pod-ephvm": {Target: "vm", VmState: &spec.VmDeployState{SSHPort: 33799}},
 		}}
 		got := PruneStaleVmDottedTwin(dc, "vm:check-sidecar-pod-check-sidecar-pod-ephvm")
 		if got != "check-sidecar-pod.check-sidecar-pod-ephvm" {

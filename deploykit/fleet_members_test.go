@@ -4,7 +4,7 @@ package deploykit
 // TestIsPodMember/TestTearDownMembers_* covered isPodMember/tearDownMembers via bare
 // spec.FleetNode{Target: "pod"} fixtures, relying on core's OLD nodeTraits' registry-fallback
 // branch (Descent nil → resolve via the live provider registry). The relocated
-// spec.IsVmVenue/spec.IsContainerVenue predicates read ONLY the wire-stamped node.Descent (no
+// fleet.IsVmVenue/fleet.IsContainerVenue predicates read ONLY the wire-stamped node.Descent (no
 // registry access, matching candy/plugin-check's own registry-free twin) — every node
 // BringUpMembers/TearDownMembers sees in practice comes from an already-loaded, Descent-stamped
 // project, so fixtures here stamp Descent directly instead of relying on a registry fallback that
@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/opencharly/spec/fleet"
 	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
 )
@@ -34,19 +35,19 @@ func localNode() *spec.FleetNode {
 // TestIsVmVenue_IsContainerVenue covers the routing predicates BringUpMembers/TearDownMembers
 // dispatch on, over Descent-stamped fixtures (the shape every LoadUnified'd node carries).
 func TestIsVmVenue_IsContainerVenue(t *testing.T) {
-	if !spec.IsContainerVenue(podNode()) {
+	if !fleet.IsContainerVenue(podNode()) {
 		t.Errorf("a container-venue node should be a pod member")
 	}
-	if spec.IsContainerVenue(vmNode("x")) || spec.IsContainerVenue(localNode()) {
+	if fleet.IsContainerVenue(vmNode("x")) || fleet.IsContainerVenue(localNode()) {
 		t.Errorf("vm/local venue nodes should NOT be container members")
 	}
-	if !spec.IsVmVenue(vmNode("x")) {
+	if !fleet.IsVmVenue(vmNode("x")) {
 		t.Errorf("an ssh-venue node should be a vm member")
 	}
-	if spec.IsVmVenue(podNode()) || spec.IsVmVenue(localNode()) {
+	if fleet.IsVmVenue(podNode()) || fleet.IsVmVenue(localNode()) {
 		t.Errorf("container/local venue nodes should NOT be vm members")
 	}
-	if spec.IsContainerVenue(nil) || spec.IsVmVenue(nil) {
+	if fleet.IsContainerVenue(nil) || fleet.IsVmVenue(nil) {
 		t.Errorf("a nil node is neither venue")
 	}
 }

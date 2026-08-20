@@ -33,6 +33,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/fleet"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -84,7 +85,7 @@ func memberDNSRefs(node *spec.FleetNode) map[string][]string {
 	}
 	refs := map[string][]string{}
 	for memberKey, member := range node.Members {
-		if member == nil || !spec.IsContainerVenue(member) {
+		if member == nil || !fleet.IsContainerVenue(member) {
 			continue
 		}
 		ops := make([]spec.Op, 0, len(member.Plan))
