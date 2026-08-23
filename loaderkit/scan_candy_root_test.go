@@ -15,6 +15,7 @@ import (
 // the candy name from the repo's own name when the sub-path is empty, and
 // QualifyRemoteSiblingDeps must NOT fabricate sibling paths for a root-level
 // remote (it has no siblings).
+// the candy name from the repo's own name when the sub-path is empty.
 
 func TestScanRemoteCandy_RootLevelNameDerivation(t *testing.T) {
 	repoDir := t.TempDir()
@@ -34,6 +35,7 @@ ripgrep:
 		return ParseCandyManifest(path, spec.Threaded{Kinds: map[string]bool{"candy": true}}, spec.CandyVocab{})
 	}
 
+	// Root-level ref: the bare ref IS the repo path (no /candy/<name> sub-path).
 	got, err := ScanRemoteCandy(repoDir, "github.com/opencharly/ripgrep", map[string]bool{"github.com/opencharly/ripgrep": true}, parseDoc)
 	if err != nil {
 		t.Fatalf("ScanRemoteCandy: %v", err)
@@ -107,6 +109,8 @@ ripgrep:
 		return ParseCandyManifest(path, spec.Threaded{Kinds: map[string]bool{"candy": true}}, spec.CandyVocab{})
 	}
 
+	// A typo'd repo path (charlyy) is NOT the repo itself and NOT under it: the
+	// scan must fail loudly, never silently scan this repo's root.
 	_, err := ScanRemoteCandy(repoDir, "github.com/opencharly/ripgrep", map[string]bool{"github.com/opencharly/charlyy/candy/ripgrep": true}, parseDoc)
 	if err == nil {
 		t.Fatal("foreign ref scanned without error — the root-level guard must fire only on the exact repo path")

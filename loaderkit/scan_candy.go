@@ -3,6 +3,7 @@ package loaderkit
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -69,14 +70,27 @@ func ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseDo
 	out := make(map[string]spec.ScannedCandy, len(wantRefs))
 
 	for bareRef := range wantRefs {
-		// Extract sub-path from bare ref: "github.com/org/repo/candy/name" -> "candy/name"
+		// Extract sub-path from bare ref: "github.com/org/repo/candy/name" -> "candy/name".
+		// A ref that IS the repo itself (no sub-path — the candy de-submodule cutover's
+		// root-level standalone candy) yields an empty sub-path: the manifest lives at
+		// the repo root. A ref NOT under repoPath at all (a typo) keeps the full ref as
+		// the sub-path and fails the candyDir stat below — never silently mis-resolves.
 		subPath := strings.TrimPrefix(bareRef, repoPath+"/")
+		if bareRef == repoPath {
+			subPath = ""
+		}
 		candyDir := filepath.Join(repoDir, subPath)
 
 		// Derive name from last segment
 		name := subPath
 		if idx := strings.LastIndex(subPath, "/"); idx != -1 {
 			name = subPath[idx+1:]
+		}
+		if name == "" {
+			// Root-level candy (the candy de-submodule cutover): a standalone candy
+			// repo's manifest lives at the repo root, so the ref's last path segment
+			// IS the repo itself — the candy name is the repo's own name.
+			name = path.Base(repoPath)
 		}
 
 		if _, err := os.Stat(candyDir); os.IsNotExist(err) {
