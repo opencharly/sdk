@@ -12,6 +12,9 @@ import (
 // scan_candy_root_test.go — the root-level remote candy (the candy de-submodule
 // cutover): a standalone candy repo's manifest lives at the repo ROOT, so the
 // bare ref's last path segment is the repo itself. ScanRemoteCandy must derive
+// the candy name from the repo's own name when the sub-path is empty, and
+// QualifyRemoteSiblingDeps must NOT fabricate sibling paths for a root-level
+// remote (it has no siblings).
 // the candy name from the repo's own name when the sub-path is empty.
 
 func TestScanRemoteCandy_RootLevelNameDerivation(t *testing.T) {
@@ -114,5 +117,41 @@ ripgrep:
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("foreign ref error = %v, want the hard not-found error", err)
+	}
+}
+
+// The root-level remote candy has NO siblings: a bare dep must NOT be qualified
+// to a fabricated sibling path (the candy de-submodule cutover).
+func TestQualifyRemoteSiblingDeps_RootLevelSkips(t *testing.T) {
+	refs := spec.CandyRefs{
+		Require:       []spec.CandyRefEntry{{Raw: "pixi"}},
+		IncludedCandy: []spec.CandyRefEntry{{Raw: "ffmpeg"}},
+		BakePlugin:    []spec.CandyRefEntry{{Raw: "plugin-x"}},
+	}
+	QualifyRemoteSiblingDeps("github.com/opencharly/layer-python", "", &refs)
+	for _, e := range refs.Require {
+		if e.Resolved != "" {
+			t.Fatalf("root-level require qualified to %q — must stay bare", e.Resolved)
+		}
+	}
+	for _, e := range refs.IncludedCandy {
+		if e.Resolved != "" {
+			t.Fatalf("root-level candy dep qualified to %q — must stay bare", e.Resolved)
+		}
+	}
+	for _, e := range refs.BakePlugin {
+		if e.Resolved != "" {
+			t.Fatalf("root-level bake_plugin qualified to %q — must stay bare", e.Resolved)
+		}
+	}
+}
+
+// The candy-library form (SubPathPrefix "candy/") must keep qualifying bare
+// deps to siblings in the same repo.
+func TestQualifyRemoteSiblingDeps_SubPathStillQualifies(t *testing.T) {
+	refs := spec.CandyRefs{Require: []spec.CandyRefEntry{{Raw: "ripgrep"}}}
+	QualifyRemoteSiblingDeps("github.com/opencharly/charly", "candy/", &refs)
+	if refs.Require[0].Resolved != "github.com/opencharly/charly/candy/ripgrep" {
+		t.Fatalf("sub-path dep = %q, want the sibling qualification", refs.Require[0].Resolved)
 	}
 }

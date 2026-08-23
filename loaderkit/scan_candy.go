@@ -298,6 +298,15 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 // pre-move charly/layers.go qualifyRemoteSiblingDeps, retargeted at the CandyRefs carrier (the
 // live *Candy's Require/IncludedCandy/BakePlugin fields this mutated in place pre-move).
 func QualifyRemoteSiblingDeps(repoPath, subPathPrefix string, refs *spec.CandyRefs) {
+	// A ROOT-LEVEL remote candy (the candy de-submodule cutover — a standalone candy
+	// repo whose manifest lives at the repo root, SubPathPrefix "") has NO siblings:
+	// qualifying a bare dep to repoPath+"/"+name would fabricate a wrong sibling path
+	// (github.com/org/layer-python/pixi for a bare pixi dep). The bare name is left
+	// untouched and resolves against the scan set (the local library or another
+	// downloaded remote).
+	if subPathPrefix == "" {
+		return
+	}
 	qualify := func(list []spec.CandyRefEntry) {
 		for i := range list {
 			if !list[i].IsRemote() {
