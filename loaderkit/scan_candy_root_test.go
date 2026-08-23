@@ -111,4 +111,7 @@ ripgrep:
 	if err == nil {
 		t.Fatal("foreign ref scanned without error — the root-level guard must fire only on the exact repo path")
 	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("foreign ref error = %v, want the hard not-found error", err)
+	}
 }
