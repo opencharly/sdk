@@ -73,9 +73,10 @@ func ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseDo
 		// Extract sub-path from bare ref: "github.com/org/repo/candy/name" -> "candy/name".
 		// A ref that IS the repo itself (no sub-path — the candy de-submodule cutover's
 		// root-level standalone candy) yields an empty sub-path: the manifest lives at
-		// the repo root.
+		// the repo root. A ref NOT under repoPath at all (a typo) keeps the full ref as
+		// the sub-path and fails the candyDir stat below — never silently mis-resolves.
 		subPath := strings.TrimPrefix(bareRef, repoPath+"/")
-		if subPath == bareRef {
+		if bareRef == repoPath {
 			subPath = ""
 		}
 		candyDir := filepath.Join(repoDir, subPath)

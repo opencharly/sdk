@@ -86,3 +86,29 @@ func TestScanRemoteCandy_SubPathNameUnchanged(t *testing.T) {
 		t.Fatalf("sub-path prefix = %q, want %q", sc.View.SubPathPrefix, "candy/")
 	}
 }
+
+// A ref NOT under repoPath at all (a typo'd repo path) must keep the hard
+// "not found" error — the root-level guard fires only on the exact repo path.
+func TestScanRemoteCandy_ForeignRefStillErrors(t *testing.T) {
+	repoDir := t.TempDir()
+	body := `version: 2026.232.0520
+ripgrep:
+    candy:
+        version: 2026.144.1443
+        description: Fast recursive text search (rg)
+`
+	if err := os.WriteFile(filepath.Join(repoDir, "charly.yml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	parseDoc := func(path string) (*spec.CandyYAML, error) {
+		return ParseCandyManifest(path, spec.Threaded{Kinds: map[string]bool{"candy": true}}, spec.CandyVocab{})
+	}
+
+	// A typo'd repo path (charlyy) is NOT the repo itself and NOT under it: the
+	// scan must fail loudly, never silently scan this repo's root.
+	_, err := ScanRemoteCandy(repoDir, "github.com/opencharly/ripgrep", map[string]bool{"github.com/opencharly/charlyy/candy/ripgrep": true}, parseDoc)
+	if err == nil {
+		t.Fatal("foreign ref scanned without error — the root-level guard must fire only on the exact repo path")
+	}
+}
