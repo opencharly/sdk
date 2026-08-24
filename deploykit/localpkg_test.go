@@ -833,3 +833,78 @@ func TestCandyProjectDir(t *testing.T) {
 		t.Errorf("candyProjectDir orphan = %q, want \"\"", got)
 	}
 }
+
+// TestCompileLocalPkgStep_SkipsWhenDistroRepoProvidesPackage is the regression
+// guard for the double-install: a candy that declares BOTH `packaging:` and a
+// `distro:` section whose repo provides the same package name must NOT emit a
+// LocalPkgInstallStep (the repo install is canonical; the localpkg fallback
+// would install the same package twice — apt's "Packages were downgraded and
+// -y was used without --allow-downgrades" failure). The negative control — a
+// candy with packaging: but no distro repo — must still emit the step.
+func TestCompileLocalPkgStep_SkipsWhenDistroRepoProvidesPackage(t *testing.T) {
+	img := &ResolvedBox{ResolvedBox: spec.ResolvedBox{
+		Name: "test-img", Pkg: "pac", Distro: []string{"arch"},
+		EffectiveVersion: "2026.225.1200",
+	}, DistroDef: &spec.ResolvedDistro{
+		Format: map[string]*spec.Format{
+			"pac": {LocalPkg: &spec.LocalPkg{
+				DownloadTemplate: "https://opencharly.github.io/charly-arch/${ARCH}/charly-${ARCH}.pkg.tar.zst",
+				InstallTemplate:  "pacman -U --noconfirm {{.StageDir}}/{{.Glob}}",
+				Probe:            "command -v pacman",
+			}},
+		},
+	}}
+
+	// Positive: packaging + distro repo for the same package → nil (repo install is canonical).
+	withRepo := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+		TagSections: map[string]spec.TagPkgConfig{
+			"arch": {
+				Package: []string{"charly"},
+				Raw: map[string]any{
+					"repo": []map[string]any{{"name": "charly", "server": "https://opencharly.github.io/charly-arch/amd64/"}},
+				},
+			},
+		},
+	}, spec.CandyView{})
+	if step := CompileLocalPkgStep(withRepo, img, HostContext{}); step != nil {
+		t.Errorf("CompileLocalPkgStep with distro repo for the same package = %#v, want nil (repo install is canonical)", step)
+	}
+
+	// Negative control: packaging but NO distro repo → step still emitted.
+	noRepo := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+	}, spec.CandyView{})
+	step := CompileLocalPkgStep(noRepo, img, HostContext{})
+	if step == nil {
+		t.Fatal("CompileLocalPkgStep with packaging but no distro repo = nil, want a LocalPkgInstallStep (localpkg is the fallback)")
+	}
+	if _, ok := step.(*LocalPkgInstallStep); !ok {
+		t.Errorf("step = %#v, want *LocalPkgInstallStep", step)
+	}
+
+	// Edge: distro section with a package list but NO repo entry → step still emitted.
+	noRepoEntry := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+		TagSections: map[string]spec.TagPkgConfig{
+			"arch": {Package: []string{"charly"}},
+		},
+	}, spec.CandyView{})
+	if step := CompileLocalPkgStep(noRepoEntry, img, HostContext{}); step == nil {
+		t.Error("CompileLocalPkgStep with a package list but no repo entry = nil, want a LocalPkgInstallStep (no repo install to conflict with)")
+	}
+
+	// Edge: distro repo exists but does NOT provide the packaged name → step still emitted.
+	otherPkg := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+		TagSections: map[string]spec.TagPkgConfig{
+			"arch": {
+				Package: []string{"other-tool"},
+				Raw:     map[string]any{"repo": []map[string]any{{"name": "other", "server": "https://example.com/repo"}}},
+			},
+		},
+	}, spec.CandyView{})
+	if step := CompileLocalPkgStep(otherPkg, img, HostContext{}); step == nil {
+		t.Error("CompileLocalPkgStep with a repo that does not provide the packaged name = nil, want a LocalPkgInstallStep")
+	}
+}

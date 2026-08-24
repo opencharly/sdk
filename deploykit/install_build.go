@@ -205,6 +205,18 @@ func CompileLocalPkgStep(layer CandyModel, img *ResolvedBox, _ HostContext) Inst
 	if pkg == nil || pkg.Name == "" {
 		return nil
 	}
+	// The distro repo install is the CANONICAL path: when the candy's `distro:`
+	// section already provides pkg.Name via a repo entry for the target distro,
+	// the local_pkg fallback would double-install the package (apt's "Packages
+	// were downgraded and -y was used without --allow-downgrades" failure when
+	// the same .deb lands twice — the charly candy's packaging: + distro: repo
+	// both name `charly`). Skip the localpkg step entirely; the
+	// SystemPackagesStep (CompileSystemPackageSteps) installs pkg.Name from the
+	// declared repo. local_pkg remains the fallback for candies that declare
+	// packaging: but no distro repo.
+	if distroRepoProvidesPackage(layer, img, pkg.Name) {
+		return nil
+	}
 	return &LocalPkgInstallStep{
 		PackageName: pkg.Name,
 		Version:     img.EffectiveVersion,
@@ -213,6 +225,34 @@ func CompileLocalPkgStep(layer CandyModel, img *ResolvedBox, _ HostContext) Inst
 		Format:      fmtName,
 		LocalPkg:    lp,
 	}
+}
+
+// distroRepoProvidesPackage reports whether the candy's `distro:` section
+// declares a repo entry whose package list includes pkgName for the target
+// distro. The check walks the SAME cascade chain as ResolveCascadePackages
+// (img.Distro tags most-specific-first + the format-family tag), so the
+// localpkg skip can never diverge from the system-package resolution that
+// installs pkgName from the repo. A tag section counts only when BOTH hold:
+// its `package:` list names pkgName AND it declares at least one `repo:`
+// entry — a package list without a repo is not a repo install, and the
+// localpkg fallback still applies.
+func distroRepoProvidesPackage(layer CandyModel, img *ResolvedBox, pkgName string) bool {
+	if pkgName == "" {
+		return false
+	}
+	for _, tag := range CascadeTagChain(img) {
+		cfg := layer.TagSection(tag)
+		if cfg == nil {
+			continue
+		}
+		if !slices.Contains(cfg.Package, pkgName) {
+			continue
+		}
+		if len(toMapSlice(cfg.Raw["repo"])) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // CompileExtractSteps emits one ExtractStep per candy `extract:` entry, but ONLY for
