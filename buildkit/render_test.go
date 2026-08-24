@@ -18,6 +18,122 @@ import (
 // distro vocabulary declares for that format (rpm/pac/aur), so the render
 // assertions are byte-for-byte the same test, decoupled from the charly loader.
 
+// TestUnifiedInstallBodyRendersBothVenues proves the R3 shape end to end: a
+// venue-agnostic `phase.install.install` body (written with `&& \`
+// continuations, valid plain shell AND inside a Dockerfile RUN) renders as a
+// plain shell command for the host venue and as a BuildKit RUN for the
+// container venue — one canonical body, venue applied at render by
+// spec.FormatPhaseTemplate (sdk#…).
+func TestUnifiedInstallBodyRendersBothVenues(t *testing.T) {
+	rpm := &spec.Format{
+		CacheMount: []spec.CacheMount{{Dst: "/var/cache/libdnf5", Sharing: "locked"}},
+		Phases: &spec.PhaseSet{
+			Install: &spec.PhaseTemplates{Install: `{{- range .Repos}}{{if .url}}
+    dnf5 config-manager addrepo --from-repofile={{quote .url}} 2>/dev/null || true && \
+{{- end}}{{end}}
+    dnf install -y{{range .Options}} {{.}}{{end}}{{range .Packages}} {{.}}{{end}}
+`},
+		},
+	}
+	ctx := &spec.InstallContext{
+		CacheMounts: rpm.CacheMount,
+		Packages:    []string{"charly"},
+		Repos: []map[string]any{{
+			"name": "charly",
+			"url":  "https://opencharly.github.io/charly-fedora/amd64/",
+		}},
+	}
+
+	// Host venue: the body verbatim, runnable as plain shell.
+	hostTmpl := FormatPhaseTemplate(rpm, spec.PhaseInstall, spec.VenueHostNative)
+	host, err := RenderTemplate("rpm-host-unified", hostTmpl, ctx)
+	if err != nil {
+		t.Fatalf("host render error: %v", err)
+	}
+	if !strings.Contains(host, "dnf5 config-manager addrepo --from-repofile=\"https://opencharly.github.io/charly-fedora/amd64/\"") {
+		t.Errorf("host render missing the repo add; got:\n%s", host)
+	}
+	if !strings.Contains(host, "dnf install -y charly") {
+		t.Errorf("host render missing the package install; got:\n%s", host)
+	}
+
+	// Container venue: the body under a BuildKit RUN + cacheMounts.
+	containerTmpl := FormatPhaseTemplate(rpm, spec.PhaseInstall, spec.VenueContainerBuilder)
+	container, err := RenderTemplate("rpm-container-unified", containerTmpl, ctx)
+	if err != nil {
+		t.Fatalf("container render error: %v", err)
+	}
+	if !strings.Contains(container, "RUN --mount=type=cache,id=charly-var-cache-libdnf5,dst=/var/cache/libdnf5,sharing=locked") {
+		t.Errorf("container render missing the cacheMounts RUN prefix; got:\n%s", container)
+	}
+	if !strings.Contains(container, "dnf install -y charly") {
+		t.Errorf("container render missing the package install; got:\n%s", container)
+	}
+}
+
+// TestPacUnifiedInstallKeyBranchUsesHasPrefix proves the hasPrefix template
+// func routes a repo key: that is an http(s) URL (a published key FILE — curl +
+// pacman-key --add, the deterministic keyserver-free mechanism) from a bare
+// fingerprint (pacman-key --recv-keys). This test FAILS without the hasPrefix
+// func (the template errors: function "hasPrefix" not defined) — the
+// failing-without-fix coverage for the render.go change.
+func TestPacUnifiedInstallKeyBranchUsesHasPrefix(t *testing.T) {
+	pac := &spec.Format{
+		Phases: &spec.PhaseSet{
+			Install: &spec.PhaseTemplates{Install: `{{- range .Repos}}
+    printf '[{{.name}}]\nServer = {{.server}}\nSigLevel = {{default .siglevel "Optional TrustAll"}}\n' >> /etc/pacman.conf && \
+{{- if .key}}
+{{- if hasPrefix (printf "%v" .key) "http"}}
+    curl -fsSL {{quote .key}} -o /tmp/{{.name}}.gpg && pacman-key --add /tmp/{{.name}}.gpg && \
+{{- else}}
+    pacman-key --recv-keys {{.key}} && pacman-key --lsign-key {{.key}} && \
+{{- end}}
+{{- end}}
+{{- end}}
+    pacman -Syu --noconfirm --needed{{range .Packages}} {{.}}{{end}}
+`},
+		},
+	}
+
+	urlCtx := &spec.InstallContext{
+		Packages: []string{"charly"},
+		Repos: []map[string]any{{
+			"name":   "charly",
+			"server": "https://opencharly.github.io/charly-arch/amd64/",
+			"key":    "https://opencharly.github.io/charly-arch/charly.gpg",
+		}},
+	}
+	urlOut, err := RenderTemplate("pac-url-key", pac.Phases.Install.Install, urlCtx)
+	if err != nil {
+		t.Fatalf("URL-key render error (hasPrefix not wired?): %v", err)
+	}
+	if !strings.Contains(urlOut, "curl -fsSL \"https://opencharly.github.io/charly-arch/charly.gpg\" -o /tmp/charly.gpg && pacman-key --add") {
+		t.Errorf("URL key: want the curl+add branch, got:\n%s", urlOut)
+	}
+	if strings.Contains(urlOut, "pacman-key --recv-keys") {
+		t.Errorf("URL key: must NOT take the recv-keys branch; got:\n%s", urlOut)
+	}
+
+	fprCtx := &spec.InstallContext{
+		Packages: []string{"charly"},
+		Repos: []map[string]any{{
+			"name":   "charly",
+			"server": "https://opencharly.github.io/charly-arch/amd64/",
+			"key":    "978DFF11A951A830F7ADA2D4062B073E9D1BAE2E",
+		}},
+	}
+	fprOut, err := RenderTemplate("pac-fpr-key", pac.Phases.Install.Install, fprCtx)
+	if err != nil {
+		t.Fatalf("fingerprint-key render error: %v", err)
+	}
+	if !strings.Contains(fprOut, "pacman-key --recv-keys 978DFF11A951A830F7ADA2D4062B073E9D1BAE2E") {
+		t.Errorf("fingerprint key: want the recv-keys branch, got:\n%s", fprOut)
+	}
+	if strings.Contains(fprOut, "curl -fsSL") {
+		t.Errorf("fingerprint key: must NOT take the curl branch; got:\n%s", fprOut)
+	}
+}
+
 // TestRpmHostCellHandlesRepos proves the rpm phase.install.host cell renders the
 // repo setup the container cell has always had: the .repo file write (with the
 // gpgkey), the key import, and --enable-repo on the install line. Regression for

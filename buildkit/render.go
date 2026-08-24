@@ -121,6 +121,13 @@ var TemplateFuncs = template.FuncMap{
 	// inline `.repo` file generated locally.
 	"hasSuffix": strings.HasSuffix,
 
+	// hasPrefix reports whether a string starts with the given prefix. Used by
+	// the pac install template to distinguish a repo `key:` that is a published
+	// key FILE URL (fetch via curl + pacman-key --add — the deterministic,
+	// keyserver-free mechanism every other format uses) from a keyserver
+	// fingerprint (pacman-key --recv-keys).
+	"hasPrefix": strings.HasPrefix,
+
 	// anyRepoHasURL reports whether any repo entry declares a `url` key
 	// (i.e. needs `dnf5 config-manager addrepo`). Lets install_template
 	// conditionally install `dnf5-plugins` — necessary on bootc bases
