@@ -139,6 +139,18 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 						p := spec.ParseRemoteRef(dep.Raw)
 						return enqueue(p.RepoPath, p.Version, dep.Bare())
 					}
+					// A ROOT-LEVEL remote candy (the candy de-submodule cutover — a
+					// standalone candy repo whose manifest lives at the repo root,
+					// SubPathPrefix "") has NO siblings: enqueuing
+					// repoPath+"/"+""+dep.Raw would fabricate a wrong sibling ref
+					// (github.com/opencharly/layer-cuda/nvidia for a bare nvidia dep)
+					// whose sub-path does not exist in the repo — the fetch fix-point's
+					// mirror of QualifyRemoteSiblingDeps' skip (#160). The bare name is
+					// left untouched and resolves against the scan set (the local
+					// library or another downloaded remote).
+					if sc.View.SubPathPrefix == "" {
+						return nil
+					}
 					return enqueue(dl.RepoPath, dl.Version, dl.RepoPath+"/"+sc.View.SubPathPrefix+dep.Raw)
 				}
 				for _, dep := range sc.Refs.Require {

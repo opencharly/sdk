@@ -1,6 +1,7 @@
 package loaderkit
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,4 +155,166 @@ func TestQualifyRemoteSiblingDeps_SubPathStillQualifies(t *testing.T) {
 	if refs.Require[0].Resolved != "github.com/opencharly/charly/candy/ripgrep" {
 		t.Fatalf("sub-path dep = %q, want the sibling qualification", refs.Require[0].Resolved)
 	}
+}
+
+// scan_orchestrate_test.go's sibling — the FETCH fix-point's mirror of the
+// qualify skip. A root-level remote candy (SubPathPrefix "") has NO siblings,
+// so the enqueue leg must NOT fabricate repoPath+"/"+dep for a bare dep: the
+// next fix-point round would scan the fabricated ref against the repo at the
+// tag and die "remote candy github.com/opencharly/layer-cuda/nvidia not found
+// at .../layer-cuda@v2026.235.2110/nvidia" (the exact batch-1 bed failure).
+// The bare dep must instead be left to resolve against the scan set (the local
+// library or another downloaded remote).
+func TestScanCandyFromLocal_RootLevelBareDepNotEnqueued(t *testing.T) {
+	const (
+		repoPath  = "github.com/opencharly/layer-cuda"
+		tag       = "v2026.235.2110"
+		rootRef   = "github.com/opencharly/layer-cuda"
+		localName = "nvidia"
+	)
+	repoDir := t.TempDir()
+	body := `version: 2026.232.0520
+cuda:
+    candy:
+        version: 2026.229.1218
+        require:
+            - nvidia
+            - '@github.com/opencharly/layer-ffmpeg:v2026.235.2057'
+`
+	if err := os.WriteFile(filepath.Join(repoDir, "charly.yml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parseDoc := func(path string) (*spec.CandyYAML, error) {
+		return ParseCandyManifest(path, spec.Threaded{Kinds: map[string]bool{"candy": true}}, spec.CandyVocab{})
+	}
+
+	// ScanRemote fails the test if it is ever asked for the FABRICATED sibling
+	// ref — that is the regression this test gates. The only refs the fix-point
+	// may scan are the root ref itself and the @-pinned remote dep.
+	var scannedRefs []string
+	ffmpegDir := t.TempDir()
+	ffmpegBody := `version: 2026.232.0520
+ffmpeg:
+    candy:
+        version: 2026.235.2057
+        description: ffmpeg
+        package:
+            - ffmpeg
+`
+	if err := os.WriteFile(filepath.Join(ffmpegDir, "charly.yml"), []byte(ffmpegBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seams := spec.ScanSeams{
+		CollectRemoteRefs: func(map[string]spec.ScannedCandy) ([]spec.RemoteDownload, error) {
+			return []spec.RemoteDownload{{RepoPath: repoPath, Version: tag, Refs: []string{rootRef}}}, nil
+		},
+		EnsureRepo: func(repo, _ string) (string, error) {
+			if repo == "github.com/opencharly/layer-ffmpeg" {
+				return ffmpegDir, nil
+			}
+			return repoDir, nil
+		},
+		ScanRemote: func(cacheDir, repo string, wantRefs map[string]bool) (map[string]spec.ScannedCandy, error) {
+			for ref := range wantRefs {
+				scannedRefs = append(scannedRefs, ref)
+				if ref != rootRef && ref != "github.com/opencharly/layer-ffmpeg" {
+					return nil, fmt.Errorf("fix-point scanned fabricated ref %q — the root-level bare dep must not be enqueued as a sibling", ref)
+				}
+			}
+			return ScanRemoteCandy(cacheDir, repo, wantRefs, parseDoc)
+		},
+	}
+
+	// The bare `nvidia` dep must resolve against the SCAN SET — the local
+	// library — not a fabricated sibling in the layer-cuda repo.
+	local := map[string]spec.ScannedCandy{
+		localName: {
+			Model: spec.CandyModel{Name: localName, Version: "2026.229.1218", SourceDir: "/local/candy/" + localName},
+			View:  spec.CandyView{Name: localName},
+		},
+	}
+
+	got, err := ScanCandyFromLocal(local, nil, seams)
+	if err != nil {
+		t.Fatalf("ScanCandyFromLocal: %v", err)
+	}
+	root, ok := got[rootRef]
+	if !ok {
+		t.Fatalf("root-level ref %q missing from scan result; got %v", rootRef, got)
+	}
+	if root.GetSourceDir() != repoDir {
+		t.Fatalf("root-level SourceDir = %q, want %q", root.GetSourceDir(), repoDir)
+	}
+	// The local dep must still be present under its bare name.
+	if _, ok := got[localName]; !ok {
+		t.Fatalf("local dep %q missing from scan result", localName)
+	}
+	for _, ref := range scannedRefs {
+		if ref == repoPath+"/nvidia" {
+			t.Fatalf("fix-point scanned the fabricated sibling ref %q", ref)
+		}
+	}
+}
+
+// The SUB-PATH form (SubPathPrefix "candy/") must keep the sibling enqueue —
+// the negative control that keeps this fix from degenerating into "drop all
+// plain-name deps of remote candies". A sub-path remote candy's bare dep is a
+// same-repo sibling at the same tag, so the fix-point must still enqueue
+// repoPath+"/candy/"+dep.
+func TestScanCandyFromLocal_SubPathBareDepStillEnqueued(t *testing.T) {
+	repoDir := t.TempDir()
+	// The sub-path (candy-library) form: NO root project `version:` line — the
+	// repo root is a candy/ tree; the manifest is the plain node form.
+	body := `lib:
+    candy:
+        version: 2026.229.1218
+        require:
+            - ripgrep
+`
+	if err := os.MkdirAll(filepath.Join(repoDir, "candy", "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "candy", "lib", "charly.yml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The sibling the bare dep resolves to — its manifest must exist so the
+	// enqueued scan materializes it.
+	if err := os.MkdirAll(filepath.Join(repoDir, "candy", "ripgrep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "candy", "ripgrep", "charly.yml"), []byte(`ripgrep:
+    candy:
+        version: 2026.235.1000
+        description: Fast recursive text search (rg)
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var scanned []string
+	seams := spec.ScanSeams{
+		CollectRemoteRefs: func(map[string]spec.ScannedCandy) ([]spec.RemoteDownload, error) {
+			return []spec.RemoteDownload{{
+				RepoPath: "github.com/opencharly/charly",
+				Version:  "v2026.235.1000",
+				Refs:     []string{"github.com/opencharly/charly/candy/lib"},
+			}}, nil
+		},
+		EnsureRepo: func(_, _ string) (string, error) { return repoDir, nil },
+		ScanRemote: func(_ string, _ string, wantRefs map[string]bool) (map[string]spec.ScannedCandy, error) {
+			for ref := range wantRefs {
+				scanned = append(scanned, ref)
+			}
+			return ScanRemoteCandy(repoDir, "github.com/opencharly/charly", wantRefs, func(path string) (*spec.CandyYAML, error) {
+				return ParseCandyManifest(path, spec.Threaded{Kinds: map[string]bool{"candy": true}}, spec.CandyVocab{})
+			})
+		},
+	}
+	got, err := ScanCandyFromLocal(nil, nil, seams)
+	if err != nil {
+		t.Fatalf("ScanCandyFromLocal: %v", err)
+	}
+	if _, ok := got["github.com/opencharly/charly/candy/ripgrep"]; !ok {
+		t.Fatalf("sibling candy %q not fetched/enqueued — the sub-path form must keep the sibling enqueue; got %v", "github.com/opencharly/charly/candy/ripgrep", got)
+	}
+	_ = scanned
 }
