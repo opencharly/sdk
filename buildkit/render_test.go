@@ -18,6 +18,59 @@ import (
 // distro vocabulary declares for that format (rpm/pac/aur), so the render
 // assertions are byte-for-byte the same test, decoupled from the charly loader.
 
+// TestUnifiedInstallBodyRendersBothVenues proves the R3 shape end to end: a
+// venue-agnostic `phase.install.install` body (written with `&& \`
+// continuations, valid plain shell AND inside a Dockerfile RUN) renders as a
+// plain shell command for the host venue and as a BuildKit RUN for the
+// container venue — one canonical body, venue applied at render by
+// spec.FormatPhaseTemplate (sdk#…).
+func TestUnifiedInstallBodyRendersBothVenues(t *testing.T) {
+	rpm := &spec.Format{
+		CacheMount: []spec.CacheMount{{Dst: "/var/cache/libdnf5", Sharing: "locked"}},
+		Phases: &spec.PhaseSet{
+			Install: &spec.PhaseTemplates{Install: `{{- range .Repos}}{{if .url}}
+    dnf5 config-manager addrepo --from-repofile={{quote .url}} 2>/dev/null || true && \
+{{- end}}{{end}}
+    dnf install -y{{range .Options}} {{.}}{{end}}{{range .Packages}} {{.}}{{end}}
+`},
+		},
+	}
+	ctx := &spec.InstallContext{
+		CacheMounts: rpm.CacheMount,
+		Packages:    []string{"charly"},
+		Repos: []map[string]any{{
+			"name": "charly",
+			"url":  "https://opencharly.github.io/charly-fedora/amd64/",
+		}},
+	}
+
+	// Host venue: the body verbatim, runnable as plain shell.
+	hostTmpl := FormatPhaseTemplate(rpm, spec.PhaseInstall, spec.VenueHostNative)
+	host, err := RenderTemplate("rpm-host-unified", hostTmpl, ctx)
+	if err != nil {
+		t.Fatalf("host render error: %v", err)
+	}
+	if !strings.Contains(host, "dnf5 config-manager addrepo --from-repofile=\"https://opencharly.github.io/charly-fedora/amd64/\"") {
+		t.Errorf("host render missing the repo add; got:\n%s", host)
+	}
+	if !strings.Contains(host, "dnf install -y charly") {
+		t.Errorf("host render missing the package install; got:\n%s", host)
+	}
+
+	// Container venue: the body under a BuildKit RUN + cacheMounts.
+	containerTmpl := FormatPhaseTemplate(rpm, spec.PhaseInstall, spec.VenueContainerBuilder)
+	container, err := RenderTemplate("rpm-container-unified", containerTmpl, ctx)
+	if err != nil {
+		t.Fatalf("container render error: %v", err)
+	}
+	if !strings.Contains(container, "RUN --mount=type=cache,id=charly-var-cache-libdnf5,dst=/var/cache/libdnf5,sharing=locked") {
+		t.Errorf("container render missing the cacheMounts RUN prefix; got:\n%s", container)
+	}
+	if !strings.Contains(container, "dnf install -y charly") {
+		t.Errorf("container render missing the package install; got:\n%s", container)
+	}
+}
+
 // TestRpmHostCellHandlesRepos proves the rpm phase.install.host cell renders the
 // repo setup the container cell has always had: the .repo file write (with the
 // gpgkey), the key import, and --enable-repo on the install line. Regression for
