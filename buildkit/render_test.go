@@ -77,6 +77,57 @@ func TestRpmHostCellHandlesRepos(t *testing.T) {
 	}
 }
 
+// TestPacHostCellHandlesRepos proves the pac phase.install.host cell renders the
+// Keys/Repos setup the container cell has always had: the repo appended to
+// /etc/pacman.conf and the key imported. Regression for the check-cachyos-vm
+// `target not found: charly` — the host cell was bare `pacman -Syu ...` with no
+// repo handling, so a candy's distro repo was never added on the host/VM venue.
+// The fixture is a literal copy of the host cell in charly/charly.yml; the
+// charly-side presence check lives in charly/format_config_test.go.
+func TestPacHostCellHandlesRepos(t *testing.T) {
+	pac := &spec.Format{
+		CacheMount: []spec.CacheMount{{Dst: "/var/cache/pacman/pkg", Sharing: "locked"}},
+		Phases: &spec.PhaseSet{
+			Install: &spec.PhaseTemplates{Host: `{{- range .Keys}}
+    pacman-key --recv-keys {{.}} && pacman-key --lsign-key {{.}} && \
+{{- end}}
+{{- range .Repos}}
+    printf '[{{.name}}]\nServer = {{.server}}\nSigLevel = {{default .siglevel "Optional TrustAll"}}\n' >> /etc/pacman.conf && \
+{{- if .key}}
+    pacman-key --recv-keys {{.key}} && pacman-key --lsign-key {{.key}} && \
+{{- end}}
+{{- end}}
+    pacman -Syu --noconfirm --needed{{range .Options}} {{.}}{{end}}{{range .Packages}} {{.}}{{end}}
+`},
+		},
+	}
+	ctx := &spec.InstallContext{
+		CacheMounts: pac.CacheMount,
+		Packages:    []string{"charly"},
+		Keys:        []string{"978DFF11A951A830F7ADA2D4062B073E9D1BAE2E"},
+		Repos: []map[string]any{{
+			"name":     "charly",
+			"server":   "https://opencharly.github.io/charly-arch/amd64/",
+			"key":      "978DFF11A951A830F7ADA2D4062B073E9D1BAE2E",
+			"siglevel": "Required DatabaseOptional",
+		}},
+	}
+	out, err := RenderTemplate("pac-host-test", pac.Phases.Install.Host, ctx)
+	if err != nil {
+		t.Fatalf("render error: %v", err)
+	}
+	for _, want := range []string{
+		"Server = https://opencharly.github.io/charly-arch/amd64/",
+		"/etc/pacman.conf",
+		"pacman-key --recv-keys 978DFF11A951A830F7ADA2D4062B073E9D1BAE2E",
+		"pacman -Syu --noconfirm --needed charly",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("pac host install missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestRpmTemplateWithModules(t *testing.T) {
 	rpm := &spec.Format{
 		CacheMount: []spec.CacheMount{{Dst: "/var/cache/libdnf5", Sharing: "locked"}},
