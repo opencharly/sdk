@@ -18,6 +18,65 @@ import (
 // distro vocabulary declares for that format (rpm/pac/aur), so the render
 // assertions are byte-for-byte the same test, decoupled from the charly loader.
 
+// TestRpmHostCellHandlesRepos proves the rpm phase.install.host cell renders the
+// repo setup the container cell has always had: the .repo file write (with the
+// gpgkey), the key import, and --enable-repo on the install line. Regression for
+// the check-fedora-vm `No match for argument: charly` — the host cell was bare
+// `dnf install -y ...` with no repo handling, so a candy's distro repo was never
+// added on the host/VM venue. The fixture is a literal copy of the host cell in
+// charly/charly.yml (the embedded vocabulary), mirroring TestRpmTemplateWithModules'
+// container-cell fixture; the charly-side presence check lives in
+// charly/format_config_test.go (charly/ core must not import sdk).
+func TestRpmHostCellHandlesRepos(t *testing.T) {
+	rpm := &spec.Format{
+		CacheMount: []spec.CacheMount{{Dst: "/var/cache/libdnf5", Sharing: "locked"}},
+		Phases: &spec.PhaseSet{
+			Install: &spec.PhaseTemplates{Host: `{{- range .Repos}}{{if .rpm}}
+    dnf install -y {{quote .rpm}} && \
+{{- end}}{{end}}
+{{- if or (anyRepoHasURL .Repos) .Copr}}
+    dnf install -y dnf5-plugins && \
+{{- end}}
+{{- range .Repos}}{{if .url}}
+{{- if hasSuffix (printf "%s" .url) ".repo"}}
+    dnf5 config-manager addrepo --from-repofile={{quote .url}} 2>/dev/null || true && \
+    dnf5 config-manager setopt {{quote (printf "%s.enabled=0" .name)}} && \
+{{- else}}
+    printf '%s\n' '[{{.name}}]' 'name={{.name}}' 'baseurl={{.url}}' 'enabled=0' 'gpgcheck={{if eq (default .gpgcheck "true") "false"}}0{{else}}1{{end}}'{{if .repo_gpgcheck}} 'repo_gpgcheck={{if eq (printf "%v" .repo_gpgcheck) "false"}}0{{else}}1{{end}}'{{end}}{{if .gpgkey}} 'gpgkey={{.gpgkey}}'{{end}} > /etc/yum.repos.d/{{.name}}.repo && \
+{{- end}}
+{{- if .gpgkey}}
+    rpm --import {{.gpgkey}} || true && \
+{{- end}}
+{{- end}}{{end}}
+    dnf install -y{{range .Options}} {{.}}{{end}}{{range .Repos}}{{if .url}} --enable-repo={{quote .name}}{{end}}{{end}}{{range .Exclude}} --exclude='{{.}}'{{end}}{{range .Packages}} {{.}}{{end}}
+`},
+		},
+	}
+	ctx := &spec.InstallContext{
+		CacheMounts: rpm.CacheMount,
+		Packages:    []string{"charly"},
+		Repos: []map[string]any{{
+			"name":   "charly",
+			"url":    "https://opencharly.github.io/charly-fedora/amd64/",
+			"gpgkey": "https://opencharly.github.io/charly-fedora/RPM-GPG-KEY-charly",
+		}},
+	}
+	out, err := RenderTemplate("rpm-host-test", rpm.Phases.Install.Host, ctx)
+	if err != nil {
+		t.Fatalf("render error: %v", err)
+	}
+	for _, want := range []string{
+		"/etc/yum.repos.d/charly.repo",
+		"gpgkey=https://opencharly.github.io/charly-fedora/RPM-GPG-KEY-charly",
+		"rpm --import https://opencharly.github.io/charly-fedora/RPM-GPG-KEY-charly",
+		"--enable-repo=\"charly\"",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rpm host install missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestRpmTemplateWithModules(t *testing.T) {
 	rpm := &spec.Format{
 		CacheMount: []spec.CacheMount{{Dst: "/var/cache/libdnf5", Sharing: "locked"}},
