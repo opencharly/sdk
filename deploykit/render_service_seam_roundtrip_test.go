@@ -30,8 +30,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	egress "github.com/opencharly/charly/candy/plugin-egress"
-	initkind "github.com/opencharly/charly/candy/plugin-init"
+	egress "github.com/opencharly/plugin-egress/candy/plugin-egress"
+	initkind "github.com/opencharly/plugin-init/candy/plugin-init"
 	"github.com/opencharly/sdk"
 	pb "github.com/opencharly/spec/proto"
 	"github.com/opencharly/spec/spec"

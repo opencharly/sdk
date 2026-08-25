@@ -10,8 +10,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/goreleaser/nfpm/v2 v2.47.0
 	github.com/klauspost/compress v1.19.2
-	github.com/opencharly/charly/candy/plugin-egress v0.0.0-20260806230842-5cda00cb0fbc
-	github.com/opencharly/charly/candy/plugin-init v0.0.0-20260806230842-5cda00cb0fbc
+	github.com/opencharly/plugin-egress/candy/plugin-egress v0.2026237.1419
+	github.com/opencharly/plugin-init/candy/plugin-init v0.2026237.1424
 	github.com/opencharly/spec v0.2026232.521-0.20260824192047-0c29ab15816d
 	golang.org/x/term v0.43.0
 	google.golang.org/grpc v1.61.0
