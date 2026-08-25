@@ -108,7 +108,7 @@ type RemoteResolver func(repoPath, version string) (fetchedDir string, err error
 // (candy/<name>/charly.yml, box/<name>/charly.yml) — the same two the loader uses — so the
 // result is exactly what an author has written down.
 func CollectEntities(roots []Root) ([]Entity, error) {
-	return collectEntitiesWithRemote(roots, nil, "")
+	return collectEntitiesWithRemote(roots, nil)
 }
 
 // CollectEntitiesRemote extends CollectEntities with the candy de-submodule cutover's
@@ -120,9 +120,8 @@ func CollectEntities(roots []Root) ([]Entity, error) {
 // runtime scan materialises). Entity.SourceRoot carries the fetched repo dir for remote entities
 // so schema reads resolve against the fetched tree, not the local project root.
 //
-// rootRefs is the seed: refs found in the LOCAL files' require:/candy: lists before any fetch.
 func CollectEntitiesRemote(roots []Root, resolve RemoteResolver) ([]Entity, error) {
-	return collectEntitiesWithRemote(roots, resolve, "")
+	return collectEntitiesWithRemote(roots, resolve)
 }
 
 // collectEntitiesWithRemote is the shared walker behind CollectEntities (resolve == nil) and
@@ -130,7 +129,7 @@ func CollectEntitiesRemote(roots []Root, resolve RemoteResolver) ([]Entity, erro
 // FS walk of candy/ + box/. When resolve is set, every @github.com/opencharly/... ref found in
 // the walked files (local AND fetched) is resolved and the fetched repo's entities unioned in,
 // fix-pointing until no new refs surface.
-func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver, _ string) ([]Entity, error) {
+func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, error) {
 	var out []Entity
 	seenRefs := map[string]bool{} // repoPath:version -> fetched (or attempted)
 
@@ -262,8 +261,8 @@ func collectRefs(path string) []string {
 
 // parseRemoteRef decomposes a @github.com/opencharly/<kind>-<name>:v<calver> ref into its repo
 // path (host/org/repo — the first three segments) and version, or nil for anything else.
-// Subpaths (e.g. the pre-cutover @github.com/opencharly/charly/candy/<name> in-repo form) are
-// kept in the returned subpath so callers can distinguish a standalone repo from an in-repo ref.
+// The pre-cutover in-repo form (@github.com/opencharly/charly/candy/<name>) is excluded by the
+// caller (collectRefs skips RepoPath == github.com/opencharly/charly).
 func parseRemoteRef(ref string) *parsedRemoteRef {
 	rest := strings.TrimPrefix(ref, "@")
 	idx := strings.LastIndex(rest, ":")
@@ -279,13 +278,11 @@ func parseRemoteRef(ref string) *parsedRemoteRef {
 		return nil
 	}
 	repoPath := strings.Join(segs[:3], "/")
-	subPath := strings.Join(segs[3:], "/")
-	return &parsedRemoteRef{RepoPath: repoPath, SubPath: subPath, Version: ver}
+	return &parsedRemoteRef{RepoPath: repoPath, Version: ver}
 }
 
 type parsedRemoteRef struct {
 	RepoPath string
-	SubPath  string
 	Version  string
 }
 
