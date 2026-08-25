@@ -292,7 +292,8 @@ type parsedRemoteRef struct {
 // ReadEntityFile decodes one charly.yml into its top-level nodes. The file is a map of entity
 // NAME to a single kind key (name-first shape); each (name, kind, value) triple is one Entity.
 // A charly.yml that does not fit the name-first shape (a multi-doc bed, a template) is skipped
-// rather than failing the whole discovery.
+// rather than failing the whole discovery. Scalar top-level keys (the standalone repos' prepended
+// `version: <calver>` schema header) are tolerated and ignored — they are not entities.
 func ReadEntityFile(path string, r Root, relDir string) ([]Entity, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -301,19 +302,24 @@ func ReadEntityFile(path string, r Root, relDir string) ([]Entity, error) {
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	var doc map[string]map[string]yaml.Node
+	var doc map[string]yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		// Not catalog content — skip it rather than failing the whole walk.
 		return nil, nil //nolint:nilerr // intentionally tolerant: non-catalog shapes are skipped
 	}
 	var out []Entity
-	for name, kinds := range doc {
-		// Each key in the node's value map is a kind discriminator (`candy:`, `skill:`, …).
-		// A directive-style key (`discover:` …) has a non-map value that yaml.Unmarshal into
-		// map[string]yaml.Node already rejected at the file level, so every (kind, value) pair
-		// here is an entity node; the loader gates a node with no/several discriminators.
-		for kind, value := range kinds {
-			out = append(out, Entity{Name: name, Namespace: r.Namespace, Dir: relDir, Kind: kind, Value: value})
+	for name, node := range doc {
+		// The node's value is a mapping of KIND discriminators (`candy:`, `skill:`, …) to their
+		// value bodies. A SCALAR top-level key (the prepended `version: <calver>` header, or a
+		// directive-style key) is not an entity — skip it. This is the shape the pre-cutover
+		// in-repo manifests (name-first with no header) and the standalone repos (header +
+		// name-first) both share, so the same reader walks both.
+		if node.Kind != yaml.MappingNode {
+			continue
+		}
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			kind := node.Content[i].Value
+			out = append(out, Entity{Name: name, Namespace: r.Namespace, Dir: relDir, Kind: kind, Value: *node.Content[i+1]})
 		}
 	}
 	return out, nil
