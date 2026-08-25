@@ -77,3 +77,112 @@ func TestReadEntityFile_SkipsNonCatalogShapes(t *testing.T) {
 		t.Fatalf("directive-only file produced %d entities, want 0", len(ents))
 	}
 }
+
+// TestCollectEntitiesRemote_FetchesRemoteCandy is the Phase-3 discovery seam proof: a local root
+// whose candy dir references a MOVED candy via @github.com/opencharly/... resolves that repo
+// through the caller-supplied resolver and includes the fetched candy's entity (root-manifest
+// layout, SourceRoot = the fetched dir) in the union. This is exactly what Phase 4 requires:
+// after the in-repo candy/ dirs are deleted, discovery still surfaces every moved candy.
+func TestCollectEntitiesRemote_FetchesRemoteCandy(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "candy", "local-keeper"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	local := `local-keeper:
+    candy:
+        version: 2026.200.1000
+        description: A local fixture candy.
+`
+	if err := os.WriteFile(filepath.Join(root, "candy", "local-keeper", "charly.yml"), []byte(local), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The fetched "remote repo" is a synthetic export dir: a config candy's root manifest.
+	fetched := t.TempDir()
+	remoteManifest := `ripgrep:
+    candy:
+        version: 2026.144.1443
+        description: Fast recursive text search.
+`
+	if err := os.WriteFile(filepath.Join(fetched, "charly.yml"), []byte(remoteManifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	roots := []Root{{Namespace: "", Dir: root}}
+	resolve := func(repoPath, version string) (string, error) {
+		if repoPath != "github.com/opencharly/layer-ripgrep" || version != "v2026.144.1443" {
+			t.Fatalf("resolver called with unexpected repo %q version %q", repoPath, version)
+		}
+		return fetched, nil
+	}
+
+	// The local keeper references the moved ripgrep candy in its candy: list.
+	ref := "@github.com/opencharly/layer-ripgrep:v2026.144.1443"
+	if err := os.WriteFile(filepath.Join(root, "candy", "local-keeper", "charly.yml"),
+		[]byte(local+"        candy:\n            - '"+ref+"'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ents, err := CollectEntitiesRemote(roots, resolve)
+	if err != nil {
+		t.Fatalf("CollectEntitiesRemote: %v", err)
+	}
+	var remote *Entity
+	for i := range ents {
+		if ents[i].Name == "ripgrep" {
+			remote = &ents[i]
+		}
+	}
+	if remote == nil {
+		t.Fatalf("moved candy ripgrep not discovered from the remote; got entities: %+v", ents)
+	}
+	if remote.SourceRoot != fetched {
+		t.Fatalf("remote entity SourceRoot = %q, want %q (schema reads must resolve against the fetched tree)", remote.SourceRoot, fetched)
+	}
+	if remote.Dir != "." {
+		t.Fatalf("remote root-manifest entity Dir = %q, want \".\"", remote.Dir)
+	}
+
+	// The schema/ dir read must resolve against the FETCHED tree (SourceRoot), not the local
+	// project root — the docs generator's collectPlugins reads schema/ from the entity dir.
+	// Create a schema file in the fetched export and assert the entity's schema dir resolves
+	// there (the walker surfaces the entity; the schema read is the generator's job, so this
+	// asserts the SourceRoot contract that makes that read land in the fetched tree).
+	schemaDir := filepath.Join(fetched, "schema")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(schemaDir, "ripgrep.cue"), []byte("package schema\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(remote.SourceRoot, remote.Dir, "schema", "ripgrep.cue")); err != nil {
+		t.Fatalf("schema read against SourceRoot failed: %v (SourceRoot=%q Dir=%q)", err, remote.SourceRoot, remote.Dir)
+	}
+}
+
+// TestCollectEntities_UnchangedDefault pins the pre-Phase-4 default: CollectEntities (no resolver)
+// is byte-for-byte the pure local FS walk — no remote resolution, no SourceRoot override.
+func TestCollectEntities_UnchangedDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "candy", "plain"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `plain:
+    candy:
+        version: 2026.200.1000
+        description: A local fixture candy.
+`
+	if err := os.WriteFile(filepath.Join(dir, "candy", "plain", "charly.yml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := CollectEntities([]Root{{Namespace: "", Dir: dir}})
+	if err != nil {
+		t.Fatalf("CollectEntities: %v", err)
+	}
+	if len(ents) != 1 || ents[0].Name != "plain" {
+		t.Fatalf("local walk: got %+v, want exactly the plain entity", ents)
+	}
+	if ents[0].SourceRoot != dir {
+		t.Fatalf("local entity SourceRoot = %q, want the local root %q", ents[0].SourceRoot, dir)
+	}
+}
