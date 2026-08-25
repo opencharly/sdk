@@ -142,6 +142,22 @@ func TestCollectEntitiesRemote_FetchesRemoteCandy(t *testing.T) {
 	if remote.Dir != "." {
 		t.Fatalf("remote root-manifest entity Dir = %q, want \".\"", remote.Dir)
 	}
+
+	// The schema/ dir read must resolve against the FETCHED tree (SourceRoot), not the local
+	// project root — the docs generator's collectPlugins reads schema/ from the entity dir.
+	// Create a schema file in the fetched export and assert the entity's schema dir resolves
+	// there (the walker surfaces the entity; the schema read is the generator's job, so this
+	// asserts the SourceRoot contract that makes that read land in the fetched tree).
+	schemaDir := filepath.Join(fetched, "schema")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(schemaDir, "ripgrep.cue"), []byte("package schema\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(remote.SourceRoot, remote.Dir, "schema", "ripgrep.cue")); err != nil {
+		t.Fatalf("schema read against SourceRoot failed: %v (SourceRoot=%q Dir=%q)", err, remote.SourceRoot, remote.Dir)
+	}
 }
 
 // TestCollectEntities_UnchangedDefault pins the pre-Phase-4 default: CollectEntities (no resolver)
