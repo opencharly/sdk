@@ -240,13 +240,24 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver, _ string) (
 var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[a-zA-Z0-9._/-]+:v[0-9]+\.[0-9]+\.[0-9]+`)
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy
-// refs only — package names and bare candy names are never remote refs).
+// refs only — package names and bare candy names are never remote refs). Refs that point INTO
+// the charly repo itself (@github.com/opencharly/charly/candy/<name> — the pre-cutover in-repo
+// form, still carried by box submodule repos until their own cutover) are NOT standalone candy
+// repos and are skipped: they resolve to the LOCAL charly checkout's candy dir, which the local
+// FS walk already surfaces (or, after Phase 4, are stale refs swept by the box repos' own
+// cutover).
 func collectRefs(path string) []string {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	return remoteRefRe.FindAllString(string(raw), -1)
+	var out []string
+	for _, ref := range remoteRefRe.FindAllString(string(raw), -1) {
+		if pr := parseRemoteRef(ref); pr != nil && pr.RepoPath != "github.com/opencharly/charly" {
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // parseRemoteRef decomposes a @github.com/opencharly/<repo>:v<calver> ref into its repo path and
