@@ -260,23 +260,32 @@ func collectRefs(path string) []string {
 	return out
 }
 
-// parseRemoteRef decomposes a @github.com/opencharly/<repo>:v<calver> ref into its repo path and
-// version, or nil for anything else.
+// parseRemoteRef decomposes a @github.com/opencharly/<kind>-<name>:v<calver> ref into its repo
+// path (host/org/repo — the first three segments) and version, or nil for anything else.
+// Subpaths (e.g. the pre-cutover @github.com/opencharly/charly/candy/<name> in-repo form) are
+// kept in the returned subpath so callers can distinguish a standalone repo from an in-repo ref.
 func parseRemoteRef(ref string) *parsedRemoteRef {
 	rest := strings.TrimPrefix(ref, "@")
 	idx := strings.LastIndex(rest, ":")
 	if idx == -1 {
 		return nil
 	}
-	repo, ver := rest[:idx], rest[idx+1:]
-	if repo == "" || ver == "" {
+	path, ver := rest[:idx], rest[idx+1:]
+	if path == "" || ver == "" {
 		return nil
 	}
-	return &parsedRemoteRef{RepoPath: repo, Version: ver}
+	segs := strings.Split(path, "/")
+	if len(segs) < 3 {
+		return nil
+	}
+	repoPath := strings.Join(segs[:3], "/")
+	subPath := strings.Join(segs[3:], "/")
+	return &parsedRemoteRef{RepoPath: repoPath, SubPath: subPath, Version: ver}
 }
 
 type parsedRemoteRef struct {
 	RepoPath string
+	SubPath  string
 	Version  string
 }
 
