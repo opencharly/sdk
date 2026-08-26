@@ -12,7 +12,7 @@ require (
 	github.com/klauspost/compress v1.19.2
 	github.com/opencharly/plugin-egress/candy/plugin-egress v0.2026237.1419
 	github.com/opencharly/plugin-init/candy/plugin-init v0.2026237.1424
-	github.com/opencharly/spec v0.2026232.521-0.20260824192047-0c29ab15816d
+	github.com/opencharly/spec v0.2026232.521-0.20260826090151-ce44afab8bbf
 	golang.org/x/term v0.43.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
@@ -81,5 +81,3 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.7.1 // indirect
 )
-
-replace github.com/opencharly/spec => /home/atrawog/Sync/Atrapub/coder/pi/opencharly/spec
