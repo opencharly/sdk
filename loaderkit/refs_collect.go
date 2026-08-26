@@ -209,8 +209,8 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 	// is unused now (kept for call-site stability + future diagnostics).
 	type repoVer struct{ repo, ver string }
 	pairs := make(map[repoVer]map[string]bool) // (repo, git-tag) -> set of bare refs
-	// Track resolved default branches per repo (to avoid duplicate git queries)
-	defaultBranches := make(map[string]string)
+	// Track resolved latest tags per repo (to avoid duplicate git queries)
+	latestTags := make(map[string]string)
 
 	addRef := func(ref, source string) error {
 		_ = source
@@ -221,18 +221,28 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 		bareRef := spec.BareCandyRef(ref)
 		version := parsed.Version
 		if version == "" {
-			// No version specified -- resolve to default branch
-			if branch, ok := defaultBranches[parsed.RepoPath]; ok {
-				version = branch
+			// No version specified -- resolve to the LATEST TAG (the candy de-submodule cutover,
+			// Phase 4). A version-less remote ref (e.g. a builder plugin connected by word ref,
+			// where the caller knows the repo but not the tag) previously fell back to the
+			// MUTABLE default branch — a freshness-checked ref that hangs in a network-bound
+			// CI/container and can advance under the resolver. The newest tag is immutable and
+			// deterministic; a repo with no tags errors loudly rather than silently pinning a
+			// branch.
+			if tag, ok := latestTags[parsed.RepoPath]; ok {
+				version = tag
 			} else {
 				repoURL := refs.RepoGitURL(parsed.RepoPath)
-				branch, err := refs.GitDefaultBranch(repoURL)
-				if err != nil {
-					return fmt.Errorf("%s: cannot resolve default branch for %s: %w", source, parsed.RepoPath, err)
+				resolveTag := seams.LatestTag
+				if resolveTag == nil {
+					resolveTag = refs.GitLatestTag
 				}
-				version = branch
-				defaultBranches[parsed.RepoPath] = branch
-				fmt.Fprintf(os.Stderr, "Resolved @%s -> %s (default branch)\n", parsed.RepoPath, version)
+				tag, err := resolveTag(repoURL)
+				if err != nil {
+					return fmt.Errorf("%s: cannot resolve latest tag for %s: %w", source, parsed.RepoPath, err)
+				}
+				version = tag
+				latestTags[parsed.RepoPath] = tag
+				fmt.Fprintf(os.Stderr, "Resolved @%s -> %s (latest tag)\n", parsed.RepoPath, version)
 			}
 		}
 		key := repoVer{parsed.RepoPath, version}

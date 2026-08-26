@@ -8,6 +8,7 @@ import (
 
 	"github.com/opencharly/sdk"
 	"github.com/opencharly/spec/proc"
+	"github.com/opencharly/spec/refs"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -53,6 +54,7 @@ func RefsSeamsFromExecutor(ctx context.Context, ex *sdk.Executor) spec.RefsColle
 		// computes its own override independently); reading its VALUE is plain os.Getenv, never
 		// something core had to do for us.
 		OverrideEnvValue: os.Getenv(proc.RepoOverrideEnv),
+		LatestTag:        refs.GitLatestTag,
 	}
 }
 
