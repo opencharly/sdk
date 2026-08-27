@@ -23,6 +23,14 @@ func remoteBuildConfigCacheRoot(candies map[string]CandyModel) string {
 		if l == nil || !l.GetRemote() || l.GetSourceDir() == "" {
 			continue
 		}
+		// A ROOT-LEVEL standalone candy (the de-submodule cutover's shape: the manifest lives at
+		// the repo root, ref == repoPath) has an empty SubPathPrefix and its SourceDir IS the
+		// repo@version cache root itself — no suffix to strip. A subpath candy (old
+		// candy/<name> inside the charly repo, or any future multi-candy repo) carries
+		// SubPathPrefix like "candy/"; strip it to reach the shared cache root.
+		if l.GetSubPathPrefix() == "" {
+			return l.GetSourceDir()
+		}
 		suffix := filepath.Join(l.GetSubPathPrefix(), l.GetName())
 		if trimmed, ok := strings.CutSuffix(l.GetSourceDir(), suffix); ok {
 			return strings.TrimRight(trimmed, string(filepath.Separator))
