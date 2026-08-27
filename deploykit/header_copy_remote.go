@@ -85,8 +85,7 @@ func materializeBuildConfigAsset(candies map[string]CandyModel, dir, buildDir, r
 }
 
 // rewriteHeaderCopyForRemote rewrites a `COPY <src> <dst>` header directive so its source points
-// at a materialized build-config asset when the original src isn't in the local build context.
-// Plain 3-token COPY only; anything else passes through.
+// at the materialized build-config asset (or stays as-authored when no remote source is found).
 func rewriteHeaderCopyForRemote(candies map[string]CandyModel, dir, buildDir, headerCopy string) (string, error) {
 	fields := strings.Fields(headerCopy)
 	if len(fields) != 3 || fields[0] != "COPY" {
@@ -96,8 +95,5 @@ func rewriteHeaderCopyForRemote(candies map[string]CandyModel, dir, buildDir, he
 	if err != nil {
 		return headerCopy, err
 	}
-	if newSrc == fields[1] {
-		return headerCopy, nil
-	}
-	return fmt.Sprintf("COPY %s %s", newSrc, fields[2]), nil
+	return "COPY " + newSrc + " " + fields[2], nil
 }
