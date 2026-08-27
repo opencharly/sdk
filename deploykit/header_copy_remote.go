@@ -15,28 +15,41 @@ import (
 // (Remote/SourceDir/SubPathPrefix/Name, all exposed by the CandyModel interface) plus the render
 // dir + build dir the plugin already holds — so this needs no host callback at all.
 
-// remoteBuildConfigCacheRoot finds the shared repo@version cache root a remote candy's build.yml
-// was read from, by stripping the candy subpath off any remote candy's cached SourceDir (every
-// remote candy + the remote build.yml share one repo@version cache).
-func remoteBuildConfigCacheRoot(candies map[string]CandyModel) string {
+// remoteBuildConfigCacheRoots returns the DISTINCT repo@version cache roots every remote candy's
+// build.yml was read from, by stripping each candy's subpath off its cached SourceDir. Before the
+// candy de-submodule cutover every remote candy + the remote build.yml shared ONE repo@version
+// cache (the charly repo); the cutover moved each candy to its own standalone repo, so the cache
+// roots are now per-repo and the build-config asset (e.g. the supervisord init header_file) may
+// live in ANY of them. Deduplicated so a repo with several candies yields one root.
+func remoteBuildConfigCacheRoots(candies map[string]CandyModel) []string {
+	seen := map[string]bool{}
+	var out []string
 	for _, l := range candies {
 		if l == nil || !l.GetRemote() || l.GetSourceDir() == "" {
 			continue
 		}
+		var root string
 		// A ROOT-LEVEL standalone candy (the de-submodule cutover's shape: the manifest lives at
 		// the repo root, ref == repoPath) has an empty SubPathPrefix and its SourceDir IS the
 		// repo@version cache root itself — no suffix to strip. A subpath candy (old
 		// candy/<name> inside the charly repo, or any future multi-candy repo) carries
 		// SubPathPrefix like "candy/"; strip it to reach the shared cache root.
 		if l.GetSubPathPrefix() == "" {
-			return l.GetSourceDir()
+			root = l.GetSourceDir()
+		} else {
+			suffix := filepath.Join(l.GetSubPathPrefix(), l.GetName())
+			trimmed, ok := strings.CutSuffix(l.GetSourceDir(), suffix)
+			if !ok {
+				continue
+			}
+			root = strings.TrimRight(trimmed, string(filepath.Separator))
 		}
-		suffix := filepath.Join(l.GetSubPathPrefix(), l.GetName())
-		if trimmed, ok := strings.CutSuffix(l.GetSourceDir(), suffix); ok {
-			return strings.TrimRight(trimmed, string(filepath.Separator))
+		if root != "" && !seen[root] {
+			seen[root] = true
+			out = append(out, root)
 		}
 	}
-	return ""
+	return out
 }
 
 // materializeBuildConfigAsset ensures a build-config asset file (referenced by a remotely-included
@@ -51,27 +64,28 @@ func materializeBuildConfigAsset(candies map[string]CandyModel, dir, buildDir, r
 	if _, err := os.Stat(filepath.Join(dir, relPath)); err == nil {
 		return relPath, nil // local build-config ships the asset; COPY works as-is
 	}
-	root := remoteBuildConfigCacheRoot(candies)
-	if root == "" {
-		return relPath, nil // no remote source to pull from; leave as authored
+	// Search EVERY distinct repo@version cache root — after the candy de-submodule cutover each
+	// remote candy lives in its own standalone repo, so the build-config asset (e.g. the init
+	// header_file) may live in any candy's cache root, not just the first.
+	for _, root := range remoteBuildConfigCacheRoots(candies) {
+		srcAbs := filepath.Join(root, relPath)
+		if _, err := os.Stat(srcAbs); err != nil {
+			continue
+		}
+		destAbs := filepath.Join(buildDir, "_buildconfig", relPath)
+		if err := os.MkdirAll(filepath.Dir(destAbs), 0755); err != nil {
+			return relPath, err
+		}
+		if out, err := exec.Command("cp", "-a", srcAbs, destAbs).CombinedOutput(); err != nil {
+			return relPath, fmt.Errorf("materializing build-config asset %s: %s: %w", relPath, string(out), err)
+		}
+		return filepath.ToSlash(filepath.Join(".build", "_buildconfig", relPath)), nil
 	}
-	srcAbs := filepath.Join(root, relPath)
-	if _, err := os.Stat(srcAbs); err != nil {
-		return relPath, nil // not in the remote cache either; leave as authored
-	}
-	destAbs := filepath.Join(buildDir, "_buildconfig", relPath)
-	if err := os.MkdirAll(filepath.Dir(destAbs), 0755); err != nil {
-		return relPath, err
-	}
-	if out, err := exec.Command("cp", "-a", srcAbs, destAbs).CombinedOutput(); err != nil {
-		return relPath, fmt.Errorf("materializing build-config asset %s: %s: %w", relPath, string(out), err)
-	}
-	return filepath.ToSlash(filepath.Join(".build", "_buildconfig", relPath)), nil
+	return relPath, nil // not in any remote cache root; leave as authored
 }
 
 // rewriteHeaderCopyForRemote rewrites a `COPY <src> <dst>` header directive so its source points
-// at a materialized build-config asset when the original src isn't in the local build context.
-// Plain 3-token COPY only; anything else passes through.
+// at the materialized build-config asset (or stays as-authored when no remote source is found).
 func rewriteHeaderCopyForRemote(candies map[string]CandyModel, dir, buildDir, headerCopy string) (string, error) {
 	fields := strings.Fields(headerCopy)
 	if len(fields) != 3 || fields[0] != "COPY" {
@@ -81,8 +95,5 @@ func rewriteHeaderCopyForRemote(candies map[string]CandyModel, dir, buildDir, he
 	if err != nil {
 		return headerCopy, err
 	}
-	if newSrc == fields[1] {
-		return headerCopy, nil
-	}
-	return fmt.Sprintf("COPY %s %s", newSrc, fields[2]), nil
+	return "COPY " + newSrc + " " + fields[2], nil
 }
