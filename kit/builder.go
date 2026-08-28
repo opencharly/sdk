@@ -40,10 +40,25 @@ func BuilderCollectContext(word string, in spec.BuilderCollectInput) map[string]
 			ctx["replaces"] = in.Replaces
 		}
 		return ctx
-	case "npm", "cargo":
-		// Globals (npm) / binaries (cargo) are read from package.json / Cargo.toml host-side at
-		// install time (best-effort) — nothing derivable from the candy manifest alone.
+	case "npm":
+		// Globals are read from package.json host-side at install time (best-effort) —
+		// nothing derivable from the candy manifest alone.
 		return nil
+	case "cargo":
+		// A cargo BINARY crate's installed binaries are read from Cargo.toml host-side at
+		// install time (best-effort). A cargo LIBRARY crate is different: its artifacts go
+		// to a directory that is a pure function of the candy name, so the teardown is
+		// fully derivable HERE, with no manifest read at all.
+		//
+		// Recorded unconditionally, because whether a crate is a library is decided by the
+		// crate's own Cargo.toml inside the build context — not knowable at collect time.
+		// Both teardown ops are idempotent on a binary-crate candy (the directory and the
+		// drop-in simply do not exist), which is the same best-effort contract the other
+		// builders' reverse legs carry.
+		return map[string]any{
+			"lib_dir": CargoLibDir(in.Candy),
+			"ld_conf": CargoLdConfPath(in.Candy),
+		}
 	}
 	return nil
 }
@@ -72,13 +87,33 @@ func BuilderReverse(word string, in spec.BuilderReverseInput) []spec.ReverseOp {
 			}}
 		}
 	case "cargo":
+		var ops []spec.ReverseOp
 		if bins := builderCtxStringSlice(in.Context, "binaries"); len(bins) > 0 {
-			return []spec.ReverseOp{{
+			ops = append(ops, spec.ReverseOp{
 				Kind:    spec.ReverseOpCargoUninstall,
 				Targets: bins,
 				Scope:   spec.ScopeUser,
-			}}
+			})
 		}
+		// The library leg: the artifact directory and the loader drop-in that makes it
+		// visible are installed together, so they are removed together — leaving the
+		// ld.so.conf.d entry behind would point the loader at a directory that no longer
+		// exists.
+		if dir := builderCtxString(in.Context, "lib_dir"); dir != "" {
+			ops = append(ops, spec.ReverseOp{
+				Kind:    spec.ReverseOpRmDirRecursive,
+				Targets: []string{dir},
+				Scope:   spec.ScopeSystem,
+			})
+		}
+		if conf := builderCtxString(in.Context, "ld_conf"); conf != "" {
+			ops = append(ops, spec.ReverseOp{
+				Kind:    spec.ReverseOpRmFileSystem,
+				Targets: []string{conf},
+				Scope:   spec.ScopeSystem,
+			})
+		}
+		return ops
 	case "aur":
 		// aur packages install into the host package DB; reverse is a package-remove (the host
 		// renders UninstallCmd from the format's uninstall_template via fillReverseUninstallCmds).

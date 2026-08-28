@@ -17,7 +17,13 @@ func TestBuilderCollectContext(t *testing.T) {
 	}{
 		{"pixi", spec.BuilderCollectInput{Candy: "jupyter"}, map[string]any{"env_name": "default"}},
 		{"npm", spec.BuilderCollectInput{Candy: "claude-code"}, nil},
-		{"cargo", spec.BuilderCollectInput{Candy: "ripgrep"}, nil},
+		// cargo now records the LIBRARY leg's two paths. They are a pure function of the
+		// candy name, so they are derivable here with no Cargo.toml read — unlike the
+		// binary leg, which still needs one host-side at install time.
+		{"cargo", spec.BuilderCollectInput{Candy: "ripgrep"}, map[string]any{
+			"lib_dir": "/usr/local/lib/charly/ripgrep",
+			"ld_conf": "/etc/ld.so.conf.d/charly-ripgrep.conf",
+		}},
 		{
 			"aur",
 			spec.BuilderCollectInput{Candy: "chrome", Packages: []string{"google-chrome"}, Replaces: []string{"chromium"}},
