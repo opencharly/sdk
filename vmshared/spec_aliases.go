@@ -82,6 +82,7 @@ type (
 	LibvirtFeatures            = spec.LibvirtFeatures
 	LibvirtFilesystem          = spec.LibvirtFilesystem
 	LibvirtGraphics            = spec.LibvirtGraphics
+	LibvirtGraphicsGL          = spec.LibvirtGraphicsGL
 	LibvirtGraphicsListen      = spec.LibvirtGraphicsListen
 	LibvirtGraphicsListeners   = spec.LibvirtGraphicsListeners
 	LibvirtHostdev             = spec.LibvirtHostdev
@@ -120,6 +121,8 @@ type (
 	LibvirtVCPUPin             = spec.LibvirtVCPUPin
 	LibvirtVendorID            = spec.LibvirtVendorID
 	LibvirtVideo               = spec.LibvirtVideo
+	LibvirtVideoDriver         = spec.LibvirtVideoDriver
+	LibvirtVideoResolution     = spec.LibvirtVideoResolution
 	LibvirtVsock               = spec.LibvirtVsock
 	LibvirtWatchdog            = spec.LibvirtWatchdog
 	LocalSpec                  = spec.LocalSpec
