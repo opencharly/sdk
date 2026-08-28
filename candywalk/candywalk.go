@@ -119,7 +119,6 @@ func CollectEntities(roots []Root) ([]Entity, error) {
 // lists may surface new refs, which are fetched in turn, until closure (the same fix-point the
 // runtime scan materialises). Entity.SourceRoot carries the fetched repo dir for remote entities
 // so schema reads resolve against the fetched tree, not the local project root.
-//
 func CollectEntitiesRemote(roots []Root, resolve RemoteResolver) ([]Entity, error) {
 	return collectEntitiesWithRemote(roots, resolve)
 }

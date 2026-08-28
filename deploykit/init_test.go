@@ -21,6 +21,12 @@ import (
 // already covers in depth.
 
 func fakeRenderService(entry *spec.ServiceEntry, def *spec.ResolvedInit, ctx spec.ServiceRenderContext) (*spec.RenderedService, error) {
+	// Mirror the REAL render path: renderService applies BuildServiceRenderContext
+	// before touching a template. Without this the double diverged from production
+	// — it read entry-derived fields the caller happened to pre-seed, so it kept
+	// passing while the caller's projection was dead code, and it would have kept
+	// passing had that projection been wrong rather than merely redundant.
+	ctx = spec.BuildServiceRenderContext(entry, ctx)
 	return &spec.RenderedService{UnitText: "[program:" + ctx.Name + "]\ncommand=" + ctx.Exec + "\n"}, nil
 }
 
