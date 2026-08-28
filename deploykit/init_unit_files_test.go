@@ -138,3 +138,69 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+// A box that composes the init candy through its WRAPPER REPO is satisfied, and must
+// not be reported. ScanRemoteCandy names a root-level candy after its repo, so
+// `@github.com/opencharly/layer-supervisord` scans as "layer-supervisord" while the
+// entity it defines - the one depends_candy names - is "supervisord". Judging
+// satisfaction by the scanned name alone reported every post-cutover project as
+// unsatisfied even when it composed the candy explicitly.
+func TestOrderSatisfiesInitDependsAcrossWrapperRepoNames(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		order []string
+		want  bool
+	}{
+		{"the entity itself, in-repo", []string{"supervisord"}, true},
+		{"the wrapper repo, bare ref", []string{"github.com/opencharly/layer-supervisord"}, true},
+		{"a pod- wrapper", []string{"github.com/opencharly/pod-supervisord"}, true},
+		{"a sub-path candy ref", []string{"github.com/opencharly/x/candy/supervisord"}, true},
+		{"an unrelated candy", []string{"github.com/opencharly/pod-dbus"}, false},
+		{"a near-miss substring must NOT match", []string{"supervisord-extras"}, false},
+		{"empty order", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := orderSatisfiesInitDepends(tc.order, "supervisord"); got != tc.want {
+				t.Errorf("orderSatisfiesInitDepends(%v) = %v, want %v", tc.order, got, tc.want)
+			}
+		})
+	}
+}
+
+// The end-to-end shape of the false positive: a box that composes the wrapper repo is
+// silent, while a box that composes nothing is still reported.
+func TestUnsatisfiedInitDependsIgnoresBoxesThatComposeTheWrapperRepo(t *testing.T) {
+	var calls []string
+	orig := unsatisfiedInitDepends
+	unsatisfiedInitDepends = func(box, _, _ string) { calls = append(calls, box) }
+	t.Cleanup(func() { unsatisfiedInitDepends = orig })
+	unsatisfiedInitDependsSeen = sync.Map{}
+
+	cfg := &spec.Config{}
+	cfg.SetBox("has-it", spec.Box{Candy: []string{"app", "github.com/opencharly/layer-supervisord"}})
+	cfg.SetBox("lacks-it", spec.Box{Candy: []string{"app"}})
+	layers := map[string]CandyModel{
+		"app": serviceCandy("app", "supervisord"),
+		"github.com/opencharly/layer-supervisord": NewSpecCandyModel(
+			// Named after the REPO, exactly as ScanRemoteCandy names it.
+			spec.CandyModel{Name: "layer-supervisord"}, spec.CandyView{}),
+	}
+
+	InjectInitDependsCandy(cfg, layers, initVocabFixture())
+
+	for _, b := range calls {
+		if b == "has-it" {
+			t.Error("reported a box that composes the init candy through its wrapper repo: " +
+				"the image will start fine, so the report is a false alarm")
+		}
+	}
+	found := false
+	for _, b := range calls {
+		if b == "lacks-it" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("stopped reporting the box that genuinely cannot install its init")
+	}
+}

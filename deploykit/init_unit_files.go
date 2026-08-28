@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/opencharly/spec/spec"
@@ -96,4 +97,38 @@ var unsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
 			"will declare init %q with no %s binary and fail at start. Reference the candy "+
 			"directly in the box's candy: list, or pull it in via a composed candy's require:.\n",
 		boxName, initName, dependsCandy, initName, dependsCandy)
+}
+
+// orderSatisfiesInitDepends reports whether a box's RESOLVED candy order already
+// supplies the init's depends_candy.
+//
+// It has to tolerate a name divergence the de-submodule cutover introduced. A candy
+// repo is named after its REPO, not its entity: ScanRemoteCandy derives a root-level
+// candy's name from path.Base(repoPath), so `@github.com/opencharly/layer-supervisord`
+// scans as "layer-supervisord" while the entity it defines — and the one the init's
+// `depends_candy: supervisord` names — is "supervisord". The org wraps entities in
+// `<kind>-<entity>` repos (layer-, pod-, plugin-), so the wrapper prefix is the
+// convention, not an accident.
+//
+// Matching the bare name, the last path segment, and that segment's `-<entity>` suffix
+// covers every shape in the corpus without pretending the scanned name is the entity
+// name. Where it still cannot tell — a repo whose name shares no token with its entity
+// — the caller reports rather than guesses, which is the honest outcome.
+func orderSatisfiesInitDepends(order []string, dependsCandy string) bool {
+	if dependsCandy == "" {
+		return false
+	}
+	for _, key := range order {
+		if key == dependsCandy {
+			return true
+		}
+		seg := key
+		if i := strings.LastIndex(seg, "/"); i != -1 {
+			seg = seg[i+1:]
+		}
+		if seg == dependsCandy || strings.HasSuffix(seg, "-"+dependsCandy) {
+			return true
+		}
+	}
+	return false
 }
