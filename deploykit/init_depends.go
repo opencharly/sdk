@@ -91,7 +91,7 @@ func InjectInitDependsCandy(cfg *spec.Config, layers map[string]CandyModel, init
 		if err != nil {
 			continue
 		}
-		_, def := initCfg.ResolveInitSystem(layers, order, "")
+		_, def := initCfg.ResolveInitSystem(layers, order, img.Init)
 		if def == nil || def.DependsCandy == "" {
 			continue
 		}

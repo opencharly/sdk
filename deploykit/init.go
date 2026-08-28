@@ -335,21 +335,20 @@ func (g *Generator) GenerateInitFragments(boxName, initName string, def *spec.Re
 						continue
 					}
 				}
-				ctx := spec.ServiceRenderContext{
-					Name:             entry.Name,
-					Candy:            candyName,
-					Exec:             entry.Exec,
-					Env:              entry.Env,
-					EnvList:          MapToKeyValueSlice(entry.Env),
-					Restart:          entry.Restart,
-					WorkingDirectory: entry.WorkingDirectory,
-					User:             entry.User,
-					After:            entry.After,
-					Before:           entry.Before,
-					Stdout:           entry.Stdout,
-					StopTimeout:      entry.StopTimeout,
-					Scope:            entry.EffectiveScope(),
-				}
+				// ONLY the fields BuildServiceRenderContext does not derive from the
+				// entry itself. It runs inside RenderService and overwrites every
+				// entry-derived field, so seeding them here was dead — except for
+				// After/Before, which it APPENDS: pre-seeding those double-listed
+				// every ordering directive on a systemd render.
+				//
+				// The fields that actually belong here are the ones it cannot know,
+				// and they were the ones missing: without Home the home-expansion
+				// pass is skipped entirely, so `%(ENV_HOME)s` / `~` / `$HOME` in an
+				// exec or env value reach a systemd unit verbatim (supervisord
+				// expands `%(ENV_HOME)s` natively, which is why this stayed hidden),
+				// and without the unit dirs a scope: user unit has nowhere to land.
+				// Mirrors compile_service_steps.go's deploy-time context exactly.
+				ctx := fragmentRenderContext(candyName, img)
 				rendered, err := g.RenderService(entry, def, ctx)
 				if err != nil {
 					return fmt.Errorf("rendering service %s/%s/%s: %w", initName, candyName, entry.Name, err)

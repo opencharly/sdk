@@ -64,7 +64,8 @@ func (g *Generator) RenderPrepBox(boxName string) error {
 
 	// 5. initSystem + initDef — the resolved init system name + definition.
 	if g.InitConfig != nil {
-		img.InitSystem, img.InitDef = g.InitConfig.ResolveInitSystem(g.Candies, candyOrder, "")
+		img.InitSystem, img.InitDef = g.InitConfig.ResolveInitSystem(
+			g.Candies, candyOrder, AuthoredInit(g.Config, boxName))
 	}
 
 	// 6. BakedMetadata — the fully-baked OCI-label wire set.
@@ -193,7 +194,8 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 
 	// Init system label: active init system name + per-init service list.
 	if g.InitConfig != nil {
-		labelInitSystem, labelInitDef := g.InitConfig.ResolveInitSystem(g.Candies, candyOrder, "")
+		labelInitSystem, labelInitDef := g.InitConfig.ResolveInitSystem(
+			g.Candies, candyOrder, AuthoredInit(g.Config, boxName))
 		if labelInitSystem != "" && labelInitDef != nil {
 			meta.Init = labelInitSystem
 			meta.InitDef = &spec.CapabilityInitDef{
