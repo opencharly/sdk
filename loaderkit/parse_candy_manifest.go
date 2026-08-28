@@ -95,6 +95,36 @@ func ParseCandyManifest(path string, t spec.Threaded, vocab spec.CandyVocab) (*s
 				c.Name = pp.Nodes[i].Name
 				return &c, nil
 			}
+		} else {
+			// ParseDoc failed — most commonly an EMPTY Threaded snapshot in a resolver context
+			// before the provider registry is loaded, so kind classification cannot recognize
+			// the candy discriminator. The "charly.yml is everything at once" contract says a
+			// project file (version/repo/import/discover + entity nodes) must still yield its
+			// candy nodes. Fall back to a direct scan of the top-level mapping for a node whose
+			// value is a mapping carrying a `candy:` key — the candy discriminator — without
+			// needing kind classification.
+			for i := 0; i+1 < len(inner.Content); i += 2 {
+				nameNode, valNode := inner.Content[i], inner.Content[i+1]
+				if valNode.Kind != yaml.MappingNode {
+					continue
+				}
+				var candyBody *yaml.Node
+				for j := 0; j+1 < len(valNode.Content); j += 2 {
+					if valNode.Content[j].Value == "candy" {
+						candyBody = valNode.Content[j+1]
+						break
+					}
+				}
+				if candyBody == nil {
+					continue
+				}
+				var c spec.CandyYAML
+				if derr := DecodeEntityViaCUE(candyBody, reflect.TypeOf(spec.CandyYAML{}), &c, path); derr != nil {
+					return nil, fmt.Errorf("%s: %w", path, derr)
+				}
+				c.Name = nameNode.Value
+				return &c, nil
+			}
 		}
 	}
 
