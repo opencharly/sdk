@@ -70,6 +70,20 @@ func ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseDo
 	out := make(map[string]spec.ScannedCandy, len(wantRefs))
 
 	for bareRef := range wantRefs {
+		// A repo-root ref (bareRef == repoPath) to a PROJECT repo (a repo whose root
+		// charly.yml is a project file, not a candy manifest) must provide EVERY candy
+		// the repo owns — the "charly.yml is everything at once" contract. Scan the
+		// repo's candy/ dir and return all candies found there.
+		if bareRef == repoPath {
+			if candies, err := scanRepoCandyDir(repoDir, repoPath, parseDoc); err == nil {
+				for k, v := range candies {
+					out[k] = v
+				}
+				continue
+			}
+			// Fall through: a root-level standalone candy (manifest at the repo root)
+			// is still handled by the normal path below.
+		}
 		// Extract sub-path from bare ref: "github.com/org/repo/candy/name" -> "candy/name".
 		// A ref that IS the repo itself (no sub-path — the candy de-submodule cutover's
 		// root-level standalone candy) yields an empty sub-path: the manifest lives at
@@ -112,6 +126,52 @@ func ScanRemoteCandy(repoDir, repoPath string, wantRefs map[string]bool, parseDo
 		out[bareRef] = spec.ScannedCandy{Model: m, View: v, Refs: refs}
 	}
 
+	return out, nil
+}
+
+// scanRepoCandyDir scans a PROJECT repo's candy/ directory and returns every candy it
+// owns, keyed by its bare ref ("github.com/org/repo/candy/<name>"). A project repo's
+// root charly.yml is a project file (version/repo/import/discover + entity nodes), not
+// a candy manifest — the candies live in candy/ subdirectories. This is the
+// "charly.yml is everything at once" contract: a repo-root @github ref provides the
+// whole repo's candy surface, exactly as the project loader's discover: path does for
+// a local checkout.
+//
+// Returns an error when the repo has no candy/ dir (a root-level standalone candy repo
+// — the caller falls through to the normal single-candy path).
+func scanRepoCandyDir(repoDir, repoPath string, parseDoc func(path string) (*spec.CandyYAML, error)) (map[string]spec.ScannedCandy, error) {
+	candyRoot := filepath.Join(repoDir, "candy")
+	entries, err := os.ReadDir(candyRoot)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]spec.ScannedCandy)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		candyDir := filepath.Join(candyRoot, name)
+		manifest := filepath.Join(candyDir, spec.UnifiedFileName)
+		if _, err := os.Stat(manifest); os.IsNotExist(err) {
+			continue
+		}
+		m, v, refs, err := ScanCandyManifest(candyDir, name, spec.UnifiedFileName, parseDoc)
+		if err != nil {
+			// A subdirectory that is not a candy (e.g. a nested box/) is skipped —
+			// only a directory carrying a charly.yml manifest is a candy.
+			continue
+		}
+		v.Remote = true
+		v.RepoPath = repoPath
+		v.SubPathPrefix = "candy/"
+		QualifyRemoteSiblingDeps(v.RepoPath, v.SubPathPrefix, &refs)
+		bareRef := repoPath + "/candy/" + name
+		out[bareRef] = spec.ScannedCandy{Model: m, View: v, Refs: refs}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no candies found in %s", candyRoot)
+	}
 	return out, nil
 }
 
