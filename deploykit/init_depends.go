@@ -91,7 +91,7 @@ func InjectInitDependsCandy(cfg *spec.Config, layers map[string]CandyModel, init
 		if err != nil {
 			continue
 		}
-		_, def := initCfg.ResolveInitSystem(layers, order, img.Init)
+		initName, def := initCfg.ResolveInitSystem(layers, order, img.Init)
 		if def == nil || def.DependsCandy == "" {
 			continue
 		}
@@ -114,6 +114,14 @@ func InjectInitDependsCandy(cfg *spec.Config, layers map[string]CandyModel, init
 			// absent could not install that init by ANY route, so there is nothing to inject and
 			// this pass leaves the box exactly as it found it; injecting a dangling name would
 			// manufacture an "unknown candy" resolve failure that buries the project's real defect.
+			//
+			// Declining to inject is right. Saying nothing is not: the build then SUCCEEDS,
+			// stamping this init and its entrypoint onto an image that has no binary to run,
+			// and the failure surfaces only at `charly start` as a bare
+			// "executable file not found in $PATH" — naming neither the init that was
+			// resolved nor the candy that would have satisfied it. Everything needed to say
+			// so is known right here, and the condition is decidable at BUILD time.
+			reportUnsatisfiedInitDepends(name, initName, def.DependsCandy)
 			continue
 		}
 		if slices.Contains(order, key) {
