@@ -108,6 +108,15 @@ func InjectInitDependsCandy(cfg *spec.Config, layers map[string]CandyModel, init
 		// init candy is always a remote `@github…` ref — caught by reading the emitted Containerfile,
 		// not by the unit tests, which model a local project. Matching on GetName() is what the
 		// former validator did for the same reason.
+		// A candy repo is NAMED after its repo, not its entity: ScanRemoteCandy derives a
+		// root-level candy's name from path.Base(repoPath), so the standalone
+		// `layer-supervisord` repo yields the name "layer-supervisord" while the entity it
+		// defines — and the one `depends_candy:` names — is "supervisord". Judging
+		// satisfaction by the scanned name alone therefore reported every post-cutover
+		// project as unsatisfied even when it composes the candy explicitly.
+		if orderSatisfiesInitDepends(order, def.DependsCandy) {
+			continue
+		}
 		key, ok := candyKeyForName(layers, def.DependsCandy)
 		if !ok {
 			// The init candy is not in the project's scanned set at all. A project where it is
