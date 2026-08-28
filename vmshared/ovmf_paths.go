@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // OvmfPaths is the pair of firmware image paths needed to boot a UEFI
@@ -96,23 +98,22 @@ func parseEmbeddedOvmfPaths() map[string]ovmfFamilyPaths {
 	return table
 }
 
-// ovmfDistroAliases maps a host distro ID to its OVMF firmware family (fedora|arch|debian),
-// read from the ovmf_distro_aliases directive in the embedded charly.yml (Phase 4: data
-// moved out of Go). An unlisted distro has no entry — ovmfCandidatesForDistro then unions
-// all families and ovmfNotFoundError emits the generic install hint. Both readers derive
-// the family from this ONE map (R3 — no duplicated alias grouping).
-var ovmfDistroAliases = sync.OnceValue(parseEmbeddedOvmfDistroAliases)
-
-func parseEmbeddedOvmfDistroAliases() map[string]string {
-	var doc struct {
-		OvmfDistroAliases map[string]string `yaml:"ovmf_distro_aliases"`
-	}
-	UnmarshalEmbeddedDefaults(&doc)
-	if len(doc.OvmfDistroAliases) == 0 {
-		panic("ovmf: embedded charly.yml has no ovmf_distro_aliases: directive")
-	}
-	return doc.OvmfDistroAliases
-}
+// ovmfDistroAliases maps a host distro ID to its OVMF firmware family
+// (fedora|arch|debian). It reads spec.DistroOvmfFamilies, generated from
+// #Distros[id].ovmf_family — the same vocabulary that already supplies each distro's
+// format, ssh_unit and init.
+//
+// It used to parse an `ovmf_distro_aliases:` directive out of the embedded charly.yml,
+// which meant the table was hand-maintained in TWO byte-identical copies (charly's
+// charly.yml and plugin-vm's build_defaults.yml) that had to be edited together. The
+// generated table has no second copy to drift from, and it removed a startup panic:
+// the old parser panicked when the directive was absent, so a consumer embedding a
+// defaults file without it crashed rather than degrading.
+//
+// An unlisted distro still has no entry — ovmfCandidatesForDistro then unions all
+// families and ovmfNotFoundError emits the generic install hint. Both readers derive
+// the family from this ONE map (R3).
+func ovmfDistroAliases() map[string]string { return spec.DistroOvmfFamilies }
 
 // ovmfCandidatesForDistro returns the ordered candidate path pairs for a given distro +
 // secure-boot combination. More than one candidate per distro covers historical path
