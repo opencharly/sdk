@@ -44,10 +44,69 @@ const npmStageTemplate = "FROM {{.BuilderRef}} AS {{.StageName}}\nUSER {{.UID}}\
 // pre-rendered {{.CacheMountsAuto}}).
 const aurStageTemplate = "FROM {{.BuilderRef}} AS {{.StageName}}\nUSER root\nRUN echo '{{.User}} ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder\nUSER {{.UID}}\nWORKDIR {{.Home}}\nENV XDG_CACHE_HOME=/tmp/aur-xdg-cache\nRUN {{.CacheMountsAuto}} \\\n    mkdir -p /tmp/aur-build /tmp/aur-srcdest /tmp/aur-xdg-cache && \\\n    cp /etc/makepkg.conf /tmp/makepkg.conf && \\\n    sed -i '/^OPTIONS/s/ debug/ !debug/' /tmp/makepkg.conf && \\\n    echo 'SRCDEST=/tmp/aur-srcdest' >> /tmp/makepkg.conf && \\\n    sudo pacman -Syu --noconfirm && \\\n    yay -S --noconfirm --needed --builddir /tmp/aur-build --makepkgconf /tmp/makepkg.conf\n{{- range .Options}} {{.}}{{end}}\n{{- range .Packages}} \\\n      {{.}}{{end}} && \\\n    mkdir -p /tmp/aur-pkgs && \\\n    find /tmp/aur-build -name '*.pkg.tar.zst' -exec cp {} /tmp/aur-pkgs/ \\; && \\\n    { ls /tmp/aur-pkgs/*.pkg.tar.zst >/dev/null 2>&1 || { echo 'charly aur builder: yay produced ZERO .pkg.tar.zst artifacts for a non-empty aur: package list — a package listed under aur: is likely now a repo package (yay -S --needed installs it from the repo without building), so nothing was copied for the main image to COPY. Move it to the package: list.' >&2; exit 1; }; }\n"
 
-// cargoInlineTemplate is the verbatim former builder.cargo.install_template (cache-mount func
-// → pre-rendered {{.CacheMountsOwned}}). cargo is an INLINE builder — no separate FROM stage;
-// this RUN emits IN the main image, returned as BuilderResolveReply.InlineFragment.
-const cargoInlineTemplate = "RUN --mount=type=bind,from={{.LayerStage}},source=/,target=/ctx \\\n    {{.CacheMountsOwned}}cargo install --path /ctx\n"
+// CargoLibDir returns the directory a cargo LIBRARY crate's artifacts install into for a
+// given candy. Per-candy rather than a flat /usr/local/lib so the install is identifiable and
+// therefore reversible: BuilderReverse can remove exactly this directory, where a flat install
+// would leave charly unable to tell its own .so files from anyone else's.
+func CargoLibDir(candy string) string { return "/usr/local/lib/charly/" + candy }
+
+// CargoLdConfPath returns the ld.so.conf.d drop-in that puts CargoLibDir on the loader path.
+// Without it a per-candy directory would be invisible to the dynamic loader, which is the
+// price of making the install identifiable — so the drop-in is emitted with it, never
+// separately.
+func CargoLdConfPath(candy string) string { return "/etc/ld.so.conf.d/charly-" + candy + ".conf" }
+
+// cargoInlineTemplate is the former builder.cargo.install_template (cache-mount func →
+// pre-rendered {{.CacheMountsOwned}}), extended with the LIBRARY branch. cargo is an INLINE
+// builder — no separate FROM stage; this RUN emits IN the main image, returned as
+// BuilderResolveReply.InlineFragment.
+//
+// `cargo install` installs BINARIES ONLY: on a crate that declares no `[[bin]]` it fails with
+// "no binaries to install", so any candy shipping a cdylib GStreamer plugin, a staticlib, or a
+// .so for LD_PRELOAD simply could not use this builder. The branch is in the TEMPLATE rather
+// than in Go because the discriminator — the crate's own Cargo.toml — exists only inside the
+// build context, and because a shell test needs no new schema, no new input field, and no
+// authored `external_builder:`; detection stays detection.
+//
+// Cargo's binary detection is three rules, not one: an explicit [[bin]] section, src/main.rs,
+// or any src/bin/*.rs. All three are tested, because treating a binary crate as a library
+// would build it and then install nothing.
+//
+// The source is COPIED out of /ctx before EITHER branch runs, because a Containerfile
+// `--mount=type=bind` is READ-ONLY and cargo writes into the crate directory:
+//
+//	cargo build   → "failed to write /ctx/Cargo.lock: Read-only file system"
+//	cargo install → "Read-only file system (os error 30) at path /ctx/targetIg7IED"
+//
+// The second one is a PRE-EXISTING defect on the binary path, not something the library branch
+// introduced: `cargo install --path` writes its intermediate artifacts beside the source. It
+// went unnoticed because no production candy uses this builder — the only Cargo.toml beside a
+// charly.yml in the whole corpus is charly's own cargo-tool test fixture — so the container
+// cargo path had never actually run. Copying once, before the branch, fixes both.
+//
+// Both were found by RUNNING the rendered script against real crates in a container, not by
+// reading it.
+//
+// A library crate that produces no cdylib/staticlib FAILS LOUDLY. The alternative — a glob
+// that matches nothing and an install that quietly does nothing — is the exact silent no-op
+// this builder already avoids on the aur path.
+const cargoInlineTemplate = `RUN --mount=type=bind,from={{.LayerStage}},source=/,target=/ctx \
+    {{.CacheMountsOwned}}set -e; \
+    cp -a /ctx /tmp/charly-cargo-src; \
+    if grep -qE '^[[:space:]]*\[\[bin\]\]' /tmp/charly-cargo-src/Cargo.toml || [ -f /tmp/charly-cargo-src/src/main.rs ] || ls /tmp/charly-cargo-src/src/bin/*.rs >/dev/null 2>&1; then \
+      cargo install --path /tmp/charly-cargo-src; \
+    else \
+      cargo build --release --manifest-path /tmp/charly-cargo-src/Cargo.toml --target-dir /tmp/charly-cargo-target; \
+      __n=0; \
+      for __f in /tmp/charly-cargo-target/release/*.so /tmp/charly-cargo-target/release/*.a; do \
+        [ -e "$__f" ] || continue; \
+        install -Dm644 "$__f" '{{.LibDir}}'/"${__f##*/}"; \
+        __n=$((__n+1)); \
+      done; \
+      [ "$__n" -gt 0 ] || { echo 'charly cargo builder: the crate declares no [[bin]], no src/main.rs and no src/bin/*.rs, so it was built as a LIBRARY — but cargo build --release produced no .so and no .a. Add crate-type = ["cdylib"] (or "staticlib") under [lib], or give the crate a binary target.' >&2; exit 1; }; \
+      mkdir -p /etc/ld.so.conf.d && echo '{{.LibDir}}' > '{{.LdConf}}' && ldconfig; \
+    fi
+`
 
 // BuilderResolve renders `word`'s build-time multi-stage from the host-supplied context,
 // returning the pieces the host splices into the Containerfile: Stage (pre-main-FROM),
@@ -86,7 +145,7 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 			CopyArtifacts: []string{builderCopyLine(in.StageName, "/tmp/aur-pkgs/", "/tmp/aur-pkgs/", false, 0, 0)},
 		}, nil
 	case "cargo":
-		frag, err := renderBuilderStage("cargo-inline", cargoInlineTemplate, in)
+		frag, err := renderCargoInline(in)
 		if err != nil {
 			return zero, err
 		}
@@ -99,12 +158,19 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 // The templates use only stdlib text/template constructs (field access, if/range) — the
 // cache-mount funcs were pre-rendered host-side — so no FuncMap is needed.
 func renderBuilderStage(name, tmplStr string, in spec.BuilderResolveInput) (string, error) {
+	return renderBuilderStageData(name, tmplStr, in)
+}
+
+// renderBuilderStageData is the one render (R3). It takes `any` so the cargo branch can pass a
+// context that WRAPS the resolve input with derived per-candy paths, without every other
+// builder growing fields it does not use.
+func renderBuilderStageData(name, tmplStr string, data any) (string, error) {
 	t, err := template.New(name).Parse(tmplStr)
 	if err != nil {
 		return "", fmt.Errorf("parse %s template: %w", name, err)
 	}
 	var b strings.Builder
-	if err := t.Execute(&b, in); err != nil {
+	if err := t.Execute(&b, data); err != nil {
 		return "", fmt.Errorf("render %s template: %w", name, err)
 	}
 	return b.String(), nil
@@ -118,4 +184,22 @@ func builderCopyLine(stage, src, dst string, chown bool, uid, gid int) string {
 		return fmt.Sprintf("COPY --from=%s --chown=%d:%d %s %s", stage, uid, gid, src, dst)
 	}
 	return fmt.Sprintf("COPY --from=%s %s %s", stage, src, dst)
+}
+
+// cargoInlineData is the cargo template's render context: the resolve input plus the two
+// per-candy paths the library branch installs into. They are derived here rather than added to
+// spec.BuilderResolveInput because they are a FUNCTION of the candy name, not authored
+// anywhere — putting them on the wire input would let a caller disagree with CargoLibDir.
+type cargoInlineData struct {
+	spec.BuilderResolveInput
+	LibDir string
+	LdConf string
+}
+
+func renderCargoInline(in spec.BuilderResolveInput) (string, error) {
+	return renderBuilderStageData("cargo-inline", cargoInlineTemplate, cargoInlineData{
+		BuilderResolveInput: in,
+		LibDir:              CargoLibDir(in.Candy),
+		LdConf:              CargoLdConfPath(in.Candy),
+	})
 }
