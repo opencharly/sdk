@@ -235,7 +235,7 @@ func (g *Generator) EmitInitFragmentStages(b *strings.Builder, boxName string, i
 				hasFragments = true
 				break
 			}
-			if def.Model == "file_copy" && len(layer.ServiceFiles()) > 0 {
+			if def.Model == "file_copy" && len(initUnitFiles(def, layer)) > 0 {
 				hasFragments = true
 				break
 			}
@@ -279,8 +279,8 @@ func (g *Generator) EmitInitFragmentStages(b *strings.Builder, boxName string, i
 				}
 			}
 			// File copy model: copy detected service files
-			if def.Model == "file_copy" && len(layer.ServiceFiles()) > 0 {
-				for _, svcPath := range layer.ServiceFiles() {
+			if unitFiles := initUnitFiles(def, layer); def.Model == "file_copy" && len(unitFiles) > 0 {
+				for _, svcPath := range unitFiles {
 					svcName := filepath.Base(svcPath)
 					copyLine, err := InitRenderStageFragmentCopy(def, boxName, svcName)
 					if err != nil {
@@ -398,7 +398,7 @@ func (g *Generator) GenerateInitFragments(boxName, initName string, def *spec.Re
 
 		// File copy model: copy detected service files (systemd *.service globs).
 		if def.Model == "file_copy" {
-			for _, svcPath := range layer.ServiceFiles() {
+			for _, svcPath := range initUnitFiles(def, layer) {
 				content, err := os.ReadFile(svcPath)
 				if err != nil {
 					return fmt.Errorf("reading service file %s: %w", svcPath, err)
