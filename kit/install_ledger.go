@@ -135,6 +135,14 @@ type ledgerDoc struct {
 	} `yaml:"ledger"`
 }
 
+// ReadLedger returns the FULL ledger maps (deploys + candies) in ONE read of the
+// per-host charly.yml. The status collector uses this to avoid re-reading the
+// config once per record (measured: 186 reads of a 310KB config per status run).
+// STRICT: a malformed ledger is an error (never reported as an empty one).
+func ReadLedger(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRecord, error) {
+	return readLedgerStrict(paths)
+}
+
 // readLedger reads the `ledger:` section of the per-host charly.yml (best-effort;
 // an absent/corrupt file yields an empty ledger).
 func readLedger(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRecord) {
