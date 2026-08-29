@@ -81,5 +81,3 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.7.1 // indirect
 )
-
-replace github.com/opencharly/spec => /tmp/spec-check
