@@ -38,6 +38,12 @@ type LocalImageInfo = container.LocalImageInfo
 // ListLocalImages returns all images in the engine's local storage.
 var ListLocalImages = container.ListLocalImages
 
+// InvalidateImageCache clears the persistent image-list cache. Called by the
+// build and deploy commands (charly box build / fleet add / update) — every
+// operation that creates or pulls an image — so the next status run re-fetches
+// the fresh image list instead of serving a stale cache.
+var InvalidateImageCache = container.InvalidateImageCache
+
 // ParseLocalImagesJSON parses `{podman,docker} images --format json` output
 // into ONE LocalImageInfo per distinct image ID.
 var ParseLocalImagesJSON = container.ParseLocalImagesJSON
