@@ -36,20 +36,13 @@ import (
 // file.
 //
 // The legacy per-deploy JSON-file layout (~/.config/opencharly/installed/) is
-// DELETED by this cutover; the Root/Deploys/Candies fields are KEPT ONLY as
-// deprecated stubs so out-of-tree consumers (plugin-fleet, plugin-substrate)
-// compile during the transition — the I/O functions read/write ConfigFile, never
-// the legacy dirs. The consumers migrate to ConfigFile in their own PRs, then
-// the stubs are removed.
+// DELETED by this cutover. The consumers (plugin-fleet, plugin-substrate) migrate
+// to ConfigFile in the same wave (their PRs land with the new sdk pin); a stale
+// consumer fails to COMPILE against this shape — a loud failure, never a silent
+// wrong answer.
 type LedgerPaths struct {
 	ConfigFile string // the per-host charly.yml path
 	LockFile   string // the advisory lock path
-
-	// Deprecated: the legacy JSON-file layout. Kept for compile compatibility
-	// during the consumer transition; never read or written by the I/O functions.
-	Root    string
-	Deploys string
-	Candies string
 }
 
 // DefaultLedgerPaths returns the canonical paths anchored at the per-host
@@ -274,30 +267,9 @@ func recordMapNode[T any](records map[string]T) *yaml.Node {
 	return n
 }
 
-// ErrLedgerRelocated is returned when a consumer uses the LEGACY LedgerPaths
-// fields (Root/Deploys/Candies) — the per-deploy JSON-file layout that this
-// cutover deleted. The ledger now lives in the `ledger:` section of the per-host
-// charly.yml (ConfigFile). A stale consumer gets this LOUD error instead of a
-// silent wrong answer (e.g. os.Stat("") → ENOENT → "no local deploys").
-var ErrLedgerRelocated = fmt.Errorf("install ledger relocated: the ledger now lives in the `ledger:` section of the per-host charly.yml (~/.config/charly/charly.yml); update the consumer to use LedgerPaths.ConfigFile (the legacy Root/Deploys/Candies JSON-file layout is deleted)")
-
-// checkRelocated fails loudly when a consumer still uses the legacy fields.
-func checkRelocated(paths *LedgerPaths) error {
-	if paths == nil {
-		return fmt.Errorf("ledger: nil LedgerPaths")
-	}
-	if paths.Root != "" || paths.Deploys != "" || paths.Candies != "" {
-		return ErrLedgerRelocated
-	}
-	return nil
-}
-
 // WriteDeployRecord serializes rec into the `ledger:` section under
 // ledger.deploys[rec.DeployID].
 func WriteDeployRecord(paths *LedgerPaths, rec *DeployRecord) error {
-	if err := checkRelocated(paths); err != nil {
-		return err
-	}
 	if err := paths.Ensure(); err != nil {
 		return err
 	}
@@ -312,9 +284,6 @@ func WriteDeployRecord(paths *LedgerPaths, rec *DeployRecord) error {
 
 // ReadDeployRecord loads ledger.deploys[id]; returns nil, nil if absent.
 func ReadDeployRecord(paths *LedgerPaths, id string) (*DeployRecord, error) {
-	if err := checkRelocated(paths); err != nil {
-		return nil, err
-	}
 	deploys, _ := readLedger(paths)
 	rec, ok := deploys[id]
 	if !ok {
@@ -358,9 +327,6 @@ func ListCandyNames(paths *LedgerPaths) []string {
 // WriteCandyRecord serializes rec into the `ledger:` section under
 // ledger.candies[rec.Candy].
 func WriteCandyRecord(paths *LedgerPaths, rec *CandyRecord) error {
-	if err := checkRelocated(paths); err != nil {
-		return err
-	}
 	if err := paths.Ensure(); err != nil {
 		return err
 	}
@@ -375,9 +341,6 @@ func WriteCandyRecord(paths *LedgerPaths, rec *CandyRecord) error {
 
 // ReadCandyRecord loads ledger.candies[layer]; returns nil, nil if absent.
 func ReadCandyRecord(paths *LedgerPaths, layer string) (*CandyRecord, error) {
-	if err := checkRelocated(paths); err != nil {
-		return nil, err
-	}
 	_, candies := readLedger(paths)
 	rec, ok := candies[layer]
 	if !ok {
@@ -392,9 +355,6 @@ func ReadCandyRecord(paths *LedgerPaths, layer string) (*CandyRecord, error) {
 // DeleteDeployRecord removes ledger.deploys[id]; silently ignores not-found
 // (teardown is idempotent).
 func DeleteDeployRecord(paths *LedgerPaths, id string) error {
-	if err := checkRelocated(paths); err != nil {
-		return err
-	}
 	deploys, candies := readLedger(paths)
 	if _, ok := deploys[id]; !ok {
 		return nil
@@ -405,9 +365,6 @@ func DeleteDeployRecord(paths *LedgerPaths, id string) error {
 
 // DeleteCandyRecord removes ledger.candies[layer].
 func DeleteCandyRecord(paths *LedgerPaths, layer string) error {
-	if err := checkRelocated(paths); err != nil {
-		return err
-	}
 	deploys, candies := readLedger(paths)
 	if _, ok := candies[layer]; !ok {
 		return nil
@@ -423,9 +380,6 @@ func DeleteCandyRecord(paths *LedgerPaths, layer string) error {
 // AddCandyDeployment adds deployID to candy.DeployedBy and writes the record.
 // Used at install time.
 func AddCandyDeployment(paths *LedgerPaths, candyName, deployID string, update func(*CandyRecord)) error {
-	if err := checkRelocated(paths); err != nil {
-		return err
-	}
 	rec, err := ReadCandyRecord(paths, candyName)
 	if err != nil {
 		return err
@@ -450,9 +404,6 @@ func AddCandyDeployment(paths *LedgerPaths, candyName, deployID string, update f
 // caller should perform the actual file/package/service teardown and then delete
 // the candy ledger entry.
 func RemoveCandyDeployment(paths *LedgerPaths, candyName, deployID string) (*CandyRecord, bool, error) {
-	if err := checkRelocated(paths); err != nil {
-		return nil, false, err
-	}
 	rec, err := ReadCandyRecord(paths, candyName)
 	if err != nil {
 		return nil, false, err
