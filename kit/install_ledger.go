@@ -326,6 +326,35 @@ func ReadDeployRecord(paths *LedgerPaths, id string) (*DeployRecord, error) {
 	return &rec, nil
 }
 
+// ListDeployIDs returns every deploy id in the `ledger:` section, sorted.
+//
+// This is the enumeration half of the ledger API. Before the relocation, a consumer
+// enumerated by listing *.json stems under LedgerPaths.Deploys; that directory no longer
+// exists, so without this an out-of-tree consumer cannot discover what is deployed at all —
+// it can only ReadDeployRecord an id it already knows. Absent/corrupt file yields an empty
+// slice, matching readLedger's best-effort contract (and the old empty-directory case).
+func ListDeployIDs(paths *LedgerPaths) []string {
+	deploys, _ := readLedger(paths)
+	ids := make([]string, 0, len(deploys))
+	for id := range deploys {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// ListCandyNames returns every candy name in the `ledger:` section, sorted.
+// The candy-side counterpart of ListDeployIDs; see that doc for why it exists.
+func ListCandyNames(paths *LedgerPaths) []string {
+	_, candies := readLedger(paths)
+	names := make([]string, 0, len(candies))
+	for name := range candies {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
 // WriteCandyRecord serializes rec into the `ledger:` section under
 // ledger.candies[rec.Candy].
 func WriteCandyRecord(paths *LedgerPaths, rec *CandyRecord) error {
