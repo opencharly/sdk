@@ -436,33 +436,27 @@ func AddCandyDeploymentVia(exec spec.DeployExecutor, paths *LedgerPaths, candyNa
 	// charly.yml. `~` resolves in the substrate shell.
 	const remoteFile = "~/.config/charly/charly.yml"
 	data, err := exec.GetFile(ctx, remoteFile, false, EmitOpts{})
-	var rec *CandyRecord
-	if err == nil && len(data) > 0 {
-		rec = &CandyRecord{}
-		if jerr := yaml.Unmarshal(data, rec); jerr != nil {
-			rec = nil
-		}
-	}
-	if rec == nil {
-		rec = &CandyRecord{
-			Candy:      candyName,
-			DeployedAt: time.Now().UTC().Format(time.RFC3339),
-		}
-	}
-	if !containsString(rec.DeployedBy, deployID) {
-		rec.DeployedBy = append(rec.DeployedBy, deployID)
-	}
-	if update != nil {
-		update(rec)
-	}
-	rec.SchemaVersion = ledgerSchemaVersion
-	if err := spec.ValidateRecord("candy_record", remoteFile, rec); err != nil {
-		return err
-	}
 	// Read-modify-write the substrate's charly.yml: preserve every other key
 	// (deploy:, provides:, cache:, system:), update only the ledger: section.
 	out, err := mutateRemoteLedger(data, func(deploys map[string]DeployRecord, candies map[string]CandyRecord) (map[string]DeployRecord, map[string]CandyRecord, error) {
-		candies[candyName] = *rec
+		rec, ok := candies[candyName]
+		if !ok {
+			rec = CandyRecord{
+				Candy:      candyName,
+				DeployedAt: time.Now().UTC().Format(time.RFC3339),
+			}
+		}
+		if !containsString(rec.DeployedBy, deployID) {
+			rec.DeployedBy = append(rec.DeployedBy, deployID)
+		}
+		if update != nil {
+			update(&rec)
+		}
+		rec.SchemaVersion = ledgerSchemaVersion
+		if err := spec.ValidateRecord("candy_record", remoteFile, &rec); err != nil {
+			return nil, nil, err
+		}
+		candies[candyName] = rec
 		return deploys, candies, nil
 	})
 	if err != nil {
