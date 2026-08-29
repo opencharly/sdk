@@ -68,6 +68,31 @@ func isSystem(s spec.Scope) bool { return s == spec.ScopeSystem }
 func WalkPlans(ctx context.Context, exec DeployExecutor, plans []spec.InstallPlanView, opts WalkOpts) ([]spec.ReverseOp, error) {
 	var reverse []spec.ReverseOp
 	sawShellHook := false
+	// The deferred {{.Home}} token is resolved against the VENUE's home before any step
+	// runs. The OCI target does this at emit (OCITarget.emitPlan → spec.ResolveHome); the
+	// machine-venue walk had no equivalent, so a home-relative `copy:`/`download:` `to:`
+	// reached PutFile carrying the literal token and created a directory named
+	// "{{.Home}}" in the venue instead of landing in the real home.
+	//
+	// Probed LAZILY: only a plan that actually carries the token pays the extra
+	// RunCapture, so the common case costs nothing.
+	home := opts.Home
+	homeProbed := home != ""
+	for i := range plans {
+		for j := range plans[i].Steps {
+			if !stepCarriesHomeToken(&plans[i].Steps[j]) {
+				continue
+			}
+			if !homeProbed {
+				h, err := probeVenueHome(ctx, exec)
+				if err != nil {
+					return nil, err
+				}
+				home, homeProbed = h, true
+			}
+			resolveStepHome(&plans[i].Steps[j], home)
+		}
+	}
 	for _, p := range plans {
 		for _, step := range p.Steps {
 			ops, err := walkStep(ctx, exec, step)
@@ -318,14 +343,13 @@ func reloadDaemon(ctx context.Context, exec DeployExecutor, scope spec.Scope) er
 func ensureVenueManagedBlock(ctx context.Context, exec DeployExecutor, opts WalkOpts) error {
 	home := opts.Home
 	if home == "" {
-		out, _, _, err := exec.RunCapture(ctx, `printf %s "$HOME"`)
+		// ONE probe implementation, shared with the {{.Home}} token resolution in
+		// WalkPlans (R3) — the two used to carry the same inline RunCapture.
+		h, err := probeVenueHome(ctx, exec)
 		if err != nil {
-			return fmt.Errorf("probe venue home: %w", err)
+			return err
 		}
-		home = strings.TrimSpace(out)
-	}
-	if home == "" {
-		return fmt.Errorf("venue home unresolved")
+		home = h
 	}
 	shell := opts.Shell
 	if shell == "" {
@@ -356,4 +380,80 @@ func isNotFound(err error) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "No such file or directory") || strings.Contains(msg, "no such file")
+}
+
+// stepCarriesHomeToken reports whether any home-bearing field of the view still holds the
+// deferred token, so the venue home is probed only when it is actually needed.
+func stepCarriesHomeToken(step *spec.InstallStepView) bool {
+	for _, f := range homeBearingFields(step) {
+		if strings.Contains(*f, spec.HomeToken) {
+			return true
+		}
+	}
+	for _, m := range []map[string]string{step.EnvVars} {
+		for _, v := range m {
+			if strings.Contains(v, spec.HomeToken) {
+				return true
+			}
+		}
+	}
+	for _, l := range [][]string{step.PathAdd, step.PathAppend} {
+		for _, v := range l {
+			if strings.Contains(v, spec.HomeToken) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// resolveStepHome substitutes the deferred token in every home-bearing field of a step
+// view. Mirrors the field set spec.ResolveHome covers for the concrete steps, so the
+// machine venue and the OCI target resolve the SAME places (R3) — a field resolved by
+// some other path simply no longer contains the token and is left unchanged.
+func resolveStepHome(step *spec.InstallStepView, home string) {
+	if home == "" {
+		return
+	}
+	sub := func(s string) string { return strings.ReplaceAll(s, spec.HomeToken, home) }
+	for _, f := range homeBearingFields(step) {
+		*f = sub(*f)
+	}
+	for k, v := range step.EnvVars {
+		step.EnvVars[k] = sub(v)
+	}
+	for i, v := range step.PathAdd {
+		step.PathAdd[i] = sub(v)
+	}
+	for i, v := range step.PathAppend {
+		step.PathAppend[i] = sub(v)
+	}
+}
+
+// homeBearingFields is the ONE list of scalar view fields that may carry the token —
+// kept in one place so stepCarriesHomeToken and resolveStepHome cannot drift apart.
+func homeBearingFields(step *spec.InstallStepView) []*string {
+	return []*string{
+		&step.To,          // OpStep copy/download destination — the charly#460 defect
+		&step.Dest,        // FileStep destination
+		&step.ExtractDest, // Extract destination
+		&step.UnitPath,    // ServiceCustom unit install path (user scope lives under HOME)
+		&step.UnitText,    // ServiceCustom unit body (ExecStart/WorkingDirectory)
+		&step.Snippet,     // ShellSnippet body
+		&step.Destination, // ShellSnippet destination
+	}
+}
+
+// probeVenueHome asks the venue for $HOME. Shared by the token resolution above and the
+// env.d managed-block finalizer.
+func probeVenueHome(ctx context.Context, exec DeployExecutor) (string, error) {
+	out, _, _, err := exec.RunCapture(ctx, `printf %s "$HOME"`)
+	if err != nil {
+		return "", fmt.Errorf("probe venue home: %w", err)
+	}
+	home := strings.TrimSpace(out)
+	if home == "" {
+		return "", fmt.Errorf("venue home unresolved")
+	}
+	return home, nil
 }
