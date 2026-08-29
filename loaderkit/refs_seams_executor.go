@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/opencharly/sdk"
 	"github.com/opencharly/spec/proc"
@@ -54,8 +55,29 @@ func RefsSeamsFromExecutor(ctx context.Context, ex *sdk.Executor) spec.RefsColle
 		// computes its own override independently); reading its VALUE is plain os.Getenv, never
 		// something core had to do for us.
 		OverrideEnvValue: os.Getenv(proc.RepoOverrideEnv),
-		LatestTag:        refs.GitLatestTag,
+		// The centralized git layer: a process-wide GitClient whose cache lives in
+		// the `cache:` section of the PER-HOST charly.yml (~/.config/charly/charly.yml)
+		// — the single home for local system state (deployments, ledger, system,
+		// cache). Every git operation in the loader goes through it, so a git command
+		// runs only when the answer is not already cached (issue #423, #208).
+		LatestTag: gitClient().LatestTag,
 	}
+}
+
+// gitClient is the process-wide centralized git layer (spec/refs.GitClient). Its
+// cache lives in the `cache:` section of the per-host charly.yml
+// (~/.config/charly/charly.yml, honoring the CHARLY_DEPLOY_CONFIG override).
+// Constructed once and shared by every loader consumer.
+var gitClientOnce sync.Once
+var gitClientInstance *refs.GitClient
+
+func gitClient() *refs.GitClient {
+	gitClientOnce.Do(func() {
+		// NewGitClient("") resolves the default deploy config path — the per-host
+		// charly.yml — and reads/writes the `cache:` section there.
+		gitClientInstance = refs.NewGitClient("")
+	})
+	return gitClientInstance
 }
 
 // peerDownloader is the spec.RefsDownloader face of the registered refs BACKEND, reached over

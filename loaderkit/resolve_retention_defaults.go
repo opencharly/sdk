@@ -2,8 +2,10 @@ package loaderkit
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/opencharly/sdk"
+	"github.com/opencharly/spec/spec"
 )
 
 // resolve_retention_defaults.go — the ONE shared plugin-side resolution of the project's
@@ -34,4 +36,29 @@ func ResolveRetentionDefaultsViaExecutor(ctx context.Context, ex *sdk.Executor, 
 		}
 	}
 	return keepImages, keepCheckRuns
+}
+
+// ResolveRetentionDefaultsViaSeam reads the project's retention defaults through the
+// lightweight "retention-defaults" HostBuild seam — a config-only read that does NOT
+// walk the project or resolve its @github refs. The clean command uses this instead of
+// LoadUnifiedViaExecutor, which walked the project and paid for a `git ls-remote`
+// freshness check per version-less import ref (issue #423: 70 network calls, hanging
+// `charly clean --dry-run` past the 2m never-hang ceiling).
+func ResolveRetentionDefaultsViaSeam(ctx context.Context, ex *sdk.Executor, dir string) (keepImages, keepCheckRuns int) {
+	if ex == nil {
+		return 0, 0
+	}
+	reqJSON, err := json.Marshal(spec.RetentionRequest{Dir: dir})
+	if err != nil {
+		return 0, 0
+	}
+	replyJSON, err := ex.HostBuild(ctx, "retention-defaults", reqJSON)
+	if err != nil {
+		return 0, 0
+	}
+	var reply spec.RetentionReply
+	if err := json.Unmarshal(replyJSON, &reply); err != nil {
+		return 0, 0
+	}
+	return reply.KeepImages, reply.KeepCheckRuns
 }

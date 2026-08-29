@@ -33,7 +33,7 @@ func CanonicalRef(ref, baseDir string, seams spec.RefsCollectSeams) (key, path s
 		parsed := spec.ParseRemoteRef(ref)
 		version := parsed.Version
 		if version == "" {
-			branch, e := refs.GitDefaultBranch(refs.RepoGitURL(parsed.RepoPath))
+			branch, e := gitClient().DefaultBranch(refs.RepoGitURL(parsed.RepoPath))
 			if e != nil {
 				return "", "", fmt.Errorf("resolving default branch for %s: %w", parsed.RepoPath, e)
 			}
