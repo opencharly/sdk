@@ -295,6 +295,68 @@ func ReadDeployRecord(paths *LedgerPaths, id string) (*DeployRecord, error) {
 	return &rec, nil
 }
 
+// readLedgerStrict is readLedger's error-reporting twin. readLedger deliberately
+// swallows a read/parse failure and yields an empty ledger, which is the right
+// contract for callers that treat "no ledger yet" and "unreadable ledger" alike --
+// but it is the WRONG contract for a caller that wants to tell a user their
+// charly.yml is malformed. An absent file is still not an error here (nothing has
+// been deployed yet); only an unreadable or unparseable one is.
+func readLedgerStrict(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRecord, error) {
+	deploys := map[string]DeployRecord{}
+	candies := map[string]CandyRecord{}
+	data, err := os.ReadFile(paths.ConfigFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return deploys, candies, nil // never deployed on this host
+		}
+		return nil, nil, fmt.Errorf("read ledger %s: %w", paths.ConfigFile, err)
+	}
+	var doc ledgerDoc
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, nil, fmt.Errorf("parse ledger %s: %w", paths.ConfigFile, err)
+	}
+	if doc.Ledger != nil {
+		if doc.Ledger.Deploys != nil {
+			deploys = doc.Ledger.Deploys
+		}
+		if doc.Ledger.Candies != nil {
+			candies = doc.Ledger.Candies
+		}
+	}
+	return deploys, candies, nil
+}
+
+// ListDeployIDsStrict is ListDeployIDs but reports a malformed ledger instead of
+// reading it as an empty one. Prefer it wherever a user-facing command would
+// otherwise print "nothing deployed" for a file it simply could not parse.
+func ListDeployIDsStrict(paths *LedgerPaths) ([]string, error) {
+	deploys, _, err := readLedgerStrict(paths)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(deploys))
+	for id := range deploys {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids, nil
+}
+
+// ListCandyNamesStrict is ListCandyNames with the same malformed-ledger contract
+// as ListDeployIDsStrict.
+func ListCandyNamesStrict(paths *LedgerPaths) ([]string, error) {
+	_, candies, err := readLedgerStrict(paths)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(candies))
+	for name := range candies {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names, nil
+}
+
 // ListDeployIDs returns every deploy id in the `ledger:` section, sorted.
 //
 // This is the enumeration half of the ledger API. Before the relocation, a consumer
