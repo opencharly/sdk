@@ -166,8 +166,22 @@ func SaveFleetConfig(dc *FleetConfig, marshalNode func(name string, node *FleetN
 	// deploy entry is a name-first node `<name>: {<disc>: <body>, <child-nodes>}` — the SAME
 	// shape the node-form loader accepts (the only authoring surface), produced by the caller's
 	// marshalNode callback.
+	//
+	// The per-host charly.yml is the SINGLE home for local system state: the deploy entries
+	// (`deploy:`), the git metadata cache (`cache:`), the install ledger (`ledger:`), and the
+	// local system info (`system:`). A deploy write must PRESERVE the other sections — the
+	// GitClient, the ledger, and the system populator write their own sections to the same file
+	// — so this starts from the EXISTING file's root (when present) and updates only the
+	// version/provides/deploy keys, never clobbering cache/ledger/system.
 	root := &yaml.Node{Kind: yaml.MappingNode}
-	root.Content = append(root.Content, kit.ScalarNode("version"), kit.ScalarNode(kit.LatestSchemaVersion().String()))
+	if existing, rerr := os.ReadFile(path); rerr == nil {
+		var doc yaml.Node
+		if yaml.Unmarshal(existing, &doc) == nil && len(doc.Content) > 0 && doc.Content[0].Kind == yaml.MappingNode {
+			root = doc.Content[0]
+		}
+	}
+	// Update the version stamp (set or replace).
+	kit.SetMappingKey(root, "version", kit.ScalarNode(kit.LatestSchemaVersion().String()))
 	if dc.Provides != nil {
 		pb, perr := yaml.Marshal(dc.Provides)
 		if perr != nil {
@@ -178,9 +192,13 @@ func SaveFleetConfig(dc *FleetConfig, marshalNode func(name string, node *FleetN
 			return fmt.Errorf("re-parsing provides: %w", perr)
 		}
 		if len(pd.Content) == 1 {
-			root.Content = append(root.Content, kit.ScalarNode("provides"), pd.Content[0])
+			kit.SetMappingKey(root, "provides", pd.Content[0])
 		}
 	}
+	// Replace the deploy entries: remove every existing deploy key, then add the new ones.
+	// The deploy keys are the top-level keys that are NOT reserved directives and NOT the
+	// local-state sections (cache/ledger/system/sidecar/provides).
+	removeDeployKeys(root)
 	names := make([]string, 0, len(dc.Fleet))
 	for n := range dc.Fleet {
 		names = append(names, n)
@@ -223,6 +241,28 @@ func SaveFleetConfig(dc *FleetConfig, marshalNode func(name string, node *FleetN
 		return fmt.Errorf("renaming %s -> %s: %w", tmpPath, path, err)
 	}
 	return nil
+}
+
+// reservedDeployKeys are the top-level keys that are NOT deploy entries: the reserved
+// #NodeDoc directives plus the local-state sections (cache/ledger/system/sidecar).
+var reservedDeployKeys = map[string]bool{
+	"version": true, "repo": true, "import": true, "discover": true, "defaults": true,
+	"provides": true, "providers": true, "compiled_plugins": true,
+	"context_ignore_baseline": true, "ovmf_paths": true, "ovmf_distro_aliases": true,
+	"cache": true, "ledger": true, "system": true, "sidecar": true,
+}
+
+// removeDeployKeys removes every top-level key that is a deploy entry (not a reserved
+// directive and not a local-state section), so the new deploy set replaces the old one.
+func removeDeployKeys(m *yaml.Node) {
+	out := m.Content[:0]
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if !reservedDeployKeys[m.Content[i].Value] {
+			continue // drop this deploy key + its value
+		}
+		out = append(out, m.Content[i], m.Content[i+1])
+	}
+	m.Content = out
 }
 
 // LoadDeployConfigForRead loads charly.yml for read-only consumption. Unlike the historical
