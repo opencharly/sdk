@@ -100,3 +100,35 @@ func TestAddCandyDeploymentVia_PreservesExistingKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestLedgerRelocatedFailsLoudly proves a consumer still using the LEGACY
+// LedgerPaths fields (Root/Deploys/Candies — the deleted JSON-file layout) gets
+// an explicit ErrLedgerRelocated instead of a silent wrong answer (e.g.
+// os.Stat("") → ENOENT → "no local deploys").
+func TestLedgerRelocatedFailsLoudly(t *testing.T) {
+	legacy := &LedgerPaths{Root: "/tmp/legacy", Deploys: "/tmp/legacy/deploys", Candies: "/tmp/legacy/layers"}
+	if err := WriteDeployRecord(legacy, &DeployRecord{DeployID: "x"}); err != ErrLedgerRelocated {
+		t.Fatalf("WriteDeployRecord: got %v, want ErrLedgerRelocated", err)
+	}
+	if _, err := ReadDeployRecord(legacy, "x"); err != ErrLedgerRelocated {
+		t.Fatalf("ReadDeployRecord: got %v, want ErrLedgerRelocated", err)
+	}
+	if err := WriteCandyRecord(legacy, &CandyRecord{Candy: "x"}); err != ErrLedgerRelocated {
+		t.Fatalf("WriteCandyRecord: got %v, want ErrLedgerRelocated", err)
+	}
+	if _, err := ReadCandyRecord(legacy, "x"); err != ErrLedgerRelocated {
+		t.Fatalf("ReadCandyRecord: got %v, want ErrLedgerRelocated", err)
+	}
+	if err := DeleteDeployRecord(legacy, "x"); err != ErrLedgerRelocated {
+		t.Fatalf("DeleteDeployRecord: got %v, want ErrLedgerRelocated", err)
+	}
+	if err := DeleteCandyRecord(legacy, "x"); err != ErrLedgerRelocated {
+		t.Fatalf("DeleteCandyRecord: got %v, want ErrLedgerRelocated", err)
+	}
+	if err := AddCandyDeployment(legacy, "x", "d", nil); err != ErrLedgerRelocated {
+		t.Fatalf("AddCandyDeployment: got %v, want ErrLedgerRelocated", err)
+	}
+	if _, _, err := RemoveCandyDeployment(legacy, "x", "d"); err != ErrLedgerRelocated {
+		t.Fatalf("RemoveCandyDeployment: got %v, want ErrLedgerRelocated", err)
+	}
+}
