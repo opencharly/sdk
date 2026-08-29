@@ -52,6 +52,22 @@ func FindMappingValue(m *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
+// SetMappingKey sets (or replaces) a top-level key in a YAML mapping node. The
+// ONE shared helper for the section-preserving per-host charly.yml writers
+// (deploykit.SaveFleetConfig, the GitClient cache, the ledger I/O) — R3.
+func SetMappingKey(m *yaml.Node, key string, val *yaml.Node) {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i < len(m.Content)-1; i += 2 {
+		if m.Content[i].Kind == yaml.ScalarNode && m.Content[i].Value == key {
+			m.Content[i+1] = val
+			return
+		}
+	}
+	m.Content = append(m.Content, ScalarNode(key), val)
+}
+
 // MigrateCandidateYAMLFiles is the ONE candidate-file scanner the multi-document
 // doc-migration steps share AND the core loader's legacy-vocab rejection scan uses:
 // every `.yml`/`.yaml` under each of treeSubdirs (walked recursively, skipping

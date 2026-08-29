@@ -197,7 +197,7 @@ func writeLedger(paths *LedgerPaths, deploys map[string]DeployRecord, candies ma
 		{Kind: yaml.ScalarNode, Value: "candies"},
 		recordMapNode(candies),
 	}}
-	setMappingKey(root, "ledger", ledgerVal)
+	SetMappingKey(root, "ledger", ledgerVal)
 
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
@@ -233,17 +233,6 @@ func hasMappingKey(m *yaml.Node, name string) bool {
 		}
 	}
 	return false
-}
-
-// setMappingKey sets (or replaces) a top-level key in a yaml mapping node.
-func setMappingKey(m *yaml.Node, key string, val *yaml.Node) {
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			m.Content[i+1] = val
-			return
-		}
-	}
-	m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: key}, val)
 }
 
 // recordMapNode builds a YAML mapping node from a record map (deploy-id or
@@ -548,7 +537,7 @@ func mutateRemoteLedger(data []byte, mutate func(map[string]DeployRecord, map[st
 		{Kind: yaml.ScalarNode, Value: "candies"},
 		recordMapNode(candies),
 	}}
-	setMappingKey(root, "ledger", ledgerVal)
+	SetMappingKey(root, "ledger", ledgerVal)
 	return yaml.Marshal(&doc)
 }
 

@@ -181,7 +181,7 @@ func SaveFleetConfig(dc *FleetConfig, marshalNode func(name string, node *FleetN
 		}
 	}
 	// Update the version stamp (set or replace).
-	setMappingKey(root, "version", kit.ScalarNode(kit.LatestSchemaVersion().String()))
+	kit.SetMappingKey(root, "version", kit.ScalarNode(kit.LatestSchemaVersion().String()))
 	if dc.Provides != nil {
 		pb, perr := yaml.Marshal(dc.Provides)
 		if perr != nil {
@@ -192,7 +192,7 @@ func SaveFleetConfig(dc *FleetConfig, marshalNode func(name string, node *FleetN
 			return fmt.Errorf("re-parsing provides: %w", perr)
 		}
 		if len(pd.Content) == 1 {
-			setMappingKey(root, "provides", pd.Content[0])
+			kit.SetMappingKey(root, "provides", pd.Content[0])
 		}
 	}
 	// Replace the deploy entries: remove every existing deploy key, then add the new ones.
@@ -241,17 +241,6 @@ func SaveFleetConfig(dc *FleetConfig, marshalNode func(name string, node *FleetN
 		return fmt.Errorf("renaming %s -> %s: %w", tmpPath, path, err)
 	}
 	return nil
-}
-
-// setMappingKey sets (or replaces) a top-level key in a yaml mapping node.
-func setMappingKey(m *yaml.Node, key string, val *yaml.Node) {
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			m.Content[i+1] = val
-			return
-		}
-	}
-	m.Content = append(m.Content, kit.ScalarNode(key), val)
 }
 
 // reservedDeployKeys are the top-level keys that are NOT deploy entries: the reserved
