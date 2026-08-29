@@ -34,9 +34,22 @@ import (
 // LedgerPaths describes where the ledger lives. The ledger is the `ledger:`
 // section of the per-host charly.yml. Extracted so tests can redirect to a temp
 // file.
+//
+// The legacy per-deploy JSON-file layout (~/.config/opencharly/installed/) is
+// DELETED by this cutover; the Root/Deploys/Candies fields are KEPT ONLY as
+// deprecated stubs so out-of-tree consumers (plugin-fleet, plugin-substrate)
+// compile during the transition — the I/O functions read/write ConfigFile, never
+// the legacy dirs. The consumers migrate to ConfigFile in their own PRs, then
+// the stubs are removed.
 type LedgerPaths struct {
 	ConfigFile string // the per-host charly.yml path
 	LockFile   string // the advisory lock path
+
+	// Deprecated: the legacy JSON-file layout. Kept for compile compatibility
+	// during the consumer transition; never read or written by the I/O functions.
+	Root    string
+	Deploys string
+	Candies string
 }
 
 // DefaultLedgerPaths returns the canonical paths anchored at the per-host
