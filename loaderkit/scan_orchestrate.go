@@ -74,7 +74,7 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 				if b, ok := defaultBranches[repo]; ok {
 					ver = b
 				} else {
-					b, err := kit.GitDefaultBranch(kit.RepoGitURL(repo))
+					b, err := gitClient().DefaultBranch(kit.RepoGitURL(repo))
 					if err != nil {
 						return fmt.Errorf("resolving default branch for %s: %w", repo, err)
 					}
@@ -201,6 +201,18 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 			continue
 		}
 		combined[ref] = winner.Scanned
+		// ALSO key the remote candy by its bare NAME, so a bare-name ref (a transitive
+		// plain-name dep in a pinned tag, e.g. `versatiles-style` inside
+		// pod-versatiles-frontend's list) resolves to this remote candy. The refs list
+		// registers remote candies by their @github path; without the name key, the
+		// build's global candy order (ResolveCandyOrder looks up layers[name]) fails
+		// with "unknown candy" for every transitive bare-name dep. Guarded: a name
+		// already taken (a local candy, or a same-named remote from another repo — the
+		// plugin-mcp conflict class) is NOT overwritten; the conflict check surfaces it.
+		if _, exists := combined[winner.Scanned.Model.Name]; !exists {
+			combined[winner.Scanned.Model.Name] = winner.Scanned
+			fmt.Fprintf(os.Stderr, "DEBUG name-keyed: %q -> %q\n", winner.Scanned.Model.Name, ref)
+		}
 	}
 
 	// 5. Host-completion (InitSystems, initCfg-gated — nil by default, matching every caller but

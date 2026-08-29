@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync"
 
 	"github.com/opencharly/sdk"
 	"github.com/opencharly/spec/proc"
@@ -54,8 +56,29 @@ func RefsSeamsFromExecutor(ctx context.Context, ex *sdk.Executor) spec.RefsColle
 		// computes its own override independently); reading its VALUE is plain os.Getenv, never
 		// something core had to do for us.
 		OverrideEnvValue: os.Getenv(proc.RepoOverrideEnv),
-		LatestTag:        refs.GitLatestTag,
+		// The centralized git layer: a project-scoped GitClient whose cache lives
+		// under the project's charly dir (or the repo cache dir). Every git
+		// operation in the loader goes through it, so a git command runs only when
+		// the answer is not already cached (issue #423, #208).
+		LatestTag: gitClient().LatestTag,
 	}
+}
+
+// gitClient is the process-wide centralized git layer (spec/refs.GitClient). Its
+// cache lives under the project's charly dir when CHARLY_PROJECT_DIR is set, else
+// the repo cache dir. Constructed once and shared by every loader consumer.
+var gitClientOnce sync.Once
+var gitClientInstance *refs.GitClient
+
+func gitClient() *refs.GitClient {
+	gitClientOnce.Do(func() {
+		dir := os.Getenv(spec.ProjectDirEnv)
+		if dir != "" {
+			dir = filepath.Join(dir, ".charly", "cache")
+		}
+		gitClientInstance = refs.NewGitClient(dir)
+	})
+	return gitClientInstance
 }
 
 // peerDownloader is the spec.RefsDownloader face of the registered refs BACKEND, reached over
