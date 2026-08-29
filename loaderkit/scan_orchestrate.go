@@ -211,7 +211,6 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		// plugin-mcp conflict class) is NOT overwritten; the conflict check surfaces it.
 		if _, exists := combined[winner.Scanned.Model.Name]; !exists {
 			combined[winner.Scanned.Model.Name] = winner.Scanned
-			fmt.Fprintf(os.Stderr, "DEBUG name-keyed: %q -> %q\n", winner.Scanned.Model.Name, ref)
 		}
 	}
 
