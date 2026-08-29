@@ -164,7 +164,11 @@ func EnsureRepoDownloaded(repoPath, version string, seams spec.RefsCollectSeams)
 		// refs.DownloadRepo provenance check) — a plain cache hit would freeze the branch at its
 		// first-download content forever (the pre-#146 @main protocol skew). Immutable coordinates
 		// (tags, SHAs) keep the offline cache hit.
-		path, err = seams.Downloader.Download(repoPath, version)
+		//
+		// The centralized git layer CACHES the mutable-ref download with a short TTL (5m): a
+		// mutable branch can move, but not on every invocation — the status fan-out resolving
+		// the envelope multiple times pays the download once (issue #423, #208).
+		path, err = gitClient().Download(repoPath, version, seams.Downloader.Download)
 	}
 	if err != nil {
 		return "", err
@@ -395,6 +399,21 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 			Version:  key.ver,
 			Refs:     refList,
 		})
+	}
+	// FIRST-STARTUP WARM-UP: when the git cache is cold, prefetch the version-less
+	// refs' latest tags + default branches with a clear message so the user knows
+	// charly is fetching git metadata (issue #423, #208). The centralized git layer
+	// caches the results, so subsequent invocations are fast.
+	if len(pairs) > 0 {
+		var repos []string
+		seen := map[string]bool{}
+		for key := range pairs {
+			if !seen[key.repo] {
+				seen[key.repo] = true
+				repos = append(repos, refs.RepoGitURL(key.repo))
+			}
+		}
+		gitClient().WarmUp(repos, os.Stderr)
 	}
 	return result, nil
 }

@@ -183,6 +183,14 @@ func scanRepoCandyDir(repoDir, repoPath string, parseDoc func(path string) (*spe
 // step, mirroring the pre-move qualifyRemoteSiblingDeps → projectCandyView/projectCandyModel
 // ordering — see spec.CandyRefs' doc comment in sdk/spec/loader_seam.go).
 func scanFromParsed(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyModel, spec.CandyView, spec.CandyRefs) {
+	// The ACTUAL candy name is the node key in the manifest (ly.Name), which for a
+	// root-level standalone candy repo can differ from the repo-path-derived name
+	// (e.g. repo layer-versatiles-style owns the candy `versatiles-style`). The
+	// derived name is only the map-key fallback; the logical name must be the node
+	// key so bare-name refs (`versatiles-style` in a sibling's list) resolve.
+	if ly != nil && ly.Name != "" {
+		name = ly.Name
+	}
 	m := spec.CandyModel{Name: name, SourceDir: sourceDir}
 	v := spec.CandyView{Name: name}
 
