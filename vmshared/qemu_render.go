@@ -150,7 +150,15 @@ func RenderQemuArgv(spec *VmSpec, rt VmRuntimeParams, paths QemuRuntimePaths) []
 			fmt.Sprintf("unix:%s,server,nowait", paths.ConsoleSocket))
 	}
 
-	args = append(args, "-display", "none", "-daemonize")
+	// Video / display / shared memory (qemu_render_gpu.go). Before these, the backend
+	// emitted a bare `-display none` and NO video device, so every declared video,
+	// graphics and qemu_override field silently did nothing here. A VM that declares no
+	// graphics still renders exactly `-display none`, unchanged.
+	if spec.Libvirt != nil {
+		args = append(args, qemuSharedMemoryArgs(spec.Libvirt, rt.RamMB)...)
+		args = append(args, qemuVideoArgs(spec.Libvirt)...)
+	}
+	args = append(args, "-display", qemuDisplayArg(spec.Libvirt), "-daemonize")
 
 	if paths.PidFile != "" {
 		args = append(args, "-pidfile", paths.PidFile)

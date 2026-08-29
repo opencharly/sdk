@@ -235,7 +235,7 @@ func (g *Generator) EmitInitFragmentStages(b *strings.Builder, boxName string, i
 				hasFragments = true
 				break
 			}
-			if def.Model == "file_copy" && len(layer.ServiceFiles()) > 0 {
+			if def.Model == "file_copy" && len(initUnitFiles(def, layer)) > 0 {
 				hasFragments = true
 				break
 			}
@@ -279,8 +279,8 @@ func (g *Generator) EmitInitFragmentStages(b *strings.Builder, boxName string, i
 				}
 			}
 			// File copy model: copy detected service files
-			if def.Model == "file_copy" && len(layer.ServiceFiles()) > 0 {
-				for _, svcPath := range layer.ServiceFiles() {
+			if unitFiles := initUnitFiles(def, layer); def.Model == "file_copy" && len(unitFiles) > 0 {
+				for _, svcPath := range unitFiles {
 					svcName := filepath.Base(svcPath)
 					copyLine, err := InitRenderStageFragmentCopy(def, boxName, svcName)
 					if err != nil {
@@ -335,21 +335,20 @@ func (g *Generator) GenerateInitFragments(boxName, initName string, def *spec.Re
 						continue
 					}
 				}
-				ctx := spec.ServiceRenderContext{
-					Name:             entry.Name,
-					Candy:            candyName,
-					Exec:             entry.Exec,
-					Env:              entry.Env,
-					EnvList:          MapToKeyValueSlice(entry.Env),
-					Restart:          entry.Restart,
-					WorkingDirectory: entry.WorkingDirectory,
-					User:             entry.User,
-					After:            entry.After,
-					Before:           entry.Before,
-					Stdout:           entry.Stdout,
-					StopTimeout:      entry.StopTimeout,
-					Scope:            entry.EffectiveScope(),
-				}
+				// ONLY the fields BuildServiceRenderContext does not derive from the
+				// entry itself. It runs inside RenderService and overwrites every
+				// entry-derived field, so seeding them here was dead — except for
+				// After/Before, which it APPENDS: pre-seeding those double-listed
+				// every ordering directive on a systemd render.
+				//
+				// The fields that actually belong here are the ones it cannot know,
+				// and they were the ones missing: without Home the home-expansion
+				// pass is skipped entirely, so `%(ENV_HOME)s` / `~` / `$HOME` in an
+				// exec or env value reach a systemd unit verbatim (supervisord
+				// expands `%(ENV_HOME)s` natively, which is why this stayed hidden),
+				// and without the unit dirs a scope: user unit has nowhere to land.
+				// Mirrors compile_service_steps.go's deploy-time context exactly.
+				ctx := fragmentRenderContext(candyName, img)
 				rendered, err := g.RenderService(entry, def, ctx)
 				if err != nil {
 					return fmt.Errorf("rendering service %s/%s/%s: %w", initName, candyName, entry.Name, err)
@@ -399,7 +398,7 @@ func (g *Generator) GenerateInitFragments(boxName, initName string, def *spec.Re
 
 		// File copy model: copy detected service files (systemd *.service globs).
 		if def.Model == "file_copy" {
-			for _, svcPath := range layer.ServiceFiles() {
+			for _, svcPath := range initUnitFiles(def, layer) {
 				content, err := os.ReadFile(svcPath)
 				if err != nil {
 					return fmt.Errorf("reading service file %s: %w", svcPath, err)

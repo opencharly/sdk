@@ -24,10 +24,12 @@ package vmshared
 // schema before the bytes are emitted (RenderCloudInit in cloud_init_render.go).
 var ValidateEgress func(kind, label string, data []byte) error
 
-// UnmarshalEmbeddedDefaults decodes the consumer's embedded build vocabulary
-// (the ovmf_paths / ovmf_distro_aliases directives the OVMF resolver reads) into
-// dst. Core reads its embedded charly.yml; the plugin reads its embedded
-// build_defaults.yml.
+// UnmarshalEmbeddedDefaults decodes the consumer's embedded build vocabulary (the
+// ovmf_paths directive the OVMF resolver reads) into dst. Core reads its embedded
+// charly.yml; the plugin reads its embedded build_defaults.yml.
+//
+// It used to decode ovmf_distro_aliases too. That half is now spec.DistroOvmfFamilies,
+// generated from the distro vocabulary, so this hook covers the PATH data only.
 var UnmarshalEmbeddedDefaults func(dst any)
 
 // Snapshot backends. Core wires host-side RPC wrappers (vm_snapshot_client.go)
