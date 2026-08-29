@@ -526,11 +526,11 @@ func mutateRemoteLedger(data []byte, mutate func(map[string]DeployRecord, map[st
 	// Decode the current ledger section (if any).
 	deploys := map[string]DeployRecord{}
 	candies := map[string]CandyRecord{}
-	if lv := mappingValue(root, "ledger"); lv != nil && lv.Kind == yaml.MappingNode {
-		if dv := mappingValue(lv, "deploys"); dv != nil {
+	if lv := FindMappingValue(root, "ledger"); lv != nil && lv.Kind == yaml.MappingNode {
+		if dv := FindMappingValue(lv, "deploys"); dv != nil {
 			_ = dv.Decode(&deploys)
 		}
-		if cv := mappingValue(lv, "candies"); cv != nil {
+		if cv := FindMappingValue(lv, "candies"); cv != nil {
 			_ = cv.Decode(&candies)
 		}
 	}
@@ -546,14 +546,4 @@ func mutateRemoteLedger(data []byte, mutate func(map[string]DeployRecord, map[st
 	}}
 	SetMappingKey(root, "ledger", ledgerVal)
 	return yaml.Marshal(&doc)
-}
-
-// mappingValue returns the value node for a top-level key in a mapping node, or nil.
-func mappingValue(m *yaml.Node, key string) *yaml.Node {
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key {
-			return m.Content[i+1]
-		}
-	}
-	return nil
 }
