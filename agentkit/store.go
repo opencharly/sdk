@@ -565,11 +565,36 @@ func (s *Store) withLock(fn func() error) (returnErr error) {
 		return err
 	}
 	defer func() { returnErr = errors.Join(returnErr, f.Close()) }()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := flockBounded(f); err != nil {
 		return err
 	}
 	defer func() { returnErr = errors.Join(returnErr, syscall.Flock(int(f.Fd()), syscall.LOCK_UN)) }()
 	return fn()
+}
+
+// storeLockTimeout bounds the exclusive-lock wait in withLock. Under heavy
+// concurrent load (parallel bed runs), a peer holding the store lock can
+// stall; an unbounded flock would hang the caller forever (the recurring
+// fleet-del stall). A package var (not a const) so a test can shorten it.
+var storeLockTimeout = 2 * time.Minute
+
+// flockBounded acquires an exclusive flock, failing fast after
+// storeLockTimeout instead of blocking forever on a contended lock.
+func flockBounded(f *os.File) error {
+	deadline := time.Now().Add(storeLockTimeout)
+	for {
+		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return nil
+		}
+		if err != syscall.EWOULDBLOCK {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("store lock held by another process for > %s", storeLockTimeout)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func useFile(file *os.File, operation func() error) (returnErr error) {

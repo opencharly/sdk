@@ -25,6 +25,18 @@ type VmRuntimeParams struct {
 	// Empty → no cdrom attached (bootc source with cloud-init disabled).
 	SeedISOPath string
 
+	// InstallerISOPath is the absolute path to a distro's OFFICIAL INSTALLER ISO, for
+	// source.kind: iso. Empty for every other source kind, which is why it is a separate
+	// field rather than a reuse of SeedISOPath: an iso VM attaches BOTH — the installer
+	// AND, on its own cdrom, the answers volume that makes the install unattended.
+	//
+	// Its presence also changes the BOOT ORDER to disk-then-cdrom. That is the whole
+	// mechanism by which an ISO install terminates: an empty disk is not bootable, so the
+	// firmware falls through to the installer on the first boot; once the installer has
+	// written the disk, the disk boots and the ISO is never reached again. Nothing has to
+	// detect that the install finished, and nothing has to eject or detach anything.
+	InstallerISOPath string
+
 	// NVRAMPath is the absolute path to the per-VM UEFI NVRAM file.
 	// Empty → firmware: bios (no pflash drives emitted).
 	NVRAMPath string

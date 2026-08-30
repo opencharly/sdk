@@ -91,11 +91,48 @@ func RenderQemuArgv(spec *VmSpec, rt VmRuntimeParams, paths QemuRuntimePaths) []
 			fmt.Sprintf("file=%s,format=qcow2,if=virtio", rt.QCOW2Path))
 	}
 
-	// --- Seed ISO cdrom (D5) ---
-
-	if rt.SeedISOPath != "" {
+	// --- Seed volume (D5) ---
+	//
+	// An INSTALLER-driven VM gets it on VIRTIO-BLK; every other source kind keeps the cdrom
+	// cloud-init expects. That is the difference between an unattended install and one that
+	// stops at a wizard.
+	//
+	// An installer looks for its answers by FILESYSTEM LABEL, early, from a script the ISO
+	// runs on tty1. Omarchy's omarchy-cidata-load calls `udevadm settle` and then reads
+	// /dev/disk/by-label/cidata — but settle only drains the queue as it stands, and a cdrom
+	// whose probe has not been QUEUED yet is not covered. The lookup misses, the script
+	// falls back to the interactive wizard, and the install stops with nobody at the
+	// keyboard. Running the same script a minute later finds the drive and installs fine,
+	// which is what makes it a race rather than a defect in the volume.
+	//
+	// Measured both ways against the real Omarchy 4.0.1 ISO: as a cdrom the disk sat
+	// untouched at 197,248 bytes indefinitely; as a virtio disk the same seed installed
+	// unattended to 6,092,816,384 bytes and reached the installed system's greeter, with no
+	// intervention.
+	//
+	// cloud_image/bootc/bootstrap are deliberately UNCHANGED: cloud-init finds a NoCloud
+	// source on either, it has never raced here, and moving those would be a behaviour
+	// change to every existing VM in exchange for nothing.
+	if rt.SeedISOPath != "" && rt.InstallerISOPath != "" {
+		args = append(args, "-drive",
+			fmt.Sprintf("file=%s,format=raw,if=virtio,readonly=on", rt.SeedISOPath))
+	} else if rt.SeedISOPath != "" {
 		args = append(args, "-drive",
 			fmt.Sprintf("file=%s,media=cdrom,readonly=on", rt.SeedISOPath))
+	}
+
+	// --- Installer ISO cdrom (source.kind: iso) ---
+	//
+	// A SECOND cdrom beside the answers volume above, and the boot order that goes with
+	// it: `-boot order=cd` is disk-then-cdrom in qemu's letter vocabulary (c = first hard
+	// disk, d = first cdrom), which is what makes the install terminate. An empty disk is
+	// not bootable so the firmware falls through to the installer; once the disk has been
+	// written it boots, and the installer is never reached again. Nothing detects the end
+	// of the install and nothing ejects anything.
+	if rt.InstallerISOPath != "" {
+		args = append(args, "-drive",
+			fmt.Sprintf("file=%s,media=cdrom,readonly=on", rt.InstallerISOPath))
+		args = append(args, "-boot", "order=cd")
 	}
 
 	// --- Additional disks from structured config ---

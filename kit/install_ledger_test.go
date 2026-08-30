@@ -20,8 +20,8 @@ type fakeRemoteExec struct {
 	written  string // the last written charly.yml bytes
 }
 
-func (e *fakeRemoteExec) Venue() string { return "ssh://fake" }
-func (e *fakeRemoteExec) Kind() string { return "ssh" }
+func (e *fakeRemoteExec) Venue() string                                           { return "ssh://fake" }
+func (e *fakeRemoteExec) Kind() string                                            { return "ssh" }
 func (e *fakeRemoteExec) RunSystem(_ context.Context, _ string, _ EmitOpts) error { return nil }
 func (e *fakeRemoteExec) RunUser(_ context.Context, s string, _ EmitOpts) error {
 	// Extract the heredoc body (the charly.yml bytes) between the opening
@@ -53,9 +53,11 @@ func (e *fakeRemoteExec) ResolveHome(_ context.Context, _ string) (string, error
 func (e *fakeRemoteExec) RunHostStep(_ context.Context, _ spec.InstallStepView, _ []byte) ([]spec.ReverseOp, error) {
 	return nil, nil
 }
-func (e *fakeRemoteExec) RunBuilder(_ context.Context, _ spec.BuilderRunOpts) ([]byte, error) { return nil, nil }
+func (e *fakeRemoteExec) RunBuilder(_ context.Context, _ spec.BuilderRunOpts) ([]byte, error) {
+	return nil, nil
+}
 func (e *fakeRemoteExec) RunInteractive(_ context.Context, _ string) (int, error) { return 0, nil }
-func (e *fakeRemoteExec) RunStream(_ context.Context, _ string) (int, error) { return 0, nil }
+func (e *fakeRemoteExec) RunStream(_ context.Context, _ string) (int, error)      { return 0, nil }
 
 // TestAddCandyDeploymentVia_WritesLedgerSection proves the executor-routed
 // variant writes the candy record into the `ledger:` section of the substrate's

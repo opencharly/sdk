@@ -44,13 +44,22 @@ func TestResolveISOBuilderPassesSharedVolumeID(t *testing.T) {
 	if b.Bin == "" {
 		t.Skip("no ISO builder on PATH (xorriso/genisoimage/mkisofs)")
 	}
-	args := b.Args("/tmp/out.iso", []string{"/tmp/user-data"})
+	args := b.Args("/tmp/out.iso", cloudInitVolumeID, []string{"/tmp/user-data"})
 	i := slices.Index(args, "-volid")
 	if i < 0 || i+1 >= len(args) {
 		t.Fatalf("builder argv has no -volid: %v", args)
 	}
 	if args[i+1] != cloudInitVolumeID {
 		t.Fatalf("-volid = %q, want the shared constant %q", args[i+1], cloudInitVolumeID)
+	}
+
+	// The label is now a PARAMETER, because an unattended distro installer discovers its
+	// answers volume by a different one ("OEMDRV" for kickstart). Passing it through
+	// unchanged is what makes one ISO writer serve both.
+	args = b.Args("/tmp/out.iso", "OEMDRV", []string{"/tmp/ks.cfg"})
+	i = slices.Index(args, "-volid")
+	if i < 0 || i+1 >= len(args) || args[i+1] != "OEMDRV" {
+		t.Fatalf("-volid did not carry the caller's label: %v", args)
 	}
 }
 
