@@ -32,7 +32,7 @@ func runEngineCommand(ctx context.Context, engineBin string, args ...string) (st
 // Under heavy concurrent load the container engine can stall (a saturated podman
 // daemon), and an unbounded exec would hang the calling bed's cleanup step in
 // futex_wait forever (the recurring fleet-del/remove stall). A package var (not a
-// const) so a test can shorten it.
+// const) so a test can shorten it. On expiry the whole process group is killed (a shell wrapper's children must not survive and hold the output pipe open).
 var engineCommandTimeout = 2 * time.Minute
 
 // RemoveImagesByReference best-effort removes every local image whose repository BASENAME exactly
