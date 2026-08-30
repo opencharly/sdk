@@ -108,6 +108,38 @@ const cargoInlineTemplate = `RUN --mount=type=bind,from={{.LayerStage}},source=/
     fi
 `
 
+// miseVersion is the pinned mise release the builder stage installs. Bump
+// deliberately (mise releases weekly); the tarball naming is Go-style arch
+// (x64/arm64) with a -musl suffix for musl libc bases (Alpine), mapped from
+// uname + the musl-loader probe at build time.
+const miseVersion = "v2026.8.14"
+
+// miseStageTemplate is the builder.mise stage. The stage is DISTRO-AGNOSTIC: its FROM is
+// the host-computed BuilderRef (the image's builder box — distro-appropriate, e.g.
+// fedora-builder or cachyos-builder), the toolchain (curl+tar) comes from the builder
+// image, and the install command comes from the embedded builder: mise: vocabulary's
+// install_command ({{.InstallCmd}}). The only fixed paths are mise's OWN conventions:
+// the binary lands at /usr/local/bin/mise (the release tarball's layout) and the data
+// dir is mise's default $HOME/.local/share/mise (the CopyArtifacts copy the stage's
+// Home, exactly like the pixi builder's ~/.pixi). Distro knowledge stays in the host's
+// vocabulary — a builder template never names a distro. The release tarball is
+// libc-specific: mise publishes glibc builds (mise-<ver>-linux-<arch>.tar.gz) AND musl
+// builds (mise-<ver>-linux-<arch>-musl.tar.gz); the stage probes for the musl loader
+// (/lib/ld-musl-*.so.1) and appends the -musl suffix on musl bases, so the glibc binary
+// never lands on a musl image where it cannot exec (missing /lib64/ld-linux-*).
+const miseStageTemplate = `FROM {{.BuilderRef}} AS {{.StageName}}
+USER root
+RUN A=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') && \
+    M=""; if [ -e /lib/ld-musl-x86_64.so.1 ] || [ -e /lib/ld-musl-aarch64.so.1 ]; then M="-musl"; fi && \
+    curl -sL -o /tmp/mise.tar.gz https://github.com/jdx/mise/releases/download/{{.MiseVersion}}/mise-{{.MiseVersion}}-linux-$A$M.tar.gz && \
+    tar xzf /tmp/mise.tar.gz -C /usr/local --strip-components=1 && rm /tmp/mise.tar.gz
+USER {{.UID}}
+WORKDIR {{.Home}}
+ENV MISE_YES=1
+COPY --chown={{.UID}}:{{.GID}} {{.CopySrc}}/{{.Manifest}} {{.Manifest}}
+RUN {{.CacheMountsOwned}}{{.InstallCmd}} && mise reshim
+`
+
 // BuilderResolve renders `word`'s build-time multi-stage from the host-supplied context,
 // returning the pieces the host splices into the Containerfile: Stage (pre-main-FROM),
 // CopyArtifacts + CopyBinary (post-main-FROM), or InlineFragment (in-candy, inline builders).
@@ -150,6 +182,16 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 			return zero, err
 		}
 		return spec.BuilderResolveReply{InlineFragment: frag}, nil
+	case "mise":
+		stage, err := renderBuilderStageData("mise-stage", miseStageTemplate, miseStageData{BuilderResolveInput: in, MiseVersion: miseVersion})
+		if err != nil {
+			return zero, err
+		}
+		return spec.BuilderResolveReply{
+			Stage:         stage,
+			CopyArtifacts: []string{builderCopyLine(in.StageName, in.Home, in.Home, true, in.UID, in.GID)},
+			CopyBinary:    builderCopyLine(in.StageName, "/usr/local/bin/mise", "/usr/local/bin/mise", false, 0, 0),
+		}, nil
 	}
 	return zero, fmt.Errorf("kit.BuilderResolve: unknown detection-builder word %q", word)
 }
@@ -184,6 +226,13 @@ func builderCopyLine(stage, src, dst string, chown bool, uid, gid int) string {
 		return fmt.Sprintf("COPY --from=%s --chown=%d:%d %s %s", stage, uid, gid, src, dst)
 	}
 	return fmt.Sprintf("COPY --from=%s %s %s", stage, src, dst)
+}
+
+// miseStageData is the mise template's render context: the resolve input plus the
+// pinned mise release version (named, not a magic literal in the template).
+type miseStageData struct {
+	spec.BuilderResolveInput
+	MiseVersion string
 }
 
 // cargoInlineData is the cargo template's render context: the resolve input plus the two
