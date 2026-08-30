@@ -32,8 +32,19 @@ func TestRenderQemuArgv_InstallerIsoIsASecondCdromWithDiskFirstBoot(t *testing.T
 	}
 	// BOTH, not one instead of the other: the answers volume is what makes the install
 	// unattended, and an installer with no answers sits at its first prompt forever.
-	if !strings.Contains(args, "file=/state/omarchy-vm/seed.iso,media=cdrom,readonly=on") {
-		t.Errorf("the answers volume was dropped when an installer ISO was present; got %q", args)
+	//
+	// And it must be VIRTIO, not a cdrom. An installer reads its answers by filesystem
+	// label from a script that runs early on tty1; Omarchy's omarchy-cidata-load calls
+	// `udevadm settle` (which drains only the queue as it stands) and then reads
+	// /dev/disk/by-label/cidata, so a cdrom whose probe has not been QUEUED yet is missed
+	// and the script falls back to the interactive wizard. Measured: as a cdrom the disk
+	// stayed at 197,248 bytes indefinitely; as a virtio disk the same seed installed
+	// unattended to 6,092,816,384 bytes with no intervention.
+	if !strings.Contains(args, "file=/state/omarchy-vm/seed.iso,format=raw,if=virtio,readonly=on") {
+		t.Errorf("the answers volume must be a VIRTIO disk for an installer VM; got %q", args)
+	}
+	if strings.Contains(args, "file=/state/omarchy-vm/seed.iso,media=cdrom") {
+		t.Errorf("the answers volume is still a cdrom — it loses the udev race against the installer: %q", args)
 	}
 	if !strings.Contains(args, "-boot order=cd") {
 		t.Errorf("boot order must be disk-then-cdrom (order=cd); got %q", args)
@@ -59,5 +70,11 @@ func TestRenderQemuArgv_NoInstallerLeavesBootOrderAlone(t *testing.T) {
 	}
 	if !strings.Contains(args, "file=/state/arch-vm/seed.iso,media=cdrom,readonly=on") {
 		t.Errorf("the cidata seed cdrom regressed; got %q", args)
+	}
+	// And specifically NOT virtio. Moving the seed for cloud_image/bootc/bootstrap would be
+	// a behaviour change to every existing VM: cloud-init finds a NoCloud source on either
+	// bus and has never raced here, so there is nothing to gain and a fleet to regress.
+	if strings.Contains(args, "seed.iso,format=raw,if=virtio") {
+		t.Errorf("a non-installer VM's seed moved to virtio — that changes every existing VM: %q", args)
 	}
 }
