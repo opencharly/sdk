@@ -166,6 +166,9 @@ func (g *Generator) EmitInitAssembly(b *strings.Builder, img *buildkit.ResolvedB
 			var systemUnits []string
 			for _, candyName := range candyOrder {
 				layer := g.Candies[candyName]
+				if layer == nil {
+					continue
+				}
 				for i := range layer.Service() {
 					entry := &layer.Service()[i]
 					if entry.IsPackaged() && entry.EffectiveScope() == "system" &&
@@ -227,6 +230,9 @@ func (g *Generator) EmitInitFragmentStages(b *strings.Builder, boxName string, i
 		hasFragments := false
 		for _, candyName := range initCandyOrder {
 			layer := g.Candies[candyName]
+			if layer == nil {
+				continue
+			}
 			if def.Model == "fragment_assembly" && layer.HasInit(initName) {
 				hasFragments = true
 				break
@@ -310,6 +316,12 @@ func (g *Generator) GenerateInitFragments(boxName, initName string, def *spec.Re
 
 	for i, candyName := range candyOrder {
 		layer := g.Candies[candyName]
+		if layer == nil {
+			// A candy in the order that is not in the layers map contributes no
+			// services — skip it rather than panic (a deploy's candyOrder can
+			// include an add_candy the build's layers map does not carry).
+			continue
+		}
 		idx := i + 1
 
 		if def.Model == "fragment_assembly" {
