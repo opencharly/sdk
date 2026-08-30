@@ -2,6 +2,7 @@ package deploykit
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/opencharly/spec/spec"
@@ -74,7 +75,30 @@ type OCITarget struct {
 	EmitStepOp func(step spec.InstallStep, plan *spec.InstallPlan, distros []string) (string, error)
 
 	buf strings.Builder
+
+	// lastUser is the USER the emitted Containerfile is left in by the fragments spliced so
+	// far ("" or "root"/"0" meaning root). Fragments arrive from a plugin's build-emit and are
+	// spliced VERBATIM, so a candy whose step legitimately switches to the image user (an
+	// inline builder, a user-scoped install) silently leaves every LATER candy running as that
+	// user. The full-image path does not have this problem: Generator.WriteCandySteps tracks
+	// the same state itself and resets between candies. See resetUserForNextCandy.
+	lastUser string
 }
+
+// userDirectiveRE matches a USER directive at the start of a line in a spliced fragment.
+var userDirectiveRE = regexp.MustCompile(`(?m)^[ \t]*USER[ \t]+(\S+)`)
+
+// lastUserDirective returns the last USER argument a fragment sets, or "" if it sets none.
+func lastUserDirective(frag string) string {
+	m := userDirectiveRE.FindAllStringSubmatch(frag, -1)
+	if len(m) == 0 {
+		return ""
+	}
+	return m[len(m)-1][1]
+}
+
+// isRootUser reports whether a USER argument denotes root.
+func isRootUser(u string) bool { return u == "" || u == "root" || u == "0" }
 
 // Name identifies this target.
 func (t *OCITarget) Name() string { return "oci" }
@@ -106,6 +130,21 @@ func (t *OCITarget) emitPlan(plan *spec.InstallPlan) error {
 		ResolveHome(plan, t.Home)
 	}
 	fmt.Fprintf(&t.buf, "# Layer: %s\n", plan.Candy)
+	// A candy's steps assume they start as root — that is the convention the full-image
+	// generator maintains between candies (Generator.WriteCandySteps' `if asUser &&
+	// !skipRootReset` reset). The overlay walker splices opaque fragments instead of
+	// emitting the steps itself, so it has to restore the same invariant here or a
+	// preceding candy's USER switch leaks into this one (charly#467: pacman-key --init
+	// running as UID 1000 -> "pacman-key needs to be run as root").
+	//
+	// This is namespaced root inside a rootless build, not host root: the container UID 0
+	// maps to the invoking user, which is the same privilege the full-image build already
+	// uses for package installs. The base image's own USER is restored after the last
+	// candy by the overlay assembler, so nothing leaks into the shipped image.
+	if !isRootUser(t.lastUser) {
+		t.buf.WriteString("USER root\n")
+		t.lastUser = "root"
+	}
 	for _, step := range plan.Steps {
 		if step == nil {
 			continue
@@ -123,6 +162,9 @@ func (t *OCITarget) emitPlan(plan *spec.InstallPlan) error {
 		t.buf.WriteString(frag)
 		if !strings.HasSuffix(frag, "\n") {
 			t.buf.WriteString("\n")
+		}
+		if u := lastUserDirective(frag); u != "" {
+			t.lastUser = u
 		}
 	}
 	t.buf.WriteString("\n")
