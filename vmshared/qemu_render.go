@@ -98,6 +98,20 @@ func RenderQemuArgv(spec *VmSpec, rt VmRuntimeParams, paths QemuRuntimePaths) []
 			fmt.Sprintf("file=%s,media=cdrom,readonly=on", rt.SeedISOPath))
 	}
 
+	// --- Installer ISO cdrom (source.kind: iso) ---
+	//
+	// A SECOND cdrom beside the answers volume above, and the boot order that goes with
+	// it: `-boot order=cd` is disk-then-cdrom in qemu's letter vocabulary (c = first hard
+	// disk, d = first cdrom), which is what makes the install terminate. An empty disk is
+	// not bootable so the firmware falls through to the installer; once the disk has been
+	// written it boots, and the installer is never reached again. Nothing detects the end
+	// of the install and nothing ejects anything.
+	if rt.InstallerISOPath != "" {
+		args = append(args, "-drive",
+			fmt.Sprintf("file=%s,media=cdrom,readonly=on", rt.InstallerISOPath))
+		args = append(args, "-boot", "order=cd")
+	}
+
 	// --- Additional disks from structured config ---
 
 	if spec.Libvirt != nil && spec.Libvirt.Devices != nil {
