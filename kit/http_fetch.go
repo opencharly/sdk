@@ -29,8 +29,31 @@ type FetchedImage struct {
 // a sidecar file at <url>.SHA256 / .sha256 / .sha256sum (Arch convention
 // is .SHA256). The first one that returns HTTP 200 wins.
 func FetchQcow2(src VmSource) (FetchedImage, error) {
+	return FetchArtifact(src, ".qcow2")
+}
+
+// FetchArtifact is FetchQcow2 generalised over the cached file's EXTENSION, and
+// nothing else. Every behaviour below — the content-addressed cache keyed on
+// sha256(url), the cross-process flock, the sidecar-sum auto-resolve, the
+// resumable .part download, the stale-partial single refetch, the atomic
+// promote — is identical for a qcow2 cloud image and for an installer ISO,
+// because none of it ever looks inside the file.
+//
+// The extension is not cosmetic: the cache is shared, and a bare hash with no
+// suffix would let a qcow2 and an ISO fetched from two URLs that happened to
+// collide in the operator's mind land on indistinguishable paths in a directory
+// a human reads during an incident. It also lets `file`/`qemu-img` on a cache
+// entry mean something.
+//
+// This exists because `source.kind: iso` needs exactly this fetcher for the
+// installer image. Copying it would be the second copy of a resumable,
+// lock-protected, checksum-verifying downloader (R3).
+func FetchArtifact(src VmSource, ext string) (FetchedImage, error) {
 	if src.URL == "" {
-		return FetchedImage{}, fmt.Errorf("FetchQcow2: source.url is empty")
+		return FetchedImage{}, fmt.Errorf("FetchArtifact: source.url is empty")
+	}
+	if ext == "" {
+		return FetchedImage{}, fmt.Errorf("FetchArtifact: ext is empty")
 	}
 
 	cacheDir := src.Cache
@@ -47,7 +70,7 @@ func FetchQcow2(src VmSource) (FetchedImage, error) {
 
 	// Content-addressed by sha256(url). Stable across URL query params.
 	urlHash := sha256.Sum256([]byte(src.URL))
-	cachePath := filepath.Join(cacheDir, hex.EncodeToString(urlHash[:])+".qcow2")
+	cachePath := filepath.Join(cacheDir, hex.EncodeToString(urlHash[:])+ext)
 	cacheSumPath := cachePath + ".sha256"
 
 	// Serialize concurrent fetchers of this image (flock, cross-process): two beds
@@ -73,7 +96,7 @@ func FetchQcow2(src VmSource) (FetchedImage, error) {
 	// This stops unpinned rolling URLs from re-downloading hundreds of MiB per build and
 	// tripping mirror rate limits (the failure mode that took down check-fedora-vm before
 	// fedora-vm was pinned). Pinned images keep the stronger expected==recorded check. To
-	// avoid re-hashing large qcow2 files on every build, the recorded sidecar sum is trusted.
+	// avoid re-hashing large artifacts on every build, the recorded sidecar sum is trusted.
 	if existing := readRecordedSum(cacheSumPath); existing != "" && (expected == "" || existing == expected) {
 		if _, err := os.Stat(cachePath); err == nil {
 			return FetchedImage{Path: cachePath, SHA256: existing}, nil
@@ -104,7 +127,7 @@ func FetchQcow2(src VmSource) (FetchedImage, error) {
 		}
 		_ = os.Remove(partPath)
 		if resumed {
-			fmt.Fprintf(os.Stderr, "fetch qcow2: resumed partial failed verification (upstream rotated?) — refetching %s from zero\n", src.URL)
+			fmt.Fprintf(os.Stderr, "fetch artifact: resumed partial failed verification (upstream rotated?) — refetching %s from zero\n", src.URL)
 			continue
 		}
 		// Hard failure — a clean full download mismatched.
@@ -232,7 +255,7 @@ func downloadResumable(u, dst string) error {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
 	}
 
-	client := &http.Client{Timeout: 0} // no timeout — qcow2s can be large
+	client := &http.Client{Timeout: 0} // no timeout — VM artifacts (cloud images, installer ISOs) can be many GiB
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", u, err)
@@ -319,7 +342,7 @@ func HumanBytes(n int64) string {
 // build-tag configurations; retained for parity with sibling files.
 var _ = strconv.Itoa
 
-// acquireVmImageFetchLock serializes concurrent fetches of the same cached qcow2
+// acquireVmImageFetchLock serializes concurrent fetches of the same cached artifact
 // (per-cachePath flock). kit-local wrapper over AcquireFileLock.
 func acquireVmImageFetchLock(cachePath string) (func() error, error) {
 	return AcquireFileLock(cachePath+".lock", true)
