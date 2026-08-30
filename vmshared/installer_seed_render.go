@@ -80,8 +80,27 @@ func seedGuardPasses(rendered string) bool {
 	return true
 }
 
+// seedTemplateFuncs is the ARITHMETIC an answer template needs and nothing else.
+//
+// Installer answer formats state partition geometry as absolute numbers — archinstall
+// indexes partition['size'] with no default and has no fill-remaining sentinel — so a
+// template given only the disk size must be able to subtract the ESP from it. Go templates
+// cannot add or subtract at all without this.
+//
+// Deliberately FOUR functions and no more. This is not a general-purpose expression
+// language: everything a seed needs is integer byte arithmetic, and each addition here is
+// a thing a distro author can hide logic in, where it is invisible to every gate. `mib` and
+// `gib` exist so a template says 2 GiB rather than 2147483648, which is the number a human
+// can check against upstream's own script.
+var seedTemplateFuncs = template.FuncMap{
+	"add": func(a, b int64) int64 { return a + b },
+	"sub": func(a, b int64) int64 { return a - b },
+	"mib": func(n int64) int64 { return n * 1024 * 1024 },
+	"gib": func(n int64) int64 { return n * 1024 * 1024 * 1024 },
+}
+
 func renderSeedTemplate(name, text string, ctx spec.InstallerSeedContext) (string, error) {
-	t, err := template.New(name).Option("missingkey=default").Parse(text)
+	t, err := template.New(name).Funcs(seedTemplateFuncs).Option("missingkey=default").Parse(text)
 	if err != nil {
 		return "", fmt.Errorf("parsing %s: %w", name, err)
 	}
