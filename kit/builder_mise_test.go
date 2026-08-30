@@ -36,6 +36,16 @@ func TestBuilderResolve_Mise(t *testing.T) {
 	if !strings.Contains(reply.Stage, "mise install && mise reshim") {
 		t.Fatalf("stage missing install+reshim: %q", reply.Stage)
 	}
+	// The pinned mise release is NAMED (miseVersion) and rendered into the
+	// download URL — never a magic literal in the template.
+	if !strings.Contains(reply.Stage, "mise-"+miseVersion+"-linux-$A$M.tar.gz") {
+		t.Fatalf("stage missing the named pinned mise release in the download URL: %q", reply.Stage)
+	}
+	// The stage probes for the musl loader and appends the -musl suffix, so the
+	// glibc binary never lands on a musl base where it cannot exec.
+	if !strings.Contains(reply.Stage, "ld-musl-x86_64.so.1") || !strings.Contains(reply.Stage, "M=\"-musl\"") {
+		t.Fatalf("stage missing the musl-loader probe: %q", reply.Stage)
+	}
 	if len(reply.CopyArtifacts) != 1 || !strings.Contains(reply.CopyArtifacts[0], "/home/user") {
 		t.Fatalf("artifacts must copy the Home: %v", reply.CopyArtifacts)
 	}

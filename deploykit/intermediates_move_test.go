@@ -72,6 +72,44 @@ func pixiCandy(t *testing.T, m spec.CandyModel, v spec.CandyView) CandyModel {
 	return NewSpecCandyModel(m, v)
 }
 
+// miseCandy writes a mise.toml (or .tool-versions) into a temp dir so the
+// specCandyAdapter's live fs-probe HasFile() reports it — the same pattern as
+// pixiCandy, proving BoxNeedsBuilder recognizes the mise detection files.
+func miseCandy(t *testing.T, m spec.CandyModel, v spec.CandyView, file string) CandyModel {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(""), 0o644); err != nil {
+		t.Fatalf("write %s: %v", file, err)
+	}
+	m.SourceDir = dir
+	return NewSpecCandyModel(m, v)
+}
+
+// TestImageNeedsBuilder_MiseDetection proves the mise detection-builder trigger:
+// a candy shipping mise.toml OR .tool-versions makes BoxNeedsBuilder return true
+// (the build-graph ordering fix — the builder box must enter the build order).
+func TestImageNeedsBuilder_MiseDetection(t *testing.T) {
+	layers := map[string]CandyModel{
+		"mise-toml":  miseCandy(t, spec.CandyModel{Name: "mise-toml"}, spec.CandyView{}, "mise.toml"),
+		"tool-vers":  miseCandy(t, spec.CandyModel{Name: "tool-vers"}, spec.CandyView{}, ".tool-versions"),
+		"plain":      candyFixture(spec.CandyModel{Name: "plain"}, spec.CandyView{}),
+	}
+	images := map[string]*buildkit.ResolvedBox{
+		"mise-toml": {ResolvedBox: spec.ResolvedBox{Name: "mise-toml", Base: "ext:1", IsExternalBase: true, Candy: []string{"mise-toml"}}},
+		"tool-vers": {ResolvedBox: spec.ResolvedBox{Name: "tool-vers", Base: "ext:1", IsExternalBase: true, Candy: []string{"tool-vers"}}},
+		"plain":     {ResolvedBox: spec.ResolvedBox{Name: "plain", Base: "ext:1", IsExternalBase: true, Candy: []string{"plain"}}},
+	}
+	if !BoxNeedsBuilder(images["mise-toml"], images, layers) {
+		t.Error("mise-toml candy should need builder (ships mise.toml)")
+	}
+	if !BoxNeedsBuilder(images["tool-vers"], images, layers) {
+		t.Error("tool-vers candy should need builder (ships .tool-versions)")
+	}
+	if BoxNeedsBuilder(images["plain"], images, layers) {
+		t.Error("plain candy should not need builder (no detection file)")
+	}
+}
+
 func TestGlobalCandyOrder_PopularityTieBreaking(t *testing.T) {
 	layers := map[string]CandyModel{
 		"pixi":    candyFixture(spec.CandyModel{Name: "pixi"}, spec.CandyView{}),
