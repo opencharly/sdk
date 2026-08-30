@@ -75,5 +75,24 @@ func ProjectCandiesScanned(uf *spec.UnifiedFile, rootDir string, parseDoc func(p
 		m, v, refs := ScanInlineCandy(name, rootDir, &il.CandyYAML)
 		out[name] = spec.ScannedCandy{Model: m, View: v, Refs: refs}
 	}
+	// Fold the mounted namespaces' candies into the scan (root-wins): a namespace image
+	// (pulled via resolveNamespacedBases) composes its candies by BARE name, and those
+	// candies live in the namespace's own UnifiedFile — without folding them here, the
+	// global candy order fails with "unknown candy" for every namespace image that
+	// composes a vendored candy (e.g. distro-cachyos's cachyos base composing
+	// cachyos-base-check from its candy/ discover). The recursion mirrors the walk's
+	// nested-namespace handling; each namespace's RootDir anchors its own relative
+	// `from:` paths.
+	for alias, ns := range uf.Namespaces {
+		nsCandies, err := ProjectCandiesScanned(ns, ns.RootDir, parseDoc)
+		if err != nil {
+			return nil, fmt.Errorf("namespace %q candies: %w", alias, err)
+		}
+		for name, c := range nsCandies {
+			if _, exists := out[name]; !exists {
+				out[name] = c
+			}
+		}
+	}
 	return out, nil
 }
