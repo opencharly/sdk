@@ -108,6 +108,27 @@ const cargoInlineTemplate = `RUN --mount=type=bind,from={{.LayerStage}},source=/
     fi
 `
 
+// miseStageTemplate is the builder.mise stage. The stage is DISTRO-AGNOSTIC: its FROM is
+// the host-computed BuilderRef (the image's builder box — distro-appropriate, e.g.
+// fedora-builder or cachyos-builder), the toolchain (curl+tar) comes from the builder
+// image, and the install command comes from the embedded builder: mise: vocabulary's
+// install_command ({{.InstallCmd}}). The only fixed paths are mise's OWN conventions:
+// the binary lands at /usr/local/bin/mise (the release tarball's layout) and the data
+// dir is mise's default $HOME/.local/share/mise (the CopyArtifacts copy the stage's
+// Home, exactly like the pixi builder's ~/.pixi). Distro knowledge stays in the host's
+// vocabulary — a builder template never names a distro.
+const miseStageTemplate = `FROM {{.BuilderRef}} AS {{.StageName}}
+USER root
+RUN A=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/') && \
+    curl -sL -o /tmp/mise.tar.gz https://github.com/jdx/mise/releases/download/v2026.8.14/mise-v2026.8.14-linux-$A.tar.gz && \
+    tar xzf /tmp/mise.tar.gz -C /usr/local --strip-components=1 && rm /tmp/mise.tar.gz
+USER {{.UID}}
+WORKDIR {{.Home}}
+ENV MISE_YES=1
+COPY --chown={{.UID}}:{{.GID}} {{.CopySrc}}/{{.Manifest}} {{.Manifest}}
+RUN {{.CacheMountsOwned}}{{.InstallCmd}} && mise reshim
+`
+
 // BuilderResolve renders `word`'s build-time multi-stage from the host-supplied context,
 // returning the pieces the host splices into the Containerfile: Stage (pre-main-FROM),
 // CopyArtifacts + CopyBinary (post-main-FROM), or InlineFragment (in-candy, inline builders).
@@ -150,6 +171,16 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 			return zero, err
 		}
 		return spec.BuilderResolveReply{InlineFragment: frag}, nil
+	case "mise":
+		stage, err := renderBuilderStage("mise-stage", miseStageTemplate, in)
+		if err != nil {
+			return zero, err
+		}
+		return spec.BuilderResolveReply{
+			Stage:         stage,
+			CopyArtifacts: []string{builderCopyLine(in.StageName, in.Home, in.Home, true, in.UID, in.GID)},
+			CopyBinary:    builderCopyLine(in.StageName, "/usr/local/bin/mise", "/usr/local/bin/mise", false, 0, 0),
+		}, nil
 	}
 	return zero, fmt.Errorf("kit.BuilderResolve: unknown detection-builder word %q", word)
 }
