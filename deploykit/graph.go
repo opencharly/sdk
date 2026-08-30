@@ -248,8 +248,11 @@ func BoxNeedsBuilder(img *buildkit.ResolvedBox, boxes map[string]*buildkit.Resol
 		if !ok {
 			continue
 		}
-		// Check file-based builder triggers
-		if layer.PixiManifest() != "" || layer.GetHasPackageJson() || layer.GetHasCargoToml() {
+		// Check file-based builder triggers (the four detection builders + the mise
+		// builder's detect_file: mise.toml/.tool-versions — a candy shipping either
+		// makes the image need its builder box as a build dependency).
+		if layer.PixiManifest() != "" || layer.GetHasPackageJson() || layer.GetHasCargoToml() ||
+			layer.HasFile("mise.toml") || layer.HasFile(".tool-versions") {
 			return true
 		}
 		// Check config-based builder triggers (any format with a matching builder)
