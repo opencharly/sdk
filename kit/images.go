@@ -5,9 +5,35 @@ package kit
 // drops its synthesized overlay images itself here, instead of forwarding to a hidden core command.
 
 import (
+	"context"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
+
+// runEngineCommand runs an engine command bounded by ctx, killing the whole
+// process group on timeout (a shell wrapper's children must not survive and
+// hold the output pipe open).
+func runEngineCommand(ctx context.Context, engineBin string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, engineBin, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return nil
+	}
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+// engineCommandTimeout bounds every engine command RemoveImagesByReference runs.
+// Under heavy concurrent load the container engine can stall (a saturated podman
+// daemon), and an unbounded exec would hang the calling bed's cleanup step in
+// futex_wait forever (the recurring fleet-del/remove stall). A package var (not a
+// const) so a test can shorten it. On expiry the whole process group is killed (a shell wrapper's children must not survive and hold the output pipe open).
+var engineCommandTimeout = 2 * time.Minute
 
 // RemoveImagesByReference best-effort removes every local image whose repository BASENAME exactly
 // equals `reference` (e.g. "<deploy>-overlay") via `<engineBin> images … | rmi`. Silent on error
@@ -22,13 +48,20 @@ func RemoveImagesByReference(engineBin, reference string) {
 	if engineBin == "" {
 		engineBin = "podman"
 	}
-	out, err := exec.Command(engineBin, "images",
-		"--filter", "reference="+reference, "--format", "{{.Repository}} {{.Tag}}").Output()
+	// Bound the engine commands with a timeout: under heavy concurrent load the
+	// container engine can stall (a saturated podman daemon), and an unbounded
+	// exec would hang the calling bed's cleanup step in futex_wait forever (the
+	// recurring fleet-del/remove stall). Fail fast instead — image cleanup is
+	// best-effort, so a timed-out list/rmi is a skipped cleanup, never a hang.
+	ctx, cancel := context.WithTimeout(context.Background(), engineCommandTimeout)
+	defer cancel()
+	out, err := runEngineCommand(ctx, engineBin, "images",
+		"--filter", "reference="+reference, "--format", "{{.Repository}} {{.Tag}}")
 	if err != nil {
 		return
 	}
 	for _, ref := range exactRepoRefs(string(out), reference) {
-		_ = exec.Command(engineBin, "rmi", ref).Run()
+		_, _ = runEngineCommand(ctx, engineBin, "rmi", ref)
 	}
 }
 
