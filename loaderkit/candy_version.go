@@ -29,7 +29,20 @@ import (
 // (naming the winner + a loser) and the newest per-entity version wins. This is
 // the sole candy-version arbiter — direct and transitive refs both flow through
 // it. cands is non-empty.
+// PickCandyVersion keeps the original two-argument shape so existing callers and their tests
+// compile unchanged; the advisory goes to stderr exactly as before.
 func PickCandyVersion(bareRef string, cands []spec.CandyCandidate) spec.CandyCandidate {
+	return PickCandyVersionWith(bareRef, cands, nil)
+}
+
+// PickCandyVersionWith is the same arbiter with an injectable advisory sink.
+//
+// The skew advisory used to be a bare `fmt.Fprintf(os.Stderr, ...)`, which made it
+// unstructured and therefore UNCOUNTABLE: `charly box validate` could not report how many
+// warnings a run produced because they never reached its diagnostics, so a summary line could
+// only omit the number or state a false one. A caller that wants the advisory as DATA passes a
+// collector here; nil falls back to stderr, so behaviour is unchanged for everyone else.
+func PickCandyVersionWith(bareRef string, cands []spec.CandyCandidate, warn func(string, ...any)) spec.CandyCandidate {
 	best := cands[0]
 	for _, c := range cands[1:] {
 		if kit.CompareCalVer(c.Version, best.Version) > 0 {
@@ -40,8 +53,10 @@ func PickCandyVersion(bareRef string, cands []spec.CandyCandidate) spec.CandyCan
 	}
 	for _, c := range cands {
 		if c.Version != best.Version {
-			fmt.Fprintf(os.Stderr,
-				"Warning: candy %s resolved to multiple versions; using newest %s (from %s), ignoring %s (from %s)\n",
+			if warn == nil {
+				warn = func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) }
+			}
+			warn("Warning: candy %s resolved to multiple versions; using newest %s (from %s), ignoring %s (from %s)",
 				bareRef, best.Version, best.Source, c.Version, c.Source)
 			break
 		}
