@@ -90,9 +90,9 @@ func miseCandy(t *testing.T, m spec.CandyModel, v spec.CandyView, file string) C
 // (the build-graph ordering fix — the builder box must enter the build order).
 func TestImageNeedsBuilder_MiseDetection(t *testing.T) {
 	layers := map[string]CandyModel{
-		"mise-toml":  miseCandy(t, spec.CandyModel{Name: "mise-toml"}, spec.CandyView{}, "mise.toml"),
-		"tool-vers":  miseCandy(t, spec.CandyModel{Name: "tool-vers"}, spec.CandyView{}, ".tool-versions"),
-		"plain":      candyFixture(spec.CandyModel{Name: "plain"}, spec.CandyView{}),
+		"mise-toml": miseCandy(t, spec.CandyModel{Name: "mise-toml"}, spec.CandyView{}, "mise.toml"),
+		"tool-vers": miseCandy(t, spec.CandyModel{Name: "tool-vers"}, spec.CandyView{}, ".tool-versions"),
+		"plain":     candyFixture(spec.CandyModel{Name: "plain"}, spec.CandyView{}),
 	}
 	images := map[string]*buildkit.ResolvedBox{
 		"mise-toml": {ResolvedBox: spec.ResolvedBox{Name: "mise-toml", Base: "ext:1", IsExternalBase: true, Candy: []string{"mise-toml"}}},
