@@ -182,7 +182,7 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		combined[name] = sc
 	}
 	for ref, cands := range candidates {
-		winner := PickCandyVersionWith(ref, cands, seams.Warn)
+		winner := PickCandyVersion(ref, cands, seams.Warn)
 		// SHADOWING IS EFFECTIVE, NOT ADVISORY. A local candy of the same name wins, so BOTH
 		// keys under which that one logical candy is reachable — its bare name and this full
 		// remote ref — must resolve to the LOCAL materialization. Keeping the remote body here

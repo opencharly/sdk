@@ -19,7 +19,7 @@ func skewCands() []spec.CandyCandidate {
 // or state a false one.
 func TestPickCandyVersionWithRoutesAdvisoryToSink(t *testing.T) {
 	var got []string
-	best := PickCandyVersionWith("acme/thing", skewCands(), func(f string, a ...any) {
+	best := PickCandyVersion("acme/thing", skewCands(), func(f string, a ...any) {
 		got = append(got, f)
 	})
 	if best.Version != "2026.242.1655" {
@@ -40,16 +40,16 @@ func TestPickCandyVersionWithSilentWhenVersionsAgree(t *testing.T) {
 		{Version: "2026.242.1655", GitTag: "v2026.242.1700", Source: "b"},
 	}
 	n := 0
-	PickCandyVersionWith("acme/thing", same, func(string, ...any) { n++ })
+	PickCandyVersion("acme/thing", same, func(string, ...any) { n++ })
 	if n != 0 {
 		t.Errorf("identical versions must not warn, got %d advisories", n)
 	}
 }
 
-// The two-argument form still exists and still works, so existing callers and their tests
-// compile and behave unchanged — this seam is additive, not a breaking change.
-func TestPickCandyVersionKeepsLegacyShape(t *testing.T) {
-	best := PickCandyVersion("acme/thing", skewCands())
+// nil selects stderr EXPLICITLY. There is no two-argument shim to fall back on: every caller
+// states where its advisories go.
+func TestPickCandyVersionNilSinkStillArbitrates(t *testing.T) {
+	best := PickCandyVersion("acme/thing", skewCands(), nil)
 	if best.Version != "2026.242.1655" {
 		t.Errorf("legacy form picked %q, want the newest", best.Version)
 	}

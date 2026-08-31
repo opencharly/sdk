@@ -29,20 +29,15 @@ import (
 // (naming the winner + a loser) and the newest per-entity version wins. This is
 // the sole candy-version arbiter — direct and transitive refs both flow through
 // it. cands is non-empty.
-// PickCandyVersion keeps the original two-argument shape so existing callers and their tests
-// compile unchanged; the advisory goes to stderr exactly as before.
-func PickCandyVersion(bareRef string, cands []spec.CandyCandidate) spec.CandyCandidate {
-	return PickCandyVersionWith(bareRef, cands, nil)
-}
-
-// PickCandyVersionWith is the same arbiter with an injectable advisory sink.
+// warn receives the skew advisory. It USED to be a bare `fmt.Fprintf(os.Stderr, ...)` inside
+// this function, which made the advisory unstructured and therefore UNCOUNTABLE: `charly box
+// validate` could not report how many warnings a run produced because they never reached its
+// diagnostics, so its summary could only omit the number or state a false one — an early draft
+// printed "0 warnings" on a run that had just emitted two.
 //
-// The skew advisory used to be a bare `fmt.Fprintf(os.Stderr, ...)`, which made it
-// unstructured and therefore UNCOUNTABLE: `charly box validate` could not report how many
-// warnings a run produced because they never reached its diagnostics, so a summary line could
-// only omit the number or state a false one. A caller that wants the advisory as DATA passes a
-// collector here; nil falls back to stderr, so behaviour is unchanged for everyone else.
-func PickCandyVersionWith(bareRef string, cands []spec.CandyCandidate, warn func(string, ...any)) spec.CandyCandidate {
+// The sink is a REQUIRED parameter, not an optional shim. Every caller states where its
+// advisories go; passing nil selects stderr explicitly rather than by omission.
+func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, warn func(string, ...any)) spec.CandyCandidate {
 	best := cands[0]
 	for _, c := range cands[1:] {
 		if kit.CompareCalVer(c.Version, best.Version) > 0 {
