@@ -182,7 +182,7 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		combined[name] = sc
 	}
 	for ref, cands := range candidates {
-		winner := PickCandyVersion(ref, cands)
+		winner := PickCandyVersion(ref, cands, seams.Warn)
 		// SHADOWING IS EFFECTIVE, NOT ADVISORY. A local candy of the same name wins, so BOTH
 		// keys under which that one logical candy is reachable — its bare name and this full
 		// remote ref — must resolve to the LOCAL materialization. Keeping the remote body here
@@ -196,7 +196,13 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		// "incompatible API version" warning. Resolving both keys to the local body makes the
 		// choice deterministic at the source instead of per consumer.
 		if local, ok := localScanned[winner.Scanned.Model.Name]; ok {
-			fmt.Fprintf(os.Stderr, "Note: local candy %q shadows remote candy %q\n", winner.Scanned.Model.Name, ref)
+			// Same reasoning as the skew advisory: route it through the seam so a caller can
+			// collect it as data. nil keeps today's stderr behaviour.
+			if w := seams.Warn; w != nil {
+				w("Note: local candy %q shadows remote candy %q", winner.Scanned.Model.Name, ref)
+			} else {
+				fmt.Fprintf(os.Stderr, "Note: local candy %q shadows remote candy %q\n", winner.Scanned.Model.Name, ref)
+			}
 			combined[ref] = local
 			continue
 		}
