@@ -34,16 +34,25 @@ type LoaderExecutor = spec.LoaderExecutor
 // loaderkit.LoadUnified without importing charly core.
 func LoadSeamsFromExecutor(exec LoaderExecutor) LoadSeams {
 	return LoadSeams{
-		RunBootstrapPhase:        exec.RunBootstrapPhase,
-		WalkProject:              exec.WalkProject,
-		MaterializeLoadedProject: exec.MaterializeLoadedProject,
-		FlattenFleetVenues:       FlattenFleetVenues,
-		FoldMembers:              FoldMembers,
-		StampFleetDescents:       func(uf *spec.UnifiedFile) { StampFleetDescents(uf, exec.LoaderThreaded()) },
-		ValidateEphemeral:        func(uf *spec.UnifiedFile) error { return ValidateEphemeralUnified(uf, exec.LoaderThreaded()) },
-		ValidateCheckBeds:        func(uf *spec.UnifiedFile) error { return ValidateCheckBeds(uf, exec.LoaderThreaded()) },
-		ValidateAndroidDevices:   exec.ValidateAndroidDevices,
-		ValidateMembers:          ValidateMembers,
-		ValidatePreemptible:      exec.ValidatePreemptible,
+		RunBootstrapPhase: exec.RunBootstrapPhase,
+		WalkProject:       exec.WalkProject,
+		// The materialize leg is the CUE-unify hotspot every CLI subcommand child re-runs (see
+		// load_cache.go — the 32-lane stall root). Wrapping it with the host-side materialized-tree
+		// cache here — the ONE seam constructor BOTH placements (compiled-in hostLoaderExecutor and
+		// the out-of-process executorLoaderExecutor) drive LoadUnified through — lets same-state
+		// loads across the wave's separate OS processes reuse the first child's materialization
+		// instead of re-running the unify. The cache never fails a load: every cache failure
+		// degrades to exec.MaterializeLoadedProject exactly as before.
+		MaterializeLoadedProject: func(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile) error {
+			return MaterializeLoadedProjectCached(lp, merged, byID, exec.MaterializeLoadedProject)
+		},
+		FlattenFleetVenues:     FlattenFleetVenues,
+		FoldMembers:            FoldMembers,
+		StampFleetDescents:     func(uf *spec.UnifiedFile) { StampFleetDescents(uf, exec.LoaderThreaded()) },
+		ValidateEphemeral:      func(uf *spec.UnifiedFile) error { return ValidateEphemeralUnified(uf, exec.LoaderThreaded()) },
+		ValidateCheckBeds:      func(uf *spec.UnifiedFile) error { return ValidateCheckBeds(uf, exec.LoaderThreaded()) },
+		ValidateAndroidDevices: exec.ValidateAndroidDevices,
+		ValidateMembers:        ValidateMembers,
+		ValidatePreemptible:    exec.ValidatePreemptible,
 	}
 }
