@@ -346,7 +346,18 @@ func DeleteSnapshot(opts SnapshotDeleteOpts) error {
 	}
 	entry, ok := reg.Snapshots[opts.SnapName]
 	if !ok {
-		return fmt.Errorf("vm %q: snapshot %q does not exist", opts.VmName, opts.SnapName)
+		// Dual-state delete (measured gap, RCA #8): the registry entry can be
+		// absent while the LIBVIRT snapshot metadata still exists (disk removed,
+		// registry stale) — which blocks domain teardown with "cannot delete
+		// inactive domain with 1 snapshots". Best-effort clean the libvirt side
+		// so delete is idempotent and recovery always succeeds; any remaining
+		// libvirt failure is surfaced.
+		if err := DeleteExternalSnapshot(opts.VmName, &SnapshotEntry{Name: opts.SnapName, LibvirtName: opts.SnapName, Mode: "external"}); err != nil {
+			return fmt.Errorf("vm %q: snapshot %q does not exist (libvirt cleanup failed): %w", opts.VmName, opts.SnapName, err)
+		}
+		delete(reg.Snapshots, opts.SnapName)
+		_ = saveRegistry(opts.VmName, reg)
+		return nil
 	}
 	if entry.Refcount > 0 && !opts.Force {
 		return fmt.Errorf("vm %q: snapshot %q has refcount=%d (clones/ephemerals depend on it); pass --force only after destroying them",
