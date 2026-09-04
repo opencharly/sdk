@@ -178,8 +178,23 @@ func loadStanzas(path string) map[string]string {
 }
 
 func saveStanzas(path string, stanzas map[string]string) error {
-	keys := make([]string, 0, len(stanzas))
-	for k := range stanzas {
+	// Serialize concurrent fragment writers: the old read-modify-write had a whole-block
+	// replace of a possibly-stale read — two concurrent vm-creates each merging against their
+	// own load dropped the other's aliases, and the lost alias made that lane's ssh executor
+	// dial hang (measured: the 16-lane check-run stalls/inflation, no CPU/RAM pressure).
+	// The lock + a fresh per-alias merge lose nothing under concurrency.
+	unlock, lockErr := AcquireFileLock(path+".lock", true)
+	if lockErr != nil {
+		return lockErr
+	}
+	defer func() { _ = unlock() }()
+
+	merged := loadStanzas(path)
+	for k, v := range stanzas {
+		merged[k] = v
+	}
+	keys := make([]string, 0, len(merged))
+	for k := range merged {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -188,7 +203,7 @@ func saveStanzas(path string, stanzas map[string]string) error {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(strings.TrimRight(stanzas[k], "\n"))
+		sb.WriteString(strings.TrimRight(merged[k], "\n"))
 		sb.WriteString("\n")
 	}
 	body := sb.String()
