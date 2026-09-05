@@ -37,9 +37,18 @@ type materializedEnvelope struct {
 // capturePluginKinds walks uf + its mounted namespaces, recording each level's PluginKinds under its
 // namespace path so the drop-on-marshal maps can be re-attached after the round-trip.
 func capturePluginKinds(uf *spec.UnifiedFile, prefix string, out pluginKindsByPath) {
-	if uf == nil {
+	capturePluginKindsSeen(uf, prefix, out, map[*spec.UnifiedFile]bool{})
+}
+
+// capturePluginKindsSeen walks the namespace tree with a POINTER-IDENTITY cycle-break:
+// a mutual-import cycle (main<->sub, the loader aliasing semantics) makes the Namespaces
+// graph cyclic, so the plain recursion looped forever (R1: sdk pin-bump regression caught
+// by charly's TestImportNamespace_MutualCycle). Same aliasing rule the walk uses.
+func capturePluginKindsSeen(uf *spec.UnifiedFile, prefix string, out pluginKindsByPath, seen map[*spec.UnifiedFile]bool) {
+	if uf == nil || seen[uf] {
 		return
 	}
+	seen[uf] = true
 	if len(uf.PluginKinds) > 0 {
 		out[prefix] = uf.PluginKinds
 	}
@@ -48,16 +57,21 @@ func capturePluginKinds(uf *spec.UnifiedFile, prefix string, out pluginKindsByPa
 		if prefix != "" {
 			child = prefix + "." + name
 		}
-		capturePluginKinds(ns, child, out)
+		capturePluginKindsSeen(ns, child, out, seen)
 	}
 }
 
 // restorePluginKinds re-attaches the captured PluginKinds maps at each namespace level by the SAME
 // path capturePluginKinds used, so the reconstructed uf matches the source at every level.
 func restorePluginKinds(uf *spec.UnifiedFile, prefix string, in pluginKindsByPath) {
-	if uf == nil {
+	restorePluginKindsSeen(uf, prefix, in, map[*spec.UnifiedFile]bool{})
+}
+
+func restorePluginKindsSeen(uf *spec.UnifiedFile, prefix string, in pluginKindsByPath, seen map[*spec.UnifiedFile]bool) {
+	if uf == nil || seen[uf] {
 		return
 	}
+	seen[uf] = true
 	if pk, ok := in[prefix]; ok {
 		uf.PluginKinds = pk
 	}
@@ -66,7 +80,7 @@ func restorePluginKinds(uf *spec.UnifiedFile, prefix string, in pluginKindsByPat
 		if prefix != "" {
 			child = prefix + "." + name
 		}
-		restorePluginKinds(ns, child, in)
+		restorePluginKindsSeen(ns, child, in, seen)
 	}
 }
 
