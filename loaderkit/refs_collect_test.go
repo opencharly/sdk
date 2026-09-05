@@ -2,11 +2,12 @@ package loaderkit
 
 import (
 	"encoding/json"
-	"github.com/opencharly/spec/spec"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // TestMarkRepoAutoMigrating_GuardsReentry verifies the remote-cache
