@@ -316,3 +316,4 @@ func TestRenderInstallerSeed_CustomCommands(t *testing.T) {
 	}
 	if cmds2, ok := cfg2["custom_commands"].([]any); !ok || len(cmds2) != 0 {
 }
+}
