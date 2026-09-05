@@ -178,30 +178,10 @@ func TestVersionlessRefUsesCachedTag(t *testing.T) {
 	}
 }
 
-func TestLatestTagUsesCachedClient(t *testing.T) {
-	shim := filepath.Join(t.TempDir(), "git")
-	body := "#!/bin/sh\necho 'git shim invoked — the cache must serve the tag' >&2\nexit 42\n"
-	if err := os.WriteFile(shim, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", t.TempDir()+":"+os.Getenv("PATH")) // NOTE: the shim dir must be FIRST; set below
-	_ = shim
-	// The resolution path is covered by the existing refs-collection tests + the
-	// compiled-in client; the cache-serving itself is proven by the spec cache-surface
-	// tests. A raw-git invocation in ANY future refs_collect refactor is caught by
-	// the code review + this package's tests refusing the removed raw fallback.
-	t.Log("the raw GitLatestTag fallback was removed — resolution routes via gitClient().LatestTag")
-}
-
-// TestVersionlessRefRoutesThroughSeam — the ROUTING regression: the version-less
-// tag resolution inside CollectRemoteRefsOpts must honor the LatestTag seam (the
-// fix routes it through gitClient().LatestTag when the seam is nil). A recorder
-// seam: reverting the routing change (the raw refs.GitLatestTag fallback) breaks
-// this test, because the seam is never consulted.
 func TestVersionlessRefRoutesThroughSeam(t *testing.T) {
 	cfg := &spec.Config{
 		Box: spec.BoxMap{
-			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-x"]}`),
+			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
 		},
 	}
 	called := false
@@ -213,5 +193,43 @@ func TestVersionlessRefRoutesThroughSeam(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("the version-less resolution did not route through the LatestTag seam")
+	}
+}
+
+// TestVersionlessRefFallbackUsesCachedClient — the FALLBACK regression: with the
+// LatestTag seam nil, the version-less resolution must route through
+// gitClient().LatestTag (the cached 1h-TTL client), never the raw refs.GitLatestTag.
+// A local repo + a warmed cache + a FAILING git shim: any raw-git invocation breaks
+// the test, so a pass proves the fallback served the cached tag.
+func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
+		t.Skip("git unavailable: " + err.Error())
+	}
+	_ = exec.Command("git", "-C", repo, "config", "user.email", "t@t").Run()
+	_ = exec.Command("git", "-C", repo, "config", "user.name", "t").Run()
+	_ = exec.Command("git", "-C", repo, "commit", "--allow-empty", "-qm", "init").Run()
+	if err := exec.Command("git", "-C", repo, "tag", "v1.0.0").Run(); err != nil {
+		t.Skip("git tag failed: " + err.Error())
+	}
+	url := "https://github.com/opencharly/plugin-deploy-vm"
+	if _, err := gitClient().LatestTag(url); err != nil {
+		t.Skip("warm failed (network?): " + err.Error())
+	}
+	shimDir := t.TempDir()
+	shim := filepath.Join(shimDir, "git")
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\necho raw-git-invoked >&2\nexit 42\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
+		},
+	}
+	// the seam is NIL — the fallback (gitClient().LatestTag) must serve the cached tag
+	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{}); err != nil {
+		t.Fatalf("collect with the fallback: %v", err)
 	}
 }
