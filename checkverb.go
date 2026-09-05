@@ -11,6 +11,7 @@ import (
 	pb "github.com/opencharly/spec/proto"
 	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/spec/transport"
+	"github.com/opencharly/spec/ops"
 )
 
 // ServeCheckVerb serves a HOST-COUPLED check verb (kit.CheckVerbProvider) OUT-OF-PROCESS
@@ -101,6 +102,13 @@ type sdkCheckContext struct {
 	exec *Executor
 	cc   pb.CheckContextServiceClient
 	env  spec.CheckEnv
+}
+
+// InvokeProvider dispatches a provider invocation over this context's SINGLE dial
+// (the one-dial doctrine: a second Dial on the same broker id hangs — the header
+// comment). Session/service verbs reach the runner's registry through it.
+func (c *sdkCheckContext) InvokeProvider(ctx context.Context, class, word, op string, paramsJSON, env []byte) ([]byte, error) {
+	return c.exec.InvokeProvider(ctx, class, word, op, paramsJSON, env, ops.InvokeProviderOpts{})
 }
 
 func (c *sdkCheckContext) Exec() kit.Executor {
