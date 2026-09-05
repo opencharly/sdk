@@ -261,8 +261,23 @@ func CreateSnapshot(opts SnapshotCreateOpts) (*SnapshotEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, exists := reg.Snapshots[opts.SnapName]; exists {
-		return nil, fmt.Errorf("vm %q: snapshot %q already exists", opts.VmName, opts.SnapName)
+	if entry, exists := reg.Snapshots[opts.SnapName]; exists {
+		// Golden-refresh idempotency: a registry entry whose disk is MISSING is a
+		// stale record (the golden was deleted to force a re-capture, or a crashed
+		// run left the record behind). Re-capturing over it is the operator's
+		// intent — drop the stale entry and proceed. A live entry (disk present)
+		// is still a hard conflict.
+		if entry.Mode == "external" && entry.DiskPath != "" {
+			if _, err := os.Stat(entry.DiskPath); err == nil {
+				return nil, fmt.Errorf("vm %q: snapshot %q already exists", opts.VmName, opts.SnapName)
+			}
+		} else {
+			return nil, fmt.Errorf("vm %q: snapshot %q already exists", opts.VmName, opts.SnapName)
+		}
+		delete(reg.Snapshots, opts.SnapName)
+		if err := saveRegistry(opts.VmName, reg); err != nil {
+			return nil, err
+		}
 	}
 
 	// Implicit parent = whichever snapshot was most recently created
