@@ -25,6 +25,18 @@ import "github.com/opencharly/spec/spec"
 // shares via LoadUnifiedViaExecutor).
 type LoaderExecutor = spec.LoaderExecutor
 
+// connectPassAwareExecutor is the OPTIONAL capability a LoaderExecutor may implement to report
+// whether the current load is running inside the walk's connect-declared-kind pre-pass
+// (inKindConnectPass). The compiled-in host implements it (charly's hostLoaderExecutor); an
+// out-of-process plugin executor does not (plugins have no connect pass). LoadSeamsFromExecutor
+// uses it to bypass the materialized-tree cache for the connect pass's transient, deferred-entity
+// materialization (see the MaterializeLoadedProject seam below — R1, the external-kind decode
+// regression). Structural: adding the method to a LoaderExecutor implementation needs NO spec
+// change.
+type connectPassAwareExecutor interface {
+	InKindConnectPass() bool
+}
+
 // LoadSeamsFromExecutor builds a LoadSeams from a LoaderExecutor: the PURE, registry-free LOAD-half
 // seams (relocated into loaderkit, K1-LOADER RELOCATION) are wired DIRECTLY; the registry-/host-
 // coupled seams dispatch through exec. The DATA seams (descent stamp + ephemeral / check-bed
@@ -43,7 +55,22 @@ func LoadSeamsFromExecutor(exec LoaderExecutor) LoadSeams {
 		// loads across the wave's separate OS processes reuse the first child's materialization
 		// instead of re-running the unify. The cache never fails a load: every cache failure
 		// degrades to exec.MaterializeLoadedProject exactly as before.
+		//
+		// CONNECT-PASS BYPASS (R1, the external-kind decode regression): the walk's
+		// connect-declared-kind pre-pass re-loads the project (connectDeclaredKindPlugins →
+		// LoadConfig) with inKindConnectPass=true, and that nested load's materialize DEFERS the
+		// declared-but-unconnected kind nodes (they decode only after the connect registers the
+		// provider). Caching that deferred-entity tree under the SAME key the outer load then
+		// reads would hand the outer load a tree with the kind entities MISSING — the observed
+		// regression (charly's TestExternalKind_PrescanConnectDecode). The connect pass's
+		// materialization is transient (it exists only to scan candies), so it must never be
+		// cached: an executor that OPTIONALLY reports the connect-pass state (the compiled-in
+		// host does; out-of-process plugins have no connect pass) bypasses the cache for the
+		// duration of the pass, and the outer load re-materializes with the providers registered.
 		MaterializeLoadedProject: func(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile) error {
+			if aware, ok := exec.(connectPassAwareExecutor); ok && aware.InKindConnectPass() {
+				return exec.MaterializeLoadedProject(lp, merged, byID)
+			}
 			return MaterializeLoadedProjectCached(lp, merged, byID, exec.MaterializeLoadedProject)
 		},
 		FlattenFleetVenues:     FlattenFleetVenues,

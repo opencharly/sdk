@@ -122,6 +122,55 @@ func TestMaterializedCache_SameStateMaterializesOnce(t *testing.T) {
 	}
 }
 
+// connectPassCountingExecutor is a countingExecutor that ALSO reports the connect-pass state
+// (implements the optional connectPassAwareExecutor capability) — the compiled-in host's shape.
+// The connect-pass flag is settable so a test can flip it between loads.
+type connectPassCountingExecutor struct {
+	countingExecutor
+	inConnectPass bool
+}
+
+func (c *connectPassCountingExecutor) InKindConnectPass() bool { return c.inConnectPass }
+
+// TestMaterializedCache_ConnectPassBypassesCache is the R1 regression gate for the external-kind
+// decode regression: a load running INSIDE the walk's connect-declared-kind pre-pass must NOT be
+// cached (its materialization DEFERS the declared-but-unconnected kind nodes — caching it would
+// hand the outer load a tree with the kind entities missing). The witness: with the connect-pass
+// flag true, two same-state loads BOTH materialize (the cache is bypassed); with the flag false
+// the same two loads materialize ONCE (the normal cache contract, TestMaterializedCache_
+// SameStateMaterializesOnce). Removing the bypass from LoadSeamsFromExecutor breaks this test.
+func TestMaterializedCache_ConnectPassBypassesCache(t *testing.T) {
+	isolateCacheRoot(t)
+	lp, res := testMaterializedState()
+
+	// Connect pass active: every load materializes directly — the deferred-entity tree must
+	// never be cached under the outer load's key.
+	exec := &connectPassCountingExecutor{countingExecutor: countingExecutor{canned: lp, result: res}, inConnectPass: true}
+	seams := LoadSeamsFromExecutor(exec)
+	for i := 0; i < 2; i++ {
+		merged := &spec.UnifiedFile{}
+		if err := seams.MaterializeLoadedProject(&lp, merged, map[int64]*spec.UnifiedFile{}); err != nil {
+			t.Fatalf("connect-pass load %d: %v", i+1, err)
+		}
+	}
+	if exec.materializeCalls != 2 {
+		t.Fatalf("connect pass must bypass the cache (materialize per load), got %d calls", exec.materializeCalls)
+	}
+
+	// Connect pass inactive: the normal cache contract holds (one unify for same-state loads).
+	exec2 := &connectPassCountingExecutor{countingExecutor: countingExecutor{canned: lp, result: res}, inConnectPass: false}
+	seams2 := LoadSeamsFromExecutor(exec2)
+	for i := 0; i < 2; i++ {
+		merged := &spec.UnifiedFile{}
+		if err := seams2.MaterializeLoadedProject(&lp, merged, map[int64]*spec.UnifiedFile{}); err != nil {
+			t.Fatalf("normal load %d: %v", i+1, err)
+		}
+	}
+	if exec2.materializeCalls != 1 {
+		t.Fatalf("normal load must cache (one unify), got %d calls", exec2.materializeCalls)
+	}
+}
+
 // TestMaterializedCache_DisabledReMaterializes is the explicit no-cache signature: with the cache
 // disabled every load materializes — exactly the failure mode "the materializer call-count > 1"
 // the SameState test would hit if the cache were removed.
