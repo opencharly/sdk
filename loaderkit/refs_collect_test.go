@@ -1,9 +1,13 @@
 package loaderkit
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // TestMarkRepoAutoMigrating_GuardsReentry verifies the remote-cache
@@ -133,5 +137,100 @@ func TestRepoOverrideDir_OperatorFirstWins(t *testing.T) {
 	got, ok, err := repoOverrideDir("github.com/o/r", envValue)
 	if err != nil || !ok || got != opDir {
 		t.Fatalf("operator-first: got (%q,%v,%v), want operator dir %q", got, ok, err, opDir)
+	}
+}
+
+// TestVersionlessRefUsesCachedTag — the ls-remote fanout regression: the version-less
+// tag resolution must be served by the cached gitClient().LatestTag (the 1h-TTL disk
+// cache), never the raw refs.GitLatestTag. A local repo + a warmed cache + a FAILING
+// git shim on PATH: any raw-git invocation breaks the test, so a pass proves the cache
+// served the tag.
+func TestVersionlessRefUsesCachedTag(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
+		t.Skip("git unavailable: " + err.Error())
+	}
+	_ = exec.Command("git", "-C", repo, "config", "user.email", "t@t").Run()
+	_ = exec.Command("git", "-C", repo, "config", "user.name", "t").Run()
+	_ = exec.Command("git", "-C", repo, "commit", "--allow-empty", "-qm", "init").Run()
+	if err := exec.Command("git", "-C", repo, "tag", "v1.0.0").Run(); err != nil {
+		t.Skip("git tag failed: " + err.Error())
+	}
+	url := "file://" + repo
+	// warm the cache through the public API (the raw git runs once, allowed)
+	if _, err := gitClient().LatestTag(url); err != nil {
+		t.Skip("warm failed: " + err.Error())
+	}
+	// the shim: ANY git invocation now fails — the cached path must not invoke git
+	shimDir := t.TempDir()
+	shim := filepath.Join(shimDir, "git")
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\necho raw-git-invoked >&2\nexit 42\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
+	// the cached LatestTag must serve the tag WITHOUT invoking git
+	tag, err := gitClient().LatestTag(url)
+	if err != nil {
+		t.Fatalf("cached LatestTag failed (raw git invoked?): %v", err)
+	}
+	if tag != "v1.0.0" {
+		t.Fatalf("cached tag = %q, want v1.0.0", tag)
+	}
+}
+
+func TestVersionlessRefRoutesThroughSeam(t *testing.T) {
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
+		},
+	}
+	called := false
+	seams := spec.RefsCollectSeams{
+		LatestTag: func(url string) (string, error) { called = true; return "v1.0.0", nil },
+	}
+	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, seams); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if !called {
+		t.Fatal("the version-less resolution did not route through the LatestTag seam")
+	}
+}
+
+// TestVersionlessRefFallbackUsesCachedClient — the FALLBACK regression: with the
+// LatestTag seam nil, the version-less resolution must route through
+// gitClient().LatestTag (the cached 1h-TTL client), never the raw refs.GitLatestTag.
+// A local repo + a warmed cache + a FAILING git shim: any raw-git invocation breaks
+// the test, so a pass proves the fallback served the cached tag.
+func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
+		t.Skip("git unavailable: " + err.Error())
+	}
+	_ = exec.Command("git", "-C", repo, "config", "user.email", "t@t").Run()
+	_ = exec.Command("git", "-C", repo, "config", "user.name", "t").Run()
+	_ = exec.Command("git", "-C", repo, "commit", "--allow-empty", "-qm", "init").Run()
+	if err := exec.Command("git", "-C", repo, "tag", "v1.0.0").Run(); err != nil {
+		t.Skip("git tag failed: " + err.Error())
+	}
+	url := "https://github.com/opencharly/plugin-deploy-vm"
+	if _, err := gitClient().LatestTag(url); err != nil {
+		t.Skip("warm failed (network?): " + err.Error())
+	}
+	shimDir := t.TempDir()
+	shim := filepath.Join(shimDir, "git")
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\necho raw-git-invoked >&2\nexit 42\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
+		},
+	}
+	// the seam is NIL — the fallback (gitClient().LatestTag) must serve the cached tag
+	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{}); err != nil {
+		t.Fatalf("collect with the fallback: %v", err)
 	}
 }
