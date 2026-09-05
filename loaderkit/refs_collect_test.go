@@ -1,7 +1,6 @@
 package loaderkit
 
 import (
-	"github.com/opencharly/spec/spec"
 	"os"
 	"os/exec"
 	"path/filepath"
