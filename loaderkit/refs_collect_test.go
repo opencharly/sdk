@@ -1,6 +1,8 @@
 package loaderkit
 
 import (
+	"encoding/json"
+	"github.com/opencharly/spec/spec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -189,4 +191,27 @@ func TestLatestTagUsesCachedClient(t *testing.T) {
 	// tests. A raw-git invocation in ANY future refs_collect refactor is caught by
 	// the code review + this package's tests refusing the removed raw fallback.
 	t.Log("the raw GitLatestTag fallback was removed — resolution routes via gitClient().LatestTag")
+}
+
+// TestVersionlessRefRoutesThroughSeam — the ROUTING regression: the version-less
+// tag resolution inside CollectRemoteRefsOpts must honor the LatestTag seam (the
+// fix routes it through gitClient().LatestTag when the seam is nil). A recorder
+// seam: reverting the routing change (the raw refs.GitLatestTag fallback) breaks
+// this test, because the seam is never consulted.
+func TestVersionlessRefRoutesThroughSeam(t *testing.T) {
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-x"]}`),
+		},
+	}
+	called := false
+	seams := spec.RefsCollectSeams{
+		LatestTag: func(url string) (string, error) { called = true; return "v1.0.0", nil },
+	}
+	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, seams); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if !called {
+		t.Fatal("the version-less resolution did not route through the LatestTag seam")
+	}
 }
