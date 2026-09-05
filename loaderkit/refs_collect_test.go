@@ -136,11 +136,45 @@ func TestRepoOverrideDir_OperatorFirstWins(t *testing.T) {
 	}
 }
 
-// TestLatestTagUsesCachedClient — the ls-remote fanout regression: the version-less
-// tag resolution must go through gitClient().LatestTag (the 1h-TTL disk cache), never
-// the raw refs.GitLatestTag (the per-process git ls-remote --tags fanout, measured at
-// 90-94 concurrent procs -> GitHub throttling). The PATH shim FAILS: any raw git
-// subprocess invocation breaks the test, so a passing test proves the cache served.
+// TestVersionlessRefUsesCachedTag — the ls-remote fanout regression: the version-less
+// tag resolution must be served by the cached gitClient().LatestTag (the 1h-TTL disk
+// cache), never the raw refs.GitLatestTag. A local repo + a warmed cache + a FAILING
+// git shim on PATH: any raw-git invocation breaks the test, so a pass proves the cache
+// served the tag.
+func TestVersionlessRefUsesCachedTag(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
+		t.Skip("git unavailable: " + err.Error())
+	}
+	_ = exec.Command("git", "-C", repo, "config", "user.email", "t@t").Run()
+	_ = exec.Command("git", "-C", repo, "config", "user.name", "t").Run()
+	_ = exec.Command("git", "-C", repo, "commit", "--allow-empty", "-qm", "init").Run()
+	if err := exec.Command("git", "-C", repo, "tag", "v1.0.0").Run(); err != nil {
+		t.Skip("git tag failed: " + err.Error())
+	}
+	url := "file://" + repo
+	// warm the cache through the public API (the raw git runs once, allowed)
+	if _, err := gitClient().LatestTag(url); err != nil {
+		t.Skip("warm failed: " + err.Error())
+	}
+	// the shim: ANY git invocation now fails — the cached path must not invoke git
+	shimDir := t.TempDir()
+	shim := filepath.Join(shimDir, "git")
+	if err := os.WriteFile(shim, []byte("#!/bin/sh\necho raw-git-invoked >&2\nexit 42\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
+	// the cached LatestTag must serve the tag WITHOUT invoking git
+	tag, err := gitClient().LatestTag(url)
+	if err != nil {
+		t.Fatalf("cached LatestTag failed (raw git invoked?): %v", err)
+	}
+	if tag != "v1.0.0" {
+		t.Fatalf("cached tag = %q, want v1.0.0", tag)
+	}
+}
+
 func TestLatestTagUsesCachedClient(t *testing.T) {
 	shim := filepath.Join(t.TempDir(), "git")
 	body := "#!/bin/sh\necho 'git shim invoked — the cache must serve the tag' >&2\nexit 42\n"
