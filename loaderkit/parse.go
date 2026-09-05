@@ -36,6 +36,12 @@ var (
 	docDirectiveSet  = sliceSet(spec.DocDirectives)
 	authoringVerbSet = sliceSet(spec.AuthoringVerbs) // core's authoredOpFieldSet
 	kindWordSet      = sliceSet(spec.KindWords)
+	// instrumentModifiers are the non-verb authoring fields of a #Instrument capture
+	// entry (Cutover A, plan 3): id/phase/pipeline. A capture entry carries exactly
+	// ONE verb-position key beside them, desugared identically to a step verb. Mirrors
+	// spec's #Instrument authoring contract (spec A-task-1); the CUE def gates any
+	// other authored key.
+	instrumentModifiers = sliceSet([]string{"id", "phase", "pipeline"})
 )
 
 func sliceSet(ss []string) map[string]bool {
@@ -121,8 +127,9 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	if disc == "" {
 		return spec.ParsedNode{}, fmt.Errorf("node %q: no kind discriminator — collections and plan steps live INLINE in the kind value (the named child-node shape was removed); run: charly migrate", name)
 	}
-	// Desugar the body's plan steps in place (plugin sugar → plugin/plugin_input) BEFORE the
-	// body is serialized (and before any consumer — including the raw-value CUE gates — sees it).
+	// Desugar the body in place (plan steps + instrument/pipeline entries — plugin sugar →
+	// plugin/plugin_input) BEFORE the body is serialized (and before any consumer — including
+	// the raw-value CUE gates — sees it).
 	if discValue != nil && discValue.Kind == yaml.MappingNode {
 		if err := desugarEntityPlan(name, discValue, t); err != nil {
 			return spec.ParsedNode{}, err
@@ -168,18 +175,33 @@ func entityBodyJSON(name string, discValue *yaml.Node) (json.RawMessage, error) 
 	return j, nil
 }
 
-// desugarEntityPlan desugars every `plan:` step of an entity body in place.
+// desugarEntityPlan desugars every `plan:` step of an entity body in place, plus the
+// `instrument:` capture entries (Cutover A) — each entry's verb-position key and its
+// `pipeline:` word list. All of them rewrite authored `<word>: <input>` plugin-verb
+// sugar into the internal plugin/plugin_input pair with byte-identical semantics; the
+// CUE defs (the closed #Step/#Instrument bodies + each plugin's own input schema) gate
+// everything else, so the parse stays kind-blind.
 func desugarEntityPlan(entity string, body *yaml.Node, t spec.Threaded) error {
-	plan := mapValue(body, "plan")
-	if plan == nil {
-		return nil
+	if plan := mapValue(body, "plan"); plan != nil {
+		if plan.Kind != yaml.SequenceNode {
+			return fmt.Errorf("node %q: plan must be a step LIST (got yaml kind %v); run: charly migrate", entity, plan.Kind)
+		}
+		for i, st := range plan.Content {
+			if err := desugarStep(entity, i, st, t); err != nil {
+				return err
+			}
+		}
 	}
-	if plan.Kind != yaml.SequenceNode {
-		return fmt.Errorf("node %q: plan must be a step LIST (got yaml kind %v); run: charly migrate", entity, plan.Kind)
-	}
-	for i, st := range plan.Content {
-		if err := desugarStep(entity, i, st, t); err != nil {
-			return err
+	// Capture entries live on the substrate-node body beside plan: (the CUE substrate
+	// schema gates where instrument: may appear — not the parse's job).
+	if inst := mapValue(body, "instrument"); inst != nil {
+		if inst.Kind != yaml.SequenceNode {
+			return fmt.Errorf("node %q: instrument must be a capture entry LIST (got yaml kind %v)", entity, inst.Kind)
+		}
+		for i, entry := range inst.Content {
+			if err := desugarInstrumentEntry(entity, i, entry, t); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -191,19 +213,15 @@ func desugarStep(entity string, idx int, st *yaml.Node, t spec.Threaded) error {
 	if st.Kind != yaml.MappingNode {
 		return fmt.Errorf("node %q: plan[%d] must be a mapping step", entity, idx)
 	}
+	path := fmt.Sprintf("plan[%d]", idx)
+	sugarKeys, err := sugarKeyIndexes(entity, path, st, nil)
+	if err != nil {
+		return err
+	}
 	intents := 0
-	var sugarKeys []int
 	for i := 0; i+1 < len(st.Content); i += 2 {
-		k := st.Content[i].Value
-		switch {
-		case k == "plugin" || k == "plugin_input":
-			return fmt.Errorf("node %q: plan[%d] authors %q — the plugin envelope is internal-only; author the verb as `<word>: <input>` sugar (run: charly migrate)", entity, idx, k)
-		case stepKeywordSet[k]:
+		if stepKeywordSet[st.Content[i].Value] {
 			intents++
-		case authoringVerbSet[k]:
-			// a builtin verb or shared step modifier — stays as-is
-		default:
-			sugarKeys = append(sugarKeys, i)
 		}
 	}
 	if intents == 0 {
@@ -216,15 +234,102 @@ func desugarStep(entity string, idx int, st *yaml.Node, t spec.Threaded) error {
 		return nil
 	}
 	if len(sugarKeys) > 1 {
-		names := make([]string, 0, len(sugarKeys))
-		for _, i := range sugarKeys {
-			names = append(names, st.Content[i].Value)
-		}
-		sort.Strings(names)
-		return fmt.Errorf("node %q: plan[%d] carries multiple non-#Op keys (%s) — a step takes at most ONE plugin-verb sugar key", entity, idx, strings.Join(names, ", "))
+		return fmt.Errorf("node %q: plan[%d] carries multiple non-#Op keys (%s) — a step takes at most ONE plugin-verb sugar key", entity, idx, sugarKeyNames(st, sugarKeys))
 	}
-	i := sugarKeys[0]
-	wordNode, valNode := st.Content[i], st.Content[i+1]
+	return desugarVerbKey(entity, path, st, sugarKeys[0], t)
+}
+
+// desugarInstrumentEntry desugars one `instrument:` capture entry in place: its single
+// verb-position key (rewritten into plugin/plugin_input exactly like a step verb) and
+// its `pipeline:` word list. Authoring plugin:/plugin_input: directly in a capture
+// entry is a hard load error, exactly as in a step.
+func desugarInstrumentEntry(entity string, idx int, entry *yaml.Node, t spec.Threaded) error {
+	if entry.Kind != yaml.MappingNode {
+		return fmt.Errorf("node %q: instrument[%d] must be a mapping capture entry", entity, idx)
+	}
+	path := fmt.Sprintf("instrument[%d]", idx)
+	sugarKeys, err := sugarKeyIndexes(entity, path, entry, instrumentModifiers)
+	if err != nil {
+		return err
+	}
+	if len(sugarKeys) > 1 {
+		return fmt.Errorf("node %q: %s carries multiple non-#Op keys (%s) — a capture entry takes at most ONE verb-position sugar key", entity, path, sugarKeyNames(entry, sugarKeys))
+	}
+	if len(sugarKeys) == 1 {
+		if err := desugarVerbKey(entity, path, entry, sugarKeys[0], t); err != nil {
+			return err
+		}
+	}
+	if pl := mapValue(entry, "pipeline"); pl != nil {
+		if pl.Kind != yaml.SequenceNode {
+			return fmt.Errorf("node %q: %s.pipeline must be a word LIST (got yaml kind %v)", entity, path, pl.Kind)
+		}
+		for j, w := range pl.Content {
+			if err := desugarPipelineWord(entity, fmt.Sprintf("%s.pipeline[%d]", path, j), w, t); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// desugarPipelineWord desugars one pipeline word — a one-verb-key map like
+// `transcode: {to: mp4}` — into the internal plugin/plugin_input pair (the evidence
+// phase dispatches the word blindly through the registry). Exactly ONE verb key per
+// word; the internal pair is a hard load error here too.
+func desugarPipelineWord(entity, path string, w *yaml.Node, t spec.Threaded) error {
+	if w.Kind != yaml.MappingNode {
+		return fmt.Errorf("node %q: %s must be a one-verb-key word map", entity, path)
+	}
+	sugarKeys, err := sugarKeyIndexes(entity, path, w, nil)
+	if err != nil {
+		return err
+	}
+	if len(sugarKeys) != 1 {
+		return fmt.Errorf("node %q: %s must carry exactly ONE verb key (got %d)", entity, path, len(sugarKeys))
+	}
+	return desugarVerbKey(entity, path, w, sugarKeys[0], t)
+}
+
+// sugarKeyIndexes returns the positions of a sugar-bearing mapping's verb-position keys —
+// the authored `<word>: <input>` plugin-verb candidates. plugin:/plugin_input: authored
+// directly is a hard load error (the envelope is internal-only). Every other KNOWN field
+// stays as-is: the #Op authoring verbs and the step intent keywords (the step rule,
+// shared by capture entries and pipeline words) plus the context's own modifiers (known,
+// e.g. an instrument entry's id/phase/pipeline). Everything else is a verb candidate.
+func sugarKeyIndexes(entity, path string, m *yaml.Node, known map[string]bool) ([]int, error) {
+	var idx []int
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		k := m.Content[i].Value
+		switch {
+		case k == "plugin" || k == "plugin_input":
+			return nil, fmt.Errorf("node %q: %s authors %q — the plugin envelope is internal-only; author the verb as `<word>: <input>` sugar (run: charly migrate)", entity, path, k)
+		case authoringVerbSet[k] || stepKeywordSet[k] || (known != nil && known[k]):
+			// a builtin verb, a shared modifier/intent keyword, or a context modifier — stays as-is
+		default:
+			idx = append(idx, i)
+		}
+	}
+	return idx, nil
+}
+
+// sugarKeyNames renders the sorted names of the given sugar keys for the multi-key error.
+func sugarKeyNames(m *yaml.Node, idx []int) string {
+	names := make([]string, 0, len(idx))
+	for _, i := range idx {
+		names = append(names, m.Content[i].Value)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
+// desugarVerbKey rewrites one mapping pair in place — the authored `<word>: <input>`
+// plugin-verb sugar at (m.Content[i], m.Content[i+1]) — into the internal
+// plugin/plugin_input pair, byte-identical for plan steps, capture entries and pipeline
+// words. plugin_input mirrors #Op's declared shape: an opaque map (the plugin's own
+// served CUE schema validates it); scalar shorthand wraps the verb's declared primary.
+func desugarVerbKey(entity, path string, m *yaml.Node, i int, t spec.Threaded) error {
+	wordNode, valNode := m.Content[i], m.Content[i+1]
 	word := wordNode.Value
 	var input *yaml.Node
 	switch valNode.Kind {
@@ -233,7 +338,7 @@ func desugarStep(entity string, idx int, st *yaml.Node, t spec.Threaded) error {
 	case yaml.ScalarNode, yaml.SequenceNode:
 		prim, ok := t.Primaries[word]
 		if !ok {
-			return fmt.Errorf("node %q: plan[%d] plugin verb %q takes a MAP input (it declares no primary field for the scalar shorthand)", entity, idx, word)
+			return fmt.Errorf("node %q: %s plugin verb %q takes a MAP input (it declares no primary field for the scalar shorthand)", entity, path, word)
 		}
 		input = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{
 			{Kind: yaml.ScalarNode, Tag: "!!str", Value: prim},
@@ -243,10 +348,10 @@ func desugarStep(entity string, idx int, st *yaml.Node, t spec.Threaded) error {
 		// a null value is an input-less verb
 		input = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	}
-	st.Content[i] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "plugin",
+	m.Content[i] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "plugin",
 		HeadComment: wordNode.HeadComment, LineComment: wordNode.LineComment, FootComment: wordNode.FootComment}
-	st.Content[i+1] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: word}
-	st.Content = append(st.Content,
+	m.Content[i+1] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: word}
+	m.Content = append(m.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "plugin_input"}, input)
 	return nil
 }
