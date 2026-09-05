@@ -315,11 +315,3 @@ func TestRenderInstallerSeed_CustomCommands(t *testing.T) {
 		t.Fatalf("user_configuration.json (absent) is not valid JSON: %v", err)
 	}
 	if cmds2, ok := cfg2["custom_commands"].([]any); !ok || len(cmds2) != 0 {
-		t.Fatalf("absent custom_commands must default to []: %v", cfg2["custom_commands"])
-	}
-}
-
-// TestRenderInstallerSeed_CustomCommands: the answer map's custom_commands must
-// thread into the rendered archinstall config (RCA: the omarchy template
-// hardcoded [] — the authored answer.custom_commands never reached the seed).
-// The guard renders the authored JSON array when present, [] when absent.
