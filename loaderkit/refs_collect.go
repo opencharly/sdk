@@ -238,7 +238,7 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 				repoURL := refs.RepoGitURL(parsed.RepoPath)
 				resolveTag := seams.LatestTag
 				if resolveTag == nil {
-					resolveTag = refs.GitLatestTag
+					resolveTag = gitClient().LatestTag // the CACHED latest-tag (1h TTL, disk-persisted, cross-process) — the raw GitLatestTag was the per-process ls-remote fanout (measured: 90-94 concurrent ls-remote -> throttling)
 				}
 				tag, err := resolveTag(repoURL)
 				if err != nil {
