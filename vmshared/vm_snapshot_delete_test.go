@@ -174,3 +174,51 @@ func TestCreateSnapshot_LiveEntryStillConflicts(t *testing.T) {
 		t.Fatal("live entry must still conflict")
 	}
 }
+
+// TestCreateSnapshot_StatErrorStillConflicts: a stat failure that is NOT
+// not-exists (e.g. ENOTDIR — a path component is a file) must NOT delete a live
+// entry. Only os.IsNotExist qualifies as a stale/missing disk; anything else
+// falls through to the hard-conflict path (B18).
+func TestCreateSnapshot_StatErrorStillConflicts(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(VmStateDirEnv, root)
+	vm := "test-vm"
+	snap := "golden"
+
+	// A path whose parent component is a regular FILE: os.Stat returns ENOTDIR
+	// (not os.IsNotExist) — the entry must still conflict, never be deleted.
+	blocker := filepath.Join(root, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	diskPath := filepath.Join(blocker, "golden", "disk.qcow2")
+	reg := SnapshotRegistry{Version: 1, Snapshots: map[string]*SnapshotEntry{
+		snap: {Name: snap, Mode: "external", LibvirtName: snap, DiskPath: diskPath, Refcount: 1},
+	}}
+	if err := saveRegistry(vm, &reg); err != nil {
+		t.Fatalf("saveRegistry: %v", err)
+	}
+
+	called := false
+	original := CreateExternalSnapshot
+	CreateExternalSnapshot = func(opts SnapshotCreateOpts, outFile string) error {
+		called = true
+		return nil
+	}
+	defer func() { CreateExternalSnapshot = original }()
+
+	if _, err := CreateSnapshot(SnapshotCreateOpts{VmName: vm, SnapName: snap, Mode: "external"}); err == nil {
+		t.Fatal("non-not-exists stat error must still conflict")
+	}
+	if called {
+		t.Fatal("CreateExternalSnapshot must NOT be invoked for a non-not-exists stat error")
+	}
+	// The registry entry must survive (never deleted on a non-not-exists error).
+	reg2, err := loadRegistry(vm)
+	if err != nil {
+		t.Fatalf("loadRegistry: %v", err)
+	}
+	if reg2.Snapshots[snap] == nil {
+		t.Fatal("registry entry must survive a non-not-exists stat error")
+	}
+}

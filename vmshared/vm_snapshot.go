@@ -266,9 +266,11 @@ func CreateSnapshot(opts SnapshotCreateOpts) (*SnapshotEntry, error) {
 		// stale record (the golden was deleted to force a re-capture, or a crashed
 		// run left the record behind). Re-capturing over it is the operator's
 		// intent — drop the stale entry and proceed. A live entry (disk present)
-		// is still a hard conflict.
+		// is still a hard conflict. ONLY os.IsNotExist qualifies as stale: any
+		// other stat failure (permission, transient I/O) must NOT delete a live
+		// entry — it falls through to the hard-conflict path.
 		if entry.Mode == "external" && entry.DiskPath != "" {
-			if _, err := os.Stat(entry.DiskPath); err == nil {
+			if _, err := os.Stat(entry.DiskPath); err == nil || !os.IsNotExist(err) {
 				return nil, fmt.Errorf("vm %q: snapshot %q already exists", opts.VmName, opts.SnapName)
 			}
 		} else {
