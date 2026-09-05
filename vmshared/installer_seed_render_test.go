@@ -315,3 +315,4 @@ func TestRenderInstallerSeed_CustomCommands(t *testing.T) {
 		t.Fatalf("user_configuration.json (absent) is not valid JSON: %v", err)
 	}
 	if cmds2, ok := cfg2["custom_commands"].([]any); !ok || len(cmds2) != 0 {
+}
