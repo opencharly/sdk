@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/ops"
 	pb "github.com/opencharly/spec/proto"
 	"github.com/opencharly/spec/spec"
 	"github.com/opencharly/spec/transport"
@@ -101,6 +102,16 @@ type sdkCheckContext struct {
 	exec *Executor
 	cc   pb.CheckContextServiceClient
 	env  spec.CheckEnv
+}
+
+// InvokeProvider dispatches a provider invocation over this context's SINGLE dial
+// (the one-dial doctrine: a second Dial on the same broker id hangs — the header
+// comment). Session/service verbs reach the runner's registry through it.
+func (c *sdkCheckContext) InvokeProvider(ctx context.Context, class, word, op string, paramsJSON, env []byte) ([]byte, error) {
+	if c.exec == nil {
+		return nil, fmt.Errorf("sdk: InvokeProvider: no host executor (check context not wired)")
+	}
+	return c.exec.InvokeProvider(ctx, class, word, op, paramsJSON, env, ops.InvokeProviderOpts{})
 }
 
 func (c *sdkCheckContext) Exec() kit.Executor {
