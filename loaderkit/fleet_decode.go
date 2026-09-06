@@ -13,6 +13,7 @@ package loaderkit
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/opencharly/spec/spec"
 )
@@ -51,8 +52,22 @@ func SetFleetCrossRef(dn *spec.FleetNode, disc, ref string, t spec.Threaded) {
 	if traits.ImageBacked {
 		dn.Image = ref
 	} else {
-		dn.From = ref
+		// The unified `from: name:tag` spelling (tag = snapshot name — Cutover A
+		// addendum): split on the LAST `:`; a VM entity name may not contain `:`,
+		// so the split is unambiguous. Image refs never reach this arm.
+		dn.From, dn.FromSnapshot = splitVMSnapshotRef(ref)
 	}
+}
+
+// splitVMSnapshotRef splits a VM deploy cross-ref of the unified `name:tag` spelling on the
+// LAST `:` — a VM entity name may not contain `:`, so the split is unambiguous; no `:`
+// → the plain name with no snapshot. pod/kubernetes IMAGE refs (the ImageBacked arm) never
+// reach this helper: image tags legitimately contain `:`.
+func splitVMSnapshotRef(ref string) (name, snapshot string) {
+	if i := strings.LastIndex(ref, ":"); i >= 0 {
+		return ref[:i], ref[i+1:]
+	}
+	return ref, ""
 }
 
 // IsStandaloneResourceKind reports whether disc names one of the 5 substrate kinds

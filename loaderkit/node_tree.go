@@ -106,6 +106,14 @@ func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error
 	if dv != nil && dv.Kind == yaml.ScalarNode {
 		SetFleetCrossRef(&dn, pn.Disc, dv.Value, t)
 	}
+	// The mapping deploy form (`vm: {from: "base:golden"}`) decodes `from` into dn.From
+	// via yaml DIRECTLY (bypassing SetFleetCrossRef) — normalize the unified name:tag split
+	// here so BOTH authored forms produce From+FromSnapshot. Guarded to the non-ImageBacked
+	// arm (an image ref with a `:` tag is never split); the scalar form is already split
+	// (FromSnapshot set) and passes through untouched.
+	if dn.From != "" && dn.FromSnapshot == "" && dn.Image == "" {
+		dn.From, dn.FromSnapshot = splitVMSnapshotRef(dn.From)
+	}
 
 	children, err := BuildResourceMemberChildren(pn, t)
 	if err != nil {
