@@ -61,7 +61,11 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 					return fmt.Errorf("kind:check bed %q (target: %s) must set `%s: <entity>`", name, node.Target, node.Target)
 				}
 				if _, ok := uf.PluginKinds[node.Target][node.From]; !ok {
-					return fmt.Errorf("kind:check bed %q references %s entity %q which is not defined", name, node.Target, node.From)
+					// The from: name:tag DEPLOY-HOP (Phase 3): the from: may name a kind:check BED
+					// (the clone-base bed) whose own from: names the template.
+					if _, isBed := uf.CheckBeds()[node.From]; !isBed {
+						return fmt.Errorf("kind:check bed %q references %s entity %q which is not defined", name, node.Target, node.From)
+					}
 				}
 			}
 		default:
