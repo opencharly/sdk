@@ -18,17 +18,17 @@ package loaderkit
 import (
 	"fmt"
 
-	"github.com/opencharly/sdk/deploykit"
 	"github.com/opencharly/spec/spec"
 )
 
-// SortedDeployKeys / SortedMemberKeys / VenueIsAgentProvisioned are DEFINED in the dedicated spec
-// module (spec/spec/fleet_keys.go, #55 2b Class A) — pure fleet-map helpers with no kind-specific
-// logic. These forwarders keep loaderkit's own callers (FoldMembers / FlattenFleetVenues here) +
-// charly's DEPLOY-half owner-walk terse (R3, one shared abstraction).
+// SortedDeployKeys / VenueIsAgentProvisioned are DEFINED in the dedicated spec module
+// (spec/spec/fleet_keys.go, #55 2b Class A) — pure fleet-map helpers with no kind-specific
+// logic. The forwarder keeps loaderkit's own callers (FoldMembers / FlattenFleetVenues here) +
+// charly's DEPLOY-half owner-walk terse (R3, one shared abstraction). The former member-key
+// sort forwarder DIED with the dual maps: the ONE ordered Member list is deterministic in
+// authored order, so there is nothing left to sort (Cutover C task 0).
 var (
 	SortedDeployKeys        = spec.SortedDeployKeys
-	SortedMemberKeys        = spec.SortedMemberKeys
 	VenueIsAgentProvisioned = spec.VenueIsAgentProvisioned
 )
 
@@ -80,14 +80,17 @@ func flattenFleetOne(root *spec.FleetNode, rootName string) error {
 	for i := range root.Plan {
 		root.Plan[i].Venue = rootName
 	}
-	// 2. Members (siblings) are addressed by their BARE name (FoldMembers promotes them to
-	//    top-level; an agent-provisioned member resolves via the bare `charly-<name>` fallback).
-	//    Nested children of the ROOT workload are addressed `rootName.child`.
-	for _, mName := range SortedMemberKeys(root.Members) {
-		hoistVenueSubtree(root, root.Members[mName], mName)
+	// 2. DEPLOY-LEVEL members (siblings of the kind key) are addressed by their BARE name
+	//    (FoldMembers promotes them to top-level; an agent-provisioned member resolves via
+	//    the bare `charly-<name>` fallback). IN-SUBSTRATE members (entity keys inside the
+	//    kind body) are addressed `rootName.child` — the venue comes from the member's
+	//    stamped POSITION (the fold's authored-depth stamp), never from the node's kind
+	//    (the dead root-kind branch).
+	for _, m := range root.DeployLevelMembers() {
+		hoistVenueSubtree(root, m.Node, m.Name)
 	}
-	for _, cName := range deploykit.SortedNestedKeys(root.Children) {
-		hoistVenueSubtree(root, root.Children[cName], rootName+"."+cName)
+	for _, m := range root.InSubstrateMembers() {
+		hoistVenueSubtree(root, m.Node, rootName+"."+m.Name)
 	}
 	return nil
 }
@@ -106,13 +109,12 @@ func hoistVenueSubtree(root, node *spec.FleetNode, venuePath string) {
 		root.Plan = append(root.Plan, s)
 	}
 	node.Plan = nil
-	for _, cName := range deploykit.SortedNestedKeys(node.Children) {
-		hoistVenueSubtree(root, node.Children[cName], venuePath+"."+cName)
+	for _, m := range node.InSubstrateMembers() {
+		hoistVenueSubtree(root, m.Node, venuePath+"."+m.Name)
 	}
-	// A member that is itself a group can carry sibling members — addressed bare (defensive; the
-	// shipped beds nest via Children only).
-	for _, mName := range SortedMemberKeys(node.Members) {
-		hoistVenueSubtree(root, node.Members[mName], mName)
+	// A member that is itself a group can carry deploy-level members — addressed bare.
+	for _, m := range node.DeployLevelMembers() {
+		hoistVenueSubtree(root, m.Node, m.Name)
 	}
 }
 
@@ -146,8 +148,11 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 	var pending []pendingMember
 	for _, owner := range SortedDeployKeys(uf.Fleet) {
 		ownerNode := uf.Fleet[owner]
-		for _, memberKey := range SortedMemberKeys(ownerNode.Members) {
-			memberNode := ownerNode.Members[memberKey]
+		// The DEPLOY-LEVEL members fold (registered top-level, MemberOf stamped); an
+		// in-substrate member stays inside its owner's venue tree and is addressed by
+		// its dotted path.
+		for _, m := range ownerNode.DeployLevelMembers() {
+			memberKey, memberNode := m.Name, m.Node
 			if memberNode == nil {
 				return fmt.Errorf("deploy %q peer %q is empty", owner, memberKey)
 			}
@@ -199,11 +204,11 @@ func ValidateMembers(uf *spec.UnifiedFile) error {
 	}
 	for _, owner := range SortedDeployKeys(uf.Fleet) {
 		node := uf.Fleet[owner]
-		for _, memberKey := range SortedMemberKeys(node.Members) {
+		for i := range node.Member {
+			memberKey, memberNode := node.Member[i].Name, node.Member[i].Node
 			if err := spec.ValidateDeploymentName(memberKey, owner+" (peer)"); err != nil {
 				return err
 			}
-			memberNode := node.Members[memberKey]
 			if memberNode == nil {
 				continue
 			}

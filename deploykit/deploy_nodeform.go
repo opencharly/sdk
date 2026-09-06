@@ -60,9 +60,10 @@ func MarshalFleetNode(node *spec.Deploy, primaries map[string]string) (*yaml.Nod
 	value := &yaml.Node{Kind: yaml.MappingNode}
 	content.Content = append(content.Content, kit.ScalarNode(disc), value)
 	// Copy ONLY the inline fields — skip the structural keys handled specially: target (→
-	// the discriminator), nested/peer (→ recursive child nodes), descent (loader-derived,
-	// never persisted), name (the map key, never a body field). Plan steps get resugared.
-	skip := map[string]bool{"target": true, "nested": true, "peer": true, "descent": true, "name": true}
+	// the discriminator), the loader-built member tree (member/member_of → recursive child
+	// nodes below), descent (loader-derived, never persisted), name (the map key, never a
+	// body field). Plan steps get resugared.
+	skip := map[string]bool{"target": true, "member": true, "member_of": true, "descent": true, "name": true}
 	for i := 0; i+1 < len(fullBody.Content); i += 2 {
 		k, v := fullBody.Content[i], fullBody.Content[i+1]
 		if skip[k.Value] {
@@ -73,28 +74,21 @@ func MarshalFleetNode(node *spec.Deploy, primaries map[string]string) (*yaml.Nod
 		}
 		value.Content = append(value.Content, k, v)
 	}
-	// Recursive child nodes — the node-form UNWRAPS nested/peer: each child/member is a
-	// direct SIBLING of the discriminator (its name load-bearing), NOT under a `nested:`/
-	// `peer:` key. The loader re-derives the nested/peer grouping from the deploy tree
-	// structure, so the writer emits the flat sibling form.
-	appendChildNodes := func(m map[string]*spec.Deploy) error {
-		if len(m) == 0 {
-			return nil
+	// Recursive child nodes — the node-form UNWRAPS the member tree: each member is a
+	// direct SIBLING of the discriminator (its name load-bearing), in the ONE ordered
+	// Member list's authored order — both positions flatten to siblings, and the loader
+	// re-derives the position grouping from the authored depth on reload (the parse
+	// preserves it), so the writer emits the flat sibling form.
+	for i := range node.Member {
+		m := &node.Member[i]
+		if m.Node == nil {
+			continue
 		}
-		for _, k := range SortedNestedKeys(m) {
-			child, cerr := MarshalFleetNode(m[k], primaries)
-			if cerr != nil {
-				return cerr
-			}
-			content.Content = append(content.Content, kit.ScalarNode(k), child)
+		child, cerr := MarshalFleetNode(m.Node, primaries)
+		if cerr != nil {
+			return nil, cerr
 		}
-		return nil
-	}
-	if err := appendChildNodes(node.Children); err != nil {
-		return nil, err
-	}
-	if err := appendChildNodes(node.Members); err != nil {
-		return nil, err
+		content.Content = append(content.Content, kit.ScalarNode(m.Name), child)
 	}
 	return content, nil
 }

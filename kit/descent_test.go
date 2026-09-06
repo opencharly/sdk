@@ -68,23 +68,23 @@ func TestDescentFromTraits_CopiesDeclaredTraits(t *testing.T) {
 }
 
 func TestStampDescent_RecursesNestedAndPeer(t *testing.T) {
+	// The ONE ordered member tree (Cutover C task 0): an in-substrate member and a
+	// deploy-level member both recurse from the root's single Member list.
 	root := &spec.Deploy{
 		Target: "vm",
-		Children: map[string]*spec.Deploy{
-			"inner": {Target: "pod"},
-		},
-		Members: map[string]*spec.Deploy{
-			"peer": {Target: "local"},
+		Member: []spec.Member{
+			{Name: "inner", Position: spec.PositionInSubstrate, Node: &spec.Deploy{Target: "pod"}},
+			{Name: "peer", Position: spec.PositionDeployLevel, Node: &spec.Deploy{Target: "local"}},
 		},
 	}
 	StampDescent(root, canonicalTraits)
 	if root.Descent == nil || root.Descent.Transport != "ssh" {
 		t.Fatalf("root descent = %+v, want ssh", root.Descent)
 	}
-	if c := root.Children["inner"]; c.Descent == nil || c.Descent.Transport != "container-exec" {
-		t.Errorf("nested child descent = %+v, want container-exec", c.Descent)
+	if c := root.MemberByName("inner").Node; c.Descent == nil || c.Descent.Transport != "container-exec" {
+		t.Errorf("nested member descent = %+v, want container-exec", c.Descent)
 	}
-	if m := root.Members["peer"]; m.Descent == nil || !m.Descent.HostRooted {
-		t.Errorf("peer member descent = %+v, want host_rooted", m.Descent)
+	if m := root.MemberByName("peer").Node; m.Descent == nil || !m.Descent.HostRooted {
+		t.Errorf("deploy-level member descent = %+v, want host_rooted", m.Descent)
 	}
 }

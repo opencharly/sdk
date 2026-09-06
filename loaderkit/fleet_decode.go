@@ -19,12 +19,15 @@ import (
 )
 
 // IsResourceDisc reports whether a discriminator names a deploy-substrate kind (the markers of a
-// fleet member / fleet-shaped node) — the CUE-derived resourceKindSet (#ResourceKind), OR a
-// recognized external DEPLOY substrate word (t.DeploySubstrates, a registered/pre-scanned
-// out-of-process deploy provider, e.g. `exampledeploy`), so a deploy whose edge is an external
-// target is built as a fleet node.
+// fleet member / fleet-shaped node) — the ONE memberDisc classification (Cutover C task 0, 8a
+// unity): the CUE-derived resourceKindSet (#ResourceKind), the threaded external STRUCTURAL kind
+// words, OR a recognized external DEPLOY substrate word (t.DeploySubstrates, a registered/
+// pre-scanned out-of-process deploy provider, e.g. `exampledeploy`), so a deploy whose edge is an
+// external target is built as a fleet node. The former private two-set spelling — the third
+// drift-prone member classification — is gone; the parse-child, the parse-parent-allow, and this
+// fold consult ONE Threaded-fed function.
 func IsResourceDisc(d string, t spec.Threaded) bool {
-	return resourceKindSet[d] || t.DeploySubstrates[d]
+	return memberDisc(d, t)
 }
 
 // FleetTargetForDisc maps a node discriminator to the FleetNode Target — DATA-driven via

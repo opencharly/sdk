@@ -18,8 +18,6 @@ var (
 	PathLeaf = fleet.PathLeaf
 	// ClassifyNodeTarget picks the pod|vm|kubernetes|local|android target discriminator for a node.
 	ClassifyNodeTarget = fleet.ClassifyNodeTarget
-	// SortedNestedKeys returns a children map's keys in deterministic order.
-	SortedNestedKeys = fleet.SortedNestedKeys
 	// BedCheckLiveRefs returns the ordered `charly check live` targets for a bed.
 	BedCheckLiveRefs = fleet.BedCheckLiveRefs
 	// DescriptionInfo returns the trimmed first line of a candy/box description.

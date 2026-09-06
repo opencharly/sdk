@@ -28,6 +28,13 @@ import (
 // (already-canonical JSON) decoded through Go's empty interface, then yaml-encoded, so a scalar
 // stays a scalar (any JSON scalar type, not just a string) and a mapping stays a mapping. Returns
 // nil for an empty/absent body.
+//
+// The member-carrier keys are OMITTED: an in-substrate member's key was authored inside the disc
+// body (the parse keeps it there as the fold's position channel), but the member tree owns the
+// value — every body EMITTER (this reconstruction feeding DecodeNodeValue/AssembleEntityBody/
+// EntityBodyJSON) hands the closed per-kind schema gates a body without it, which is how substrate
+// closedness stops rejecting resource-member keys (Cutover C task 0). BuildResourceMemberChildren
+// reads pn.Body RAW for the position stamp.
 func discValue(pn spec.ParsedNode) (*yaml.Node, error) {
 	if len(pn.Body) == 0 {
 		return nil, nil
@@ -36,11 +43,39 @@ func discValue(pn spec.ParsedNode) (*yaml.Node, error) {
 	if err := json.Unmarshal(pn.Body, &asAny); err != nil {
 		return nil, fmt.Errorf("node %q: decode body: %w", pn.Name, err)
 	}
+	if asMap, ok := asAny.(map[string]any); ok && len(pn.Children) > 0 {
+		for _, ch := range pn.Children {
+			delete(asMap, ch.Name)
+		}
+		if len(asMap) == 0 {
+			asMap = map[string]any{} // keep an empty (non-nil) mapping body
+		}
+		asAny = asMap
+	}
 	var dv yaml.Node
 	if err := dv.Encode(asAny); err != nil {
 		return nil, fmt.Errorf("node %q: encode body: %w", pn.Name, err)
 	}
 	return &dv, nil
+}
+
+// authoredBodyKeys returns the TOP-LEVEL keys of pn's authored disc body (the RAW pn.Body —
+// before the member-carrier strip) — the position channel: a member child whose name is a body
+// key was authored INSIDE the kind body (in-substrate); one that wasn't is a deploy-level
+// sibling of the kind key.
+func authoredBodyKeys(pn spec.ParsedNode) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(pn.Body) == 0 {
+		return out, nil
+	}
+	var asMap map[string]any
+	if err := json.Unmarshal(pn.Body, &asMap); err != nil {
+		return nil, fmt.Errorf("node %q: decode body: %w", pn.Name, err)
+	}
+	for k := range asMap {
+		out[k] = true
+	}
+	return out, nil
 }
 
 // AssembleEntityBody returns the DOCUMENT-wrapped entity-body mapping to decode: pn's body value
@@ -115,37 +150,35 @@ func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error
 		dn.From, dn.FromSnapshot = splitVMSnapshotRef(dn.From)
 	}
 
-	children, err := BuildResourceMemberChildren(pn, t)
+	// Cutover C task 0 — the fold stamps Member.Position from the authored depth ALONE (the
+	// parse-preserved body-membership channel) and attaches the ONE ordered member list. The
+	// former root-kind branch (dn.Target == "" → alongside, else deploy-into) is DELETED: one
+	// authored shape, one meaning, classified by position — never re-derived from the node's
+	// kind.
+	members, err := BuildResourceMemberChildren(pn, t)
 	if err != nil {
 		return nil, err
 	}
-	for name, member := range children {
-		// A targetless GROUP (no own workload target) places members ALONGSIDE (shared net →
-		// Peer); a WORKLOAD places its resource children INSIDE its venue (deploy-into →
-		// Nested).
-		if dn.Target == "" {
-			if dn.Members == nil {
-				dn.Members = map[string]*spec.FleetNode{}
-			}
-			dn.Members[name] = member
-		} else {
-			if dn.Children == nil {
-				dn.Children = map[string]*spec.FleetNode{}
-			}
-			dn.Children[name] = member
-		}
-	}
+	dn.Member = members
 	return &dn, nil
 }
 
-// BuildResourceMemberChildren decodes pn's RESOURCE-MEMBER entity children into a name→*FleetNode
-// map via the SAME BuildFleetNode recursion — the SINGLE source of truth for authored member-tree
-// decode (R3). Every pn.Children entry is an entity child by construction (the parse-time desugar
-// already separates step/data children into the plan/body fields before a spec.ParsedNode ever
-// reaches here — see charly/node_parse.go), so no discClass filter is needed. A non-resource
-// entity child is a hard error (deploy/resource children must be pod/vm/kubernetes/local/android/group).
-func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) (map[string]*spec.FleetNode, error) {
-	var out map[string]*spec.FleetNode
+// BuildResourceMemberChildren decodes pn's RESOURCE-MEMBER entity children into the uniform
+// ordered member ENTRIES (authored order preserved — pn.Children is a slice) via the SAME
+// BuildFleetNode recursion — the SINGLE source of truth for authored member-tree decode (R3).
+// Every pn.Children entry is an entity child by construction (the parse's own member extraction
+// plus the desugar separate step/data children into the plan/body fields before a spec.ParsedNode
+// ever reaches here), so no discClass filter is needed. A non-member entity child is a hard error
+// (deploy/resource children must be pod/vm/kubernetes/local/android/group or a recognized
+// external kind — the ONE memberDisc classification). The FOLD stamps each entry's Position from
+// the authored depth alone: a child NAMED by a top-level key of pn's authored disc body hung
+// INSIDE the kind body (in-substrate); one that didn't is a deploy-level sibling of the kind key.
+func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) ([]spec.Member, error) {
+	inBody, err := authoredBodyKeys(pn)
+	if err != nil {
+		return nil, err
+	}
+	var out []spec.Member
 	for _, rk := range pn.Children {
 		if !IsResourceDisc(rk.Disc, t) {
 			return nil, fmt.Errorf("node %q: a %q child %q is not a resource member (deploy/resource children must be pod/vm/kubernetes/local/android)", pn.Name, rk.Disc, rk.Name)
@@ -154,10 +187,11 @@ func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) (map[strin
 		if err != nil {
 			return nil, err
 		}
-		if out == nil {
-			out = map[string]*spec.FleetNode{}
+		pos := spec.PositionDeployLevel
+		if inBody[rk.Name] {
+			pos = spec.PositionInSubstrate
 		}
-		out[rk.Name] = member
+		out = append(out, spec.Member{Name: rk.Name, Position: pos, Node: member})
 	}
 	return out, nil
 }
@@ -231,8 +265,8 @@ func DecodeStandaloneTemplateJSON(pn spec.ParsedNode, t spec.Threaded) (json.Raw
 
 // ResourceChildren returns pn's children whose discriminator is itself a resource/fleet kind (the
 // markers of a fleet-shaped node). The deployable set is the CUE-derived resourceKindSet
-// (#ResourceKind) — the fixed vocab alone, not the registry-derived external-substrate extension
-// (mirrors the original's own scope).
+// (#ResourceKind) — the fixed vocab alone (the frozen seam takes no Threaded snapshot; the
+// registry-aware member classification is memberDisc, consumed by the parse and the fold).
 func ResourceChildren(pn spec.ParsedNode) []spec.ParsedNode {
 	var out []spec.ParsedNode
 	for _, ch := range pn.Children {

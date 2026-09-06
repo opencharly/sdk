@@ -67,9 +67,12 @@ func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
 		calls = append(calls, args)
 		return nil
 	}
-	node := &spec.FleetNode{Members: map[string]*spec.FleetNode{
-		"zeta-pod":   podNode(),
-		"alpha-host": localNode(),
+	// The ONE ordered member list (Cutover C task 0): authored order replaces the map-era
+	// sorted-key iteration — the fixture lists the members in the order the old sorted map
+	// produced (alpha before zeta).
+	node := &spec.FleetNode{Member: []spec.Member{
+		{Name: "alpha-host", Position: spec.PositionDeployLevel, Node: localNode()},
+		{Name: "zeta-pod", Position: spec.PositionDeployLevel, Node: podNode()},
 	}}
 	if err := TearDownMembers(node); err != nil {
 		t.Fatalf("TearDownMembers: %v", err)
@@ -110,9 +113,9 @@ func TestTearDownMembers_AttemptsAllAndReturnsJoinedErrors(t *testing.T) {
 		}
 		return secondErr
 	}
-	err := TearDownMembers(&spec.FleetNode{Members: map[string]*spec.FleetNode{
-		"a-local": localNode(),
-		"b-pod":   podNode(),
+	err := TearDownMembers(&spec.FleetNode{Member: []spec.Member{
+		{Name: "a-local", Position: spec.PositionDeployLevel, Node: localNode()},
+		{Name: "b-pod", Position: spec.PositionDeployLevel, Node: podNode()},
 	}})
 	if !errors.Is(err, firstErr) || !errors.Is(err, secondErr) {
 		t.Fatalf("TearDownMembers error = %v, want both member failures", err)

@@ -46,9 +46,10 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 		traits := t.DeployTraits[node.Target]
 		switch {
 		case node.Target == "":
-			// A GROUP bed (no workload cross-ref) — valid ONLY when it carries sibling Members
-			// (subject + driver peers): the §3 group+siblings shape for cross-deployment probing.
-			if len(node.Members) == 0 {
+			// A GROUP bed (no workload cross-ref) — valid ONLY when it carries members
+			// (subject + driver peers): the §3 group+siblings shape for cross-deployment
+			// probing. The ONE ordered member tree counts both positions.
+			if !node.HasMembers() {
 				return fmt.Errorf("kind:check bed %q has no workload cross-ref and no sibling members — a group bed must declare member subdeployments (the subject + driver of a cross-deployment probe)", name)
 			}
 		case traits != nil && traits.BedTarget:
