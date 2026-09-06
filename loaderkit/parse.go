@@ -173,17 +173,22 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 		return nil
 	}
 	allowMembers := memberDisc(disc, t)
-	// In-substrate members first: entity keys inside the disc body, in body order.
-	for _, c := range discEntityPairs(discValue, t) {
-		if !allowMembers {
-			return spec.ParsedNode{}, fmt.Errorf("node %q (kind %q): in-body member %q is not allowed — only deployable resource kinds or an external structural plugin kind nest sub-entity members", name, disc, c.k.Value)
-		}
-		child, err := parseNode(c.k.Value, c.v, true, t)
-		if err != nil {
-			return spec.ParsedNode{}, err
-		}
-		if err := appendChild(child); err != nil {
-			return spec.ParsedNode{}, err
+	// In-substrate members first: entity keys inside the disc body, in body order — scanned ONLY
+	// where member nesting is MEANINGFUL (the parent-disc guard): a DEPLOY-SUBSTRATE body (its
+	// members deploy into its venue) or an external STRUCTURAL body (the provider reconstructs
+	// the authored members). An arbitrary resource-kind body (group's bed list; a check/candy/box
+	// body) has a CLOSED schema whose own fields may collide with kind words (`agent:`,
+	// `sandbox:`, ...) — its body travels untouched as data and the closed-schema gates own it;
+	// its members are DEPLOY-LEVEL siblings only (the memberPairs loop below).
+	if t.DeploySubstrates[disc] || t.StructuralKinds[disc] {
+		for _, c := range discEntityPairs(discValue, t) {
+			child, err := parseNode(c.k.Value, c.v, true, t)
+			if err != nil {
+				return spec.ParsedNode{}, err
+			}
+			if err := appendChild(child); err != nil {
+				return spec.ParsedNode{}, err
+			}
 		}
 	}
 	// Deploy-level siblings second: entity keys beside the disc key, in authored order.
@@ -205,7 +210,10 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 // discEntityPairs returns the ENTITY-keyed pairs of a disc value body — the in-substrate member
 // candidates: a pair whose value is a mapping that carries a kind discriminator (memberDisc —
 // the ONE member classification). Data fields (scalars, sequences, mappings of non-kind keys)
-// never classify, so the body's own data travels untouched.
+// never classify, so the body's own data travels untouched. Consulted ONLY under the
+// parent-disc guard (the caller scans bodies of kinds that nest members — deploy substrates
+// and external structural kinds) — never inside an arbitrary resource-kind body whose closed
+// schema may define fields colliding with kind words.
 func discEntityPairs(discValue *yaml.Node, t spec.Threaded) []struct{ k, v *yaml.Node } {
 	if discValue == nil || discValue.Kind != yaml.MappingNode {
 		return nil
