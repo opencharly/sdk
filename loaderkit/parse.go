@@ -180,9 +180,15 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	// has a CLOSED schema and never scans; its members are DEPLOY-LEVEL siblings only (the
 	// memberPairs loop below).
 	//
-	// SUBSTRATE parent (vm/pod/local/android/kubernetes) — UNCHANGED: the entity-keyed value-shape
-	// scan (discEntityPairs/isEntityValue). Substrate bodies have no colliding declared fields
-	// (their unknown keys are already rejected by their own decoders).
+	// SUBSTRATE parent (vm/pod/local/android/kubernetes) — the entity-keyed value-shape scan
+	// (discEntityPairs/isEntityValue) MINUS the substrate's DECLARED body fields
+	// (t.DeployDeclaredFields — the #Deploy-schema channel, the substrate twin of the structural
+	// rule below, fed by the host from the registered schema): a declared field (iterate, plan,
+	// record, disk_size, ram, ...) is DATA even when its VALUE SHAPE would classify as an
+	// in-substrate member — the pod body's `iterate:` carrying an `agent:` kind-word key (the
+	// canonical ADE-iterate-bed regression, sdk #221 class) — and a declared field's value is
+	// NEVER looked inside. A substrate word with NO declared schema threaded keeps the plain
+	// value-shape scan (the documented no-declared-schema fallback).
 	//
 	// STRUCTURAL parent (an F5 structural kind, e.g. group) — the KEY rule: an in-body key is a
 	// member iff the KEY ITSELF is a memberDisc word, minus the kind's DECLARED input-schema
@@ -192,7 +198,11 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	// declared field stays data. A kind with NO declared schema threaded falls back to every
 	// kind-word key being a member (the documented, tested fallback).
 	if t.DeploySubstrates[disc] {
+		deployDeclared := t.DeployDeclaredFields[disc]
 		for _, c := range discEntityPairs(discValue, t) {
+			if deployDeclared[c.k.Value] {
+				continue // a declared #Deploy field is DATA — never look inside its value
+			}
 			child, err := parseNode(c.k.Value, c.v, true, t)
 			if err != nil {
 				return spec.ParsedNode{}, err
