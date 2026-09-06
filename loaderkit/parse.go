@@ -173,16 +173,42 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 		return nil
 	}
 	allowMembers := memberDisc(disc, t)
-	// In-substrate members first: entity keys inside the disc body, in body order — scanned ONLY
-	// where member nesting is MEANINGFUL (the parent-disc guard): a DEPLOY-SUBSTRATE body (its
-	// members deploy into its venue) or an external STRUCTURAL body (the provider reconstructs
-	// the authored members). An arbitrary resource-kind body (group's bed list; a check/candy/box
-	// body) has a CLOSED schema whose own fields may collide with kind words (`agent:`,
-	// `sandbox:`, ...) — its body travels untouched as data and the closed-schema gates own it;
-	// its members are DEPLOY-LEVEL siblings only (the memberPairs loop below).
-	if t.DeploySubstrates[disc] || t.StructuralKinds[disc] {
+	// In-substrate members first — the parent-disc guard (#222) with the REFINED two-rule scan:
+	// the scan fires ONLY where member nesting is MEANINGFUL — a DEPLOY-SUBSTRATE body or a
+	// STRUCTURAL body (nestingKinds = t.DeploySubstrates ∪ t.StructuralKinds, data-driven from
+	// Threaded, zero hardcoded words). An arbitrary resource-kind body (a check/candy/box body)
+	// has a CLOSED schema and never scans; its members are DEPLOY-LEVEL siblings only (the
+	// memberPairs loop below).
+	//
+	// SUBSTRATE parent (vm/pod/local/android/kubernetes) — UNCHANGED: the entity-keyed value-shape
+	// scan (discEntityPairs/isEntityValue). Substrate bodies have no colliding declared fields
+	// (their unknown keys are already rejected by their own decoders).
+	//
+	// STRUCTURAL parent (an F5 structural kind, e.g. group) — the KEY rule: an in-body key is a
+	// member iff the KEY ITSELF is a memberDisc word, minus the kind's DECLARED input-schema
+	// fields (t.StructuralDeclaredFields — the registered #XInput body fields the host threads).
+	// A non-kind key is opaque data whose value is NEVER looked inside (no transitive recursion —
+	// the `iterate:`-carrying-`agent:` collision class dies here); a kind-word key that IS a
+	// declared field stays data. A kind with NO declared schema threaded falls back to every
+	// kind-word key being a member (the documented, tested fallback).
+	if t.DeploySubstrates[disc] {
 		for _, c := range discEntityPairs(discValue, t) {
 			child, err := parseNode(c.k.Value, c.v, true, t)
+			if err != nil {
+				return spec.ParsedNode{}, err
+			}
+			if err := appendChild(child); err != nil {
+				return spec.ParsedNode{}, err
+			}
+		}
+	} else if t.StructuralKinds[disc] {
+		declared := t.StructuralDeclaredFields[disc]
+		for i := 0; i+1 < len(discValue.Content); i += 2 {
+			k, v := discValue.Content[i], discValue.Content[i+1]
+			if !memberDisc(k.Value, t) || declared[k.Value] {
+				continue // opaque data (never look inside v) — or a declared field → data
+			}
+			child, err := parseNode(k.Value, v, true, t)
 			if err != nil {
 				return spec.ParsedNode{}, err
 			}

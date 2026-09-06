@@ -6,25 +6,29 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// groupCorpusThreaded threads the collision words the distro-arch corpus authors: the group +
-// check kinds (host-threaded ClassKind words), the pod/vm deploy substrates, and the external
-// `agent` structural kind word — whose NAME collides with the group schema's own `agent:`
-// field (the exact live Threaded shape that broke charly's TestCueKinds_Corpus).
-var groupCorpusThreaded = spec.Threaded{
+// liveGroupThreaded models the LIVE host threading for the distro-arch corpus shape: `group` is
+// a STRUCTURAL kind (plugin-group declares Structural:true, word "group") but NOT a deploy
+// substrate (a group is targetless); `agent` is a threaded kind word colliding with a
+// group-schema FIELD name (the live collision the charly worker RCA'd); and the declared-fields
+// channel carries group's #GroupInput body fields — fed by the host from the REGISTERED schema.
+var liveGroupThreaded = spec.Threaded{
 	Kinds:            map[string]bool{"group": true, "check": true},
 	DeploySubstrates: map[string]bool{"pod": true, "vm": true},
-	StructuralKinds:  map[string]bool{"pod": true, "vm": true, "agent": true},
+	StructuralKinds:  map[string]bool{"pod": true, "vm": true, "group": true, "agent": true},
+	StructuralDeclaredFields: map[string]map[string]bool{
+		"group": {"description": true, "disposable": true, "lifecycle": true, "iterate": true},
+	},
 }
 
-// TestParse_InBodyScan_OnlyNestingKinds is the corpus regression (distro-arch charly.yml
-// `check-agent-live`, caught live by charly's TestCueKinds_Corpus after sdk #221): a GROUP
-// body's `iterate:` block carries an `agent:` key — a structural kind WORD colliding with a
-// group-schema FIELD name. In-body member detection must fire ONLY where member nesting is
-// meaningful — a deploy-substrate body or an external structural body — never inside an
-// arbitrary resource-kind body (group/check/candy/box) whose closed schema defines fields
-// that can collide with kind words. The iterate block (scalar `sandbox:` included) must
-// travel as the group's own data, untouched.
-func TestParse_InBodyScan_OnlyNestingKinds(t *testing.T) {
+// TestParse_StructuralDeclaredFieldStaysData is the corpus regression, under the CORRECT live
+// threading (distro-arch charly.yml `check-agent-live`): a GROUP body's `iterate:` block
+// carries an `agent:` key — a threaded kind WORD colliding with a group-schema FIELD name.
+// Group is a STRUCTURAL parent, so the in-body scan runs the KEY rule: `iterate` is not a kind
+// word → opaque data whose value is NEVER looked inside (no transitive recursion — the parse
+// never sees the `agent:` key inside it), and it is also a DECLARED #GroupInput field (the
+// channel). The iterate block travels as the group's own data, untouched; the only child is the
+// deploy-level sibling watcher.
+func TestParse_StructuralDeclaredFieldStaysData(t *testing.T) {
 	_, pp, err := ParseDoc(docFrom(t, `
 check-agent-live:
   group:
@@ -39,7 +43,7 @@ check-agent-live:
   watcher:
     pod:
       image: img
-`), groupCorpusThreaded)
+`), liveGroupThreaded)
 	if err != nil {
 		t.Fatalf("ParseDoc: %v", err)
 	}
@@ -50,12 +54,9 @@ check-agent-live:
 	if pn.Disc != "group" {
 		t.Fatalf("disc = %q, want group", pn.Disc)
 	}
-	// The iterate block must NOT classify as an in-body member; the ONLY child is the
-	// deploy-level sibling watcher (group members are deploy-level, beside the disc key).
 	if len(pn.Children) != 1 || pn.Children[0].Name != "watcher" {
 		t.Fatalf("children = %+v, want just the deploy-level sibling watcher", pn.Children)
 	}
-	// The FULL authored body travels as data — the closed group schema owns every field.
 	body := bodyMap(t, pn.Body)
 	it, ok := body["iterate"].(map[string]any)
 	if !ok {
@@ -70,31 +71,64 @@ check-agent-live:
 	}
 }
 
-// TestParse_InBodyScan_StructuralBodyStillScans pins the guard's positive arm: an external
-// STRUCTURAL body still nests IN-BODY members (the parent-disc guard must not kill the
-// structural channel the 8a fix opened — member nesting is meaningful there).
-func TestParse_InBodyScan_StructuralBodyStillScans(t *testing.T) {
+// TestParse_StructuralKindWordKeysAreMembers pins the no-declared-schema fallback (requirement
+// b): a structural kind with NO declared schema threaded falls back to every kind-word key being
+// a member — here the in-body `group:` key (a memberDisc word) carries a group entity under a
+// group body.
+func TestParse_StructuralKindWordKeysAreMembers(t *testing.T) {
+	threaded := spec.Threaded{
+		Kinds:            map[string]bool{"group": true},
+		DeploySubstrates: map[string]bool{},
+		StructuralKinds:  map[string]bool{"group": true},
+	}
 	_, pp, err := ParseDoc(docFrom(t, `
-parent:
-  extstruct:
-    cfg: x
-    inner:
-      extstruct:
-        cfg: y
-`), vmBedThreaded)
+bed:
+  group:
+    description: outer group bed
+    group:
+      group:
+        description: in-body member under a kind-word key
+`), threaded)
 	if err != nil {
 		t.Fatalf("ParseDoc: %v", err)
 	}
 	pn := pp.Nodes[0]
-	if pn.Disc != "extstruct" {
-		t.Fatalf("disc = %q, want extstruct", pn.Disc)
+	if len(pn.Children) != 1 || pn.Children[0].Name != "group" || pn.Children[0].Disc != "group" {
+		t.Fatalf("children = %+v, want the in-body kind-word-keyed group member", pn.Children)
 	}
-	if len(pn.Children) != 1 || pn.Children[0].Name != "inner" || pn.Children[0].Disc != "extstruct" {
-		t.Fatalf("children = %+v, want the in-body extstruct member inner", pn.Children)
-	}
-	// The authored body keeps the in-body member key — the fold's position channel.
 	body := bodyMap(t, pn.Body)
-	if _, ok := body["inner"]; !ok {
+	if _, ok := body["group"]; !ok {
 		t.Fatalf("authored body dropped the in-body member key: %v", body)
+	}
+}
+
+// TestParse_StructuralDeclaredKindWordKeyStaysData pins the declared-fields channel's direct
+// effect (requirement a): a structural kind whose registered schema declares a field NAMED like
+// a kind word keeps that key as DATA — the channel decides, zero hardcoded lists.
+func TestParse_StructuralDeclaredKindWordKeyStaysData(t *testing.T) {
+	threaded := spec.Threaded{
+		Kinds:            map[string]bool{"group": true},
+		DeploySubstrates: map[string]bool{},
+		StructuralKinds:  map[string]bool{"group": true},
+		StructuralDeclaredFields: map[string]map[string]bool{
+			"group": {"pod": true}, // a declared input-schema field NAMED like a kind word
+		},
+	}
+	_, pp, err := ParseDoc(docFrom(t, `
+bed:
+  group:
+    pod:
+      sandbox: check-agent-pod
+`), threaded)
+	if err != nil {
+		t.Fatalf("ParseDoc: %v", err)
+	}
+	if len(pp.Nodes[0].Children) != 0 {
+		t.Fatalf("children = %+v, want none — the declared kind-word field is data", pp.Nodes[0].Children)
+	}
+	body := bodyMap(t, pp.Nodes[0].Body)
+	pod, ok := body["pod"].(map[string]any)
+	if !ok || pod["sandbox"] != "check-agent-pod" {
+		t.Fatalf("body.pod = %v, want the declared field intact as data", body["pod"])
 	}
 }
