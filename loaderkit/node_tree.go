@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
@@ -105,6 +106,23 @@ func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error
 	}
 	if dv != nil && dv.Kind == yaml.ScalarNode {
 		SetFleetCrossRef(&dn, pn.Disc, dv.Value, t)
+	}
+	// Unified from: name:tag syntax (Cutover A addendum — the pod/VM unification): a
+	// backing-chain substrate (vm) accepts `from: base:snapshot` as the unified
+	// spelling of `from: base` + `from_snapshot: snapshot` — the SAME name:tag
+	// shape pods use (`from: image:tag`). Operates on the RESOLVED dn.From (both the
+	// scalar discriminator form `vm: base:snap` and the mapping form `vm: {from: base:snap}`).
+	// Split on the LAST colon (a VM entity name may not contain ':'). A contradictory dual
+	// spelling (from: name:tag AND from_snapshot: with a different value) is a loud
+	// authoring error, never a silent pick.
+	if traits := t.DeployTraits[pn.Disc]; traits != nil && traits.SupportsFromSnapshot && dn.From != "" {
+		if i := strings.LastIndex(dn.From, ":"); i > 0 {
+			base, tag := dn.From[:i], dn.From[i+1:]
+			if dn.FromSnapshot != "" && dn.FromSnapshot != tag {
+				return nil, fmt.Errorf("deploy %q: from %q carries snapshot tag %q but from_snapshot: %q is also set — use one spelling (from: name:tag or from: name + from_snapshot: tag)", pn.Name, dn.From, tag, dn.FromSnapshot)
+			}
+			dn.From, dn.FromSnapshot = base, tag
+		}
 	}
 
 	children, err := BuildResourceMemberChildren(pn, t)
