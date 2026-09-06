@@ -274,3 +274,47 @@ func TestRenderInstallerSeed_NoValueSentinelIsRejected(t *testing.T) {
 		t.Errorf("unexpected error shape: %v", err)
 	}
 }
+
+// TestRenderInstallerSeed_CustomCommands: the answer map's custom_commands must
+// thread into the rendered archinstall config (RCA: the omarchy template
+// hardcoded [] — the authored answer.custom_commands never reached the seed).
+// The guard renders the authored JSON array when present, [] when absent.
+func TestRenderInstallerSeed_CustomCommands(t *testing.T) {
+	inst := &spec.DistroInstaller{
+		VolumeID: "cidata",
+		Files: []spec.DistroInstallerFile{{
+			Path:    "user_configuration.json",
+			Content: `{"custom_commands": {{if .Answers.custom_commands}}{{.Answers.custom_commands}}{{else}}[]{{end}}}`,
+		}},
+	}
+
+	// Authored: the array threads verbatim.
+	ctx := baseCtx()
+	ctx.Answers = map[string]string{"custom_commands": `["systemctl enable sshd","pacman -S --needed --noconfirm asciinema"]`}
+	files, err := RenderInstallerSeed(inst, ctx)
+	if err != nil {
+		t.Fatalf("RenderInstallerSeed: %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(files["user_configuration.json"]), &cfg); err != nil {
+		t.Fatalf("user_configuration.json is not valid JSON: %v", err)
+	}
+	cmds, ok := cfg["custom_commands"].([]any)
+	if !ok || len(cmds) != 2 {
+		t.Fatalf("custom_commands not threaded: %v", cfg["custom_commands"])
+	}
+
+	// Absent: defaults to [].
+	ctx2 := baseCtx()
+	files2, err := RenderInstallerSeed(inst, ctx2)
+	if err != nil {
+		t.Fatalf("RenderInstallerSeed (absent): %v", err)
+	}
+	var cfg2 map[string]any
+	if err := json.Unmarshal([]byte(files2["user_configuration.json"]), &cfg2); err != nil {
+		t.Fatalf("user_configuration.json (absent) is not valid JSON: %v", err)
+	}
+	if cmds2, ok := cfg2["custom_commands"].([]any); !ok || len(cmds2) != 0 {
+		t.Fatalf("custom_commands (absent) leaked through: got %v (want none)", cmds2)
+	}
+}
