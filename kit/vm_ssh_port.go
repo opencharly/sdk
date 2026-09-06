@@ -23,6 +23,12 @@ import (
 // core reads its project config directly; an out-of-process plugin reads over a host
 // seam) — this is the PURE resolution/allocation decision only.
 func ResolveVmSshPort(vm *spec.ResolvedVm, vmName string, persistedPort int) (int, error) {
+	if vm == nil {
+		// NIL-SPEC guard (RCA 2026-09-06): the live-check deploy-hop can miss the template —
+		// a nil spec means an unknown guest; fall back to the in-guest default (22), never
+		// panic. A non-nil spec keeps the documented semantics: fixed port, port_auto, else 2222.
+		return 22, nil
+	}
 	if vm.SSH != nil && vm.SSH.PortAuto {
 		if persistedPort > 0 {
 			return persistedPort, nil

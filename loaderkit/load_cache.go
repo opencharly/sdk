@@ -33,15 +33,16 @@ package loaderkit
 // strictly stronger than a bare list of resolved commit hashes — it is a content hash of the
 // resolved refs, so a re-pin whose content is byte-identical (and whose materialization therefore
 // IS identical) correctly does NOT re-key, while a re-pin to different content re-keys by the
-// content itself; the schema-CalVer component makes a binary schema upgrade re-key too.
-//
-// TTL. materializeCacheTTL (1h) bounds the only materialize input the envelope cannot see: a
-// provider-set / loader-logic change in the embedding binary that ships WITHOUT a schema CalVer
-// bump. A stale entry is skipped (miss → re-materialize), never served.
+// content itself; the schema-CalVer component makes a binary schema upgrade re-key too; the
+// loader-identity component (below) makes a loader-logic change re-key too — so the cache is
+// VALID AS LONG AS THE INPUTS (charły.yml content + schema + loader) ARE UNCHANGED, and any
+// input change re-materializes + writes the new entry automatically. There is NO time validity
+// (the Docker cache rule): an old entry whose components match is served; reclamation of
+// stale-input orphans is the write-time prune's storage-only job.
 //
 // LAYOUT + CONCURRENCY (the spec/refs git-cache patterns). One entry file per key,
 // ~/.cache/charly/materialized/<sha256-hex>.json (CHARLY_MATERIALIZED_CACHE overrides the root,
-// mirroring CHARLY_REPO_CACHE), holding {resolved RFC3339, tree = MarshalMaterialized bytes}.
+// mirroring CHARLY_REPO_CACHE), holding {resolved RFC3339 (reclamation data), tree = MarshalMaterialized bytes}.
 // Reads are LOCK-FREE: a writer publishes atomically (tmp + rename), so a reader sees either the
 // complete old state (miss) or the complete new one (hit) — never a torn entry (the
 // downloadRepoFrom publish pattern). The MISS path takes a per-key blocking advisory flock
@@ -57,7 +58,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"runtime/debug"
+	"sort"
 	"time"
 
 	"github.com/opencharly/sdk/kit"
@@ -71,10 +73,13 @@ import (
 const materializedCacheEnvName = "CHARLY_MATERIALIZED_CACHE"
 
 var (
-	// materializeCacheTTL bounds how long a cached materialization is trusted before it counts as
-	// a miss and the unify re-runs. A package var (not a const) so a test can shorten it, exactly
-	// like spec/lock's lockTimeout; the git-cache precedent in spec/refs (submoduleCacheTTL) is 1h.
-	materializeCacheTTL = time.Hour
+	// materializedCacheMaxEntries bounds the cache SIZE (the Docker builder --keep-storage
+	// analogue): the write path opportunistically reclaims the oldest entries beyond the cap.
+	// Reclamation is STORAGE-bound only — validity is purely component-based (valid while the
+	// charly.yml content + schema + loader identity are unchanged; ANY change re-materializes
+	// and a new entry is written automatically — no manual invalidation, no time expiry — the
+	// Docker cache rule).
+	materializedCacheMaxEntries = 32
 	// materializedTreeCacheEnabled is the escape hatch + test hook: when false every load
 	// materializes directly, exactly as before the cache existed. Tests flip it to demonstrate the
 	// no-cache behavior (the materializer is called once per load).
@@ -95,37 +100,99 @@ func materializedCacheDir() (string, error) {
 	return filepath.Join(home, ".cache", "charly", "materialized"), nil
 }
 
-// loadedProjectCacheKey derives the cache key for ONE materialize input: a SHA-256 over (1) the
-// deterministic JSON of the walk envelope (the project config state after resolution — see the
-// file header: the envelope EMBEDS every resolved ref's content, so a content hash of it is the
-// resolved-refs-hash marker, stronger than a bare commit list) and (2) the embedding binary's
-// compiled schema CalVer, so a schema upgrade re-keys. An error (an un-marshalable envelope) means
-// the cache cannot participate — callers fall back to a direct materialize.
-func loadedProjectCacheKey(lp *spec.LoadedProject) (string, error) {
+// materializeCacheComponents names the three inputs the materialized tree is a FUNCTION of:
+// (1) the project CONFIG state (the content-addressed walk envelope — the resolved refs' bytes are
+// EMBEDDED in it), (2) the compiled SCHEMA CalVer, (3) the compiled LOADER logic identity (the sdk
+// module version — loaderkit's parse/fold changes ship in a new sdk version). The component set is
+// the cache's self-detection contract: the entry records the components it was materialized under,
+// and the read REFUSES an entry whose components differ from the current ones (a config/schema/
+// loader change) — the miss then re-materializes and the write UPDATES the cache automatically.
+// No manual invalidation is ever needed.
+type materializeCacheComponents struct {
+	ConfigHash     string `json:"config_hash"`
+	SchemaCalVer   string `json:"schema_calver"`
+	LoaderIdentity string `json:"loader_identity"`
+}
+
+// loadedProjectCacheKey derives the cache KEY (the on-disk filename: a SHA-256 over the three
+// components, so each distinct configuration gets its own entry) AND the components themselves
+// (the same three values, separated for the read-time drift check). An error (an un-marshalable
+// envelope) means the cache cannot participate — callers fall back to a direct materialize.
+func loadedProjectCacheKey(lp *spec.LoadedProject) (string, materializeCacheComponents, error) {
 	env, err := json.Marshal(lp)
 	if err != nil {
-		return "", fmt.Errorf("materialized-tree cache key: encode walk envelope: %w", err)
+		return "", materializeCacheComponents{}, fmt.Errorf("materialized-tree cache key: encode walk envelope: %w", err)
 	}
+	envHash := sha256Hex(env)
+	calver := kit.LatestSchemaVersion().String()
+	identity := loaderIdentity()
+	comps := materializeCacheComponents{ConfigHash: envHash, SchemaCalVer: calver, LoaderIdentity: identity}
 	h := sha256.New()
-	_, _ = h.Write(env)
+	_, _ = h.Write([]byte(envHash))
 	_, _ = h.Write([]byte{0}) // field separator (both halves are length-delimited; the marker keeps the framing explicit)
-	_, _ = h.Write([]byte(kit.LatestSchemaVersion().String()))
-	return hex.EncodeToString(h.Sum(nil)), nil
+	_, _ = h.Write([]byte(calver))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(identity))
+	return hex.EncodeToString(h.Sum(nil)), comps, nil
 }
 
-// materializedCacheEntry is one cache file's contents: when the materialization was resolved and
-// the MarshalMaterialized bytes of the merged tree (the SAME wire envelope the loader-materialize
-// leg returns, PluginKinds preserved — never a plain json.Marshal).
+// sha256Hex is the hex SHA-256 of a byte slice (the content-addressed config-state digest).
+func sha256Hex(b []byte) string {
+	h := sha256.New()
+	_, _ = h.Write(b)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// loaderIdentity names the COMPILED loader logic in the cache key (RCA 2026-09-06: the
+// Phase 3 from: name:tag split landed in loaderkit WITHOUT a schema-CalVer bump, so the key
+// (envelope + schema CalVer) did not change and the cache served the PRE-SPLIT tree for up
+// to the same-key/same-tree assumption — the exact gap the RCA measured). The identity is the
+// sdk module version from the build info: loaderkit's parse/fold logic lives in the sdk module,
+// so a loader-logic change necessarily ships in a NEW sdk version → a new identity → a new
+// cache key. A new binary never inherits an older logic's tree. Fallback (no build info,
+// e.g. go test): the caller's envelope already varies per project; the identity stays "bare"
+// so tests in one binary share one namespace, exactly as before this component.
+// loaderIdentityFn is a package var (not a const) so tests inject a DIFFERENT identity and
+// prove both the key and the read-time drift detection respond to it.
+var loaderIdentityFn = func() string {
+	return loaderIdentityImpl()
+}
+
+func loaderIdentity() string { return loaderIdentityFn() }
+
+func loaderIdentityImpl() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info == nil {
+		return "bare"
+	}
+	for _, m := range info.Deps {
+		if m.Path == sdkModulePath {
+			return "sdk@" + m.Version
+		}
+	}
+	return "bare"
+}
+
+// sdkModulePath is loaderkit's own module path — the identity key is the module that OWNS
+// this file's logic (any rename here must rename this constant with it).
+const sdkModulePath = "github.com/opencharly/sdk"
+
+// materializedCacheEntry is one cache file's contents: when the materialization was resolved, the
+// MarshalMaterialized bytes of the merged tree (the SAME wire envelope the loader-materialize leg
+// returns, PluginKinds preserved — never a plain json.Marshal), and the components it was
+// materialized under (the read's drift-detection contract — see materializeCacheComponents).
 type materializedCacheEntry struct {
-	Resolved time.Time `json:"resolved"`
-	Tree     []byte    `json:"tree"`
+	Resolved   time.Time                  `json:"resolved"`
+	Tree       []byte                     `json:"tree"`
+	Components materializeCacheComponents `json:"components"`
 }
 
-// readMaterializedTree returns the cached marshal-materialized tree for key when present and
-// fresh (TTL-wise), else (nil, false). Every failure — absent file, corrupt JSON, empty tree,
-// stale TTL, disabled cache — is a miss; callers re-materialize. Lock-free: the writer's atomic
-// rename guarantees a complete read or an absent one.
-func readMaterializedTree(key string) ([]byte, bool) {
+// readMaterializedTree returns the cached tree for key when present, components-matched (AND
+// materialized under the CURRENT components — the self-detection contract: a config, schema, or
+// loader-logic change (any component drift) is a MISS, so the caller re-materializes and the
+// write path UPDATES the entry automatically. Every failure — absent file, corrupt JSON, empty
+// tree, stale TTL, component drift, disabled cache — is a miss; callers re-materialize.
+func readMaterializedTree(key string, want materializeCacheComponents) ([]byte, bool) {
 	if !materializedTreeCacheEnabled {
 		return nil, false
 	}
@@ -141,17 +208,21 @@ func readMaterializedTree(key string) ([]byte, bool) {
 	if json.Unmarshal(data, &e) != nil || len(e.Tree) == 0 {
 		return nil, false
 	}
-	if time.Since(e.Resolved) > materializeCacheTTL {
+	if e.Components != want {
+		// Detected: the config/schema/loader changed since this entry was written.
 		return nil, false
 	}
+	// NO TIME VALIDITY: an entry whose components match is VALID regardless of age (the
+	// Docker cache rule — valid while the inputs are the same). Reclamation of old entries is
+	// the prune's job (write-time, storage-bound), never the read's.
 	return e.Tree, true
 }
 
 // writeMaterializedTree persists a tree under key, atomically (tmp + rename so a concurrent
 // lock-free reader never sees a torn entry) and best-effort (a write failure is silent — the
-// cache is an optimization). Publishes only outside-materialize state: the entry's Resolved is
-// now, so the entry is fresh for materializeCacheTTL.
-func writeMaterializedTree(key string, tree []byte) {
+// cache is an optimization). The entry's Resolved is the write timestamp — RECLAMATION data
+// only (the prune's ordering): validity is purely component-based, never time-based.
+func writeMaterializedTree(key string, tree []byte, comps materializeCacheComponents) {
 	if !materializedTreeCacheEnabled || len(tree) == 0 {
 		return
 	}
@@ -162,7 +233,7 @@ func writeMaterializedTree(key string, tree []byte) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
-	e := materializedCacheEntry{Resolved: time.Now(), Tree: tree}
+	e := materializedCacheEntry{Resolved: time.Now(), Tree: tree, Components: comps}
 	data, err := json.Marshal(e)
 	if err != nil {
 		return
@@ -172,31 +243,59 @@ func writeMaterializedTree(key string, tree []byte) {
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return
 	}
-	_ = os.Rename(tmp, final)
-	sweepMaterializedCache(dir)
+	if err := os.Rename(tmp, final); err != nil {
+		return
+	}
+	// Docker-style opportunistic reclamation: keep the newest materializedCacheMaxEntries
+	// entries, drop the rest — storage-bound ONLY (never a validity input; see the prune
+	// doc). Best-effort like every cache write.
+	pruneMaterializedCache(dir)
 }
 
-// sweepMaterializedCache opportunistically removes entry files older than 2x the TTL so a heavy
-// host (many distinct project states per hour) stays bounded without a cleanup task. A file the
-// sweep removes is already TTL-stale, so no live entry is ever lost. Best-effort: errors are
-// swallowed.
-func sweepMaterializedCache(dir string) {
+// pruneMaterializedCache reclaims storage Docker-style (the builder --keep-storage analogue):
+// when the entry count exceeds materializedCacheMaxEntries, the OLDEST entries are removed
+// (by write time). This is RECLAMATION — it never invalidates a valid entry: the read's
+// validity is purely component-based (any charly.yml/schema/loader change re-materializes and
+// writes a new entry automatically), so a pruned entry is only ever a stale-input orphan.
+// The bound is a package var so tests can shrink it.
+func pruneMaterializedCache(dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	cutoff := time.Now().Add(-2 * materializeCacheTTL)
-	for _, de := range entries {
-		if de.IsDir() || !strings.HasSuffix(de.Name(), ".json") {
+	excess := len(entries) - materializedCacheMaxEntries
+	if excess <= 0 {
+		return
+	}
+	// os.ReadDir sorts by NAME (the key hash) — the reclamation must remove the OLDEST by
+	// WRITE time, so sort by the entry's Resolved timestamp (the semantic write-time; the
+	// file ModTime can drift with renames) ascending — the oldest first, removed first.
+	type named struct {
+		name string
+		res  time.Time
+	}
+	byAge := make([]named, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
 			continue
 		}
-		info, err := de.Info()
-		if err != nil {
+		data, rerr := os.ReadFile(filepath.Join(dir, e.Name()))
+		if rerr != nil {
 			continue
 		}
-		if info.ModTime().Before(cutoff) {
-			_ = os.Remove(filepath.Join(dir, de.Name()))
+		var ent materializedCacheEntry
+		if json.Unmarshal(data, &ent) != nil {
+			continue
 		}
+		byAge = append(byAge, named{e.Name(), ent.Resolved})
+	}
+	sort.Slice(byAge, func(i, j int) bool { return byAge[i].res.Before(byAge[j].res) })
+	for _, e := range byAge {
+		if excess <= 0 {
+			return
+		}
+		_ = os.Remove(filepath.Join(dir, e.name))
+		excess--
 	}
 }
 
@@ -227,11 +326,11 @@ func MaterializeLoadedProjectCached(lp *spec.LoadedProject, merged *spec.Unified
 		// (a nil lp panics in the real seam anyway, so nothing here can be cached).
 		return materialize(lp, merged, byID)
 	}
-	key, kerr := loadedProjectCacheKey(lp)
+	key, comps, kerr := loadedProjectCacheKey(lp)
 	if kerr != nil {
 		return materialize(lp, merged, byID)
 	}
-	if tree, ok := readMaterializedTree(key); ok {
+	if tree, ok := readMaterializedTree(key, comps); ok {
 		if err := UnmarshalMaterialized(tree, merged); err == nil {
 			// Reproduce MaterializeLoadedProject's first step — registering THIS project's merged
 			// tree under its walk-assigned id — so a caller that keeps byID observes the same
@@ -256,7 +355,7 @@ func MaterializeLoadedProjectCached(lp *spec.LoadedProject, merged *spec.Unified
 		return materialize(lp, merged, byID)
 	}
 	defer func() { _ = release() }()
-	if tree, ok := readMaterializedTree(key); ok {
+	if tree, ok := readMaterializedTree(key, comps); ok {
 		if err := UnmarshalMaterialized(tree, merged); err == nil {
 			if lp.ID != 0 {
 				byID[lp.ID] = merged
@@ -268,7 +367,7 @@ func MaterializeLoadedProjectCached(lp *spec.LoadedProject, merged *spec.Unified
 		return err
 	}
 	if tree, merr := MarshalMaterialized(merged); merr == nil {
-		writeMaterializedTree(key, tree)
+		writeMaterializedTree(key, tree, comps)
 	}
 	return nil
 }

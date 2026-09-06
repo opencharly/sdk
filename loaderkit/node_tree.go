@@ -106,6 +106,14 @@ func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error
 	if dv != nil && dv.Kind == yaml.ScalarNode {
 		SetFleetCrossRef(&dn, pn.Disc, dv.Value, t)
 	}
+	// The mapping deploy form (`vm: {from: "base:golden"}`) decodes `from` into dn.From
+	// via yaml DIRECTLY (bypassing SetFleetCrossRef) — normalize the unified name:tag split
+	// here so BOTH authored forms produce From+FromSnapshot. Guarded to the non-ImageBacked
+	// arm (an image ref with a `:` tag is never split); the scalar form is already split
+	// (FromSnapshot set) and passes through untouched.
+	if dn.From != "" && dn.FromSnapshot == "" && dn.Image == "" {
+		dn.From, dn.FromSnapshot = splitVMSnapshotRef(dn.From)
+	}
 
 	children, err := BuildResourceMemberChildren(pn, t)
 	if err != nil {
@@ -167,6 +175,27 @@ func BuildFleetNodeInto(pn spec.ParsedNode, t spec.Threaded, acc *spec.Materiali
 	}
 	acc.Fleet[pn.Name] = *dn
 	return nil
+}
+
+// DeployTargetEntity resolves a deploy-hop name to the TERMINAL kind:vm entity it builds
+// from (Phase 3, the unified from: name:tag clone spelling): a plain entity name passes
+// through; a name that is a kind:check BED (the clone-base bed — a deploy whose from:
+// names the template) resolves its from: chain to the entity. The chain is ONE hop today
+// (the base bed's from:); the walker is the single canonical resolution so plugin-vm's
+// build drive, the create's config-resolve, and the validator never re-implement it (R3).
+func DeployTargetEntity(uf *spec.UnifiedFile, name string) (string, bool) {
+	if uf == nil || name == "" {
+		return "", false
+	}
+	if _, has := uf.VM()[name]; has {
+		return name, true
+	}
+	if d, has := uf.Fleet[name]; has && d.From != "" {
+		if _, has := uf.VM()[d.From]; has {
+			return d.From, true
+		}
+	}
+	return "", false
 }
 
 // IsDeployShape reports whether a substrate node is a DEPLOY (vs a standalone template): a scalar
