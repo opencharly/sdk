@@ -61,16 +61,6 @@ import (
 // DeployStateHost package var (#55 coneC-dsh — mirrors the SaveFleetConfig/SaveDeployState
 // reader-callback precedent).
 func PersistBedDeployOverrides(name string, node FleetNode, externalInPlace bool, marshalNode func(name string, node *FleetNode) (*yaml.Node, error), read func() (*FleetConfig, error)) {
-	// A GROUP bed (boxless root + sibling Members — the §3 cross-deployment shape) has NO
-	// root deployment to seed: its members each carry their own port/volume/env overrides
-	// (bringUpMembers persists every member), and the boxless root is never `charly config`'d.
-	// Persisting the group root here would write a MEMBERLESS bed (no box, no members —
-	// SaveDeployState carries no member fields) that validateCheckBeds then HARD-REJECTS on
-	// the next overlay load ("no workload cross-ref and no sibling members"), poisoning every
-	// subsequent SaveDeployState. So never persist a group bed root.
-	if node.IsGroup() {
-		return
-	}
 	// A LOCAL or EXTERNAL in-place bed never runs `charly config` (it applies candies in
 	// place during `charly fleet add`), so the whole reason PersistBedDeployOverrides exists
 	// — seeding port/volume/env overrides BEFORE config — does not apply. Worse, a local bed's
