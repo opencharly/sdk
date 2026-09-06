@@ -23,6 +23,11 @@ import (
 // core reads its project config directly; an out-of-process plugin reads over a host
 // seam) — this is the PURE resolution/allocation decision only.
 func ResolveVmSshPort(vm *spec.ResolvedVm, vmName string, persistedPort int) (int, error) {
+	if vm == nil || vm.SSH == nil || !vm.SSH.PortAuto {
+		// The non-autoport fallback: port 22 (the in-guest default) — a nil spec (the
+		// live-check deploy-hop can miss the template) never panics (RCA 2026-09-06).
+		return 22, nil
+	}
 	if vm.SSH != nil && vm.SSH.PortAuto {
 		if persistedPort > 0 {
 			return persistedPort, nil
