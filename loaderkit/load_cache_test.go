@@ -196,23 +196,79 @@ func TestMaterializedCache_DisabledReMaterializes(t *testing.T) {
 
 // TestMaterializedCache_TTLExpiryReMaterializes proves the TTL: an entry past materializeCacheTTL
 // is a miss and the unify re-runs (a negative TTL is always stale — deterministic, no sleep).
-func TestMaterializedCache_TTLExpiryReMaterializes(t *testing.T) {
+// TestMaterializedCache_ValidWhileInputsUnchanged is the DOCKER cache rule (the clean
+// architecture replacing the removed 1h TTL): an entry whose components match the current inputs
+// is VALID regardless of AGE — a stale timestamp is never a miss. The materialize counts stay at
+// one across two loads even when the entry's Resolved is aged far beyond any hour.
+func TestMaterializedCache_ValidWhileInputsUnchanged(t *testing.T) {
 	isolateCacheRoot(t)
-	prev := materializeCacheTTL
-	materializeCacheTTL = -time.Nanosecond
-	defer func() { materializeCacheTTL = prev }()
-
 	lp, res := testMaterializedState()
 	exec := &countingExecutor{canned: lp, result: res}
 	seams := LoadSeamsFromExecutor(exec)
-	for i := 0; i < 2; i++ {
+
+	merged1 := &spec.UnifiedFile{}
+	if err := seams.MaterializeLoadedProject(&lp, merged1, map[int64]*spec.UnifiedFile{}); err != nil {
+		t.Fatalf("first materialize: %v", err)
+	}
+	if exec.materializeCalls != 1 {
+		t.Fatalf("first load must materialize once, got %d", exec.materializeCalls)
+	}
+	// Age the entry far beyond any possible TTL (the timestamp is RECLAMATION data only now).
+	cacheDir, err := materializedCacheDir()
+	if err != nil {
+		t.Fatalf("cache dir: %v", err)
+	}
+	key, comps, err := loadedProjectCacheKey(&lp)
+	if err != nil {
+		t.Fatalf("key: %v", err)
+	}
+	old := time.Now().Add(-720 * time.Hour)
+	if err := os.Chtimes(filepath.Join(cacheDir, key+".json"), old, old); err != nil {
+		t.Fatalf("age the entry: %v", err)
+	}
+	// Same inputs, very old entry: still a HIT (no time validity).
+	merged2 := &spec.UnifiedFile{}
+	if err := seams.MaterializeLoadedProject(&lp, merged2, map[int64]*spec.UnifiedFile{}); err != nil {
+		t.Fatalf("second materialize: %v", err)
+	}
+	if exec.materializeCalls != 1 {
+		t.Fatalf("an old entry with matching components MUST be served (Docker rule — no time expiry), got %d calls", exec.materializeCalls)
+	}
+	_ = comps
+}
+
+// TestMaterializedCache_PruneReclaimsStorage is the Docker builder --keep-storage analogue: the
+// write path reclaims the OLDEST entries when the count exceeds the cap. Reclamation is
+// STORAGE-bound only — it never invalidates a valid entry.
+func TestMaterializedCache_PruneReclaimsStorage(t *testing.T) {
+	isolateCacheRoot(t)
+	prev := materializedCacheMaxEntries
+	materializedCacheMaxEntries = 2
+	defer func() { materializedCacheMaxEntries = prev }()
+
+	lp1, res := testMaterializedState()
+	exec := &countingExecutor{canned: lp1, result: res}
+	seams := LoadSeamsFromExecutor(exec)
+	// Three distinct project states force three writes (each past the cap of 2).
+	states := []spec.LoadedProject{lp1, lp1, lp1}
+	states[1].ID = 101
+	states[2].ID = 102
+	for i := range states {
 		merged := &spec.UnifiedFile{}
-		if err := seams.MaterializeLoadedProject(&lp, merged, map[int64]*spec.UnifiedFile{}); err != nil {
-			t.Fatalf("load %d: %v", i+1, err)
+		if err := seams.MaterializeLoadedProject(&states[i], merged, map[int64]*spec.UnifiedFile{}); err != nil {
+			t.Fatalf("state %d: %v", i, err)
 		}
 	}
-	if exec.materializeCalls != 2 {
-		t.Fatalf("expired entry must re-materialize, got %d calls", exec.materializeCalls)
+	cacheDir, err := materializedCacheDir()
+	if err != nil {
+		t.Fatalf("cache dir: %v", err)
+	}
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatalf("read cache dir: %v", err)
+	}
+	if len(entries) > 2 {
+		t.Fatalf("prune must keep at most %d entries, got %d", materializedCacheMaxEntries, len(entries))
 	}
 }
 
@@ -234,11 +290,11 @@ func TestMaterializedCache_KeySensitiveToEnvelope(t *testing.T) {
 	}
 	lp2.Docs[0].Project.Nodes[0].Body = json.RawMessage(`{"box":"fedora","vm":{"ram_gb":8}}`)
 
-	k1, err := loadedProjectCacheKey(&lp1)
+	k1, _, err := loadedProjectCacheKey(&lp1)
 	if err != nil {
 		t.Fatalf("key 1: %v", err)
 	}
-	k2, err := loadedProjectCacheKey(&lp2)
+	k2, _, err := loadedProjectCacheKey(&lp2)
 	if err != nil {
 		t.Fatalf("key 2: %v", err)
 	}
@@ -265,10 +321,11 @@ func TestMaterializedCache_KeySensitiveToEnvelope(t *testing.T) {
 func TestMaterializedCache_CorruptEntryDegradesAndSelfHeals(t *testing.T) {
 	isolateCacheRoot(t)
 	lp, res := testMaterializedState()
-	key, err := loadedProjectCacheKey(&lp)
+	key, comps, err := loadedProjectCacheKey(&lp)
 	if err != nil {
 		t.Fatalf("key: %v", err)
 	}
+	_ = comps
 	cacheDir, err := materializedCacheDir()
 	if err != nil {
 		t.Fatalf("cache dir: %v", err)
