@@ -62,11 +62,14 @@ func withMemberTag(args []string, imageTag string) []string {
 // kind:check bed runner and the operator deploy path (R3). Idempotent on an already-running
 // member.
 func BringUpMembers(node *spec.FleetNode, imageTag string) error {
-	if node == nil || len(node.Members) == 0 {
+	// The DEPLOY-LEVEL members only: alongside bring-up on the shared network. An
+	// in-substrate member deploys INTO its parent's venue (the dotted-path dispatch /
+	// the substrate plugin's PostApply), never beside it.
+	if node == nil || len(node.DeployLevelMembers()) == 0 {
 		return nil
 	}
-	for _, memberKey := range spec.SortedMemberKeys(node.Members) {
-		memberNode := node.Members[memberKey]
+	for _, m := range node.DeployLevelMembers() {
+		memberKey, memberNode := m.Name, m.Node
 		switch {
 		case fleet.IsVmVenue(memberNode):
 			// VM member: full libvirt lifecycle, mirroring the isVM bed root
@@ -91,7 +94,7 @@ func BringUpMembers(node *spec.FleetNode, imageTag string) error {
 			}
 			// Same nested-local-child gap the isVM bed root closes: plugin-deploy-vm's
 			// PostApply skips target:local children, so deploy them into the guest here.
-			if err := fleet.DeployNestedLocalChildren(memberKey, memberNode.Children, func(childKey, dotted string) error {
+			if err := fleet.DeployNestedLocalChildren(memberKey, memberNode, func(childKey, dotted string) error {
 				return proc.RunCharlySubcommand("fleet", "add", dotted)
 			}); err != nil {
 				return fmt.Errorf("peer %q: %w", memberKey, err)
@@ -120,12 +123,12 @@ func BringUpMembers(node *spec.FleetNode, imageTag string) error {
 // BringUpMembers. It attempts every member and returns their joined errors so callers can finish
 // the full cleanup while still failing the owning operation.
 func TearDownMembers(node *spec.FleetNode) error {
-	if node == nil || len(node.Members) == 0 {
+	if node == nil || len(node.DeployLevelMembers()) == 0 {
 		return nil
 	}
 	var errs []error
-	for _, memberKey := range spec.SortedMemberKeys(node.Members) {
-		memberNode := node.Members[memberKey]
+	for _, m := range node.DeployLevelMembers() {
+		memberKey, memberNode := m.Name, m.Node
 		var err error
 		switch {
 		case fleet.IsVmVenue(memberNode):

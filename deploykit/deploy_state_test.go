@@ -321,19 +321,23 @@ func TestRemoveByExactSource(t *testing.T) {
 // TestFindFleetNode covers the whole-tree name search (Cutover B unit 5, P13-KERNEL-B —
 // moved from charly/k3s_post.go's findFleetNodeByName/findFleetNodePtrByName, which had
 // no dedicated test coverage in charly; this closes that gap at the new home). A node may
-// be found at the top level, nested under Children at any depth, or nested under Members
-// at any depth; a name present nowhere in the tree returns nil.
+// be found at the top level or anywhere in the ONE ordered member tree (both positions, at
+// any depth); a name present nowhere in the tree returns nil.
 func TestFindFleetNode(t *testing.T) {
 	leaf := &FleetNode{Image: "leaf-image"}
 	member := &FleetNode{Image: "member-image"}
 	child := &FleetNode{
-		Image:    "child-image",
-		Children: map[string]*FleetNode{"leaf": leaf},
+		Image: "child-image",
+		Member: []spec.Member{
+			{Name: "leaf", Position: spec.PositionInSubstrate, Node: leaf},
+		},
 	}
 	root := FleetNode{
-		Image:    "root-image",
-		Children: map[string]*FleetNode{"child": child},
-		Members:  map[string]*FleetNode{"sidecar": member},
+		Image: "root-image",
+		Member: []spec.Member{
+			{Name: "child", Position: spec.PositionInSubstrate, Node: child},
+			{Name: "sidecar", Position: spec.PositionDeployLevel, Node: member},
+		},
 	}
 	fleet := map[string]FleetNode{"stack": root}
 
@@ -341,13 +345,13 @@ func TestFindFleetNode(t *testing.T) {
 		t.Errorf("FindFleetNode(stack) top-level = %v; want root-image", got)
 	}
 	if got := FindFleetNode(fleet, "child"); got != child {
-		t.Errorf("FindFleetNode(child) nested-Children = %v; want %v", got, child)
+		t.Errorf("FindFleetNode(child) in-substrate member = %v; want %v", got, child)
 	}
 	if got := FindFleetNode(fleet, "leaf"); got != leaf {
-		t.Errorf("FindFleetNode(leaf) nested-two-deep-Children = %v; want %v", got, leaf)
+		t.Errorf("FindFleetNode(leaf) two-deep member = %v; want %v", got, leaf)
 	}
 	if got := FindFleetNode(fleet, "sidecar"); got != member {
-		t.Errorf("FindFleetNode(sidecar) nested-Members = %v; want %v", got, member)
+		t.Errorf("FindFleetNode(sidecar) deploy-level member = %v; want %v", got, member)
 	}
 	if got := FindFleetNode(fleet, "nonexistent"); got != nil {
 		t.Errorf("FindFleetNode(nonexistent) = %v; want nil", got)

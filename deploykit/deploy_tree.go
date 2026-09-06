@@ -37,16 +37,18 @@ func WalkDeploymentTree(rootPath string, root *FleetNode, parentExec DeployExecu
 	if err != nil {
 		return err
 	}
-	if !root.HasChildren() {
-		return nil
-	}
-	for _, k := range SortedNestedKeys(root.Children) {
-		child := root.Children[k]
-		childPath := k
-		if rootPath != "" {
-			childPath = rootPath + "." + k
+	// The IN-SUBSTRATE members deploy into this node's venue (dotted identity
+	// parent.child) and are walked under it; a deploy-level member is a folded top-level
+	// entry the fleet map walks as its own root, never re-walked under its owner.
+	for _, m := range root.InSubstrateMembers() {
+		if m.Node == nil {
+			continue
 		}
-		if err := WalkDeploymentTree(childPath, child, thisExec, visit); err != nil {
+		childPath := m.Name
+		if rootPath != "" {
+			childPath = rootPath + "." + m.Name
+		}
+		if err := WalkDeploymentTree(childPath, m.Node, thisExec, visit); err != nil {
 			return err
 		}
 	}

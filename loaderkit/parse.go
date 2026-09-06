@@ -52,12 +52,24 @@ func sliceSet(ss []string) map[string]bool {
 	return m
 }
 
+// memberDisc is the ONE Threaded-fed MEMBER-discriminator classification (Cutover C task 0,
+// parser review 8a): clause-D DATA only — the CUE-derived resource kinds ∪ the threaded external
+// structural kinds ∪ the threaded external deploy substrates. The three former drift-prone
+// spellings (classifyKind's asChild arm, parseNode's parent-allow check, IsResourceDisc's fold
+// set) all consume THIS function, so a member classifies identically at every consult site —
+// an external-structural child under an external-structural parent classifies (the 8a bug:
+// the child arm never consulted t.StructuralKinds — dies here).
+func memberDisc(word string, t spec.Threaded) bool {
+	return resourceKindSet[word] || t.StructuralKinds[word] || t.DeploySubstrates[word]
+}
+
 // classifyKind reports whether k is a recognized KIND word in this position. At the top level
-// every registered/threaded kind + external deploy substrate classifies; as a member child only
-// the deployable resource kinds do.
+// every registered/threaded kind + external deploy substrate classifies; as a member child the
+// ONE member classification (memberDisc) decides — resource kinds, structural kinds, and deploy
+// substrates alike.
 func classifyKind(k string, asChild bool, t spec.Threaded) bool {
 	if asChild {
-		return resourceKindSet[k]
+		return memberDisc(k, t)
 	}
 	if kindWordSet[k] || stepKeywordSet[k] {
 		return kindWordSet[k]
@@ -65,7 +77,7 @@ func classifyKind(k string, asChild bool, t spec.Threaded) bool {
 	if t.Kinds[k] {
 		return true
 	}
-	return t.DeploySubstrates[k]
+	return memberDisc(k, t)
 }
 
 // ParseDoc decomposes a node-form document mapping into its reserved directives + the generic
@@ -140,17 +152,88 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 		return spec.ParsedNode{}, err
 	}
 	pn := spec.ParsedNode{Name: name, Disc: disc, Body: body}
+	// Cutover C task 0 — the parse PRESERVES the authored depth (indentation IS the intent):
+	// an entity-kind key INSIDE the disc value body is an IN-SUBSTRATE member of that substrate
+	// (deployed into its venue), so it parses as a member child OF THIS NODE — recursively —
+	// exactly like a deploy-level sibling does; the substrate's closed-schema gates stop seeing
+	// the member keys because every body EMITTER (discValue / EntityBodyJSON) omits keys the
+	// member tree owns, while the authored body here keeps them as the position channel the fold
+	// stamps Member.Position from. A key BESIDE the disc (a sibling of the kind key) is a
+	// DEPLOY-LEVEL member (brought up alongside). One rule at every depth.
+	//
+	// memberDisc(disc) is the ONE parent-allow classification (8a): a deployable resource kind,
+	// an external structural plugin kind, or an external deploy substrate may nest members.
+	memberNames := map[string]bool{}
+	appendChild := func(child spec.ParsedNode) error {
+		if memberNames[child.Name] {
+			return fmt.Errorf("node %q (kind %q): duplicate member name %q — a node's member children (in-body and deploy-level alike) are globally unique within the node", name, disc, child.Name)
+		}
+		memberNames[child.Name] = true
+		pn.Children = append(pn.Children, &child)
+		return nil
+	}
+	allowMembers := memberDisc(disc, t)
+	// In-substrate members first: entity keys inside the disc body, in body order.
+	for _, c := range discEntityPairs(discValue, t) {
+		if !allowMembers {
+			return spec.ParsedNode{}, fmt.Errorf("node %q (kind %q): in-body member %q is not allowed — only deployable resource kinds or an external structural plugin kind nest sub-entity members", name, disc, c.k.Value)
+		}
+		child, err := parseNode(c.k.Value, c.v, true, t)
+		if err != nil {
+			return spec.ParsedNode{}, err
+		}
+		if err := appendChild(child); err != nil {
+			return spec.ParsedNode{}, err
+		}
+	}
+	// Deploy-level siblings second: entity keys beside the disc key, in authored order.
 	for _, c := range memberPairs {
-		if !resourceKindSet[disc] && !t.StructuralKinds[disc] {
+		if !allowMembers {
 			return spec.ParsedNode{}, fmt.Errorf("node %q (kind %q): child %q is not allowed — only deployable kinds (pod/vm/kubernetes/local/android/group) or an external structural plugin kind nest sub-entity members; an old-shape data/step child must be migrated (run: charly migrate)", name, disc, c.k.Value)
 		}
 		child, err := parseNode(c.k.Value, c.v, true, t)
 		if err != nil {
 			return spec.ParsedNode{}, err
 		}
-		pn.Children = append(pn.Children, &child)
+		if err := appendChild(child); err != nil {
+			return spec.ParsedNode{}, err
+		}
 	}
 	return pn, nil
+}
+
+// discEntityPairs returns the ENTITY-keyed pairs of a disc value body — the in-substrate member
+// candidates: a pair whose value is a mapping that carries a kind discriminator (memberDisc —
+// the ONE member classification). Data fields (scalars, sequences, mappings of non-kind keys)
+// never classify, so the body's own data travels untouched.
+func discEntityPairs(discValue *yaml.Node, t spec.Threaded) []struct{ k, v *yaml.Node } {
+	if discValue == nil || discValue.Kind != yaml.MappingNode {
+		return nil
+	}
+	type kv = struct{ k, v *yaml.Node }
+	var out []kv
+	for i := 0; i+1 < len(discValue.Content); i += 2 {
+		k, v := discValue.Content[i], discValue.Content[i+1]
+		if isEntityValue(v, t) {
+			out = append(out, kv{k, v})
+		}
+	}
+	return out
+}
+
+// isEntityValue reports whether a body value parses as an entity node: a mapping carrying a
+// member-discriminator key (memberDisc). The SAME rule the node level applies to a member
+// child's own mapping — the key is the member's NAME, the disc lives inside its value.
+func isEntityValue(v *yaml.Node, t spec.Threaded) bool {
+	if v == nil || v.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(v.Content); i += 2 {
+		if memberDisc(v.Content[i].Value, t) {
+			return true
+		}
+	}
+	return false
 }
 
 // entityBodyJSON serializes a node's kind-value mapping to the opaque JSON body the host fold

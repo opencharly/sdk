@@ -30,12 +30,15 @@ func FleetWalkPreOrder(n *FleetNode, path string, fn func(path string, node *Fle
 	if err := fn(path, n); err != nil {
 		return err
 	}
-	for _, k := range SortedNestedKeys(n.Children) {
-		childPath := k
+	// The IN-SUBSTRATE members deploy into this node's venue (dotted identity) and are
+	// walked here, pre-order; a deploy-level member is a folded top-level entry walked as
+	// its own root, never re-walked under its owner.
+	for _, m := range n.InSubstrateMembers() {
+		childPath := m.Name
 		if path != "" {
-			childPath = path + "." + k
+			childPath = path + "." + m.Name
 		}
-		if err := FleetWalkPreOrder(n.Children[k], childPath, fn); err != nil {
+		if err := FleetWalkPreOrder(m.Node, childPath, fn); err != nil {
 			return err
 		}
 	}
@@ -50,12 +53,12 @@ func FleetWalkPostOrder(n *FleetNode, path string, fn func(path string, node *Fl
 	if n == nil {
 		return nil
 	}
-	for _, k := range SortedNestedKeys(n.Children) {
-		childPath := k
+	for _, m := range n.InSubstrateMembers() {
+		childPath := m.Name
 		if path != "" {
-			childPath = path + "." + k
+			childPath = path + "." + m.Name
 		}
-		if err := FleetWalkPostOrder(n.Children[k], childPath, fn); err != nil {
+		if err := FleetWalkPostOrder(m.Node, childPath, fn); err != nil {
 			return err
 		}
 	}
@@ -247,25 +250,25 @@ func FindFleetNode(fleet map[string]FleetNode, name string) *FleetNode {
 		if k == name {
 			return &n
 		}
-		if r := findFleetNodePtr(n.Children, name); r != nil {
-			return r
-		}
-		if r := findFleetNodePtr(n.Members, name); r != nil {
+		if r := findFleetNodePtr(n.Member, name); r != nil {
 			return r
 		}
 	}
 	return nil
 }
 
-func findFleetNodePtr(m map[string]*FleetNode, name string) *FleetNode {
-	for k, n := range m {
-		if k == name {
-			return n
+// findFleetNodePtr searches the ONE ordered member tree (both positions — the unqualified
+// name lookup covers every authored depth) by name.
+func findFleetNodePtr(members []spec.Member, name string) *FleetNode {
+	for i := range members {
+		m := &members[i]
+		if m.Name == name {
+			return m.Node
 		}
-		if r := findFleetNodePtr(n.Children, name); r != nil {
-			return r
+		if m.Node == nil {
+			continue
 		}
-		if r := findFleetNodePtr(n.Members, name); r != nil {
+		if r := findFleetNodePtr(m.Node.Member, name); r != nil {
 			return r
 		}
 	}

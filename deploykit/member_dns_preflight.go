@@ -80,11 +80,18 @@ func charlyCmdCapture(memberKey, script string) (string, error) {
 // memberDNSRefs returns, per container-venue member key, the sorted set of SIBLING member names
 // that member's own plan addresses by container DNS — the ${HOST:<name>} form with no :<port>.
 func memberDNSRefs(node *spec.FleetNode) map[string][]string {
-	if node == nil || len(node.Members) == 0 {
+	// The DEPLOY-LEVEL members only: they share the parent's charly network (the DNS domain
+	// this preflight guards); an in-substrate member lives inside its parent's venue.
+	if node == nil || len(node.DeployLevelMembers()) == 0 {
 		return nil
 	}
+	siblings := map[string]bool{}
+	for _, m := range node.DeployLevelMembers() {
+		siblings[m.Name] = true
+	}
 	refs := map[string][]string{}
-	for memberKey, member := range node.Members {
+	for _, m := range node.DeployLevelMembers() {
+		memberKey, member := m.Name, m.Node
 		if member == nil || !fleet.IsContainerVenue(member) {
 			continue
 		}
@@ -106,7 +113,7 @@ func memberDNSRefs(node *spec.FleetNode) map[string][]string {
 			}
 			// Only a SIBLING member is reachable by this name over the shared charly net; a
 			// self-reference or a name that is not a member is not this preflight's business.
-			if arg == memberKey || node.Members[arg] == nil {
+			if arg == memberKey || !siblings[arg] {
 				continue
 			}
 			if !seen[arg] {
