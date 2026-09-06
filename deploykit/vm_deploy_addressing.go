@@ -25,8 +25,18 @@ import (
 func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
 	var persisted int
 	if sp.SSH != nil && sp.SSH.PortAuto {
-		if entry, ok := LoadDeployConfigForRead("charly vm ssh-port").LookupKey("vm:" + vmName); ok && entry.VmState != nil && entry.VmState.SSHPort > 0 {
-			persisted = entry.VmState.SSHPort
+		// NIL-SAFE read (RCA 2026-09-06): LoadDeployConfigForRead returns nil when the
+		// DeployStateHost is unregistered — the out-of-process plugin processes (deploy-vm,
+		// check live) never register it (the host registers it in ITS OWN process at init), so
+		// the raw call chain panicked on a nil .LookupKey in the plugin live-check path
+		// (check-live crash, instrument bed). A nil config simply means "no persisted state" —
+		// the shared allocator (kit.ResolveVmSshPort) picks a fresh port, exactly the
+		// plugin-process contract the deploy-vm's resolvePriorVmState already uses.
+		cfg := LoadDeployConfigForRead("charly vm ssh-port")
+		if cfg != nil {
+			if entry, ok := cfg.LookupKey("vm:" + vmName); ok && entry.VmState != nil && entry.VmState.SSHPort > 0 {
+				persisted = entry.VmState.SSHPort
+			}
 		}
 	}
 	return kit.ResolveVmSshPort(sp, vmName, persisted)
