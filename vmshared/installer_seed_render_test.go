@@ -283,7 +283,7 @@ func TestRenderInstallerSeed_CustomCommands(t *testing.T) {
 	inst := &spec.DistroInstaller{
 		VolumeID: "cidata",
 		Files: []spec.DistroInstallerFile{{
-			Path: "user_configuration.json",
+			Path:    "user_configuration.json",
 			Content: `{"custom_commands": {{if .Answers.custom_commands}}{{.Answers.custom_commands}}{{else}}[]{{end}}}`,
 		}},
 	}
@@ -315,5 +315,6 @@ func TestRenderInstallerSeed_CustomCommands(t *testing.T) {
 		t.Fatalf("user_configuration.json (absent) is not valid JSON: %v", err)
 	}
 	if cmds2, ok := cfg2["custom_commands"].([]any); !ok || len(cmds2) != 0 {
-}
+		t.Fatalf("custom_commands (absent) leaked through: got %v (want none)", cmds2)
+	}
 }
