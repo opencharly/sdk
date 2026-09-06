@@ -23,6 +23,13 @@ import (
 // deploykit-coupled bit (LoadDeployConfigForRead over the per-host overlay); the
 // resolution/allocation decision itself is the shared kit.ResolveVmSshPort.
 func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
+	if sp == nil {
+		// NIL-SPEC guard (the live-check panic RCA 2026-09-06): the check-live spec
+		// lookup can legitimately miss (the deploy-hop name vs the template) — a nil
+		// spec means the port resolution falls back to the shared allocator with the
+		// entity's name (no port-forward), never a deref panic.
+		return kit.ResolveVmSshPort(nil, vmName, 0)
+	}
 	var persisted int
 	if sp.SSH != nil && sp.SSH.PortAuto {
 		// NIL-SAFE read (RCA 2026-09-06): LoadDeployConfigForRead returns nil when the
