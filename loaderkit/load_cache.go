@@ -220,8 +220,8 @@ func readMaterializedTree(key string, want materializeCacheComponents) ([]byte, 
 
 // writeMaterializedTree persists a tree under key, atomically (tmp + rename so a concurrent
 // lock-free reader never sees a torn entry) and best-effort (a write failure is silent — the
-// cache is an optimization). Publishes only outside-materialize state: the entry's Resolved is
-// now, so the entry is fresh for materializeCacheTTL.
+// cache is an optimization). The entry's Resolved is the write timestamp — RECLAMATION data
+// only (the prune's ordering): validity is purely component-based, never time-based.
 func writeMaterializedTree(key string, tree []byte, comps materializeCacheComponents) {
 	if !materializedTreeCacheEnabled || len(tree) == 0 {
 		return
@@ -268,23 +268,28 @@ func pruneMaterializedCache(dir string) {
 		return
 	}
 	// os.ReadDir sorts by NAME (the key hash) — the reclamation must remove the OLDEST by
-	// write time, so sort by ModTime ascending first (the oldest first, removed first).
+	// WRITE time, so sort by the entry's Resolved timestamp (the semantic write-time; the
+	// file ModTime can drift with renames) ascending — the oldest first, removed first.
 	type named struct {
 		name string
-		mod  time.Time
+		res  time.Time
 	}
 	byAge := make([]named, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		info, ierr := e.Info()
-		if ierr != nil {
+		data, rerr := os.ReadFile(filepath.Join(dir, e.Name()))
+		if rerr != nil {
 			continue
 		}
-		byAge = append(byAge, named{e.Name(), info.ModTime()})
+		var ent materializedCacheEntry
+		if json.Unmarshal(data, &ent) != nil {
+			continue
+		}
+		byAge = append(byAge, named{e.Name(), ent.Resolved})
 	}
-	sort.Slice(byAge, func(i, j int) bool { return byAge[i].mod.Before(byAge[j].mod) })
+	sort.Slice(byAge, func(i, j int) bool { return byAge[i].res.Before(byAge[j].res) })
 	for _, e := range byAge {
 		if excess <= 0 {
 			return
