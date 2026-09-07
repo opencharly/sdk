@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -43,6 +44,9 @@ func TestRenderConfig_ValidatesWithCharly(t *testing.T) {
 	cmd := exec.Command(charly, "box", "validate", "-C", dir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if strings.Contains(string(out), "newer than this charly supports") {
+			t.Skipf("only a dev/worktree charly on PATH (schema too old); set CHARLY_TEST_BIN to a released charly: %s", out)
+		}
 		t.Fatalf("charly box validate FAILED on the rendered config:\n%s", out)
 	}
 }
