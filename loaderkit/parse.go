@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
@@ -309,7 +310,7 @@ func entityBodyJSON(name string, discValue *yaml.Node) (json.RawMessage, error) 
 // CUE defs (the closed #Step/#Instrument bodies + each plugin's own input schema) gate
 // everything else, so the parse stays kind-blind.
 func desugarEntityPlan(entity string, body *yaml.Node, t spec.Threaded) error {
-	if plan := mapValue(body, "plan"); plan != nil {
+	if plan := kit.MappingChild(body, "plan"); plan != nil {
 		if plan.Kind != yaml.SequenceNode {
 			return fmt.Errorf("node %q: plan must be a step LIST (got yaml kind %v); run: charly migrate", entity, plan.Kind)
 		}
@@ -321,7 +322,7 @@ func desugarEntityPlan(entity string, body *yaml.Node, t spec.Threaded) error {
 	}
 	// Capture entries live on the substrate-node body beside plan: (the CUE substrate
 	// schema gates where instrument: may appear — not the parse's job).
-	if inst := mapValue(body, "instrument"); inst != nil {
+	if inst := kit.MappingChild(body, "instrument"); inst != nil {
 		if inst.Kind != yaml.SequenceNode {
 			return fmt.Errorf("node %q: instrument must be a capture entry LIST (got yaml kind %v)", entity, inst.Kind)
 		}
@@ -387,7 +388,7 @@ func desugarInstrumentEntry(entity string, idx int, entry *yaml.Node, t spec.Thr
 			return err
 		}
 	}
-	if pl := mapValue(entry, "pipeline"); pl != nil {
+	if pl := kit.MappingChild(entry, "pipeline"); pl != nil {
 		if pl.Kind != yaml.SequenceNode {
 			return fmt.Errorf("node %q: %s.pipeline must be a word LIST (got yaml kind %v)", entity, path, pl.Kind)
 		}
@@ -483,23 +484,5 @@ func desugarVerbKey(entity, path string, m *yaml.Node, i int, t spec.Threaded) e
 	return nil
 }
 
-// mapValue returns the value node for key in a mapping node, or nil. (Local copy of the tiny
-// yaml helper — loaderkit stays dependency-light.)
-func mapValue(m *yaml.Node, key string) *yaml.Node {
-	if m == nil {
-		return nil
-	}
-	root := m
-	if root.Kind == yaml.DocumentNode && len(root.Content) == 1 {
-		root = root.Content[0]
-	}
-	if root.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == key {
-			return root.Content[i+1]
-		}
-	}
-	return nil
-}
+// mapValue is deleted (parser consolidation F1.3) — the identical yaml mapping lookup lives in
+// sdk/kit as kit.MappingChild (the ONE copy); loaderkit already imports kit across the package.

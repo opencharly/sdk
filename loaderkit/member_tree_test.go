@@ -290,3 +290,55 @@ func TestNoDualMapConstruction(t *testing.T) {
 		t.Fatalf("sweep: %v", err)
 	}
 }
+
+// TestIsDeployShape_Arms locks the FOUR deploy-shape arms of the ONE classifier (parser
+// consolidation F1.2/F1.4): member children, scalar cross-ref, from:/image: mapping, and the
+// agent_provisioned imageless spelling (the Deploy gate's box exemption — the 2026-09-07 RCA
+// shape). The plain imageless iterate-only mapping must stay a TEMPLATE (never widen past the
+// exemption), and the member arm must fire for structural/external members too — the former
+// frozen #ResourceKind walk missed those (F1.2).
+func TestIsDeployShape_Arms(t *testing.T) {
+	memberDoc := `bed:
+  vm:
+    from: golden
+    alpha:
+      vm:
+        from: vm-b
+`
+	_, pp, err := ParseDoc(docFrom(t, memberDoc), vmBedThreaded)
+	if err != nil {
+		t.Fatalf("ParseDoc: %v", err)
+	}
+	pn := pp.Nodes[0]
+	if len(pn.Children) != 1 {
+		t.Fatalf("children = %d, want 1", len(pn.Children))
+	}
+	if !IsDeployShape(pn) {
+		t.Error("member-channel arm: a node with a resource-member child must classify DEPLOY")
+	}
+
+	scalar := spec.ParsedNode{Name: "pod", Disc: "pod", Body: json.RawMessage(`{"image":"coder"}`)}
+	if !IsDeployShape(scalar) {
+		t.Error("scalar-cross-ref arm must classify DEPLOY")
+	}
+
+	fromImg := spec.ParsedNode{Name: "vm", Disc: "vm", Body: json.RawMessage(`{"from":"base:golden"}`)}
+	if !IsDeployShape(fromImg) {
+		t.Error("mapping from:/image: arm must classify DEPLOY")
+	}
+
+	agentProvisioned := spec.ParsedNode{Name: "agent-live", Disc: "pod", Body: json.RawMessage(`{"agent_provisioned":true,"iterate":{"sandbox":"s"}}`)}
+	if !IsDeployShape(agentProvisioned) {
+		t.Error("agent_provisioned arm (the gate's box exemption) must classify DEPLOY")
+	}
+
+	plainImageless := spec.ParsedNode{Name: "bare-pod", Disc: "pod", Body: json.RawMessage(`{"iterate":{"sandbox":"s"}}`)}
+	if IsDeployShape(plainImageless) {
+		t.Error("plain imageless iterate-only mapping must stay a TEMPLATE (no widening past the exemption)")
+	}
+
+	empty := spec.ParsedNode{Name: "x", Disc: "vm"}
+	if IsDeployShape(empty) {
+		t.Error("empty body must not classify DEPLOY")
+	}
+}

@@ -110,15 +110,37 @@ func DecodeNodeValue(pn spec.ParsedNode, out any) error {
 // EntityBodyJSON returns a node's kind-value mapping as canonical JSON, generically — with NO
 // concrete-kind Go type. It is the single body→wire mechanism for both the op.Params plugin-kind
 // path and the substrate TEMPLATE thread, so the kernel never types a spec.<Kind> merely to
-// canonicalize a value. Reuses parse.go's entityBodyJSON (R3: the SAME yaml→map→JSON transform,
-// already the parse's own body-serialization step — this is that same transform applied to a
-// RECONSTRUCTED discValue rather than the freshly-parsed one).
+// canonicalize a value. Returns pn.Body DIRECTLY (parser consolidation F1.5): pn.Body IS the
+// parse-time output of the same yaml→map→JSON transform (parse.go entityBodyJSON), so the former
+// reconstruction-then-retransform round-trip (discValue + entityBodyJSON) was pure overhead on
+// data that was already canonical. The ONLY difference is the member-carrier strip — the
+// authored body keeps in-substrate member keys as the fold's position channel, while every body
+// EMITTER omits keys the member tree owns (Cutover C task 0) — done here in pure JSON (delete +
+// re-marshal), byte-identical to the yaml round-trip it replaces.
 func EntityBodyJSON(pn spec.ParsedNode) (json.RawMessage, error) {
-	dv, err := discValue(pn)
-	if err != nil {
-		return nil, err
+	if len(pn.Body) == 0 {
+		// An empty/absent body → the empty mapping, matching parse-time entityBodyJSON semantics.
+		return json.RawMessage("{}"), nil
 	}
-	return entityBodyJSON(pn.Name, dv)
+	if len(pn.Children) == 0 {
+		// No member-carrier keys to omit — the parse-produced body IS the canonical body.
+		return pn.Body, nil
+	}
+	var asMap map[string]any
+	if err := json.Unmarshal(pn.Body, &asMap); err != nil {
+		return nil, fmt.Errorf("node %q: decode body: %w", pn.Name, err)
+	}
+	for _, ch := range pn.Children {
+		delete(asMap, ch.Name)
+	}
+	if len(asMap) == 0 {
+		asMap = map[string]any{} // keep an empty (non-nil) mapping body
+	}
+	out, err := json.Marshal(asMap)
+	if err != nil {
+		return nil, fmt.Errorf("node %q: to json: %w", pn.Name, err)
+	}
+	return out, nil
 }
 
 // BuildDeployNode recursively builds a DeployNode from a deploy/resource node. The discriminator
@@ -232,10 +254,27 @@ func DeployTargetEntity(uf *spec.UnifiedFile, name string) (string, bool) {
 	return "", false
 }
 
-// IsDeployShape reports whether a substrate node is a DEPLOY (vs a standalone template): a scalar
-// discriminator value (`vm: pg-vm` / `pod: img`) is a cross-ref deploy, and a mapping value
-// carrying `from:` or `image:` is a deploy.
+// IsDeployShape reports whether a substrate node is a DEPLOY (vs a standalone template) — the
+// ONE deploy-shape classifier (parser consolidation F1.2/F1.4), data-derived from the node
+// itself (never a kind-word switch):
+//
+//   - any resource-member child (the fold's member channel — every parsed child of a substrate
+//     node IS a resource member by construction, classified by the ONE memberDisc/IsResourceDisc
+//     predicate, so a node that nests members is a deploy venue no matter what its body words);
+//   - a scalar discriminator value (a cross-ref deploy: scalar `ref` under the kind key);
+//   - a mapping value carrying `from:` or `image:` — a deploy;
+//   - an `agent_provisioned: true` body — the imageless deploy spelling the Deploy gate
+//     (spec.ValidateDeploymentTree → ValidateDeployRequiresBox) EXEMPTS from the pod box
+//     requirement, so the classifier stays in lockstep with the gate (RCA 2026-09-07:
+//     the minimal imageless iterate-entity classified as a standalone TEMPLATE and silently
+//     vanished from acc.Deploy; locked by charly/substrate_imageless_deploy_test.go).
+//
+// Formerly the host OR-composed this function with a ResourceChildren walk and an extra body
+// probe — both arms now live here so the fold calls ONE predicate.
 func IsDeployShape(pn spec.ParsedNode) bool {
+	if len(pn.Children) > 0 {
+		return true
+	}
 	dv, err := discValue(pn)
 	if err != nil || dv == nil {
 		return false
@@ -244,11 +283,21 @@ func IsDeployShape(pn spec.ParsedNode) bool {
 		return dv.Value != ""
 	}
 	if dv.Kind == yaml.MappingNode {
+		hasFromImage := false
+		agentProvisioned := false
 		for i := 0; i+1 < len(dv.Content); i += 2 {
-			if k := dv.Content[i].Value; k == "from" || k == "image" {
-				return true
+			k := dv.Content[i].Value
+			switch {
+			case k == "from" || k == "image":
+				hasFromImage = true
+			case k == "agent_provisioned":
+				// the flag's VALUE is a yaml scalar; true means the authored bool
+				if dv.Content[i+1].Kind == yaml.ScalarNode && dv.Content[i+1].Value == "true" {
+					agentProvisioned = true
+				}
 			}
 		}
+		return hasFromImage || agentProvisioned
 	}
 	return false
 }
@@ -263,16 +312,10 @@ func DecodeStandaloneTemplateJSON(pn spec.ParsedNode, t spec.Threaded) (json.Raw
 	return EntityBodyJSON(pn)
 }
 
-// ResourceChildren returns pn's children whose discriminator is itself a resource/deploy kind (the
-// markers of a deploy-shaped node). The deployable set is the CUE-derived resourceKindSet
-// (#ResourceKind) — the fixed vocab alone (the frozen seam takes no Threaded snapshot; the
-// registry-aware member classification is memberDisc, consumed by the parse and the fold).
-func ResourceChildren(pn spec.ParsedNode) []spec.ParsedNode {
-	var out []spec.ParsedNode
-	for _, ch := range pn.Children {
-		if resourceKindSet[ch.Disc] {
-			out = append(out, *ch)
-		}
-	}
-	return out
-}
+// ResourceChildren is DELETED (parser consolidation F1.2): its only caller was the host's
+// deploy-shape composite (len(ResourceChildren(pn)) > 0), subsumed by IsDeployShape's member
+// channel above — the ONE member walk (BuildResourceMemberChildren) over the ONE predicate
+// (IsResourceDisc) is the single source of truth for member classification. Its former frozen
+// resourceKindSet-only filter also MISSED structural/external member children; the member
+// channel checks the authored children themselves, so a structural or external member now
+// classifies a node as deploy-shaped exactly like a builtin resource member.
