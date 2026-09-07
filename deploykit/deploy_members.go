@@ -1,7 +1,7 @@
 package deploykit
 
-// fleet_members.go — sibling `peer:` member bring-up/tear-down (#55 W3 A4, relocated from
-// charly/fleet_members.go). A FleetNode's `peer:` map declares companion deployments brought
+// deploy_members.go — sibling `peer:` member bring-up/tear-down (#55 W3 A4, relocated from
+// charly/deploy_members.go). A DeployNode's `peer:` map declares companion deployments brought
 // up ALONGSIDE it on the shared `charly` network (NOT nested inside it) — members are reachable
 // by `${HOST:<name>}` and are never check-live'd themselves.
 //
@@ -11,7 +11,7 @@ package deploykit
 // audit found the ACTUAL duplication risk was narrower than "the whole engine" — it was the
 // venue-CLASSIFICATION predicate (isVmMember/isPodMember, formerly reading core's private
 // nodeTraits): a naive lift would have added a FOURTH copy. Resolved by promoting
-// fleet.IsVmVenue/fleet.IsContainerVenue (mirroring the already-promoted fleet.HostRooted, #55 U4)
+// deploy.IsVmVenue/deploy.IsContainerVenue (mirroring the already-promoted deploy.HostRooted, #55 U4)
 // as the ONE shared predicate — every node BringUpMembers/TearDownMembers sees comes from an
 // already-loaded, Descent-stamped project (foldMembers marks only the folded top-level copy), so
 // the registry-fallback branch core's OWN nodeTraits carried is dead weight here, exactly as it
@@ -25,7 +25,7 @@ package deploykit
 // (candy/plugin-fleet's walk, since this commit — the former "deploy-members-up"/
 // "deploy-members-down" HostBuild seam is deleted) and the check-bed runner
 // (candy/plugin-check/bed_run.go, since the immediately-following unit #55 W3 B2-full, which
-// also deleted charly/fleet_members.go's transitional core copy this file's A4 landing had
+// also deleted charly/deploy_members.go's transitional core copy this file's A4 landing had
 // briefly needed for one commit cycle — the former "check-bed" HostBuild seam it served is gone
 // too).
 
@@ -33,8 +33,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/opencharly/spec/deploy"
 	specexec "github.com/opencharly/spec/exec"
-	"github.com/opencharly/spec/fleet"
 	"github.com/opencharly/spec/hostenv"
 	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
@@ -58,10 +58,10 @@ func withMemberTag(args []string, imageTag string) []string {
 // candy/plugin-fleet/members_persist.go and candy/plugin-check's bed-member persist), then this
 // function runs `charly config <member>` + `charly start <member>`, then waits for readiness. A
 // VM member (target: vm) gets the full libvirt lifecycle (create + ssh-wait + deploy), a
-// kind:local member is registered via `charly fleet add <member>`. The SAME helper serves the
+// kind:local member is registered via `charly deploy add <member>`. The SAME helper serves the
 // kind:check bed runner and the operator deploy path (R3). Idempotent on an already-running
 // member.
-func BringUpMembers(node *spec.FleetNode, imageTag string) error {
+func BringUpMembers(node *spec.DeployNode, imageTag string) error {
 	// The DEPLOY-LEVEL members only: alongside bring-up on the shared network. An
 	// in-substrate member deploys INTO its parent's venue (the dotted-path dispatch /
 	// the substrate plugin's PostApply), never beside it.
@@ -71,35 +71,35 @@ func BringUpMembers(node *spec.FleetNode, imageTag string) error {
 	for _, m := range node.DeployLevelMembers() {
 		memberKey, memberNode := m.Name, m.Node
 		switch {
-		case fleet.IsVmVenue(memberNode):
+		case deploy.IsVmVenue(memberNode):
 			// VM member: full libvirt lifecycle, mirroring the isVM bed root
 			// (candy/plugin-check/bed_session.go's bedSetup). The VM disk is built by the caller's build step
 			// (the group bed's build arm); here we (re)create + wait for ssh +
-			// deploy the VM node — `fleet add <member> <vm-entity>` (the VM-template
+			// deploy the VM node — `deploy add <member> <vm-entity>` (the VM-template
 			// ref, like the isVM root's deploy-add), not the bare pod/local form.
 			// Best-effort pre-destroy clears a stale domain from an interrupted run.
 			hostenv.StartLibvirtUserSession()
 			// The member's libvirt domain is named after the MEMBER deploy (memberKey), not the
 			// shared kind:vm entity (memberNode.From) — so member VMs sharing one entity across beds
 			// get distinct, collision-free domains + per-domain disk overlays + ports (P33). The
-			// entity is the disk/spec source (the `fleet add` ref); --domain names this member's domain.
+			// entity is the disk/spec source (the `deploy add` ref); --domain names this member's domain.
 			memberDomain := spec.VmDomainIdentity(memberKey)
 			_ = proc.RunCharlySubcommand("vm", "destroy", memberNode.From, "--domain", memberDomain, "--if-exists")
 			if err := proc.RunCharlySubcommand("vm", "create", memberNode.From, "--domain", memberDomain); err != nil {
 				return fmt.Errorf("peer %q (vm create %s): %w", memberKey, memberNode.From, err)
 			}
 			specexec.WaitForVmSshReady(memberDomain)
-			if err := proc.RunCharlySubcommand(withMemberTag([]string{"fleet", "add", memberKey, memberNode.From}, imageTag)...); err != nil {
-				return fmt.Errorf("peer %q (vm fleet add): %w", memberKey, err)
+			if err := proc.RunCharlySubcommand(withMemberTag([]string{"deploy", "add", memberKey, memberNode.From}, imageTag)...); err != nil {
+				return fmt.Errorf("peer %q (vm deploy add): %w", memberKey, err)
 			}
 			// Same nested-local-child gap the isVM bed root closes: plugin-deploy-vm's
 			// PostApply skips target:local children, so deploy them into the guest here.
-			if err := fleet.DeployNestedLocalChildren(memberKey, memberNode, func(childKey, dotted string) error {
-				return proc.RunCharlySubcommand("fleet", "add", dotted)
+			if err := deploy.DeployNestedLocalChildren(memberKey, memberNode, func(childKey, dotted string) error {
+				return proc.RunCharlySubcommand("deploy", "add", dotted)
 			}); err != nil {
 				return fmt.Errorf("peer %q: %w", memberKey, err)
 			}
-		case fleet.IsContainerVenue(memberNode):
+		case deploy.IsContainerVenue(memberNode):
 			for _, step := range [][]string{{"config", memberKey}, {"start", memberKey}} {
 				if err := proc.RunCharlySubcommand(withMemberTag(step, imageTag)...); err != nil {
 					return fmt.Errorf("peer %q (%v): %w", memberKey, step, err)
@@ -107,9 +107,9 @@ func BringUpMembers(node *spec.FleetNode, imageTag string) error {
 			}
 			specexec.WaitForContainerReady(memberKey)
 		default:
-			// kind:local member — applies candies in place during fleet add.
-			if err := proc.RunCharlySubcommand(withMemberTag([]string{"fleet", "add", memberKey}, imageTag)...); err != nil {
-				return fmt.Errorf("peer %q (fleet add): %w", memberKey, err)
+			// kind:local member — applies candies in place during deploy add.
+			if err := proc.RunCharlySubcommand(withMemberTag([]string{"deploy", "add", memberKey}, imageTag)...); err != nil {
+				return fmt.Errorf("peer %q (deploy add): %w", memberKey, err)
 			}
 		}
 	}
@@ -122,7 +122,7 @@ func BringUpMembers(node *spec.FleetNode, imageTag string) error {
 // TearDownMembers tears down every member of `node` in deterministic order — the companion to
 // BringUpMembers. It attempts every member and returns their joined errors so callers can finish
 // the full cleanup while still failing the owning operation.
-func TearDownMembers(node *spec.FleetNode) error {
+func TearDownMembers(node *spec.DeployNode) error {
 	if node == nil || len(node.DeployLevelMembers()) == 0 {
 		return nil
 	}
@@ -131,18 +131,18 @@ func TearDownMembers(node *spec.FleetNode) error {
 		memberKey, memberNode := m.Name, m.Node
 		var err error
 		switch {
-		case fleet.IsVmVenue(memberNode):
+		case deploy.IsVmVenue(memberNode):
 			// `vm destroy` removes the libvirt domain (named after the MEMBER deploy, not the shared
 			// entity — P33), but bring-up ALSO registered the member in the deploy ledger via
-			// `fleet add`. Reverse that too, or a ledger record survives every teardown and they
+			// `deploy add`. Reverse that too, or a ledger record survives every teardown and they
 			// accumulate run over run.
 			destroyErr := proc.RunCharlySubcommand("vm", "destroy", memberNode.From, "--domain", spec.VmDomainIdentity(memberKey), "--if-exists")
-			delErr := proc.RunCharlySubcommand(spec.FleetDelArgv(memberKey)...)
+			delErr := proc.RunCharlySubcommand(spec.DeployDelArgv(memberKey)...)
 			err = errors.Join(destroyErr, delErr)
-		case fleet.IsContainerVenue(memberNode):
+		case deploy.IsContainerVenue(memberNode):
 			err = proc.RunCharlySubcommand("remove", memberKey, "--purge")
 		default:
-			err = proc.RunCharlySubcommand(spec.FleetDelArgv(memberKey)...)
+			err = proc.RunCharlySubcommand(spec.DeployDelArgv(memberKey)...)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("peer %q teardown: %w", memberKey, err))

@@ -2,8 +2,8 @@ package kit
 
 // install_ledger.go — persistent record of host deploys.
 //
-// Every `charly fleet add host …` writes structured records to the ledger so a
-// later `charly fleet del host …` can reverse the exact operations. The ledger
+// Every `charly deploy add host …` writes structured records to the ledger so a
+// later `charly deploy del host …` can reverse the exact operations. The ledger
 // lives in the `ledger:` section of the PER-HOST charly.yml
 // (~/.config/charly/charly.yml) — the single home for local system state
 // (deployments under `deploy:`, install records under `ledger:`, local system
@@ -65,7 +65,7 @@ func (p *LedgerPaths) Ensure() error {
 }
 
 // ---------------------------------------------------------------------------
-// Flock — serialize concurrent charly fleet sessions.
+// Flock — serialize concurrent charly deploy sessions.
 // ---------------------------------------------------------------------------
 
 // LedgerLock is an acquired advisory lock on the ledger. Call Release() when
@@ -76,21 +76,21 @@ type LedgerLock struct {
 
 // LedgerTxLockPath returns the LEDGER TRANSACTION lock path for one LedgerPaths: the
 // config path + ".ledger.lock". This is NOT paths.LockFile, and the separation is load-bearing
-// (the fleet-del self-deadlock, RCA 2026-09-07): paths.LockFile guards the per-host charly.yml
+// (the deploy-del self-deadlock, RCA 2026-09-07): paths.LockFile guards the per-host charly.yml
 // read-modify-write — the SAME brief exclusion every writer of that FILE shares (writeLedger
-// here, deploykit.MutateFleetConfig/SaveFleetConfig, spec/refs GitClient.save's cache section).
-// The ledger TRANSACTION lock is a different logical resource: the fleet-del/add transaction
+// here, deploykit.MutateDeployConfig/SaveDeployConfig, spec/refs GitClient.save's cache section).
+// The ledger TRANSACTION lock is a different logical resource: the deploy-del/add transaction
 // bracket (resolve → members-down → node-del-dispatch) holds it for the WHOLE operation —
 // minutes, network fetches included. Collapsing both onto charly.yml.lock made every in-process
 // nested config RMW under a transaction hold contend with the holder's own fd (flock is
 // per-open-file-description; two acquires of one path in ONE process conflict): the del's
-// resolve-phase GitClient.save and teardown-phase MutateFleetConfig each stalled the full
+// resolve-phase GitClient.save and teardown-phase MutateDeployConfig each stalled the full
 // lockTimeout against the del's own transaction hold, silently dropping their writes — the cache
-// never persisted, so the next run re-stalled. Deterministic, 7/7-reproducible fleet-del hang.
+// never persisted, so the next run re-stalled. Deterministic, 7/7-reproducible deploy-del hang.
 //
 // The dedicated file restores the genesis semantics (the pre-sdk ledger lock was a dedicated
 // ~/.config/opencharly/installed/.lock — NEVER the config lock): the transaction lock orders
-// fleet flows against EACH OTHER; brief config-file writers stay ordered by charly.yml.lock and
+// deploy flows against EACH OTHER; brief config-file writers stay ordered by charly.yml.lock and
 // legitimately interleave inside a transaction (each RMW re-reads the current file under the
 // config lock and preserves the other sections).
 func LedgerTxLockPath(paths *LedgerPaths) string {

@@ -6,7 +6,7 @@
 // validation chain) now lives here, kind-blind, exactly as charly/unified.go's
 // former inline body did. Every step that touches the provider registry, the
 // build-vocabulary plugins, or a standing K5-final-decision core file
-// (fleet_members.go's foldMembers/validateMembers) is a SEAM CALLBACK the host
+// (deploy_members.go's foldMembers/validateMembers) is a SEAM CALLBACK the host
 // supplies via LoadSeams — the same injected-seam pattern spec.WalkSeams/
 // spec.MaterializeSeams already established (#46); LoadUnified itself never
 // touches the registry. charly-core's own LoadUnified(dir) becomes a thin wrapper
@@ -42,17 +42,17 @@ type LoadSeams struct {
 	// MATERIALIZE + root-wins MERGE over the walk envelope, reconstructing merged
 	// (registry kind-decode via the registered spec.Materializer).
 	MaterializeLoadedProject func(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile) error
-	// FlattenFleetVenues stamps every plan step's execution venue from its
-	// fleet-tree position and hoists member/child steps into the root Plan.
-	FlattenFleetVenues func(uf *spec.UnifiedFile) error
-	// FoldMembers copies every deploy node's `peer:` entries into the Fleet map
+	// FlattenVenuesByPosition stamps every plan step's execution venue from its
+	// deploy-tree position and hoists member/child steps into the root Plan.
+	FlattenVenuesByPosition func(uf *spec.UnifiedFile) error
+	// FoldMembers copies every deploy node's `peer:` entries into the Deploy map
 	// as top-level addressable entries. Its relocation (if any) is a FINAL/K5
-	// decision (fleet_members.go) — it stays host-resident, reached only via
+	// decision (deploy_members.go) — it stays host-resident, reached only via
 	// this seam.
 	FoldMembers func(uf *spec.UnifiedFile) error
-	// StampFleetDescents stamps every deploy node's venue-hop descent
+	// StampDeployDescents stamps every deploy node's venue-hop descent
 	// descriptor (P9 DeployTraits, resolved from the provider registry).
-	StampFleetDescents func(uf *spec.UnifiedFile)
+	StampDeployDescents func(uf *spec.UnifiedFile)
 	// ValidateEphemeral auto-promotes disposable:true on ephemeral entries and
 	// validates the ephemeral / vm-naming invariants.
 	ValidateEphemeral func(uf *spec.UnifiedFile) error
@@ -147,16 +147,16 @@ func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 	if err := GateSchemaVersion(root, merged.Version); err != nil {
 		return nil, true, err
 	}
-	// Stamp each plan step's execution VENUE from its fleet-tree position and
-	// hoist member/child steps into the root fleet's flat Plan. MUST run before
-	// FoldMembers (which mutates the Fleet map by promoting members to
+	// Stamp each plan step's execution VENUE from its deploy-tree position and
+	// hoist member/child steps into the root deploy's flat Plan. MUST run before
+	// FoldMembers (which mutates the Deploy map by promoting members to
 	// top-level) and before ValidateCheckBeds (which counts the root Plan's
 	// check: steps). After this, both runner entry points read the venue-stamped
 	// root Plan.
-	if err := seams.FlattenFleetVenues(merged); err != nil {
+	if err := seams.FlattenVenuesByPosition(merged); err != nil {
 		return nil, true, fmt.Errorf("%s: %w", root, err)
 	}
-	// Fold sibling members (companion deployments) into the Fleet map as
+	// Fold sibling members (companion deployments) into the Deploy map as
 	// addressable top-level entries (inheriting the owner's disposability) so
 	// the SAME deploy verbs bring them up/down. Runs BEFORE the deployment-tree
 	// validation (so folded members get the same deploy validation).
@@ -167,13 +167,13 @@ func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 	}
 	// Stamp every deploy node's venue-hop descent-descriptor (the descent
 	// de-type) — uniformly here, after ALL structural kinds have folded into
-	// merged.Fleet, so the kernel's deploy chain descends by TRANSPORT and
+	// merged.Deploy, so the kernel's deploy chain descends by TRANSPORT and
 	// never switches on the substrate kind word.
-	seams.StampFleetDescents(merged)
+	seams.StampDeployDescents(merged)
 	if err := seams.ValidateEphemeral(merged); err != nil {
 		return nil, true, fmt.Errorf("%s: %w", root, err)
 	}
-	if err := spec.ValidateDeploymentTree(merged.Fleet); err != nil {
+	if err := spec.ValidateDeploymentTree(merged.Deploy); err != nil {
 		return nil, true, fmt.Errorf("%s: %w", root, err)
 	}
 	if err := seams.ValidateCheckBeds(merged); err != nil {

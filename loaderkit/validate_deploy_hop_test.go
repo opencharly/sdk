@@ -18,10 +18,10 @@ func TestValidateCheckBedsAcceptsDeployHop(t *testing.T) {
 		},
 	}
 	disp := true
-	hop := spec.FleetNode{Target: "vm", From: "check-vm-clone-base", Disposable: &disp}
-	base := spec.FleetNode{Target: "vm", From: "cachyos-vm", Disposable: &disp}
+	hop := spec.DeployNode{Target: "vm", From: "check-vm-clone-base", Disposable: &disp}
+	base := spec.DeployNode{Target: "vm", From: "cachyos-vm", Disposable: &disp}
 	uf := &spec.UnifiedFile{
-		Fleet: map[string]spec.FleetNode{
+		Deploy: map[string]spec.DeployNode{
 			"check-vm-clone":      hop,
 			"check-vm-clone-base": base,
 		},
@@ -33,7 +33,7 @@ func TestValidateCheckBedsAcceptsDeployHop(t *testing.T) {
 		t.Fatalf("the deploy-hop from: must be accepted (base bed name in CheckBeds): %v", err)
 	}
 	ufBad := &spec.UnifiedFile{
-		Fleet: map[string]spec.FleetNode{
+		Deploy: map[string]spec.DeployNode{
 			"check-vm-clone": {Target: "vm", From: "no-such-entity-or-bed", Disposable: &disp},
 		},
 	}

@@ -4,7 +4,7 @@ package kit
 // at install time, turning them into concrete teardown commands.
 //
 // Each InstallStep's Reverse() method records a list of ReverseOps
-// when the step runs (see deploy_host_helpers.go). `charly fleet del`
+// when the step runs (see deploy_host_helpers.go). `charly deploy del`
 // reads those ops from the candy ledger and hands them here for
 // execution. The ops are opaque to the ledger — only the teardown
 // logic in this file understands each Kind.
@@ -22,7 +22,7 @@ import (
 )
 
 // ReverseExecutor is the interface ReverseOp handlers expect. Allows
-// us to pass either FleetDelCmd (for real teardown) or a test mock.
+// us to pass either DeployDelCmd (for real teardown) or a test mock.
 //
 // ReverseRunner returns the shell-runner used to execute reversal
 // commands. When non-nil, handlers dispatch through it (so VM teardown

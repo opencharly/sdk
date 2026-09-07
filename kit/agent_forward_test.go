@@ -78,7 +78,7 @@ func TestResolveAgentForwarding_DeployOverride(t *testing.T) {
 		ForwardSSHAgent: true,
 	}
 	f := false
-	deploy := &spec.FleetNode{
+	deploy := &spec.DeployNode{
 		ForwardGpgAgent: &f,
 		ForwardSSHAgent: &f,
 	}

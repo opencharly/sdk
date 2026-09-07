@@ -302,4 +302,3 @@ bed:
 		t.Fatalf("authored body dropped the in-body member key: %v", body)
 	}
 }
-

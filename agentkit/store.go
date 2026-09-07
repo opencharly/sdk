@@ -575,7 +575,7 @@ func (s *Store) withLock(fn func() error) (returnErr error) {
 // storeLockTimeout bounds the exclusive-lock wait in withLock. Under heavy
 // concurrent load (parallel bed runs), a peer holding the store lock can
 // stall; an unbounded flock would hang the caller forever (the recurring
-// fleet-del stall). A package var (not a const) so a test can shorten it.
+// deploy-del stall). A package var (not a const) so a test can shorten it.
 var storeLockTimeout = 2 * time.Minute
 
 // flockBounded acquires an exclusive flock, failing fast after

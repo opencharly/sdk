@@ -10,7 +10,7 @@ package loaderkit
 // receives a Threaded whose declared-fields maps are EMPTY, and the documented
 // no-declared-schema fallback re-arms: a converted tree's declared #Deploy fields re-scan as
 // in-substrate members (the live repro: distro-arch check-agent-live's pod body —
-// `iterate:` carrying an `agent:` kind-word key — failing `charly fleet add` with
+// `iterate:` carrying an `agent:` kind-word key — failing `charly deploy add` with
 // `node "sandbox": expected a mapping value, got yaml kind 8`).
 //
 // The design ruling: the declared-fields maps are CONTRACT DATA (what each kind schema

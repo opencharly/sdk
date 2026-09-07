@@ -15,16 +15,16 @@ import (
 // resolves to the external-in-place default via kit.DescentFromTraits(nil), matching the former
 // deployTraitsFor's nil-for-unrecognized-word return.
 
-// StampFleetDescents stamps every deploy node's venue-hop descent descriptor from the DeployTraits
+// StampDeployDescents stamps every deploy node's venue-hop descent descriptor from the DeployTraits
 // DATA snapshot, replacing the former registry-live charly stampFleetDescents. Idempotent.
-func StampFleetDescents(uf *spec.UnifiedFile, t spec.Threaded) {
+func StampDeployDescents(uf *spec.UnifiedFile, t spec.Threaded) {
 	if uf == nil {
 		return
 	}
 	traitsFor := func(word string) *spec.DeployTraits { return t.DeployTraits[word] }
-	for name, node := range uf.Fleet {
+	for name, node := range uf.Deploy {
 		n := node
 		kit.StampDescent(&n, traitsFor)
-		uf.Fleet[name] = n
+		uf.Deploy[name] = n
 	}
 }

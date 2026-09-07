@@ -5,14 +5,14 @@ import (
 	"time"
 )
 
-// The fleet-del self-deadlock regression (RCA 2026-09-07): the ledger TRANSACTION lock
-// (AcquireLedgerLock — held for a WHOLE fleet del/add, minutes, network fetches included) and
+// The deploy-del self-deadlock regression (RCA 2026-09-07): the ledger TRANSACTION lock
+// (AcquireLedgerLock — held for a WHOLE deploy del/add, minutes, network fetches included) and
 // the per-host charly.yml read-modify-write lock (paths.LockFile — the brief exclusion shared by
-// writeLedger, deploykit.MutateFleetConfig/SaveFleetConfig and spec/refs GitClient.save) were
+// writeLedger, deploykit.MutateDeployConfig/SaveDeployConfig and spec/refs GitClient.save) were
 // collapsed onto ONE file (charly.yml.lock). flock is per-open-file-description, so two acquires
 // of one path in ONE process conflict: every in-process nested config RMW under a transaction
 // hold contended with the holder's own fd and stalled the full lockTimeout, silently dropping
-// the write — 'charly fleet del <name> --assume-yes' wedged 7/7 (goroutine parked in
+// the write — 'charly deploy del <name> --assume-yes' wedged 7/7 (goroutine parked in
 // spec/lock.flockBounded <- AcquireFileLock <- refs.GitClient.save, held under the del's own
 // ledger-lock fd; kernel fdinfo showed one fd holding FLOCK WRITE on charly.yml.lock while the
 // waiter's second fd retried forever).
@@ -32,7 +32,7 @@ func TestTxLockDoesNotSelfConflictWithConfigLock(t *testing.T) {
 
 	release, err := AcquireFileLock(paths.LockFile, false)
 	if err != nil {
-		t.Fatalf("config RMW lock busy while ONLY the transaction lock is held — the fleet-del self-deadlock precondition is back: %v", err)
+		t.Fatalf("config RMW lock busy while ONLY the transaction lock is held — the deploy-del self-deadlock precondition is back: %v", err)
 	}
 	if err := release(); err != nil {
 		t.Fatalf("release config lock: %v", err)

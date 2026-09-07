@@ -71,7 +71,7 @@ func CollectBoxAlias(cfg *spec.Config, layers map[string]spec.CandyReader, boxNa
 
 // ResolveBoxEngine returns the run engine for a specific box: candy-level engine requirements
 // (transitive closure) win over the global default. Deploy-time overrides come from
-// FleetNode.Engine via ResolveBoxEngineForDeploy / ResolveBoxEngineFromMeta. Relocated from
+// DeployNode.Engine via ResolveBoxEngineForDeploy / ResolveBoxEngineFromMeta. Relocated from
 // charly/engine.go (build-side resolve; distinct from the deploy-side ForDeploy/FromMeta twins).
 func ResolveBoxEngine(cfg *spec.Config, layers map[string]spec.CandyReader, boxName string, globalRunEngine string) string {
 	_, _, img, ok := BoxOwner(cfg, boxName)

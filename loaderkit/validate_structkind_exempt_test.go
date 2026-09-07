@@ -15,9 +15,9 @@ import (
 // member-scanned, so the member requirement must not fire. A CONNECTED structural kind (schema
 // registered) whose bed is targetless+memberless is a real defect and still fails.
 
-func structKindBed(name string) map[string]spec.FleetNode {
+func structKindBed(name string) map[string]spec.DeployNode {
 	disp := true
-	return map[string]spec.FleetNode{
+	return map[string]spec.DeployNode{
 		name: {Target: "", Disposable: &disp},
 	}
 }
@@ -31,7 +31,7 @@ func TestValidateCheckBedsExemptsUnconnectedStructuralKind(t *testing.T) {
 		// StructuralDeclaredFields deliberately ABSENT for the word: the plugin's schema was
 		// never registered because the provider never connected.
 	}
-	uf := &spec.UnifiedFile{Fleet: structKindBed("check-structkind")}
+	uf := &spec.UnifiedFile{Deploy: structKindBed("check-structkind")}
 	if err := ValidateCheckBeds(uf, threaded); err != nil {
 		t.Fatalf("a declared-but-unconnected structural kind bed must be exempt from the member requirement: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestValidateCheckBedsFailsConnectedStructuralKind(t *testing.T) {
 		StructuralKinds:          map[string]bool{"examplestructkind": true},
 		StructuralDeclaredFields: map[string]map[string]bool{"examplestructkind": {"marker": true}},
 	}
-	uf := &spec.UnifiedFile{Fleet: structKindBed("check-structkind")}
+	uf := &spec.UnifiedFile{Deploy: structKindBed("check-structkind")}
 	err := ValidateCheckBeds(uf, threaded)
 	if err == nil {
 		t.Fatal("a CONNECTED structural kind folding a targetless memberless bed is a defect — must fail")
@@ -60,7 +60,7 @@ func TestValidateCheckBedsFailsConnectedStructuralKind(t *testing.T) {
 // exemption must not widen to unstructured shapes).
 func TestValidateCheckBedsStillFailsPlainTargetlessBed(t *testing.T) {
 	threaded := spec.Threaded{}
-	uf := &spec.UnifiedFile{Fleet: structKindBed("check-orphan")}
+	uf := &spec.UnifiedFile{Deploy: structKindBed("check-orphan")}
 	if err := ValidateCheckBeds(uf, threaded); err == nil {
 		t.Fatal("a targetless memberless bed with no declared structural kind must still fail")
 	}

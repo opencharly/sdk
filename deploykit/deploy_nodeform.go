@@ -7,16 +7,16 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// deploy_nodeform.go — the canonical FleetNode → compact node-form deploy serializer. MarshalFleetNode
+// deploy_nodeform.go — the canonical DeployNode → compact node-form deploy serializer. MarshalDeployNode
 // emits the COMPACT name-first node the per-host overlay (~/.config/charly/charly.yml) is read back in:
-// the kind discriminator (pod/vm/kubernetes/local/android/group/fleet) carries the FULL body inline (scalars,
+// the kind discriminator (pod/vm/kubernetes/local/android/group/deploy) carries the FULL body inline (scalars,
 // collections, and the `plan:` step list), and only nested/peer members become child nodes (their names
 // are load-bearing). Plan steps are RESUGARED (the internal plugin/plugin_input pair back to the authored
 // `<word>: <input>` sugar, collapsing a single-primary map to the scalar shorthand) so the written file
 // round-trips through the loader's parse-time desugar instead of tripping its authored-envelope ban.
 //
 // P13 residue clear (deploy_nodeform.go convergence): this file previously held a STALE, DEAD copy — no
-// primaries param, resugar via kit.ResugarPlan (no scalar-collapse), and a fleetDiscForEntity MISSING the
+// primaries param, resugar via kit.ResugarPlan (no scalar-collapse), and a deployDiscForEntity MISSING the
 // pod-classification fixes — while charly-core kept the LIVE copy that diverged with those fixes. Converged
 // to the live shape here: it reads the plugin-verb WORD → primary-field D-fact as plain DATA (the
 // `primaries` param — the SAME map spec.ResolvedProject.Primaries carries and spec.Threaded.Primaries
@@ -25,20 +25,20 @@ import (
 // consult (that host-side LOAD-path gate stays in charly/node_desugar.go). Consumed by charly core's
 // deploy_state_host.go host wrapper (feeding loaderThreaded().Primaries) + reachable by any deploy plugin.
 
-// fleetCrossRefKeys are the fleet-value scalar keys that NAME another top-level
+// deployCrossRefKeys are the deploy-value scalar keys that NAME another top-level
 // entity (the key equals the referenced entity's kind).
-var fleetCrossRefKeys = map[string]bool{
+var deployCrossRefKeys = map[string]bool{
 	"box": true, "vm": true, "kubernetes": true, "local": true, "android": true,
 }
 
-// MarshalFleetNode emits a FleetNode as the compact name-first node-form the per-host
+// MarshalDeployNode emits a DeployNode as the compact name-first node-form the per-host
 // overlay loader accepts: the kind discriminator carries the FULL body inline (scalars,
 // collections, the resugared plan: step list), and nested/peer members become child nodes
-// (recursive; discriminator inferred by fleetDiscForEntity). The loader-derived target /
+// (recursive; discriminator inferred by deployDiscForEntity). The loader-derived target /
 // descent are dropped (target → the discriminator; descent → never persisted, a stored
 // descent trips #DeployValue's descent?: _|_ on reload). Comment-preserving (yaml.v3 node
 // API).
-func MarshalFleetNode(node *spec.Deploy, primaries map[string]string) (*yaml.Node, error) {
+func MarshalDeployNode(node *spec.Deploy, primaries map[string]string) (*yaml.Node, error) {
 	// Marshal the struct to capture all scalar/collection fields (env, port, volume, ...).
 	nb, err := yaml.Marshal(node)
 	if err != nil {
@@ -54,7 +54,7 @@ func MarshalFleetNode(node *spec.Deploy, primaries map[string]string) (*yaml.Nod
 	}
 	// Compute the discriminator from the struct body (reads target + cross-ref keys +
 	// workload indicators BEFORE the structural keys are filtered out).
-	disc := fleetDiscForEntity(fullBody)
+	disc := deployDiscForEntity(fullBody)
 
 	content := &yaml.Node{Kind: yaml.MappingNode}
 	value := &yaml.Node{Kind: yaml.MappingNode}
@@ -84,7 +84,7 @@ func MarshalFleetNode(node *spec.Deploy, primaries map[string]string) (*yaml.Nod
 		if m.Node == nil {
 			continue
 		}
-		child, cerr := MarshalFleetNode(m.Node, primaries)
+		child, cerr := MarshalDeployNode(m.Node, primaries)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -93,18 +93,18 @@ func MarshalFleetNode(node *spec.Deploy, primaries map[string]string) (*yaml.Nod
 	return content, nil
 }
 
-// fleetDiscForEntity picks the node-form discriminator for a deploy/check entity
+// deployDiscForEntity picks the node-form discriminator for a deploy/check entity
 // whose `target:` key is about to be dropped. A same-kind cross-ref (box/vm/local/
-// kubernetes/android) uses `fleet:` (buildFleetNode infers the workload target from it);
-// the SAVE path marshals FleetNode.Target, so the disc is that target — an empty
+// kubernetes/android) uses `deploy:` (buildDeployNode infers the workload target from it);
+// the SAVE path marshals DeployNode.Target, so the disc is that target — an empty
 // target with a POD-WORKLOAD indicator (image/resolved_image/resolved_port/port/
 // volume_project_checked) is a POD (the DEFAULT substrate), and an empty target with
 // NO workload is a targetless deploy GROUP (`host` is the pre-rename spelling of `local`).
-func fleetDiscForEntity(body *yaml.Node) string {
+func deployDiscForEntity(body *yaml.Node) string {
 	if body != nil {
 		for i := 0; i+1 < len(body.Content); i += 2 {
-			if fleetCrossRefKeys[body.Content[i].Value] {
-				return "fleet"
+			if deployCrossRefKeys[body.Content[i].Value] {
+				return "deploy"
 			}
 		}
 	}

@@ -32,4 +32,3 @@ func TestSaveStanzasConcurrent(t *testing.T) {
 		t.Fatalf("lost stanzas under concurrency: got %d, want %d", len(stanzas), writers)
 	}
 }
-

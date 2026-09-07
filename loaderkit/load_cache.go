@@ -3,7 +3,7 @@ package loaderkit
 // load_cache.go — the host-side MATERIALIZED-TREE cache (the 32-lane oversubscription stall
 // root fix, SIGQUIT goroutine dumps 2026-09-05).
 //
-// ROOT. Every "charly fleet add" / "charly check live" / rebuild phase spawns a CLI
+// ROOT. Every "charly deploy add" / "charly check live" / rebuild phase spawns a CLI
 // subcommand child that RE-MATERIALIZES the full merged deploy tree through CUE:
 // ResolveMergedDeployTreeViaExecutor → MaterializeLoadedProject → the CUE disjunction unify over
 // the project's pinned-repo tree (goroutine 1 [runnable] inside

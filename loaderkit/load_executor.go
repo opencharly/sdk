@@ -73,13 +73,13 @@ func LoadSeamsFromExecutor(exec LoaderExecutor) LoadSeams {
 			}
 			return MaterializeLoadedProjectCached(lp, merged, byID, exec.MaterializeLoadedProject)
 		},
-		FlattenFleetVenues:     FlattenFleetVenues,
-		FoldMembers:            FoldMembers,
-		StampFleetDescents:     func(uf *spec.UnifiedFile) { StampFleetDescents(uf, exec.LoaderThreaded()) },
-		ValidateEphemeral:      func(uf *spec.UnifiedFile) error { return ValidateEphemeralUnified(uf, exec.LoaderThreaded()) },
-		ValidateCheckBeds:      func(uf *spec.UnifiedFile) error { return ValidateCheckBeds(uf, exec.LoaderThreaded()) },
-		ValidateAndroidDevices: exec.ValidateAndroidDevices,
-		ValidateMembers:        ValidateMembers,
-		ValidatePreemptible:    exec.ValidatePreemptible,
+		FlattenVenuesByPosition: FlattenVenuesByPosition,
+		FoldMembers:             FoldMembers,
+		StampDeployDescents:     func(uf *spec.UnifiedFile) { StampDeployDescents(uf, exec.LoaderThreaded()) },
+		ValidateEphemeral:       func(uf *spec.UnifiedFile) error { return ValidateEphemeralUnified(uf, exec.LoaderThreaded()) },
+		ValidateCheckBeds:       func(uf *spec.UnifiedFile) error { return ValidateCheckBeds(uf, exec.LoaderThreaded()) },
+		ValidateAndroidDevices:  exec.ValidateAndroidDevices,
+		ValidateMembers:         ValidateMembers,
+		ValidatePreemptible:     exec.ValidatePreemptible,
 	}
 }

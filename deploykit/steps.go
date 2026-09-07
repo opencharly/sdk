@@ -23,7 +23,7 @@ type (
 	Op             = spec.Op
 	LocalPkgDef    = spec.LocalPkg
 	InstallStep    = spec.InstallStep
-	FleetNode      = spec.FleetNode
+	DeployNode     = spec.DeployNode
 	EmitOpts       = spec.EmitOpts
 	DeployExecutor = spec.DeployExecutor
 	BuilderRunOpts = spec.BuilderRunOpts

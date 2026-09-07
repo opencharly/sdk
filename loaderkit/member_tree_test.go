@@ -64,9 +64,9 @@ bed:
 	if _, ok := body["inbed"]; !ok {
 		t.Fatalf("authored body dropped the in-body member key: %v", body)
 	}
-	dn, err := BuildFleetNode(pn, vmBedThreaded)
+	dn, err := BuildDeployNode(pn, vmBedThreaded)
 	if err != nil {
-		t.Fatalf("BuildFleetNode: %v", err)
+		t.Fatalf("BuildDeployNode: %v", err)
 	}
 	if dn.Target != "vm" || dn.From != "golden" {
 		t.Fatalf("root node = %q/%q, want vm/golden", dn.Target, dn.From)
@@ -104,9 +104,9 @@ bed:
 	if err != nil {
 		t.Fatalf("ParseDoc (nested): %v", err)
 	}
-	dn2, err := BuildFleetNode(pp2.Nodes[0], vmBedThreaded)
+	dn2, err := BuildDeployNode(pp2.Nodes[0], vmBedThreaded)
 	if err != nil {
-		t.Fatalf("BuildFleetNode (nested): %v", err)
+		t.Fatalf("BuildDeployNode (nested): %v", err)
 	}
 	sc := dn2.MemberByName("inbed")
 	if sc == nil || sc.Node == nil || len(sc.Node.Member) != 1 {
@@ -247,8 +247,8 @@ var forbiddenDualPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`SortedMemberKeys`),
 	regexp.MustCompile(`SortedNestedKeys`),
 	regexp.MustCompile(`\.HasChildren\(`),
-	regexp.MustCompile(`Members:\s*map\[string\]\*(spec\.Deploy|spec\.FleetNode|FleetNode)`),
-	regexp.MustCompile(`Children:\s*map\[string\]\*(spec\.Deploy|spec\.FleetNode|FleetNode)`),
+	regexp.MustCompile(`Members:\s*map\[string\]\*(spec\.Deploy|spec\.DeployNode|DeployNode)`),
+	regexp.MustCompile(`Children:\s*map\[string\]\*(spec\.Deploy|spec\.DeployNode|DeployNode)`),
 }
 
 // TestNoDualMapConstruction sweeps every non-test Go file in the module for the dual-map

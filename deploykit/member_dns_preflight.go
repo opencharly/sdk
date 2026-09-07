@@ -33,7 +33,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/spec/fleet"
+	"github.com/opencharly/spec/deploy"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -79,7 +79,7 @@ func charlyCmdCapture(memberKey, script string) (string, error) {
 
 // memberDNSRefs returns, per container-venue member key, the sorted set of SIBLING member names
 // that member's own plan addresses by container DNS — the ${HOST:<name>} form with no :<port>.
-func memberDNSRefs(node *spec.FleetNode) map[string][]string {
+func memberDNSRefs(node *spec.DeployNode) map[string][]string {
 	// The DEPLOY-LEVEL members only: they share the parent's charly network (the DNS domain
 	// this preflight guards); an in-substrate member lives inside its parent's venue.
 	if node == nil || len(node.DeployLevelMembers()) == 0 {
@@ -92,7 +92,7 @@ func memberDNSRefs(node *spec.FleetNode) map[string][]string {
 	refs := map[string][]string{}
 	for _, m := range node.DeployLevelMembers() {
 		memberKey, member := m.Name, m.Node
-		if member == nil || !fleet.IsContainerVenue(member) {
+		if member == nil || !deploy.IsContainerVenue(member) {
 			continue
 		}
 		ops := make([]spec.Op, 0, len(member.Plan))
@@ -132,7 +132,7 @@ func memberDNSRefs(node *spec.FleetNode) map[string][]string {
 // preflightMemberDNS verifies that every cross-member container-DNS name a member's plan
 // references actually resolves from that member's venue, BEFORE any probe spends its retry budget
 // discovering otherwise.
-func preflightMemberDNS(node *spec.FleetNode) error {
+func preflightMemberDNS(node *spec.DeployNode) error {
 	refs := memberDNSRefs(node)
 	if len(refs) == 0 {
 		return nil

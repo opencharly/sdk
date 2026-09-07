@@ -14,8 +14,8 @@ var (
 	DeployKey = spec.DeployKey
 	// ParseDeployKey is the inverse of DeployKey.
 	ParseDeployKey = spec.ParseDeployKey
-	// FleetDelArgv is the single `charly fleet del <name>` argv builder.
-	FleetDelArgv = spec.FleetDelArgv
+	// DeployDelArgv is the single `charly deploy del <name>` argv builder.
+	DeployDelArgv = spec.DeployDelArgv
 	// DeriveDeploymentName is the shared default-name derivation for a source-less from-box deploy.
 	DeriveDeploymentName = spec.DeriveDeploymentName
 )

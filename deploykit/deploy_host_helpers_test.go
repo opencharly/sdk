@@ -73,7 +73,7 @@ func TestCandyArtifactRegisters_NameBlind(t *testing.T) {
 // kit.RunReverseOps. Relocated from charly/deploy_host_helpers_test.go when
 // HostReverseExec/TeardownHostDeploy moved to sdk/deploykit (P13-KERNEL, the 4/5 sdk
 // lift); their end-to-end teardown is exercised live by the check-local bed's
-// `charly fleet del`.
+// `charly deploy del`.
 func TestHostReverseExec_AccessorPassthrough(t *testing.T) {
 	e := &HostReverseExec{
 		DryRun:          true,

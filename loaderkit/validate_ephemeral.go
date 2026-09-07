@@ -41,10 +41,10 @@ func diagJoin(d *spec.Diagnostics) string {
 	return strings.Join(msgs, "\n  ")
 }
 
-// ValidateEphemeralOnNode applies all ephemeral-related invariants to a single FleetNode, reading
+// ValidateEphemeralOnNode applies all ephemeral-related invariants to a single DeployNode, reading
 // the substrate's DECLARED #DeployTraits from the DATA snapshot t (never the registry). Errors
 // accumulate into d. Byte-equivalent to the former charly ValidateEphemeralOnNode.
-func ValidateEphemeralOnNode(name string, node *spec.FleetNode, t spec.Threaded, d *spec.Diagnostics) {
+func ValidateEphemeralOnNode(name string, node *spec.DeployNode, t spec.Threaded, d *spec.Diagnostics) {
 	if node == nil {
 		return
 	}
@@ -79,21 +79,21 @@ func ValidateVmNamingGuard(name string, d *spec.Diagnostics) {
 
 // ValidateEphemeralUnified is the LoadSeams.ValidateEphemeral entry point: it auto-promotes
 // disposable:true on ephemeral entries and validates the ephemeral / vm-naming invariants across the
-// spec.UnifiedFile's Fleet map, reading the DeployTraits DATA snapshot t. Moved verbatim (behaviour-
+// spec.UnifiedFile's Deploy map, reading the DeployTraits DATA snapshot t. Moved verbatim (behaviour-
 // preserving) from charly's validateEphemeralUnified.
 func ValidateEphemeralUnified(uf *spec.UnifiedFile, t spec.Threaded) error {
 	if uf == nil {
 		return nil
 	}
-	for name, node := range uf.Fleet {
+	for name, node := range uf.Deploy {
 		if node.IsEphemeral() && (node.Disposable == nil || !*node.Disposable) {
 			tr := true
 			node.Disposable = &tr
-			uf.Fleet[name] = node
+			uf.Deploy[name] = node
 		}
 	}
 	var d spec.Diagnostics
-	for name, node := range uf.Fleet {
+	for name, node := range uf.Deploy {
 		n := node
 		ValidateEphemeralOnNode(name, &n, t, &d)
 		ValidateVmNamingGuard(name, &d)

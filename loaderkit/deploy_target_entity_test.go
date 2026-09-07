@@ -9,10 +9,10 @@ import (
 
 // TestDeployTargetEntity gates the ONE deploy-hop chain resolver (Phase 3): a plain kind:vm
 // entity passes through; a kind:check BED (the clone-base deploy) resolves its from: chain to
-// the terminal template. Removing the Fleet hop fails the bed case.
+// the terminal template. Removing the Deploy hop fails the bed case.
 func TestDeployTargetEntity(t *testing.T) {
 	uf := &spec.UnifiedFile{
-		Fleet: map[string]spec.FleetNode{
+		Deploy: map[string]spec.DeployNode{
 			"check-vm-clone-base": {From: "cachyos-vm"},
 		},
 		PluginKinds: map[string]map[string]json.RawMessage{

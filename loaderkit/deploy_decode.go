@@ -1,10 +1,10 @@
 package loaderkit
 
-// fleet_decode.go — fleet/resource-member kind-decode SUPPORT helpers (K1 unit 3a, relocated
-// from charly/node_fleet.go + charly/node_normalize.go): pure functions of a discriminator word
+// deploy_decode.go — deploy/resource-member kind-decode SUPPORT helpers (K1 unit 3a, relocated
+// from charly/node_deploy.go + charly/node_normalize.go): pure functions of a discriminator word
 // + the registry-derived spec.Threaded snapshot (never a live registry query), consumed by the
-// TRUE clause-M dispatch (charly/provider_kind_invoke.go) and its BuildFleetEntity fallback
-// (charly/node_fleet.go's buildFleetNodeInto). DATA-driven via t.DeploySubstrates/t.DeployTraits
+// TRUE clause-M dispatch (charly/provider_kind_invoke.go) and its BuildDeployEntity fallback
+// (charly/node_deploy.go's buildDeployNodeInto). DATA-driven via t.DeploySubstrates/t.DeployTraits
 // — the SAME snapshot loaderThreaded() already fills for the parse — never a kind-word switch (the
 // boundary law's self-test).
 //
@@ -19,35 +19,35 @@ import (
 )
 
 // IsResourceDisc reports whether a discriminator names a deploy-substrate kind (the markers of a
-// fleet member / fleet-shaped node) — the ONE memberDisc classification (Cutover C task 0, 8a
+// deploy member / deploy-shaped node) — the ONE memberDisc classification (Cutover C task 0, 8a
 // unity): the CUE-derived resourceKindSet (#ResourceKind), the threaded external STRUCTURAL kind
 // words, OR a recognized external DEPLOY substrate word (t.DeploySubstrates, a registered/
 // pre-scanned out-of-process deploy provider, e.g. `exampledeploy`), so a deploy whose edge is an
-// external target is built as a fleet node. The former private two-set spelling — the third
+// external target is built as a deploy node. The former private two-set spelling — the third
 // drift-prone member classification — is gone; the parse-child, the parse-parent-allow, and this
 // fold consult ONE Threaded-fed function.
 func IsResourceDisc(d string, t spec.Threaded) bool {
 	return memberDisc(d, t)
 }
 
-// FleetTargetForDisc maps a node discriminator to the FleetNode Target — DATA-driven via
+// DeployTargetForDisc maps a node discriminator to the DeployNode Target — DATA-driven via
 // t.DeployTraits (P9's plugin-declared #DeployTraits, the D-clause fact every substrate word
 // resolves against), never a kind-word switch: a word with no declared deploy traits is
 // TARGETLESS (`group` — the only such word today; a plugin-declared external deploy substrate
 // DOES carry traits, the Venue="none" external-in-place default).
-func FleetTargetForDisc(d string, t spec.Threaded) string {
+func DeployTargetForDisc(d string, t spec.Threaded) string {
 	if t.DeployTraits[d] == nil {
 		return "" // targetless (e.g. group — no own workload target)
 	}
 	return d // pod | vm | kubernetes | local | android | an external deploy substrate word
 }
 
-// SetFleetCrossRef sets the deploy's cross-ref from a scalar discriminator value
+// SetDeployCrossRef sets the deploy's cross-ref from a scalar discriminator value
 // (EDGE-INHERIT cutover B): DATA-driven via t.DeployTraits' ImageBacked trait (declared true for
 // pod alone, per the canonical #DeployTraits table) rather than a kind-word switch — an
 // image-backed substrate's scalar is the IMAGE it runs; every other substrate's scalar is the
 // same-kind template it inherits (`from:`). A targetless word (traits == nil) sets neither.
-func SetFleetCrossRef(dn *spec.FleetNode, disc, ref string, t spec.Threaded) {
+func SetDeployCrossRef(dn *spec.DeployNode, disc, ref string, t spec.Threaded) {
 	traits := t.DeployTraits[disc]
 	if traits == nil {
 		return
@@ -75,17 +75,17 @@ func splitVMSnapshotRef(ref string) (name, snapshot string) {
 
 // IsStandaloneResourceKind reports whether disc names one of the 5 substrate kinds
 // (pod/vm/kubernetes/local/android) — the kinds that are BOTH a standalone TEMPLATE (→ the typed
-// uf.Pod/uf.VM/… map) and a deploy (→ uf.Fleet). DATA-driven via t.DeployTraits — the SAME
-// kind-blind fact FleetTargetForDisc/SetFleetCrossRef resolve against — rather than a
+// uf.Pod/uf.VM/… map) and a deploy (→ uf.Deploy). DATA-driven via t.DeployTraits — the SAME
+// kind-blind fact DeployTargetForDisc/SetDeployCrossRef resolve against — rather than a
 // hand-kept kind-word switch. group is a structural kind too but resolves false here — it
-// declares no #DeployTraits (no per-substrate template map; it always folds to uf.Fleet).
+// declares no #DeployTraits (no per-substrate template map; it always folds to uf.Deploy).
 func IsStandaloneResourceKind(disc string, t spec.Threaded) bool {
 	return t.DeployTraits[disc] != nil
 }
 
 // FoldStandaloneTemplateReply folds candy/plugin-substrate's ECHOED template JSON into
 // acc.PluginKinds[disc][name] — the C2-substrate TEMPLATE fold arm (the standalone counterpart of
-// runPluginKind's deploy fold into acc.Fleet). GENERIC by construction: no per-kind-word switch —
+// runPluginKind's deploy fold into acc.Deploy). GENERIC by construction: no per-kind-word switch —
 // every standalone-template kind (vm/pod/kubernetes/local/android) folds into the SAME map[disc][name]
 // shape PluginKinds already uses for every other templated kind (distro/builder/init/sidecar/
 // resource/agent), so a new standalone-template kind needs no core edit here. disc is validated by
