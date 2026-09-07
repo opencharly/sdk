@@ -79,6 +79,10 @@ type RunnerConfig struct {
 	// (charly-<VmName> is the live libvirt domain). Empty for non-VM deployments, where
 	// VmTargetName falls back to Box.
 	VmName string
+	// MCPProvide carries the deployment's mcp_provide declarations (VM/host venues have no
+	// podman-inspectable OCI label; the check env threads them for the out-of-process mcp:
+	// check verb). Empty for container venues, where the label resolution path applies.
+	MCPProvide []spec.CandyMCPProvide
 
 	HostVars map[string]string
 	// CandyDirs maps candy name → resolved source dir (relative committed-APK anchoring);
@@ -119,6 +123,7 @@ type Runner struct {
 	box          string
 	instance     string
 	vmName       string
+	mcpProvide   []spec.CandyMCPProvide
 	hostVars     map[string]string
 	candyDirs    map[string]string
 	candyScanErr error
@@ -151,6 +156,7 @@ func NewRunner(cfg RunnerConfig) *Runner {
 		box:                  cfg.Box,
 		instance:             cfg.Instance,
 		vmName:               cfg.VmName,
+		mcpProvide:           cfg.MCPProvide,
 		hostVars:             cfg.HostVars,
 		candyDirs:            cfg.CandyDirs,
 		candyScanErr:         cfg.CandyScanErr,
@@ -302,7 +308,8 @@ func (r *Runner) Instance() string { return r.instance }
 // VmName is the caller-set VM domain-target (the resolved per-deploy domain identity; empty for
 // non-VM deployments); VmTargetName falls back to Box, the name the host vm/spice legs hand the
 // plugin as the libvirt-domain target.
-func (r *Runner) VmName() string { return r.vmName }
+func (r *Runner) VmName() string                     { return r.vmName }
+func (r *Runner) MCPProvide() []spec.CandyMCPProvide { return r.mcpProvide }
 func (r *Runner) VmTargetName() string {
 	if r.vmName != "" {
 		return r.vmName
