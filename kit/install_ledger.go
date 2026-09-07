@@ -74,14 +74,37 @@ type LedgerLock struct {
 	release func() error
 }
 
-// AcquireLedgerLock takes a blocking exclusive flock on the ledger lock file via
-// the shared AcquireFileLock primitive (filelock.go). Blocks until the lock is
-// available.
+// LedgerTxLockPath returns the LEDGER TRANSACTION lock path for one LedgerPaths: the
+// config path + ".ledger.lock". This is NOT paths.LockFile, and the separation is load-bearing
+// (the fleet-del self-deadlock, RCA 2026-09-07): paths.LockFile guards the per-host charly.yml
+// read-modify-write — the SAME brief exclusion every writer of that FILE shares (writeLedger
+// here, deploykit.MutateFleetConfig/SaveFleetConfig, spec/refs GitClient.save's cache section).
+// The ledger TRANSACTION lock is a different logical resource: the fleet-del/add transaction
+// bracket (resolve → members-down → node-del-dispatch) holds it for the WHOLE operation —
+// minutes, network fetches included. Collapsing both onto charly.yml.lock made every in-process
+// nested config RMW under a transaction hold contend with the holder's own fd (flock is
+// per-open-file-description; two acquires of one path in ONE process conflict): the del's
+// resolve-phase GitClient.save and teardown-phase MutateFleetConfig each stalled the full
+// lockTimeout against the del's own transaction hold, silently dropping their writes — the cache
+// never persisted, so the next run re-stalled. Deterministic, 7/7-reproducible fleet-del hang.
+//
+// The dedicated file restores the genesis semantics (the pre-sdk ledger lock was a dedicated
+// ~/.config/opencharly/installed/.lock — NEVER the config lock): the transaction lock orders
+// fleet flows against EACH OTHER; brief config-file writers stay ordered by charly.yml.lock and
+// legitimately interleave inside a transaction (each RMW re-reads the current file under the
+// config lock and preserves the other sections).
+func LedgerTxLockPath(paths *LedgerPaths) string {
+	return paths.ConfigFile + ".ledger.lock"
+}
+
+// AcquireLedgerLock takes a blocking exclusive flock on the ledger TRANSACTION lock file
+// (LedgerTxLockPath — NOT the config RMW lock, see its doc comment) via the shared
+// AcquireFileLock primitive (filelock.go). Blocks until the lock is available.
 func AcquireLedgerLock(paths *LedgerPaths) (*LedgerLock, error) {
 	if err := paths.Ensure(); err != nil {
 		return nil, err
 	}
-	release, err := AcquireFileLock(paths.LockFile, true)
+	release, err := AcquireFileLock(LedgerTxLockPath(paths), true)
 	if err != nil {
 		return nil, fmt.Errorf("ledger lock: %w", err)
 	}
