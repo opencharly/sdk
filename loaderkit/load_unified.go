@@ -16,7 +16,6 @@ package loaderkit
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/opencharly/sdk/kit"
@@ -100,36 +99,41 @@ func GateSchemaVersion(root, version string) error {
 // touches the provider registry.
 func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 	root := filepath.Join(dir, spec.UnifiedFileName)
-	if !kit.FileExists(root) {
+	// THE CONFIG STACK: read the layered charly.yml files (system → user →
+	// in-dir, later files winning) and merge them at the raw document level.
+	// The merged bytes ARE the root document — the bootstrap phase, the early
+	// schema gate, the kind-blind walk, and the validation chain all operate on
+	// the merged config (config_stack.go). A missing system/user layer is
+	// skipped; no layer at all means no project.
+	rootData, ok, err := readConfigStack(dir)
+	if err != nil {
+		return nil, true, err
+	}
+	if !ok {
 		return nil, false, nil
 	}
-	// F9 BOOTSTRAP PHASE: invoke bootstrap-phase plugins on the RAW root config
-	// bytes FIRST — before the early schema gate AND before the walk — so a
-	// bootstrap plugin's rewrite reaches both. The transformed bytes are
-	// threaded into the walk as the root override so it PARSES them (not a
-	// stale disk re-read). A read error is tolerated: the walk then reads the
-	// root from disk (no bootstrap / early gate), exactly as before.
-	var rootData []byte
-	if data, rerr := os.ReadFile(root); rerr == nil {
-		bootstrapped, berr := seams.RunBootstrapPhase(data)
-		if berr != nil {
-			return nil, true, fmt.Errorf("bootstrap phase: %w", berr)
+	// F9 BOOTSTRAP PHASE: invoke bootstrap-phase plugins on the RAW merged root
+	// config bytes FIRST — before the early schema gate AND before the walk — so
+	// a bootstrap plugin's rewrite reaches both. The transformed bytes are
+	// threaded into the walk as the root override so it PARSES them.
+	bootstrapped, berr := seams.RunBootstrapPhase(rootData)
+	if berr != nil {
+		return nil, true, fmt.Errorf("bootstrap phase: %w", berr)
+	}
+	rootData = bootstrapped
+	// EARLY schema-version gate: a below-HEAD (or absent) merged `version:` is
+	// rejected with the `charly migrate` hint BEFORE any shape parsing — so an
+	// out-of-date config never reaches node-form CUE validation. The merged
+	// version is the LATER layer's (project > user > system).
+	var vdoc yaml.Node
+	if yaml.Unmarshal(rootData, &vdoc) == nil {
+		ver := ""
+		if vn := kit.MapValue(kit.MappingRoot(&vdoc), "version"); vn != nil {
+			ver = vn.Value
 		}
-		data = bootstrapped
-		// EARLY schema-version gate: a below-HEAD (or absent) root `version:` is
-		// rejected with the `charly migrate` hint BEFORE any shape parsing — so
-		// an out-of-date config never reaches node-form CUE validation.
-		var vdoc yaml.Node
-		if yaml.Unmarshal(data, &vdoc) == nil {
-			ver := ""
-			if vn := kit.MapValue(kit.MappingRoot(&vdoc), "version"); vn != nil {
-				ver = vn.Value
-			}
-			if err := GateSchemaVersion(root, ver); err != nil {
-				return nil, true, err
-			}
+		if err := GateSchemaVersion(root, ver); err != nil {
+			return nil, true, err
 		}
-		rootData = data
 	}
 	// THE KIND-BLIND WALK: import queue + discover + namespaced-import mounts +
 	// per-document parse → a generic spec.LoadedProject. No materialize, no

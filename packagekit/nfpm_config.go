@@ -47,6 +47,16 @@ func BuildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Inf
 	if err != nil {
 		return nil, err
 	}
+	// The systemd units + the system-wide config ship ONLY in the
+	// systemd-capable formats (deb/rpm/archlinux). apk (Alpine → OpenRC), ipk
+	// (OpenWrt → procd), and msix (Windows) have no systemd — skipped.
+	if systemdFormats[format] {
+		extra, err := systemdAndConfigContents(pkg)
+		if err != nil {
+			return nil, err
+		}
+		contents = append(contents, extra...)
+	}
 	arch := ArchMap(format, opts.Arch)
 
 	info := &nfpm.Info{
@@ -109,6 +119,25 @@ func BuildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Inf
 	}
 
 	return info, nil
+}
+
+// systemdFormats are the nFPM formats that ship the systemd units + the
+// system-wide config. apk/ipk/msix have no systemd — excluded.
+var systemdFormats = map[string]bool{"deb": true, "rpm": true, "archlinux": true}
+
+// systemdAndConfigContents renders the packaging section's systemd units +
+// preset files + the system-wide config into nfpm contents (nil when the
+// packaging section declares neither).
+func systemdAndConfigContents(pkg *spec.Packaging) (files.Contents, error) {
+	units, err := systemdUnitContents(pkg)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := configContents(pkg)
+	if err != nil {
+		return nil, err
+	}
+	return append(units, cfg...), nil
 }
 
 // buildContents assembles the package contents: the binary at /usr/bin/charly +
