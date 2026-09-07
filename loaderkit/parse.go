@@ -198,7 +198,7 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	// declared field stays data. A kind with NO declared schema threaded falls back to every
 	// kind-word key being a member (the documented, tested fallback).
 	if t.DeploySubstrates[disc] {
-		deployDeclared := t.DeployDeclaredFields[disc]
+		deployDeclared := threadedDeclaredFields(t.DeployDeclaredFields, disc)
 		for _, c := range discEntityPairs(discValue, t) {
 			if deployDeclared[c.k.Value] {
 				continue // a declared #Deploy field is DATA — never look inside its value
@@ -212,7 +212,7 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 			}
 		}
 	} else if t.StructuralKinds[disc] {
-		declared := t.StructuralDeclaredFields[disc]
+		declared := threadedDeclaredFields(t.StructuralDeclaredFields, disc)
 		for i := 0; i+1 < len(discValue.Content); i += 2 {
 			k, v := discValue.Content[i], discValue.Content[i+1]
 			if !memberDisc(k.Value, t) || declared[k.Value] {

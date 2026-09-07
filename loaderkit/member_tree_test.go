@@ -31,13 +31,17 @@ var vmBedThreaded = spec.Threaded{
 // kind body folds as an IN-SUBSTRATE member of that substrate (deploy-into), while a BARE
 // deploy-level sibling of the kind key folds as a DEPLOY-LEVEL member (brought up alongside) —
 // even under a WORKLOAD root (a vm bed), where the deleted root-kind branch used to collapse
-// both positions into one meaning.
+// both positions into one meaning. The in-body member key is a NON-declared name (`inbed`):
+// under the declared-fields contract floor (declared_fields_floor.go) a CONTRACT-declared key
+// (`sidecar`) stays data even when the threaded map is empty — the empty-Threaded parse is
+// identical to the populated one, so a fabricated in-body member can no longer borrow a
+// declared field's name.
 func TestParseFold_PreservesAuthoredDepth(t *testing.T) {
 	_, pp, err := ParseDoc(docFrom(t, `
 bed:
   vm:
     from: golden
-    sidecar:
+    inbed:
       pod:
         image: img
   alpha:
@@ -52,12 +56,12 @@ bed:
 	}
 	pn := pp.Nodes[0]
 	// The parse: BOTH member children hang on the substrate node, in-body first.
-	if len(pn.Children) != 2 || pn.Children[0].Name != "sidecar" || pn.Children[1].Name != "alpha" {
+	if len(pn.Children) != 2 || pn.Children[0].Name != "inbed" || pn.Children[1].Name != "alpha" {
 		t.Fatalf("children = %+v, want [sidecar, alpha]", pn.Children)
 	}
 	// The authored body keeps the in-body member key — the fold's position channel.
 	body := bodyMap(t, pn.Body)
-	if _, ok := body["sidecar"]; !ok {
+	if _, ok := body["inbed"]; !ok {
 		t.Fatalf("authored body dropped the in-body member key: %v", body)
 	}
 	dn, err := BuildFleetNode(pn, vmBedThreaded)
@@ -71,7 +75,7 @@ bed:
 	if len(dn.Member) != 2 {
 		t.Fatalf("member entries = %d, want 2", len(dn.Member))
 	}
-	inBody := dn.MemberByName("sidecar")
+	inBody := dn.MemberByName("inbed")
 	if inBody == nil || inBody.Position != spec.PositionInSubstrate || !inBody.InSubstrate() {
 		t.Fatalf("in-body member position = %+v, want in-substrate", inBody)
 	}
@@ -90,7 +94,7 @@ bed:
 bed:
   vm:
     from: golden
-    sidecar:
+    inbed:
       pod:
         image: img
         inner:
@@ -104,7 +108,7 @@ bed:
 	if err != nil {
 		t.Fatalf("BuildFleetNode (nested): %v", err)
 	}
-	sc := dn2.MemberByName("sidecar")
+	sc := dn2.MemberByName("inbed")
 	if sc == nil || sc.Node == nil || len(sc.Node.Member) != 1 {
 		t.Fatalf("nested member tree = %+v, want sidecar carrying one member", dn2.Member)
 	}
@@ -116,12 +120,14 @@ bed:
 // TestParse_MemberCarrierKeysStrippedFromBody pins the closedness contract: every body EMITTER
 // omits the member-tree-owned keys, so the substrate's closed-schema gates stop seeing
 // resource-member keys (Cutover C task 0) — while the authored body keeps them for the fold.
+// The member-carrier key is a NON-declared name (`inbed`) — see
+// TestParseFold_PreservesAuthoredDepth for the contract-floor naming rule.
 func TestParse_MemberCarrierKeysStrippedFromBody(t *testing.T) {
 	_, pp, err := ParseDoc(docFrom(t, `
 bed:
   vm:
     from: golden
-    sidecar:
+    inbed:
       pod:
         image: img
 `), vmBedThreaded)
@@ -129,7 +135,7 @@ bed:
 		t.Fatalf("ParseDoc: %v", err)
 	}
 	pn := pp.Nodes[0]
-	if _, ok := bodyMap(t, pn.Body)["sidecar"]; !ok {
+	if _, ok := bodyMap(t, pn.Body)["inbed"]; !ok {
 		t.Fatal("authored body lost the in-body member key")
 	}
 	clean, err := EntityBodyJSON(pn)
@@ -140,7 +146,7 @@ bed:
 	if err := json.Unmarshal(clean, &m); err != nil {
 		t.Fatalf("clean body json: %v", err)
 	}
-	if _, ok := m["sidecar"]; ok {
+	if _, ok := m["inbed"]; ok {
 		t.Fatalf("EntityBodyJSON leaked the member-carrier key: %s", clean)
 	}
 	if m["from"] != "golden" {
@@ -156,7 +162,7 @@ bed:
 		t.Fatal("assembled body is not a mapping")
 	}
 	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "sidecar" {
+		if root.Content[i].Value == "inbed" {
 			t.Fatal("assembled body leaked the member-carrier key")
 		}
 	}
