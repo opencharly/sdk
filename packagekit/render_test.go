@@ -123,11 +123,16 @@ func TestRenderConfig_ValidProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderConfig: %v", err)
 	}
+	// The rendered config is a BARE minimal project: the version stamp is the
+	// whole file (a candy node would need install content — see the live
+	// validate test). The plugins/description are packaging metadata, not
+	// rendered file content.
 	s := string(body)
-	for _, want := range []string{"version: 2026.250.0001", "charly-mcp:", "bake_plugin:", "plugin-mcp", "command: \"true\""} {
-		if !strings.Contains(s, want) {
-			t.Errorf("rendered config lacks %q: %s", want, s)
-		}
+	if !strings.Contains(s, "version: 2026.250.0001") {
+		t.Errorf("rendered config lacks the version: %s", s)
+	}
+	if strings.Contains(s, "charly-mcp:") {
+		t.Errorf("rendered config carries a candy node (a bare project is what validates): %s", s)
 	}
 }
 
