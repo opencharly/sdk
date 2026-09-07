@@ -81,28 +81,19 @@ func TestRunPlanStaged_StageGroupsFirstSeenOrder(t *testing.T) {
 	}
 	out := RunPlanStaged(context.Background(), members, false, false)
 
-	// 4 steps: a2(s2), a1(s1), b1(s1) + the un-staged none.
-	_ = out
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	// s2 first-seen => its step (a2) must START before s1's steps (a1, b1).
-	idx := func(v string) int {
-		for i, s := range r.started {
-			if s == v {
-				return i
-			}
-		}
-		return -1
-	}
-	// All steps are "run" — use ended order paired with delay-free dispatch:
-	// the stage barrier guarantees ordering at the RUN level, so verify via the
-	// result order instead (venue-keyed deterministic):
-	// member a: [a2, a1]; member b: [b1] — the stage reorder happens WITHIN a
-	// member's slice, so a2 precedes a1 in a's results.
 	if len(out) != 3 {
 		t.Fatalf("RunPlanStaged -> %d results, want 3", len(out))
 	}
-	_ = idx
+	// FIRST-SEEN stage order is [s2, s1]: member a's authored steps are
+	// [a2(s2), a1(s1)], so the s2 group runs before the s1 group. Within
+	// member a's slice the stage-grouped order must be a2 then a1; member b
+	// (s1 only) follows in venue-keyed member order.
+	want := []string{"a2", "a1", "b1"}
+	for i, w := range want {
+		if out[i].Text != w {
+			t.Errorf("result %d = %q, want %q (first-seen stage order s2 then s1)", i, out[i].Text, w)
+		}
+	}
 }
 
 // TestRunPlanStaged_SameMemberStepsKeepAuthoredOrder — within a member and a

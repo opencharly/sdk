@@ -179,12 +179,10 @@ func runStagedGroups(ctx context.Context, members []MemberRun, flats []memberFla
 	}
 
 	col := newResultCollector(len(members))
-	println("DEBUG staged: stages=", len(stageOrder), " members=", len(memberStageSteps))
 	for si := range stageOrder {
 		var wg sync.WaitGroup
 		for mi := range memberStageSteps {
 			steps := memberStageSteps[mi][si]
-			println("DEBUG member", mi, "stage", si, "steps", len(steps))
 			if len(steps) == 0 || members[mi].Runner == nil {
 				continue
 			}
