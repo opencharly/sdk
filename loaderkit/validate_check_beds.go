@@ -49,7 +49,24 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 			// A GROUP bed (no workload cross-ref) — valid ONLY when it carries members
 			// (subject + driver peers): the §3 group+siblings shape for cross-deployment
 			// probing. The ONE ordered member tree counts both positions.
-			if !node.HasMembers() {
+			//
+			// DECLARED-but-UNCONNECTED structural-kind exemption (the recognizedKind fallback):
+			// after the group:-kind removal a TARGETLESS bed node can only be an external
+			// STRUCTURAL plugin kind (every resource deploy kind carries #DeployTraits). A
+			// structural kind DECLARED in the schema vocabulary (t.StructuralKinds — connected
+			// providers ∪ parse-time pre-scan declarations) whose serving provider did NOT
+			// connect (no registered input schema — the documented no-declared-schema signal,
+			// the same absence the parse's in-body member scan falls back on) cannot be
+			// member-scanned: its OpLoad never ran, so the bed folds without its authored
+			// member tree. Membership semantics come from the PARENT kind's declared schema,
+			// not from runtime registry state — the same declared-fields contract the parse's
+			// StructuralDeclaredFields channel implements — so the member requirement must not
+			// fire on a fold the plugin never had the chance to shape (a fresh clone or a
+			// degraded environment hits exactly this on a structural-kind witness bed). A
+			// CONNECTED structural kind (schema registered — its OpLoad dispatch hard-requires
+			// it) whose bed is STILL targetless+memberless is a real defect (the plugin was
+			// there and did not fold the authored members) and keeps failing.
+			if !node.HasMembers() && !declaredStructuralKindUnconnected(t) {
 				return fmt.Errorf("kind:check bed %q has no workload cross-ref and no sibling members — a group bed must declare member subdeployments (the subject + driver of a cross-deployment probe)", name)
 			}
 		case traits != nil && traits.BedTarget:
@@ -83,6 +100,26 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 		}
 	}
 	return nil
+}
+
+// declaredStructuralKindUnconnected reports whether the Threaded snapshot declares a STRUCTURAL
+// plugin kind whose serving provider did not connect: the word is in the recognized structural
+// vocabulary (t.StructuralKinds — the recognizedKind fallback the validator consults instead of
+// the live registry, clause D) but has NO registered input schema (absent from
+// t.StructuralDeclaredFields — the host leaves a word whose schema is not loaded absent, the
+// documented no-declared-schema fallback; a connected structural kind's OpLoad dispatch
+// hard-requires the registered def, so presence proves connection). The folded FleetNode does not
+// carry its discriminator word (a structural kind's OpLoad reply is a plain spec.Deploy), so the
+// exemption is deliberately load-scoped and conservative: it only fires when at least one
+// declared structural kind is unconnected, and never when every declared structural kind
+// connected (a complete StructuralDeclaredFields map exempts nothing).
+func declaredStructuralKindUnconnected(t spec.Threaded) bool {
+	for word := range t.StructuralKinds {
+		if _, connected := t.StructuralDeclaredFields[word]; !connected {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidateIterateBed enforces the iterate: benchmark invariants (replaces the former
