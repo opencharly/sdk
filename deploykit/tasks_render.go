@@ -109,6 +109,37 @@ func (g *Generator) EmitTasks(b *strings.Builder, layer CandyModel, img *buildki
 			}
 			EmitWrite(b, t, srcPath, img)
 
+		case "config":
+			// config: <dest-path> renders a config file from the candy's declared
+			// values: content is ${VAR}-SUBSTITUTED at generate time (write:
+			// bodies stay verbatim — this is the verb's reason to exist), staged
+			// content-addressed like write:, and delivered via COPY (no shell).
+			// validate: names a vendored CUE format schema (egress-schema set)
+			// the rendered bytes are validated against BEFORE they are staged.
+			parent := ParentDirForDest(TaskSubstPath(t.Config, img))
+			if parent != "" && !declaredDirs[parent] && parent != img.Home && parent != "/" {
+				EmitMkdirBatch(b, []vmshared.Op{{Mkdir: parent, RunAs: t.RunAs}}, img)
+				declaredDirs[parent] = true
+			}
+			content, subErr := SubstituteContent(t.Content, layer.Vars(), img)
+			if subErr != nil {
+				return runningUser, subErr
+			}
+			if t.Validate != "" && g.ValidateEgress != nil {
+				if verr := g.ValidateEgress(t.Validate, t.Config, []byte(content)); verr != nil {
+					return runningUser, fmt.Errorf("config: validate %q: %w", t.Validate, verr)
+				}
+			}
+			srcPath, err := StageInlineContent(buildDir, contextRelPrefix, layer.GetName(), content)
+			if err != nil {
+				return runningUser, err
+			}
+			// EmitWrite reads the Write field — rehydrate it from the config
+			// destination (the same rehydration the plugin:command case uses).
+			emitOp := t
+			emitOp.Write = t.Config
+			EmitWrite(b, emitOp, srcPath, img)
+
 		case "link":
 			batch := []vmshared.Op{t}
 			for i+1 < len(tasks) && TaskCoalescesWith(t, tasks[i+1], verb) {

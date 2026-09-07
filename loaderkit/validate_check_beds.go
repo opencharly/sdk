@@ -98,6 +98,55 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 			}
 			return fmt.Errorf("kind:check bed %q has unsupported target %q (must be pod, vm, local, android, or a registered external deploy substrate)", name, node.Target)
 		}
+		// Cutover C task 4 — ALL-OR-NOTHING stage authoring per bed: when ANY step
+		// of the bed (the root node AND every member, both positions) carries the
+		// `stage:` shared modifier, EVERY step must. A mixed bed (some staged, some
+		// not) would make the stage-grouped walk ambiguous (task 5: stages dominate;
+		// an unstaged step has no group). Stage names are dot-free — enforced by the
+		// CUE regex on #Op (`=~"^[^.]+$"`) — and the FIRST-SEEN stage order is
+		// recorded at load by the walk from the authored order (kit.RunPlanStaged).
+		if verr := validateBedStages(name, &node); verr != nil {
+			return verr
+		}
+	}
+	return nil
+}
+
+// validateBedStages enforces the ALL-OR-NOTHING stage-authoring invariant for ONE
+// kind:check bed (Cutover C task 4): EVERY plan step of the bed root and its
+// WHOLE uniform member tree (deploy-level AND in-substrate, recursively) must
+// either all carry `stage:` or none may. "Per bed" = the full tree — a member
+// with a mixed set would make the stage-grouped walk ambiguous (task 5: stages
+// dominate; an unstaged step has no group). Stage names are dot-free — enforced
+// by the CUE regex on #Op (`=~"^[^.]+$"`) — and the FIRST-SEEN stage order is
+// recorded at load by the walk from the authored order (kit.RunPlanStaged).
+// Pure.
+func validateBedStages(name string, node *spec.DeployNode) error {
+	var steps []spec.Step
+	var collect func(n *spec.DeployNode)
+	collect = func(n *spec.DeployNode) {
+		if n == nil {
+			return
+		}
+		steps = append(steps, n.Plan...)
+		for i := range n.Member {
+			if n.Member[i].Node != nil {
+				collect(n.Member[i].Node)
+			}
+		}
+	}
+	collect(node)
+
+	staged := 0
+	for i := range steps {
+		if steps[i].Stage != "" {
+			staged++
+		}
+	}
+	if len(steps) > 0 && staged > 0 && staged != len(steps) {
+		return fmt.Errorf(
+			"kind:check bed %q: mixed stage authoring — %d of %d plan steps across the bed and its members carry stage:, but %d do not; stage authoring is all-or-nothing per bed (every step of a bed must carry stage: when any step does)",
+			name, staged, len(steps), len(steps)-staged)
 	}
 	return nil
 }
