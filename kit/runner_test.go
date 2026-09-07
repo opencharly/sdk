@@ -160,3 +160,22 @@ func TestRunner_PerProbeNeverHang(t *testing.T) {
 		t.Fatal("r.Run hung on the wedged probe — per-probe never-hang not enforced (the whole-pass-guillotine regression)")
 	}
 }
+
+// TestRunner_MCPProvideCarriesDeclarations: NewRunner threads the deployment's
+// mcp_provide declarations into the Runner and exposes them through the MCPProvide
+// accessor — the carrier for the check env's mcp_provide field on VM/host venues (no
+// podman-inspectable OCI label).
+func TestRunner_MCPProvideCarriesDeclarations(t *testing.T) {
+	decls := []spec.CandyMCPProvide{
+		{Name: "charly", URL: "http://127.0.0.1:18765/mcp", Transport: "http"},
+	}
+	kr := NewRunner(RunnerConfig{MCPProvide: decls})
+	got := kr.MCPProvide()
+	if len(got) != 1 || !reflect.DeepEqual(got, decls) {
+		t.Errorf("MCPProvide() = %+v, want %+v", got, decls)
+	}
+	// The default is empty (container venues resolve via the OCI label path).
+	if empty := NewRunner(RunnerConfig{}).MCPProvide(); len(empty) != 0 {
+		t.Errorf("default MCPProvide() = %+v, want empty", empty)
+	}
+}
