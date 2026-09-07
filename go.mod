@@ -12,7 +12,7 @@ require (
 	github.com/klauspost/compress v1.19.2
 	github.com/opencharly/plugin-egress/candy/plugin-egress v0.2026237.1419
 	github.com/opencharly/plugin-init/candy/plugin-init v0.2026237.1424
-	github.com/opencharly/spec v0.2026250.929
+	github.com/opencharly/spec v0.2026250.2036
 	golang.org/x/term v0.43.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
@@ -81,8 +81,3 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.7.1 // indirect
 )
-
-// dev-only worktree replace for the F1 parser-consolidation wave (ResourceChildren seam
-// removal + CheckEnv candy_dirs CUE spelling): dropped for the real spec tag pin before merge.
-replace github.com/opencharly/spec => ../spec
-
