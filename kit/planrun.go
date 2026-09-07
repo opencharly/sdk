@@ -248,35 +248,19 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 // include: steps never reach here (expanded at collect time); a residual one is a no-op skip.
 // Agent steps route to the grader; run/check stamp the keyword-derived do-mode and dispatch
 // through RunOne.
+//
+// Stage-aware (Cutover C task 5): when any step of the plan carries a `stage:`
+// modifier, RunPlan groups steps by stage and executes the stage groups in
+// first-seen order (a single-member bed delegates to the same engine the
+// multi-member walk uses — one canonical walk, R3). Without stages: today's
+// sequential in-authored-order walk.
 func RunPlan(ctx context.Context, pc PlanContext, set *LabelDescriptionSet, strict bool) []StepResult {
 	if set == nil {
 		return nil
 	}
-	var flat []flatStep
-	for _, sec := range [][]LabeledDescription{set.Candy, set.Box, set.Deploy} {
-		for _, ld := range sec {
-			for i, s := range ld.Plan {
-				flat = append(flat, flatStep{origin: ld.Origin, desc: ld.Description, idx: i, step: s})
-			}
-		}
-	}
-
-	planCtx := NewScenarioContext()
-	orig := pc.Scenario()
-	pc.SetScenario(planCtx)
-	defer pc.SetScenario(orig)
-
-	var out []StepResult
-	for _, fs := range flat {
-		stepID := EffectiveStepID(&fs.step, fs.origin, fs.idx)
-		out = append(out, runUnit(ctx, pc, fs, planCtx, stepID, strict))
-	}
-
-	// Reap host-side background processes spawned by command: steps.
-	for _, pid := range planCtx.SnapshotBackgrounds() {
-		_ = sendSIGTERM(pid)
-	}
-	return out
+	// A single-member plan: delegate to the canonical staged walk (stages group
+	// in first-seen order when present; sequential authored order otherwise).
+	return RunPlanStaged(ctx, []MemberRun{{Runner: pc, Set: set}}, false, strict)
 }
 
 // runUnit executes one plan step and returns its result.
