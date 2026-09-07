@@ -85,6 +85,19 @@ func mergeConfigStackRaw(layers [][]byte) ([]byte, error) {
 		if root.Kind != yaml.MappingNode {
 			continue // non-mapping document — not a charly.yml; skip
 		}
+		// REJECT duplicate top-level keys WITHIN this single layer: the raw
+		// yaml.Node round-trip preserves a repeated key (last-wins dedup only
+		// happens in the merge idx-map), and a silent collapse would make the
+		// parse-level "duplicate top-level entity name" contract (parse.go —
+		// pinned by charly's TestCrossKindNameReuse_LoaderAcceptsAllKinds)
+		// unreachable. Merging ACROSS layers (the stack precedence) is
+		// unaffected — per-layer uniqueness is checked before each merge.
+		if k, dup := dupTopLevelKey(root); dup {
+			return nil, fmt.Errorf(
+				"config stack layer %d: duplicate top-level entity name %q (already declared) — a single document's top-level node names are globally unique; rename one (keep the user-facing deploy name, suffix the template)",
+				i, k,
+			)
+		}
 		mergeYamlMapping(dst, root)
 	}
 	out, err := yaml.Marshal(dst)
@@ -92,6 +105,23 @@ func mergeConfigStackRaw(layers [][]byte) ([]byte, error) {
 		return nil, fmt.Errorf("marshal merged config stack: %w", err)
 	}
 	return out, nil
+}
+
+// dupTopLevelKey returns the first top-level key that appears more than once
+// within a SINGLE document's root mapping, and whether one exists. yaml.Unmarshal
+// into yaml.Node form PRESERVES duplicate keys (each key/value pair is a node in
+// root.Content), so the merge idx-map in mergeYamlMapping would silently collapse
+// them last-wins — the check must run per layer, before the merge.
+func dupTopLevelKey(root *yaml.Node) (string, bool) {
+	seen := make(map[string]bool, len(root.Content)/2)
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		k := root.Content[i].Value
+		if seen[k] {
+			return k, true
+		}
+		seen[k] = true
+	}
+	return "", false
 }
 
 // mergeYamlMapping merges src's key/value pairs into dst, src winning on a key
