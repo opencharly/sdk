@@ -70,7 +70,10 @@ func readConfigStack(dir string) ([]byte, bool, error) {
 
 // mergeConfigStackRaw merges the raw charly.yml documents, LATER files winning
 // per top-level key. The yaml.Node round-trip preserves every node losslessly.
-// A layer that is not a mapping document (or is empty) is skipped.
+// A layer that is not a mapping document (or is empty) is skipped. A single
+// document whose top-level names repeat is rejected with the loader's ParseDoc
+// contract message (parse.go) — the duplicate surfaces at the config-stack
+// merge, before any seam is dereferenced.
 func mergeConfigStackRaw(layers [][]byte) ([]byte, error) {
 	dst := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	for i, data := range layers {
@@ -84,6 +87,17 @@ func mergeConfigStackRaw(layers [][]byte) ([]byte, error) {
 		root := doc.Content[0]
 		if root.Kind != yaml.MappingNode {
 			continue // non-mapping document — not a charly.yml; skip
+		}
+		// The yaml.Node parse tolerates repeated mapping keys (the decoder
+		// rejects them only when decoding into a map) — enforce the loader's
+		// top-level-name-uniqueness contract here, matching ParseDoc's message.
+		seen := make(map[string]string, len(root.Content)/2)
+		for j := 0; j+1 < len(root.Content); j += 2 {
+			name := root.Content[j].Value
+			if prior, dup := seen[name]; dup {
+				return nil, fmt.Errorf("node %q: duplicate top-level entity name (already declared as a %q node) — a single document's top-level node names are globally unique; rename one (keep the user-facing deploy name, suffix the template)", name, prior)
+			}
+			seen[name] = name
 		}
 		mergeYamlMapping(dst, root)
 	}
