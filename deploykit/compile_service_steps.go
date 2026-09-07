@@ -88,12 +88,29 @@ func CompileServiceSteps(ctx context.Context, ex *sdk.Executor, layer CandyModel
 			if !initIsSystemd {
 				continue
 			}
-			out = append(out, &ServicePackagedStep{
+			step := &ServicePackagedStep{
 				Unit:        EnsureServiceSuffix(entry.UsePackaged),
 				TargetScope: scope,
 				Enable:      entry.Enable,
 				CandyName:   layer.GetName(),
-			})
+			}
+			// The entry's overrides (exec/env/after) materialize as a systemd
+			// drop-in on the PACKAGED unit — a runtime ExecStart/env/ordering
+			// override that leaves the shipped unit untouched. Render it through
+			// the SAME init-provider seam the custom-exec path uses (R3):
+			// BuildServiceRenderContext precomputes PackagedUnit + RenderDropin,
+			// the init provider's OpResolve emits the drop-in text + path, and
+			// the executor (walkServicePackaged) writes it + daemon-reloads
+			// BEFORE enable --now, so the service starts with the override.
+			if entry.Overrides != nil && hostCtx.ActiveInitName == "systemd" && hostCtx.ActiveInit != nil {
+				entryClone := *entry
+				rendered, rerr := renderServiceViaSeam(ctx, ex, &entryClone, hostCtx.ActiveInit, renderCtx)
+				if rerr == nil && rendered != nil {
+					step.OverridesText = rendered.DropinText
+					step.OverridesPath = rendered.DropinPath
+				}
+			}
+			out = append(out, step)
 			continue
 		}
 
