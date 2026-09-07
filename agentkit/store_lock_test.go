@@ -9,7 +9,7 @@ import (
 )
 
 // TestFlockBounded_FailsFastOnContendedLock is the regression guard for the
-// fleet-del stall: a store lock held by another process must not hang the
+// deploy-del stall: a store lock held by another process must not hang the
 // caller forever — flockBounded fails fast after storeLockTimeout.
 func TestFlockBounded_FailsFastOnContendedLock(t *testing.T) {
 	old := storeLockTimeout

@@ -17,7 +17,7 @@ import (
 // ValidateCheckBeds enforces the kind:check bed-specific invariants beyond the generic deploy
 // validation (which already runs on the folded beds via ValidateDeploymentTree, covering the pod
 // `box:` requirement). Runs at LOAD time so EVERY command that resolves a bed (charly check run,
-// charly fleet add, charly config, charly box validate, …) sees the same friendly error.
+// charly deploy add, charly config, charly box validate, …) sees the same friendly error.
 func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 	for name, node := range uf.CheckBeds() {
 		// An iterate: bed is a benchmark (the former kind:score), NOT a deterministic R10 bed: it
@@ -108,7 +108,7 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 // the live registry, clause D) but has NO registered input schema (absent from
 // t.StructuralDeclaredFields — the host leaves a word whose schema is not loaded absent, the
 // documented no-declared-schema fallback; a connected structural kind's OpLoad dispatch
-// hard-requires the registered def, so presence proves connection). The folded FleetNode does not
+// hard-requires the registered def, so presence proves connection). The folded DeployNode does not
 // carry its discriminator word (a structural kind's OpLoad reply is a plain spec.Deploy), so the
 // exemption is deliberately load-scoped and conservative: it only fires when at least one
 // declared structural kind is unconnected, and never when every declared structural kind
@@ -127,7 +127,7 @@ func declaredStructuralKindUnconnected(t spec.Threaded) bool {
 // rules (target/disposable/cross-ref); instead: every iterate.agent[] references an entry in the
 // `agent:` catalog; iterate.sandbox names a deployment (non-empty); and the bed's plan: carries at
 // least one direct `check:` step. Pure — reads uf.PluginKinds["agent"] + node.Iterate + node.Plan.
-func ValidateIterateBed(uf *spec.UnifiedFile, name string, node *spec.FleetNode) error {
+func ValidateIterateBed(uf *spec.UnifiedFile, name string, node *spec.DeployNode) error {
 	it := node.Iterate
 	agents := uf.PluginKinds["agent"] // agent is a plugin kind; opaque name-keyed catalog
 	for _, a := range it.Agent {

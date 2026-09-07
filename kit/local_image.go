@@ -39,7 +39,7 @@ type LocalImageInfo = container.LocalImageInfo
 var ListLocalImages = container.ListLocalImages
 
 // InvalidateImageCache clears the persistent image-list cache. Called by the
-// build and deploy commands (charly box build / fleet add / update) — every
+// build and deploy commands (charly box build / deploy add / update) — every
 // operation that creates or pulls an image — so the next status run re-fetches
 // the fresh image list instead of serving a stale cache.
 var InvalidateImageCache = container.InvalidateImageCache

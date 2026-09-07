@@ -1,12 +1,12 @@
 package loaderkit
 
-// node_tree.go — the entity-body assembly + fleet/resource-member tree-builder mechanism (K1
-// unit 3b, relocated from charly/node_build.go + charly/node_fleet.go + charly/node_normalize.go).
+// node_tree.go — the entity-body assembly + deploy/resource-member tree-builder mechanism (K1
+// unit 3b, relocated from charly/node_build.go + charly/node_deploy.go + charly/node_normalize.go).
 // Operates on spec.ParsedNode (the wire-safe parsed-entity shape LoadUnified's parse already
 // produces) rather than charly core's *genericNode: genericNode is a host-internal reconstruction
 // consumed directly by charly/provider_kind_invoke.go's TRUE clause-M dispatch (candyIsImage /
 // buildCandy, the box⊻layer bootstrap routing — clause B, permanently core), so it cannot itself
-// move; but everything BELOW that dispatch layer — the entity-body assembler, the fleet-tree
+// move; but everything BELOW that dispatch layer — the entity-body assembler, the deploy-tree
 // builder, the standalone-template shape detection — never needed genericNode's yaml.Node
 // convenience wrapper specifically, only the SAME name/disc/body/children shape spec.ParsedNode
 // already carries. The host constructs *genericNode ONLY where a call genuinely needs it
@@ -121,17 +121,17 @@ func EntityBodyJSON(pn spec.ParsedNode) (json.RawMessage, error) {
 	return entityBodyJSON(pn.Name, dv)
 }
 
-// BuildFleetNode recursively builds a FleetNode from a fleet/resource node. The discriminator
-// value carries the deploy config; inline STEP children (checks) fold into the fleet's plan via
+// BuildDeployNode recursively builds a DeployNode from a deploy/resource node. The discriminator
+// value carries the deploy config; inline STEP children (checks) fold into the deploy's plan via
 // DecodeNodeValue (the assembler); ENTITY children are RESOURCE members (deploy-into / alongside).
-func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error) {
-	var dn spec.FleetNode
+func BuildDeployNode(pn spec.ParsedNode, t spec.Threaded) (*spec.DeployNode, error) {
+	var dn spec.DeployNode
 	if err := DecodeNodeValue(pn, &dn); err != nil {
 		return nil, err
 	}
 	// EDGE-INHERIT cutover B: the substrate kind at the EDGE is the target directly (no
 	// inference from a cross-ref). group:/host: are targetless venues.
-	dn.Target = FleetTargetForDisc(pn.Disc, t)
+	dn.Target = DeployTargetForDisc(pn.Disc, t)
 	// A scalar discriminator value (`vm: pg-vm` / `pod: img`) is the deploy's cross-ref: pod →
 	// the image it runs; vm/kubernetes/local/android → the same-kind template it inherits (`from:`).
 	dv, err := discValue(pn)
@@ -139,10 +139,10 @@ func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error
 		return nil, err
 	}
 	if dv != nil && dv.Kind == yaml.ScalarNode {
-		SetFleetCrossRef(&dn, pn.Disc, dv.Value, t)
+		SetDeployCrossRef(&dn, pn.Disc, dv.Value, t)
 	}
 	// The mapping deploy form (`vm: {from: "base:golden"}`) decodes `from` into dn.From
-	// via yaml DIRECTLY (bypassing SetFleetCrossRef) — normalize the unified name:tag split
+	// via yaml DIRECTLY (bypassing SetDeployCrossRef) — normalize the unified name:tag split
 	// here so BOTH authored forms produce From+FromSnapshot. Guarded to the non-ImageBacked
 	// arm (an image ref with a `:` tag is never split); the scalar form is already split
 	// (FromSnapshot set) and passes through untouched.
@@ -165,7 +165,7 @@ func BuildFleetNode(pn spec.ParsedNode, t spec.Threaded) (*spec.FleetNode, error
 
 // BuildResourceMemberChildren decodes pn's RESOURCE-MEMBER entity children into the uniform
 // ordered member ENTRIES (authored order preserved — pn.Children is a slice) via the SAME
-// BuildFleetNode recursion — the SINGLE source of truth for authored member-tree decode (R3).
+// BuildDeployNode recursion — the SINGLE source of truth for authored member-tree decode (R3).
 // Every pn.Children entry is an entity child by construction (the parse's own member extraction
 // plus the desugar separate step/data children into the plan/body fields before a spec.ParsedNode
 // ever reaches here), so no discClass filter is needed. A non-member entity child is a hard error
@@ -183,7 +183,7 @@ func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) ([]spec.Me
 		if !IsResourceDisc(rk.Disc, t) {
 			return nil, fmt.Errorf("node %q: a %q child %q is not a resource member (deploy/resource children must be pod/vm/kubernetes/local/android)", pn.Name, rk.Disc, rk.Name)
 		}
-		member, err := BuildFleetNode(*rk, t)
+		member, err := BuildDeployNode(*rk, t)
 		if err != nil {
 			return nil, err
 		}
@@ -196,18 +196,18 @@ func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) ([]spec.Me
 	return out, nil
 }
 
-// BuildFleetNodeInto builds pn into a FleetNode and registers it in the Deploy (fleet) map. acc
+// BuildDeployNodeInto builds pn into a DeployNode and registers it in the Deploy (deploy) map. acc
 // is the K1-unit-1 spec.MaterializedProject accumulator — this function only ever touches the
-// Fleet field.
-func BuildFleetNodeInto(pn spec.ParsedNode, t spec.Threaded, acc *spec.MaterializedProject) error {
-	dn, err := BuildFleetNode(pn, t)
+// Deploy field.
+func BuildDeployNodeInto(pn spec.ParsedNode, t spec.Threaded, acc *spec.MaterializedProject) error {
+	dn, err := BuildDeployNode(pn, t)
 	if err != nil {
 		return err
 	}
-	if acc.Fleet == nil {
-		acc.Fleet = map[string]spec.FleetNode{}
+	if acc.Deploy == nil {
+		acc.Deploy = map[string]spec.DeployNode{}
 	}
-	acc.Fleet[pn.Name] = *dn
+	acc.Deploy[pn.Name] = *dn
 	return nil
 }
 
@@ -224,7 +224,7 @@ func DeployTargetEntity(uf *spec.UnifiedFile, name string) (string, bool) {
 	if _, has := uf.VM()[name]; has {
 		return name, true
 	}
-	if d, has := uf.Fleet[name]; has && d.From != "" {
+	if d, has := uf.Deploy[name]; has && d.From != "" {
 		if _, has := uf.VM()[d.From]; has {
 			return d.From, true
 		}
@@ -263,8 +263,8 @@ func DecodeStandaloneTemplateJSON(pn spec.ParsedNode, t spec.Threaded) (json.Raw
 	return EntityBodyJSON(pn)
 }
 
-// ResourceChildren returns pn's children whose discriminator is itself a resource/fleet kind (the
-// markers of a fleet-shaped node). The deployable set is the CUE-derived resourceKindSet
+// ResourceChildren returns pn's children whose discriminator is itself a resource/deploy kind (the
+// markers of a deploy-shaped node). The deployable set is the CUE-derived resourceKindSet
 // (#ResourceKind) — the fixed vocab alone (the frozen seam takes no Threaded snapshot; the
 // registry-aware member classification is memberDisc, consumed by the parse and the fold).
 func ResourceChildren(pn spec.ParsedNode) []spec.ParsedNode {

@@ -54,7 +54,7 @@ func FindMappingValue(m *yaml.Node, key string) *yaml.Node {
 
 // SetMappingKey sets (or replaces) a top-level key in a YAML mapping node. The
 // ONE shared helper for the section-preserving per-host charly.yml writers
-// (deploykit.SaveFleetConfig, the GitClient cache, the ledger I/O) — R3.
+// (deploykit.SaveDeployConfig, the GitClient cache, the ledger I/O) — R3.
 func SetMappingKey(m *yaml.Node, key string, val *yaml.Node) {
 	if m == nil || m.Kind != yaml.MappingNode {
 		return

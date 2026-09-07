@@ -22,10 +22,10 @@ func TestSplitVMSnapshotRef(t *testing.T) {
 	}
 }
 
-// TestSetFleetCrossRefSplitsVMSnapshot — the scalar deploy form: a vm deploy's cross-ref
+// TestSetDeployCrossRefSplitsVMSnapshot — the scalar deploy form: a vm deploy's cross-ref
 // base:golden splits into From+FromSnapshot; an image-backed pod ref (whose tags
 // legitimately contain ':') is NEVER split into the snapshot fields.
-func TestSetFleetCrossRefSplitsVMSnapshot(t *testing.T) {
+func TestSetDeployCrossRefSplitsVMSnapshot(t *testing.T) {
 	threaded := spec.Threaded{
 		DeployTraits: map[string]*spec.DeployTraits{
 			"vm":  {Venue: "ssh"},
@@ -33,20 +33,20 @@ func TestSetFleetCrossRefSplitsVMSnapshot(t *testing.T) {
 		},
 	}
 	// vm: base:golden → From=base, FromSnapshot=golden
-	var vm spec.FleetNode
-	SetFleetCrossRef(&vm, "vm", "base:golden", threaded)
+	var vm spec.DeployNode
+	SetDeployCrossRef(&vm, "vm", "base:golden", threaded)
 	if vm.From != "base" || vm.FromSnapshot != "golden" {
 		t.Errorf("vm cross-ref: got From=%q FromSnapshot=%q, want base/golden", vm.From, vm.FromSnapshot)
 	}
 	// vm: base (no tag) → From=base, FromSnapshot=""
-	vm = spec.FleetNode{}
-	SetFleetCrossRef(&vm, "vm", "base", threaded)
+	vm = spec.DeployNode{}
+	SetDeployCrossRef(&vm, "vm", "base", threaded)
 	if vm.From != "base" || vm.FromSnapshot != "" {
 		t.Errorf("vm plain ref: got From=%q FromSnapshot=%q, want base/empty", vm.From, vm.FromSnapshot)
 	}
 	// pod: ghcr.io/foo/bar:1.2 → Image carries the FULL ref (never split), From/FromSnapshot empty
-	var pod spec.FleetNode
-	SetFleetCrossRef(&pod, "pod", "ghcr.io/foo/bar:1.2", threaded)
+	var pod spec.DeployNode
+	SetDeployCrossRef(&pod, "pod", "ghcr.io/foo/bar:1.2", threaded)
 	if pod.Image != "ghcr.io/foo/bar:1.2" || pod.From != "" || pod.FromSnapshot != "" {
 		t.Errorf("pod image ref: got Image=%q From=%q FromSnapshot=%q, want the full ref un-split", pod.Image, pod.From, pod.FromSnapshot)
 	}

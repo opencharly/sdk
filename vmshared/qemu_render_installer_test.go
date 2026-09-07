@@ -73,7 +73,7 @@ func TestRenderQemuArgv_NoInstallerLeavesBootOrderAlone(t *testing.T) {
 	}
 	// And specifically NOT virtio. Moving the seed for cloud_image/bootc/bootstrap would be
 	// a behaviour change to every existing VM: cloud-init finds a NoCloud source on either
-	// bus and has never raced here, so there is nothing to gain and a fleet to regress.
+	// bus and has never raced here, so there is nothing to gain and a deploy to regress.
 	if strings.Contains(args, "seed.iso,format=raw,if=virtio") {
 		t.Errorf("a non-installer VM's seed moved to virtio — that changes every existing VM: %q", args)
 	}

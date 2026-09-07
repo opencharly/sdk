@@ -7,7 +7,7 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-func TestBuildFleetNodeSplitsMappingFromSnapshot(t *testing.T) {
+func TestBuildDeployNodeSplitsMappingFromSnapshot(t *testing.T) {
 	threaded := spec.Threaded{
 		DeployTraits: map[string]*spec.DeployTraits{
 			"vm": {Venue: "ssh"},
@@ -18,9 +18,9 @@ func TestBuildFleetNodeSplitsMappingFromSnapshot(t *testing.T) {
 		Disc: "vm",
 		Body: json.RawMessage(`{"from": "cachyos-vm:golden"}`),
 	}
-	dn, err := BuildFleetNode(pn, threaded)
+	dn, err := BuildDeployNode(pn, threaded)
 	if err != nil {
-		t.Fatalf("BuildFleetNode(mapping form): %v", err)
+		t.Fatalf("BuildDeployNode(mapping form): %v", err)
 	}
 	if dn.From != "cachyos-vm" {
 		t.Errorf("dn.From = %q, want cachyos-vm", dn.From)

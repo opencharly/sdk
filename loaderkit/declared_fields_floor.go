@@ -10,13 +10,13 @@ package loaderkit
 // loadProjectPlugins, mid-load — and an external plugin's served schema registers only at its
 // connect). A parse that consumes a Threaded BEFORE that gate — the executor loader legs
 // (LoadUnifiedViaExecutor's "loader-walk"/"loader-threaded" host legs, shared by plugin-fleet
-// fleet add, plugin-build build:project, and the deploy-target surfaces), the plugin-side
+// deploy add, plugin-build build:project, and the deploy-target surfaces), the plugin-side
 // Threaded consumers (plugin-box validate, plugin-build resolve), or any process whose load
 // interleaves differently — receives EMPTY declared-fields maps, and the documented
 // no-declared-schema fallback re-arms the unsafe value-shape scan: a converted tree's declared
 // #Deploy fields re-scan as in-substrate members (the live repro: distro-arch
 // check-agent-live's pod body — `iterate:` carrying an `agent:` kind-word key — failing
-// `charly fleet add` with `node "sandbox": expected a mapping value, got yaml kind 8`,
+// `charly deploy add` with `node "sandbox": expected a mapping value, got yaml kind 8`,
 // the exact regression sdk #223/#225 fixed for the populated host-side parse).
 //
 // The design ruling: the declared-fields maps are CONTRACT DATA — what each kind schema

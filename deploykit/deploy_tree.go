@@ -20,7 +20,7 @@ const (
 // Returning (nil, nil) for a node with children is an error — it
 // means "cannot compute child executor", which the walker surfaces
 // with the offending path.
-type DeployTreeVisitor func(path string, node *FleetNode, parentExec DeployExecutor) (childExec DeployExecutor, err error)
+type DeployTreeVisitor func(path string, node *DeployNode, parentExec DeployExecutor) (childExec DeployExecutor, err error)
 
 // WalkDeploymentTree performs a pre-order walk rooted at the given
 // node, calling visit on each node. Dotted-path accumulation is
@@ -29,7 +29,7 @@ type DeployTreeVisitor func(path string, node *FleetNode, parentExec DeployExecu
 //
 // Errors short-circuit: as soon as any visit call returns a non-nil
 // error, the walk stops and that error propagates.
-func WalkDeploymentTree(rootPath string, root *FleetNode, parentExec DeployExecutor, visit DeployTreeVisitor) error {
+func WalkDeploymentTree(rootPath string, root *DeployNode, parentExec DeployExecutor, visit DeployTreeVisitor) error {
 	if root == nil {
 		return nil
 	}
@@ -39,7 +39,7 @@ func WalkDeploymentTree(rootPath string, root *FleetNode, parentExec DeployExecu
 	}
 	// The IN-SUBSTRATE members deploy into this node's venue (dotted identity
 	// parent.child) and are walked under it; a deploy-level member is a folded top-level
-	// entry the fleet map walks as its own root, never re-walked under its owner.
+	// entry the deploy map walks as its own root, never re-walked under its owner.
 	for _, m := range root.InSubstrateMembers() {
 		if m.Node == nil {
 			continue
@@ -59,7 +59,7 @@ func WalkDeploymentTree(rootPath string, root *FleetNode, parentExec DeployExecu
 // (specexec.AppendHopForFlatPath, spec/exec/deploy_chain.go) reads
 // node.Descent.Transport (the plugin-declared venue), never a switch on the kind
 // word. It serves BOTH deploy (pre-order WalkDeploymentTree above) and teardown
-// (fleet del via resolveDelNode + the flat-path chain). The vm venue-hop helper
+// (deploy del via resolveDelNode + the flat-path chain). The vm venue-hop helper
 // the flat-path visitor calls (VmChildExecutor) and its SSHParamsForVm live in
 // spec/exec (the floor primitive home, #55 K4); deploykit re-exports them from
 // deploy_chain.go for its plugin-side callers.
@@ -67,8 +67,8 @@ func WalkDeploymentTree(rootPath string, root *FleetNode, parentExec DeployExecu
 // ClassifyTarget normalizes the Target field for dispatch. Empty Target
 // falls back to "pod" (the default for named deploys); otherwise Target is
 // the canonical source of truth (pod|vm|kubernetes|local|android — set from the
-// node-form kind by fleetTargetForDisc; no name-prefix heuristic).
-func ClassifyTarget(node *FleetNode) string {
+// node-form kind by deployTargetForDisc; no name-prefix heuristic).
+func ClassifyTarget(node *DeployNode) string {
 	if node == nil || node.Target == "" {
 		return "pod"
 	}

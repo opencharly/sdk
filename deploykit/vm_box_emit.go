@@ -100,7 +100,7 @@ func EmitVmBox(engine, ref string, meta *spec.VmBoxMetadata, diskPath string) er
 // VmCapabilitiesFromLabels reads the VM metadata contract back from a VM box image in
 // local engine storage: engine inspect → the ai.opencharly.vm.box label → unmarshal
 // into *spec.VmBoxMetadata. The VM analog of CapabilitiesFromLabels (deploykit); the
-// source-less VM deploy (`charly fleet from-box vm:<ref>`) reconstructs every field from
+// source-less VM deploy (`charly deploy from-box vm:<ref>`) reconstructs every field from
 // the pushed box image via this function.
 func VmCapabilitiesFromLabels(engine, imageRef string) (*spec.VmBoxMetadata, error) {
 	labels, err := container.InspectLabels(engine, imageRef)

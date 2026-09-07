@@ -22,32 +22,32 @@ func TestBedVmDomains(t *testing.T) {
 	podDescent := &spec.DescentDescriptor{Venue: "container"}
 
 	// Direct vm bed: the domain is charly-<bed-name>, NOT charly-<entity>.
-	if got := BedVmDomains("check-k3s-vm", spec.FleetNode{Target: "vm", From: "k3s-vm", Descent: vmDescent}); !reflect.DeepEqual(got, []string{"charly-check-k3s-vm"}) {
+	if got := BedVmDomains("check-k3s-vm", spec.DeployNode{Target: "vm", From: "k3s-vm", Descent: vmDescent}); !reflect.DeepEqual(got, []string{"charly-check-k3s-vm"}) {
 		t.Fatalf("direct vm bed: got %v, want [charly-check-k3s-vm]", got)
 	}
 	// A SIBLING bed sharing the SAME entity resolves to a DIFFERENT domain — the P33 property that
 	// makes them collision-free (pre-P33 both were charly-k3s-vm and serialized).
-	if got := BedVmDomains("check-substrate", spec.FleetNode{Target: "vm", From: "k3s-vm", Descent: vmDescent}); !reflect.DeepEqual(got, []string{"charly-check-substrate"}) {
+	if got := BedVmDomains("check-substrate", spec.DeployNode{Target: "vm", From: "k3s-vm", Descent: vmDescent}); !reflect.DeepEqual(got, []string{"charly-check-substrate"}) {
 		t.Fatalf("sibling vm bed sharing the entity: got %v, want [charly-check-substrate] (distinct domain)", got)
 	}
 	// Group with a vm member: the member's domain is keyed by the MEMBER KEY. The members
 	// hang in the ONE ordered Member list (Cutover C task 0) — an ALONGSIDE (deploy-level)
 	// member is a host-global contention unit; an in-substrate one is not.
-	group := spec.FleetNode{Target: "group", Member: []spec.Member{
-		{Name: "check-k8s-deploy-cluster", Position: spec.PositionDeployLevel, Node: &spec.FleetNode{Target: "vm", From: "k3s-vm", Descent: vmDescent}},
-		{Name: "check-k8s-deploy-workload", Position: spec.PositionDeployLevel, Node: &spec.FleetNode{Target: "kubernetes", Descent: &spec.DescentDescriptor{LeafOnly: true}}},
+	group := spec.DeployNode{Target: "group", Member: []spec.Member{
+		{Name: "check-k8s-deploy-cluster", Position: spec.PositionDeployLevel, Node: &spec.DeployNode{Target: "vm", From: "k3s-vm", Descent: vmDescent}},
+		{Name: "check-k8s-deploy-workload", Position: spec.PositionDeployLevel, Node: &spec.DeployNode{Target: "kubernetes", Descent: &spec.DescentDescriptor{LeafOnly: true}}},
 	}}
 	if got := BedVmDomains("check-k8s-deploy", group); !reflect.DeepEqual(got, []string{"charly-check-k8s-deploy-cluster"}) {
 		t.Fatalf("group with a vm member: got %v, want [charly-check-k8s-deploy-cluster] (member-key domain)", got)
 	}
-	if got := BedVmDomains("check-pod", spec.FleetNode{Target: "pod", Descent: podDescent}); len(got) != 0 {
+	if got := BedVmDomains("check-pod", spec.DeployNode{Target: "pod", Descent: podDescent}); len(got) != 0 {
 		t.Fatalf("non-vm bed: got %v, want no domains", got)
 	}
 	// A multi-vm group's distinct member domains come back sorted + deduped (the ordered
 	// Member list carries unique names, so dedup here guards the root+member overlap path).
-	multi := spec.FleetNode{Target: "group", Member: []spec.Member{
-		{Name: "member-b", Position: spec.PositionDeployLevel, Node: &spec.FleetNode{Target: "vm", From: "shared-entity", Descent: vmDescent}},
-		{Name: "member-a", Position: spec.PositionDeployLevel, Node: &spec.FleetNode{Target: "vm", From: "shared-entity", Descent: vmDescent}},
+	multi := spec.DeployNode{Target: "group", Member: []spec.Member{
+		{Name: "member-b", Position: spec.PositionDeployLevel, Node: &spec.DeployNode{Target: "vm", From: "shared-entity", Descent: vmDescent}},
+		{Name: "member-a", Position: spec.PositionDeployLevel, Node: &spec.DeployNode{Target: "vm", From: "shared-entity", Descent: vmDescent}},
 	}}
 	if got := BedVmDomains("multi", multi); !reflect.DeepEqual(got, []string{"charly-member-a", "charly-member-b"}) {
 		t.Fatalf("multi-vm group: got %v, want sorted [charly-member-a charly-member-b]", got)

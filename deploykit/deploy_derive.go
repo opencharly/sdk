@@ -9,23 +9,23 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// fleet_derive.go — FleetConfig-derived facts (container names, occupied ports).
-// SPIKE (value-type relocation, #55 cluster 2): these were FleetConfig METHODS
-// before FleetConfig relocated to spec.FleetConfig — demoted to free functions
+// deploy_derive.go — DeployConfig-derived facts (container names, occupied ports).
+// SPIKE (value-type relocation, #55 cluster 2): these were DeployConfig METHODS
+// before DeployConfig relocated to spec.DeployConfig — demoted to free functions
 // here (receiver → first parameter) because each reaches sdk/kit
 // (ContainerNameInstance/IsAutoPort/ParseHostPort), which spec can never import
 // (the method-set cycle the spike flagged). Call sites change from
 // `dc.DeployedContainerNames()` to `deploykit.DeployedContainerNames(dc)`.
 
 // DeployedContainerNames returns the sorted, de-duplicated container names for
-// every fleet entry.
-func DeployedContainerNames(dc *FleetConfig) []string {
+// every deploy entry.
+func DeployedContainerNames(dc *DeployConfig) []string {
 	if dc == nil {
 		return nil
 	}
 	var names []string
 	seen := map[string]bool{}
-	for key := range dc.Fleet {
+	for key := range dc.Deploy {
 		img, inst := ParseDeployKey(key)
 		name := kit.ContainerNameInstance(img, inst)
 		if !seen[name] {
@@ -37,14 +37,14 @@ func DeployedContainerNames(dc *FleetConfig) []string {
 	return names
 }
 
-// OccupiedHostPorts returns the set of host ports already claimed by fleet
+// OccupiedHostPorts returns the set of host ports already claimed by deploy
 // entries other than excludeKey (resolved pins preferred over authored).
-func OccupiedHostPorts(dc *FleetConfig, excludeKey string) map[int]bool {
+func OccupiedHostPorts(dc *DeployConfig, excludeKey string) map[int]bool {
 	out := map[int]bool{}
 	if dc == nil {
 		return out
 	}
-	for key, entry := range dc.Fleet {
+	for key, entry := range dc.Deploy {
 		if key == excludeKey {
 			continue
 		}
@@ -87,7 +87,7 @@ func PodAwareEnvProvides(entries []spec.EnvProvideEntry, consumerKey, ctrName st
 
 // GlobalEnvForImage builds the env-var injection list for a consumer container
 // from the deploy state's env + MCP provides, filtered by the consumer's accepts.
-func GlobalEnvForImage(dc *FleetConfig, consumerKey, ctrName string, acceptedEnv map[string]bool) []string {
+func GlobalEnvForImage(dc *DeployConfig, consumerKey, ctrName string, acceptedEnv map[string]bool) []string {
 	if dc == nil || dc.Provides == nil {
 		return nil
 	}

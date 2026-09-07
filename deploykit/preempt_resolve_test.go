@@ -12,7 +12,7 @@ import (
 // LoadUnified dependency.
 
 func TestFilterPreemptibleHolders(t *testing.T) {
-	tree := map[string]spec.FleetNode{
+	tree := map[string]spec.DeployNode{
 		"gpu-workstation": {
 			Target:      "vm",
 			Descent:     &spec.DescentDescriptor{Venue: "ssh"},
@@ -43,7 +43,7 @@ func TestFilterPreemptibleHolders(t *testing.T) {
 }
 
 func TestFilterPreemptibleHolders_DefaultRestore(t *testing.T) {
-	tree := map[string]spec.FleetNode{
+	tree := map[string]spec.DeployNode{
 		"holder": {Preemptible: &spec.PreemptibleConfig{Holds: []string{"tok"}}},
 	}
 	got := FilterPreemptibleHolders(tree)
@@ -53,7 +53,7 @@ func TestFilterPreemptibleHolders_DefaultRestore(t *testing.T) {
 }
 
 func TestFindVMClaimant(t *testing.T) {
-	tree := map[string]spec.FleetNode{
+	tree := map[string]spec.DeployNode{
 		"check-gpu-bed": {
 			Target:            "vm",
 			From:              "gpu-check-vm",
@@ -84,7 +84,7 @@ func TestFindVMClaimant(t *testing.T) {
 func TestFindVMClaimant_RequiresSSHVenue(t *testing.T) {
 	// A pod-target node with From+RequiresExclusive set (malformed authoring, or a non-vm
 	// substrate reusing From) must NOT match — only an ssh-venue (vm) node is a valid claimant.
-	tree := map[string]spec.FleetNode{
+	tree := map[string]spec.DeployNode{
 		"pod-imposter": {
 			Target:            "pod",
 			From:              "gpu-check-vm",
@@ -98,7 +98,7 @@ func TestFindVMClaimant_RequiresSSHVenue(t *testing.T) {
 }
 
 func TestHolderAddrFor_DefaultsTargetToPod(t *testing.T) {
-	addr := HolderAddrFor("myapp/staging", spec.FleetNode{})
+	addr := HolderAddrFor("myapp/staging", spec.DeployNode{})
 	if addr.Target != "pod" {
 		t.Errorf("Target = %q, want pod (empty target defaults to pod)", addr.Target)
 	}
@@ -128,7 +128,7 @@ func TestGpuVendorTokens(t *testing.T) {
 func TestMergedDeployTree_ProjectOnlyWhenNoLocalConfig(t *testing.T) {
 	// A nil reader → no per-host overlay merge → the project tree passes through unchanged
 	// (#55 coneC-dsh β2+δ: MergedDeployTree now takes a reader; nil is the project-only semantics).
-	project := map[string]spec.FleetNode{
+	project := map[string]spec.DeployNode{
 		"a": {Target: "pod"},
 	}
 	merged := MergedDeployTree(project, "test", nil)
@@ -150,11 +150,11 @@ func TestMergedDeployTree_ProjectOnlyWhenNoLocalConfig(t *testing.T) {
 // overlay's `preemptible:` override) is already covered generically by charly's own
 // node_loader_test.go + the wider VM test suite.
 func TestMergedDeployTree_PerHostWinsOverCommittedNode(t *testing.T) {
-	project := map[string]spec.FleetNode{
+	project := map[string]spec.DeployNode{
 		"cachyos-gpu": {Target: "vm", From: "cachyos-gpu"},
 	}
-	read := func() (*FleetConfig, error) {
-		return &FleetConfig{Fleet: map[string]spec.FleetNode{
+	read := func() (*DeployConfig, error) {
+		return &DeployConfig{Deploy: map[string]spec.DeployNode{
 			"cachyos-gpu": {Preemptible: &spec.PreemptibleConfig{Holds: []string{"nvidia-gpu"}}},
 		}}, nil
 	}

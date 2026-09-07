@@ -31,7 +31,7 @@ func runEngineCommand(ctx context.Context, engineBin string, args ...string) (st
 // engineCommandTimeout bounds every engine command RemoveImagesByReference runs.
 // Under heavy concurrent load the container engine can stall (a saturated podman
 // daemon), and an unbounded exec would hang the calling bed's cleanup step in
-// futex_wait forever (the recurring fleet-del/remove stall). A package var (not a
+// futex_wait forever (the recurring deploy-del/remove stall). A package var (not a
 // const) so a test can shorten it. On expiry the whole process group is killed (a shell wrapper's children must not survive and hold the output pipe open).
 var engineCommandTimeout = 2 * time.Minute
 
@@ -51,7 +51,7 @@ func RemoveImagesByReference(engineBin, reference string) {
 	// Bound the engine commands with a timeout: under heavy concurrent load the
 	// container engine can stall (a saturated podman daemon), and an unbounded
 	// exec would hang the calling bed's cleanup step in futex_wait forever (the
-	// recurring fleet-del/remove stall). Fail fast instead — image cleanup is
+	// recurring deploy-del/remove stall). Fail fast instead — image cleanup is
 	// best-effort, so a timed-out list/rmi is a skipped cleanup, never a hang.
 	ctx, cancel := context.WithTimeout(context.Background(), engineCommandTimeout)
 	defer cancel()

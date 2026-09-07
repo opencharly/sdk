@@ -1,10 +1,10 @@
 package deploykit
 
-// fleet_members_test.go — relocated + adapted from charly/fleet_members_test.go (#55 W3 A4).
+// deploy_members_test.go — relocated + adapted from charly/deploy_members_test.go (#55 W3 A4).
 // TestIsPodMember/TestTearDownMembers_* covered isPodMember/tearDownMembers via bare
-// spec.FleetNode{Target: "pod"} fixtures, relying on core's OLD nodeTraits' registry-fallback
+// spec.DeployNode{Target: "pod"} fixtures, relying on core's OLD nodeTraits' registry-fallback
 // branch (Descent nil → resolve via the live provider registry). The relocated
-// fleet.IsVmVenue/fleet.IsContainerVenue predicates read ONLY the wire-stamped node.Descent (no
+// deploy.IsVmVenue/deploy.IsContainerVenue predicates read ONLY the wire-stamped node.Descent (no
 // registry access, matching candy/plugin-check's own registry-free twin) — every node
 // BringUpMembers/TearDownMembers sees in practice comes from an already-loaded, Descent-stamped
 // project, so fixtures here stamp Descent directly instead of relying on a registry fallback that
@@ -15,48 +15,48 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/opencharly/spec/fleet"
+	"github.com/opencharly/spec/deploy"
 	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/spec"
 )
 
-func vmNode(from string) *spec.FleetNode {
-	return &spec.FleetNode{From: from, Descent: &spec.DescentDescriptor{Venue: "ssh"}}
+func vmNode(from string) *spec.DeployNode {
+	return &spec.DeployNode{From: from, Descent: &spec.DescentDescriptor{Venue: "ssh"}}
 }
 
-func podNode() *spec.FleetNode {
-	return &spec.FleetNode{Descent: &spec.DescentDescriptor{Venue: "container"}}
+func podNode() *spec.DeployNode {
+	return &spec.DeployNode{Descent: &spec.DescentDescriptor{Venue: "container"}}
 }
 
-func localNode() *spec.FleetNode {
-	return &spec.FleetNode{Descent: &spec.DescentDescriptor{Venue: "shell", HostRooted: true}}
+func localNode() *spec.DeployNode {
+	return &spec.DeployNode{Descent: &spec.DescentDescriptor{Venue: "shell", HostRooted: true}}
 }
 
 // TestIsVmVenue_IsContainerVenue covers the routing predicates BringUpMembers/TearDownMembers
 // dispatch on, over Descent-stamped fixtures (the shape every LoadUnified'd node carries).
 func TestIsVmVenue_IsContainerVenue(t *testing.T) {
-	if !fleet.IsContainerVenue(podNode()) {
+	if !deploy.IsContainerVenue(podNode()) {
 		t.Errorf("a container-venue node should be a pod member")
 	}
-	if fleet.IsContainerVenue(vmNode("x")) || fleet.IsContainerVenue(localNode()) {
+	if deploy.IsContainerVenue(vmNode("x")) || deploy.IsContainerVenue(localNode()) {
 		t.Errorf("vm/local venue nodes should NOT be container members")
 	}
-	if !fleet.IsVmVenue(vmNode("x")) {
+	if !deploy.IsVmVenue(vmNode("x")) {
 		t.Errorf("an ssh-venue node should be a vm member")
 	}
-	if fleet.IsVmVenue(podNode()) || fleet.IsVmVenue(localNode()) {
+	if deploy.IsVmVenue(podNode()) || deploy.IsVmVenue(localNode()) {
 		t.Errorf("container/local venue nodes should NOT be vm members")
 	}
-	if fleet.IsContainerVenue(nil) || fleet.IsVmVenue(nil) {
+	if deploy.IsContainerVenue(nil) || deploy.IsVmVenue(nil) {
 		t.Errorf("a nil node is neither venue")
 	}
 }
 
 // TestTearDownMembers_RoutingAndOrder: TearDownMembers iterates members in sorted order and
-// routes a pod member to `charly remove --purge`, a non-pod member to `charly fleet del
+// routes a pod member to `charly remove --purge`, a non-pod member to `charly deploy del
 // --assume-yes` — the same iteration/routing logic BringUpMembers uses, verified here with the
 // stubbable proc.RunCharlySubcommand package var (no side effects). The flag itself is proven
-// valid against real Kong parsing by TestFleetDelArgv_KongAccepts (this stub-based test cannot —
+// valid against real Kong parsing by TestDeployDelArgv_KongAccepts (this stub-based test cannot —
 // it never invokes flag parsing, which is exactly how a `--yes`/`--force` drift once slipped
 // through).
 func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
@@ -70,7 +70,7 @@ func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
 	// The ONE ordered member list (Cutover C task 0): authored order replaces the map-era
 	// sorted-key iteration — the fixture lists the members in the order the old sorted map
 	// produced (alpha before zeta).
-	node := &spec.FleetNode{Member: []spec.Member{
+	node := &spec.DeployNode{Member: []spec.Member{
 		{Name: "alpha-host", Position: spec.PositionDeployLevel, Node: localNode()},
 		{Name: "zeta-pod", Position: spec.PositionDeployLevel, Node: podNode()},
 	}}
@@ -78,7 +78,7 @@ func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
 		t.Fatalf("TearDownMembers: %v", err)
 	}
 	want := [][]string{
-		spec.FleetDelArgv("alpha-host"),   // sorted first; non-pod → deploy del --assume-yes (unattended)
+		spec.DeployDelArgv("alpha-host"),  // sorted first; non-pod → deploy del --assume-yes (unattended)
 		{"remove", "zeta-pod", "--purge"}, // pod → remove --purge
 	}
 	if !reflect.DeepEqual(calls, want) {
@@ -92,7 +92,7 @@ func TestTearDownMembers_NoMembersNoop(t *testing.T) {
 	defer func() { proc.RunCharlySubcommand = orig }()
 	called := false
 	proc.RunCharlySubcommand = func(args ...string) error { called = true; return nil }
-	if err := TearDownMembers(&spec.FleetNode{}); err != nil {
+	if err := TearDownMembers(&spec.DeployNode{}); err != nil {
 		t.Fatalf("TearDownMembers(empty): %v", err)
 	}
 	if called {
@@ -113,7 +113,7 @@ func TestTearDownMembers_AttemptsAllAndReturnsJoinedErrors(t *testing.T) {
 		}
 		return secondErr
 	}
-	err := TearDownMembers(&spec.FleetNode{Member: []spec.Member{
+	err := TearDownMembers(&spec.DeployNode{Member: []spec.Member{
 		{Name: "a-local", Position: spec.PositionDeployLevel, Node: localNode()},
 		{Name: "b-pod", Position: spec.PositionDeployLevel, Node: podNode()},
 	}})
@@ -131,7 +131,7 @@ func TestBringUpMembers_NoMembersNoop(t *testing.T) {
 	defer func() { proc.RunCharlySubcommand = orig }()
 	called := false
 	proc.RunCharlySubcommand = func(args ...string) error { called = true; return nil }
-	if err := BringUpMembers(&spec.FleetNode{}, ""); err != nil {
+	if err := BringUpMembers(&spec.DeployNode{}, ""); err != nil {
 		t.Fatalf("BringUpMembers(empty): %v", err)
 	}
 	if called {

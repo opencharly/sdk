@@ -19,8 +19,8 @@ import (
 // duplicates). candy/plugin-loader is a DIFFERENT thing entirely — it is the HOST-CONSUMED
 // spec.DocParser/spec.ProjectWalker PROVIDER (the loader mechanism itself, resolved by charly core),
 // never a LoaderExecutor consumer over the reverse channel; it carried no copy of this pattern. Same
-// R3 consolidation pattern as the former deploykit.LoadFleetConfigViaSeam host round-trip (retired
-// by the fleet_config_executor.go helpers in this package), blessed by the charly#176 round-1
+// R3 consolidation pattern as the former deploykit.LoadDeployConfigViaSeam host round-trip (retired
+// by the deploy_config_executor.go helpers in this package), blessed by the charly#176 round-1
 // pr-validator: "an sdk kit is EXACTLY the mechanism this project uses to share code across plugin
 // module boundaries."
 //
@@ -138,30 +138,30 @@ func LoadUnifiedViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (
 // for both a genuine out-of-module plugin (over its reverse channel) AND charly-core's own host check
 // seams (plugin_loader.go's resolveMergedDeployTree wraps it over an in-proc executor) — the #55 LOADER
 // cone retired the former host-resident deploy_tree.go merged-tree read that this replaced. Its
-// composition: the PROJECT config via LoadUnifiedViaExecutor + deploykit.ProjectFleetConfig, the
-// per-host operator overlay via LoadHostFleetConfigViaExecutor (the cycle-free plugin-side read
-// in this package — #55 coneC Unit C2 retired the former deploykit.LoadFleetConfigViaSeam
+// composition: the PROJECT config via LoadUnifiedViaExecutor + deploykit.ProjectDeployConfig, the
+// per-host operator overlay via LoadHostDeployConfigViaExecutor (the cycle-free plugin-side read
+// in this package — #55 coneC Unit C2 retired the former deploykit.LoadDeployConfigViaSeam
 // host-handler round-trip; a plugin CANNOT call the bare
-// deploykit.LoadFleetConfig, which silently no-ops outside charly-core's own init per the
+// deploykit.LoadDeployConfig, which silently no-ops outside charly-core's own init per the
 // DeployStateHost placement class),
 // merged root-wins via deploykit.MergeDeployConfigs. Returns (nil, nil) on an absent/empty
 // project+overlay. This is the shared resolver the #55 Cone A Unit 3a seams (deploy-del-resolve /
 // pod-config-project-volume / the check venue+gather host helpers) call so no host handler re-loads
 // the tree with a host-resident deploykit projection+merge.
-func ResolveMergedTreeViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (map[string]spec.FleetNode, error) {
+func ResolveMergedTreeViaExecutor(ctx context.Context, ex *sdk.Executor, dir string) (map[string]spec.DeployNode, error) {
 	if ex == nil {
 		return nil, fmt.Errorf("resolve merged tree via executor: no host reverse channel (command not compiled-in?)")
 	}
-	var projectDC *deploykit.FleetConfig
+	var projectDC *deploykit.DeployConfig
 	if uf, ok, err := LoadUnifiedViaExecutor(ctx, ex, dir); err != nil {
 		return nil, err
 	} else if ok && uf != nil {
-		projectDC = deploykit.ProjectFleetConfig(uf)
+		projectDC = deploykit.ProjectDeployConfig(uf)
 	}
-	localDC, _ := LoadHostFleetConfigViaExecutor(ctx, ex)
+	localDC, _ := LoadHostDeployConfigViaExecutor(ctx, ex)
 	merged := deploykit.MergeDeployConfigs(projectDC, localDC)
-	if merged == nil || merged.Fleet == nil {
+	if merged == nil || merged.Deploy == nil {
 		return nil, nil
 	}
-	return merged.Fleet, nil
+	return merged.Deploy, nil
 }
