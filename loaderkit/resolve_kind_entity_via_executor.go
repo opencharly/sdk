@@ -20,6 +20,8 @@ import (
 // Resolve{Resource,Android,Vm}ViaExecutor already establish (a STRONGER-typed replacement for the
 // deleted seam's own untyped map[string]map[string]json.RawMessage wire shape) — no new mechanism,
 // same InvokeProvider(kind, "local", OpResolve) peer-dispatch already proven live throughout candy/.
+// The wrappers are one-liners over the shared resolveSubstrateViaExecutor/decodeResolveReply
+// envelope (resolve_substrate_executor.go — parser consolidation F1.1).
 
 // resolveKindTemplateBodyViaExecutor loads the project (PLUGIN-SIDE, over the reverse channel) and
 // returns the opaque kind:<word> template body named name — the raw, unresolved bytes exactly as
@@ -48,19 +50,13 @@ func ResolveVmEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir, name
 	if err != nil {
 		return nil, err
 	}
-	params, err := json.Marshal(spec.SubstrateTemplateResolveRequest{Vm: &spec.VmResolveInput{Vm: body}})
-	if err != nil {
-		return nil, err
-	}
-	res, err := ex.InvokeProvider(ctx, "kind", "local", sdk.OpResolve, params, nil, sdk.InvokeProviderOpts{})
+	res, err := resolveSubstrateViaExecutor(ctx, ex, "local", spec.SubstrateTemplateResolveRequest{Vm: &spec.VmResolveInput{Vm: body}})
 	if err != nil {
 		return nil, err
 	}
 	var reply spec.VmResolveReply
-	if len(res) > 0 {
-		if err := json.Unmarshal(res, &reply); err != nil {
-			return nil, fmt.Errorf("vm entity %q: decode resolve reply: %w", name, err)
-		}
+	if err := decodeResolveReply(res, &reply, fmt.Sprintf("vm entity %q", name)); err != nil {
+		return nil, err
 	}
 	return reply.Resolved, nil
 }
@@ -73,19 +69,13 @@ func ResolveKubernetesEntityViaExecutor(ctx context.Context, ex *sdk.Executor, d
 	if err != nil {
 		return nil, err
 	}
-	params, err := json.Marshal(spec.SubstrateTemplateResolveRequest{Kubernetes: &spec.KubernetesResolveInput{Kubernetes: body}})
-	if err != nil {
-		return nil, err
-	}
-	res, err := ex.InvokeProvider(ctx, "kind", "local", sdk.OpResolve, params, nil, sdk.InvokeProviderOpts{})
+	res, err := resolveSubstrateViaExecutor(ctx, ex, "local", spec.SubstrateTemplateResolveRequest{Kubernetes: &spec.KubernetesResolveInput{Kubernetes: body}})
 	if err != nil {
 		return nil, err
 	}
 	var reply spec.KubernetesResolveReply
-	if len(res) > 0 {
-		if err := json.Unmarshal(res, &reply); err != nil {
-			return nil, fmt.Errorf("kubernetes entity %q: decode resolve reply: %w", name, err)
-		}
+	if err := decodeResolveReply(res, &reply, fmt.Sprintf("kubernetes entity %q", name)); err != nil {
+		return nil, err
 	}
 	return reply.Resolved, nil
 }
@@ -98,19 +88,13 @@ func ResolveAndroidEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir,
 	if err != nil {
 		return nil, err
 	}
-	params, err := json.Marshal(spec.SubstrateTemplateResolveRequest{Android: &spec.AndroidResolveInput{Android: body}})
-	if err != nil {
-		return nil, err
-	}
-	res, err := ex.InvokeProvider(ctx, "kind", "local", sdk.OpResolve, params, nil, sdk.InvokeProviderOpts{})
+	res, err := resolveSubstrateViaExecutor(ctx, ex, "local", spec.SubstrateTemplateResolveRequest{Android: &spec.AndroidResolveInput{Android: body}})
 	if err != nil {
 		return nil, err
 	}
 	var reply spec.AndroidResolveReply
-	if len(res) > 0 {
-		if err := json.Unmarshal(res, &reply); err != nil {
-			return nil, fmt.Errorf("android entity %q: decode resolve reply: %w", name, err)
-		}
+	if err := decodeResolveReply(res, &reply, fmt.Sprintf("android entity %q", name)); err != nil {
+		return nil, err
 	}
 	return reply.Resolved, nil
 }

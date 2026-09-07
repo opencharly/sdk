@@ -81,3 +81,8 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.7.1 // indirect
 )
+
+// dev-only worktree replace for the F1 parser-consolidation wave (ResourceChildren seam
+// removal + CheckEnv candy_dirs CUE spelling): dropped for the real spec tag pin before merge.
+replace github.com/opencharly/spec => ../spec
+

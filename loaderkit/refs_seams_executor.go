@@ -127,21 +127,16 @@ func migrateCacheViaPeer(ctx context.Context, ex *sdk.Executor, path string) err
 
 // resolveLocalViaPeer projects one opaque `kind:local` template body into a *spec.ResolvedLocal via
 // candy/plugin-substrate's OpResolve leg — the same request envelope charly's own
-// substrate_template_resolve.go builds.
+// substrate_template_resolve.go builds. One-liner over the shared
+// resolveSubstrateViaExecutor/decodeResolveReply envelope (parser consolidation F1.1).
 func resolveLocalViaPeer(ctx context.Context, ex *sdk.Executor, body json.RawMessage) (*spec.ResolvedLocal, error) {
-	params, err := json.Marshal(spec.SubstrateTemplateResolveRequest{Local: &spec.LocalResolveInput{Local: body}})
-	if err != nil {
-		return nil, fmt.Errorf("local resolve: marshal input: %w", err)
-	}
-	resJSON, err := ex.InvokeProvider(ctx, "kind", "local", sdk.OpResolve, params, nil, sdk.InvokeProviderOpts{})
+	res, err := resolveSubstrateViaExecutor(ctx, ex, "local", spec.SubstrateTemplateResolveRequest{Local: &spec.LocalResolveInput{Local: body}})
 	if err != nil {
 		return nil, err
 	}
 	var reply spec.LocalResolveReply
-	if len(resJSON) > 0 {
-		if uerr := json.Unmarshal(resJSON, &reply); uerr != nil {
-			return nil, fmt.Errorf("local resolve: decode reply: %w", uerr)
-		}
+	if err := decodeResolveReply(res, &reply, "local resolve"); err != nil {
+		return nil, err
 	}
 	return reply.Resolved, nil
 }

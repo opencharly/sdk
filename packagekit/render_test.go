@@ -19,13 +19,13 @@ func testPackagingWithSystemd() *spec.Packaging {
 	pkg := testPackaging()
 	pkg.Systemd = []*spec.PackagingSystemdUnit{
 		{
-			Name:             "charly-mcp",
-			Scope:            "system",
-			Exec:             "/usr/bin/charly mcp serve --listen 127.0.0.1:18765",
-			Description:      "Charly MCP server (Streamable HTTP on 127.0.0.1:18765)",
-			Restart:          "on-failure",
-			After:            []string{"network-online.target"},
-			Wants:            []string{"network-online.target"},
+			Name:              "charly-mcp",
+			Scope:             "system",
+			Exec:              "/usr/bin/charly mcp serve --listen 127.0.0.1:18765",
+			Description:       "Charly MCP server (Streamable HTTP on 127.0.0.1:18765)",
+			Restart:           "on-failure",
+			After:             []string{"network-online.target"},
+			Wants:             []string{"network-online.target"},
 			Working_directory: "/etc/charly",
 		},
 		{
