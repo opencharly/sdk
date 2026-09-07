@@ -51,41 +51,19 @@ func configContents(pkg *spec.Packaging) (files.Contents, error) {
 }
 
 // packagedConfigDoc is the rendered shape of the packaged system-wide
-// charly.yml: version + a `charly-mcp` candy node (the ONE UnifiedFile format
-// — a plain project, nothing special about it).
+// charly.yml: a BARE minimal project (version only). The MCP server's `mcp`
+// command word resolves from the baked /usr/lib/charly/plugins/plugin-mcp
+// .providers manifest — the project exists so build-mode tools
+// (box.list.boxes etc.) resolve a local project instead of a network fallback,
+// and a bare version project is what `charly box validate` accepts (a candy
+// node would need install content, which a system config has none of).
 type packagedConfigDoc struct {
-	Version   string `yaml:"version"`
-	CharlyMCP struct {
-		Candy struct {
-			Version     string               `yaml:"version"`
-			Description string               `yaml:"description,omitempty"`
-			BakePlugin  []string             `yaml:"bake_plugin,omitempty"`
-			Plan        []packagedConfigStep `yaml:"plan,omitempty"`
-		} `yaml:"candy"`
-	} `yaml:"charly-mcp"`
-}
-
-// packagedConfigStep is the no-op plan step: a `run:` step with a `command:
-// "true" input in the build context, so `charly box validate` passes on the
-// shipped config.
-type packagedConfigStep struct {
-	Run     string   `yaml:"run"`
-	Command string   `yaml:"command"`
-	Context []string `yaml:"context"`
+	Version string `yaml:"version"`
 }
 
 // renderConfig renders the minimal project charly.yml for the packaged config.
 func renderConfig(cfg *spec.PackagingConfig) ([]byte, error) {
-	doc := packagedConfigDoc{Version: cfg.Version}
-	doc.CharlyMCP.Candy.Version = cfg.Version
-	doc.CharlyMCP.Candy.Description = cfg.Description
-	doc.CharlyMCP.Candy.BakePlugin = cfg.Plugins
-	doc.CharlyMCP.Candy.Plan = []packagedConfigStep{{
-		Run:     "no-op — this project exists so the systemd MCP server resolves a local project",
-		Command: "true",
-		Context: []string{"build"},
-	}}
-	data, err := yaml.Marshal(doc)
+	data, err := yaml.Marshal(packagedConfigDoc{Version: cfg.Version})
 	if err != nil {
 		return nil, fmt.Errorf("render config: %w", err)
 	}
