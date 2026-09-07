@@ -17,6 +17,39 @@ import (
 // TaskVarRefPattern matches ${NAME} references in task fields.
 var TaskVarRefPattern = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
 
+// SubstituteContent resolves ${NAME} references in a config: verb's content
+// against the candy's declared var: values plus the image auto-exports
+// (USER/UID/GID/HOME; var: may not shadow them — the ingress validator
+// enforces that). Unresolved references are a HARD error: the generator
+// must never emit a half-rendered config (the charly box validate contract
+// for non-shell fields). Text that only LOOKS like a reference avoids the
+// pattern by not matching ${UPPERCASE} (e.g. "${lower}" never matches).
+func SubstituteContent(content string, vars map[string]string, img *buildkit.ResolvedBox) (string, error) {
+	if content == "" {
+		return content, nil
+	}
+	known := make(map[string]bool, len(vars)+4)
+	repl := make(map[string]string, len(vars)+4)
+	for k, v := range vars {
+		known[k] = true
+		repl[k] = v
+	}
+	if img != nil {
+		for _, k := range []string{"USER", "UID", "GID", "HOME"} {
+			known[k] = true
+		}
+		repl["USER"], repl["UID"], repl["GID"], repl["HOME"] =
+			img.User, strconv.Itoa(img.UID), strconv.Itoa(img.GID), img.Home
+	}
+	if refs := TaskUnresolvedRefs(content, known); len(refs) > 0 {
+		return "", fmt.Errorf("config: unresolved %s in content (resolved against the candy's var: plus USER/UID/GID/HOME)", strings.Join(refs, ", "))
+	}
+	return TaskVarRefPattern.ReplaceAllStringFunc(content, func(match string) string {
+		name := match[2 : len(match)-1]
+		return repl[name]
+	}), nil
+}
+
 // TaskUnresolvedRefs returns the names of ${VAR} references in s not in known.
 func TaskUnresolvedRefs(s string, known map[string]bool) []string {
 	matches := TaskVarRefPattern.FindAllStringSubmatch(s, -1)
