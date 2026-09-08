@@ -33,3 +33,37 @@ func TestValidateVmNamingGuard(t *testing.T) {
 		})
 	}
 }
+
+// TestFillEphemeralDefaults covers F5.2: the ephemeral→disposable:true promotion is a
+// LOAD/finalize defaults fill (fillEphemeralDefaults), NOT a validator side effect —
+// ValidateEphemeralUnified must be read-only (it must not mutate uf.Deploy).
+func TestFillEphemeralDefaults_PromotesAndValidatorReadOnly(t *testing.T) {
+	uf := &spec.UnifiedFile{
+		Deploy: map[string]spec.DeployNode{
+			"eph":  {Ephemeral: &spec.EphemeralLifetime{TTL: "30m"}},
+			"bare": {Target: "pod"},
+		},
+	}
+	// ValidateEphemeralUnified must NOT promote (read-only validator).
+	if err := ValidateEphemeralUnified(uf, spec.Threaded{}); err != nil {
+		t.Fatalf("ValidateEphemeralUnified: %v", err)
+	}
+	if d := uf.Deploy["eph"]; d.Disposable != nil {
+		t.Fatalf("validator mutated its subject: Disposable = %v, want nil (read-only)", *d.Disposable)
+	}
+	// fillEphemeralDefaults promotes at finalize time.
+	fillEphemeralDefaults(uf)
+	d := uf.Deploy["eph"]
+	if d.Disposable == nil || !*d.Disposable {
+		t.Fatalf("fillEphemeralDefaults did not promote ephemeral→disposable: got %v", d.Disposable)
+	}
+	if d := uf.Deploy["bare"]; d.Disposable != nil {
+		t.Fatalf("non-ephemeral deploy must stay untouched: Disposable = %v", *d.Disposable)
+	}
+	// Idempotent: a second fill changes nothing.
+	before := *uf.Deploy["eph"].Disposable
+	fillEphemeralDefaults(uf)
+	if after := *uf.Deploy["eph"].Disposable; after != before {
+		t.Fatalf("fillEphemeralDefaults not idempotent: %v → %v", before, after)
+	}
+}

@@ -77,13 +77,15 @@ func ValidateVmNamingGuard(name string, d *spec.Diagnostics) {
 	}
 }
 
-// ValidateEphemeralUnified is the LoadSeams.ValidateEphemeral entry point: it auto-promotes
-// disposable:true on ephemeral entries and validates the ephemeral / vm-naming invariants across the
-// spec.UnifiedFile's Deploy map, reading the DeployTraits DATA snapshot t. Moved verbatim (behaviour-
-// preserving) from charly's validateEphemeralUnified.
-func ValidateEphemeralUnified(uf *spec.UnifiedFile, t spec.Threaded) error {
+// fillEphemeralDefaults is the LOAD/FINALIZE defaults fill for the ephemeral →
+// disposable promotion: an ephemeral deploy implies disposable:true (the
+// destroy-and-rebuild authorization), even when the author wrote no `disposable:`
+// key. It runs ONCE at load/finalize time (LoadUnified), NOT inside a validator —
+// validators are read-only (F5.2: ValidateEphemeralUnified no longer mutates its
+// subject). Registry-free, deterministic, idempotent.
+func fillEphemeralDefaults(uf *spec.UnifiedFile) {
 	if uf == nil {
-		return nil
+		return
 	}
 	for name, node := range uf.Deploy {
 		if node.IsEphemeral() && (node.Disposable == nil || !*node.Disposable) {
@@ -91,6 +93,17 @@ func ValidateEphemeralUnified(uf *spec.UnifiedFile, t spec.Threaded) error {
 			node.Disposable = &tr
 			uf.Deploy[name] = node
 		}
+	}
+}
+
+// ValidateEphemeralUnified is the LoadSeams.ValidateEphemeral entry point: it validates the
+// ephemeral / vm-naming invariants across the spec.UnifiedFile's Deploy map, reading the
+// DeployTraits DATA snapshot t. READ-ONLY — the disposable:true promotion happens at load/
+// finalize time in fillEphemeralDefaults (F5.2), never in a validator. Moved verbatim
+// (behaviour-preserving) from charly's validateEphemeralUnified.
+func ValidateEphemeralUnified(uf *spec.UnifiedFile, t spec.Threaded) error {
+	if uf == nil {
+		return nil
 	}
 	var d spec.Diagnostics
 	for name, node := range uf.Deploy {

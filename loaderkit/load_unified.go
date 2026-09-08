@@ -174,6 +174,11 @@ func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 	// merged.Deploy, so the kernel's deploy chain descends by TRANSPORT and
 	// never switches on the substrate kind word.
 	seams.StampDeployDescents(merged)
+	// LOAD/FINALIZE DEFAULTS FILL (F5.2): the ephemeral → disposable:true promotion
+	// (ephemeral implies destroy-and-rebuild authorization) runs here, once, at
+	// finalize time — BEFORE the validators, which are read-only. Ordering matters:
+	// ValidateEphemeral / ValidateCheckBeds / ValidateMembers all read IsDisposable().
+	fillEphemeralDefaults(merged)
 	if err := seams.ValidateEphemeral(merged); err != nil {
 		return nil, true, fmt.Errorf("%s: %w", root, err)
 	}
