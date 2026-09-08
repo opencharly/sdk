@@ -22,7 +22,9 @@
 // closure the runtime scan materialises. The seam keeps this kit import-free: candywalk itself
 // still carries NO charly or sdk import — only the stdlib + yaml.v3.
 //
-// The kit carries NO charly import — only the stdlib + yaml.v3. It returns the raw per-node kind
+// The package carries only the CONTRACT module + the pure kit (github.com/opencharly/spec for
+// ParseRemoteRef (F4.3), github.com/opencharly/sdk/kit for RepoLayoutDirs (F4.4)) — never charly,
+// never a mechanism kit with registry/host coupling. It returns the raw per-node kind
 // discriminator + value node; the caller owns the projection into its own types (the docs plugin
 // decodes `candy:` into its candyView/boxView; the marketplace plugin decodes `skill:`/`hook:`/
 // `marketplace:` into the generated spec types).
@@ -34,8 +36,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 
+	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
 
@@ -136,7 +139,7 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 	// @github refs found in its files (only when resolve is active).
 	walkRoot := func(r Root) ([]string, error) {
 		var newRefs []string
-		for _, kind := range []string{"candy", "box"} {
+		for _, kind := range kit.RepoLayoutDirs {
 			dir := filepath.Join(r.Dir, kind)
 			ents, err := os.ReadDir(dir)
 			if err != nil {
@@ -184,7 +187,7 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 			ref := queue[0]
 			queue = queue[1:]
 			pr := parseRemoteRef(ref)
-			if pr == nil {
+			if pr.RepoPath == "" {
 				continue
 			}
 			key := pr.RepoPath + ":" + pr.Version
@@ -251,38 +254,18 @@ func collectRefs(path string) []string {
 	}
 	var out []string
 	for _, ref := range remoteRefRe.FindAllString(string(raw), -1) {
-		if pr := parseRemoteRef(ref); pr != nil && pr.RepoPath != "github.com/opencharly/charly" {
+		if pr := parseRemoteRef(ref); pr.RepoPath != "" && pr.RepoPath != "github.com/opencharly/charly" {
 			out = append(out, ref)
 		}
 	}
 	return out
 }
 
-// parseRemoteRef decomposes a @github.com/opencharly/<kind>-<name>:v<calver> ref into its repo
-// path (host/org/repo — the first three segments) and version, or nil for anything else.
-// The pre-cutover in-repo form (@github.com/opencharly/charly/candy/<name>) is excluded by the
-// caller (collectRefs skips RepoPath == github.com/opencharly/charly).
-func parseRemoteRef(ref string) *parsedRemoteRef {
-	rest := strings.TrimPrefix(ref, "@")
-	idx := strings.LastIndex(rest, ":")
-	if idx == -1 {
-		return nil
-	}
-	path, ver := rest[:idx], rest[idx+1:]
-	if path == "" || ver == "" {
-		return nil
-	}
-	segs := strings.Split(path, "/")
-	if len(segs) < 3 {
-		return nil
-	}
-	repoPath := strings.Join(segs[:3], "/")
-	return &parsedRemoteRef{RepoPath: repoPath, Version: ver}
-}
-
-type parsedRemoteRef struct {
-	RepoPath string
-	Version  string
+// parseRemoteRef is the canonical spec.ParseRemoteRef (F4.3 parser consolidation: the
+// pre-cutover in-repo form (@github.com/opencharly/charly/candy/<name>) is excluded by the
+// caller — collectRefs skips RepoPath == github.com/opencharly/charly).
+func parseRemoteRef(ref string) *spec.ParsedRef {
+	return spec.ParseRemoteRef(ref)
 }
 
 // ReadEntityFile decodes one charly.yml into its top-level nodes. The file is a map of entity

@@ -110,11 +110,17 @@ func MigrateCandidateYAMLFiles(dir string, treeSubdirs []string) []string {
 	return out
 }
 
+// RepoLayoutDirs is the repo layout subdirectory vocabulary — the candy/ + box/ dirs
+// that hold authorable entities in every OpenCharly repo (superproject and box submodules).
+// The ONE shared sdk constant (F4.4 parser consolidation): candywalk's root walk and the
+// migrators' candidate-file scan both read it, replacing the byte-identical hand literals.
+var RepoLayoutDirs = []string{"candy", "box"}
+
 // OpUnifyCandidateFiles is the candidate-file set the op/plan-unify migrators AND
 // the core loader's legacy-test-vocab rejection scan walk (candy/ + box/ trees +
 // root siblings).
 func OpUnifyCandidateFiles(dir string) []string {
-	return MigrateCandidateYAMLFiles(dir, []string{"candy", "box"})
+	return MigrateCandidateYAMLFiles(dir, RepoLayoutDirs)
 }
 
 // MapValue returns the value node for key in a YAML mapping node, or nil.
