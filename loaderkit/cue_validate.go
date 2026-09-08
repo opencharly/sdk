@@ -16,6 +16,7 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/errors"
+	cuejson "cuelang.org/go/encoding/json"
 	cueyaml "cuelang.org/go/encoding/yaml"
 	"gopkg.in/yaml.v3"
 )
@@ -31,6 +32,24 @@ func CueDocFromYAML(path string, data []byte) (cue.Value, error) {
 		return cue.Value{}, fmt.Errorf("%s: yaml ingest: %w", path, err)
 	}
 	v := cueSchemaCtx().BuildFile(af)
+	if v.Err() != nil {
+		return cue.Value{}, fmt.Errorf("%s: build: %w", path, v.Err())
+	}
+	return v, nil
+}
+
+// CueDocFromJSON ingests one canonical JSON body (a parsed node's kind-value body) into a
+// cue.Value — the JSON twin of CueDocFromYAML (parser consolidation F2.3): the
+// validateKindValueCUE gate's deleted gn→yaml.Marshal→CueDocFromYAML round trip is restated as
+// a direct canonical-JSON ingest, so the gate validates the RAW authored value with no
+// genericNode reconstruction and no YAML re-marshal. Built with the loader's own cue.Context,
+// so the result Unifies against the compiled schema exactly like the YAML twin.
+func CueDocFromJSON(path string, data []byte) (cue.Value, error) {
+	expr, err := cuejson.Extract(path, data)
+	if err != nil {
+		return cue.Value{}, fmt.Errorf("%s: json ingest: %w", path, err)
+	}
+	v := cueSchemaCtx().BuildExpr(expr)
 	if v.Err() != nil {
 		return cue.Value{}, fmt.Errorf("%s: build: %w", path, v.Err())
 	}
