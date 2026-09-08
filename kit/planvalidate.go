@@ -9,10 +9,9 @@ import (
 
 // planvalidate.go — ValidatePlanSteps, the SHARED static plan-block validator
 // (P12a: relocated from charly/plan_validate.go). It lives here — not
-// candy/plugin-check — because it is invoked by BOTH `charly box validate`
-// (charly/validate.go) AND the externalized `charly feature` command's "feature"
-// HostBuild seam (charly/host_build_feature.go): CORE calls it directly at both
-// sites, so it must be reachable without importing a plugin candy. One copy, R3.
+// candy/plugin-check — because the externalized validators `charly box validate`
+// (candy/plugin-box) and the check/feature surfaces call it directly, so it must be
+// reachable without importing a plugin candy. One copy, R3.
 //
 //   - description non-empty
 //   - every step has exactly one keyword (StepKind())
