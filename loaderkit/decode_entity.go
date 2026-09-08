@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 
 	"cuelang.org/go/cue/cuecontext"
 	cueyaml "cuelang.org/go/encoding/yaml"
@@ -180,12 +181,25 @@ func normalizeNode(node *yaml.Node, t reflect.Type) error {
 // inline/anonymous embeds, e.g. Step embeds Op `yaml:",inline"`) to its Go
 // field type. A bare field name with no yaml tag maps under its lowercased name
 // (yaml.v3's own default). Cached per type.
-var flatYamlFieldsCache = map[reflect.Type]map[string]reflect.Type{}
+//
+// CONCURRENCY (F5.1): the cache is a process-global that loaderkit mutates while
+// multiple lanes decode concurrently (the 32-lane materialize-stall fix), so the
+// map is guarded by its own mutex. Reads re-check under the lock; writes store the
+// computed map once. The recursive embedded-struct walk calls flattenYamlFields
+// re-entrantly — the function computes FIRST, locks only for the store, and never
+// holds the lock across a recursive call (no deadlock).
+var (
+	flatYamlFieldsMu    sync.Mutex
+	flatYamlFieldsCache = map[reflect.Type]map[string]reflect.Type{}
+)
 
 func flattenYamlFields(t reflect.Type) map[string]reflect.Type {
+	flatYamlFieldsMu.Lock()
 	if m, ok := flatYamlFieldsCache[t]; ok {
+		flatYamlFieldsMu.Unlock()
 		return m
 	}
+	flatYamlFieldsMu.Unlock()
 	out := map[string]reflect.Type{}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
@@ -219,7 +233,13 @@ func flattenYamlFields(t reflect.Type) map[string]reflect.Type {
 		}
 		out[name] = f.Type
 	}
+	flatYamlFieldsMu.Lock()
+	if prev, ok := flatYamlFieldsCache[t]; ok {
+		flatYamlFieldsMu.Unlock()
+		return prev
+	}
 	flatYamlFieldsCache[t] = out
+	flatYamlFieldsMu.Unlock()
 	return out
 }
 
