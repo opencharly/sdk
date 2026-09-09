@@ -149,11 +149,12 @@ func SnapshotCheckEnv(kr *kit.Runner) spec.CheckEnv {
 	}
 
 	return spec.CheckEnv{
-		Mode:      "live",
-		Box:       kr.Box(),
-		Instance:  kr.Instance(),
-		Distros:   kr.Distros(),
-		VenueKind: venueKindOf(kr),
+		Mode:       "live",
+		Box:        kr.Box(),
+		Instance:   kr.Instance(),
+		Distros:    kr.Distros(),
+		VenueKind:  venueKindOf(kr),
+		MCPProvide: kr.MCPProvide(),
 	}
 }
 
