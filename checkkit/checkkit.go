@@ -117,6 +117,10 @@ func (r *VerbResolver) RunVerb(ctx context.Context, op *spec.Op) (spec.CheckResu
 
 // SnapshotCheckEnv builds the wire CheckEnv snapshot from the runner's state.
 func SnapshotCheckEnv(kr *kit.Runner) spec.CheckEnv {
+	if kr == nil {
+		return spec.CheckEnv{Mode: "live"}
+	}
+
 	return spec.CheckEnv{
 		Mode:      "live",
 		Box:       kr.Box(),
