@@ -74,6 +74,10 @@ type VerbResolver struct {
 func (r *VerbResolver) SetRunner(kr *kit.Runner) { r.kr = kr }
 
 func (r *VerbResolver) RunVerb(ctx context.Context, op *spec.Op) (spec.CheckResult, bool) {
+	if r.Ex == nil {
+		return spec.CheckResult{Status: spec.StatusFail, Message: "checkkit: no host executor (the dial is unavailable)"}, true
+	}
+
 	word, err := op.Kind()
 	if err != nil {
 		return spec.CheckResult{}, false
