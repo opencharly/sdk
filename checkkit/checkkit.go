@@ -115,6 +115,33 @@ func (r *VerbResolver) RunVerb(ctx context.Context, op *spec.Op) (spec.CheckResu
 	return res, true
 }
 
+// RunProvisionAct runs a do:act state-provision verb's act leg (the kit.VerbResolver
+// seam): the same single-dial dispatch, with the act run mode.
+func (r *VerbResolver) RunProvisionAct(ctx context.Context, op *spec.Op, verb string) (spec.CheckResult, bool) {
+	if r.Ex == nil {
+		return spec.CheckResult{Status: spec.StatusFail, Message: "checkkit: no host executor (the dial is unavailable)"}, true
+	}
+	params, err := json.Marshal(op)
+	if err != nil {
+		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + verb + ": marshal op: " + err.Error()}, true
+	}
+	envJSON, err := json.Marshal(r.Env)
+	if err != nil {
+		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + verb + ": marshal env: " + err.Error()}, true
+	}
+	resultJSON, err := r.Ex.InvokeProvider(ctx, "verb", verb, sdk.OpRun, params, envJSON, sdk.InvokeProviderOpts{})
+	if err != nil {
+		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + verb + ": " + err.Error()}, true
+	}
+	var res spec.CheckResult
+	if len(resultJSON) > 0 {
+		if uerr := json.Unmarshal(resultJSON, &res); uerr != nil {
+			return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + verb + ": decode result: " + uerr.Error()}, true
+		}
+	}
+	return res, true
+}
+
 // SnapshotCheckEnv builds the wire CheckEnv snapshot from the runner's state.
 func SnapshotCheckEnv(kr *kit.Runner) spec.CheckEnv {
 	if kr == nil {
