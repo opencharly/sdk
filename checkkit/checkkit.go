@@ -74,17 +74,29 @@ type VerbResolver struct {
 func (r *VerbResolver) SetRunner(kr *kit.Runner) { r.kr = kr }
 
 func (r *VerbResolver) RunVerb(ctx context.Context, op *spec.Op) (spec.CheckResult, bool) {
-	if r.Ex == nil {
-		return spec.CheckResult{Status: spec.StatusFail, Message: "checkkit: no host executor (the dial is unavailable)"}, true
-	}
-
 	word, err := op.Kind()
 	if err != nil {
 		return spec.CheckResult{}, false
 	}
+	return r.dispatch(ctx, word, op, sdk.OpRun)
+}
+
+// RunProvisionAct runs a do:act state-provision verb's act leg (the kit.VerbResolver
+// seam): the same single-dial dispatch, with the act run mode.
+func (r *VerbResolver) RunProvisionAct(ctx context.Context, op *spec.Op, verb string) (spec.CheckResult, bool) {
+	return r.dispatch(ctx, verb, op, sdk.OpRun)
+}
+
+// dispatch is the ONE single-dial verb dispatch (R3): the nil-executor guard, the
+// op/env marshal, the InvokeProvider call, and the result decode — shared by RunVerb
+// and RunProvisionAct so the dispatch body exists exactly once.
+func (r *VerbResolver) dispatch(ctx context.Context, verb string, op *spec.Op, runMode string) (spec.CheckResult, bool) {
+	if r.Ex == nil {
+		return spec.CheckResult{Status: spec.StatusFail, Message: "checkkit: no host executor (the dial is unavailable)"}, true
+	}
 	params, err := json.Marshal(op)
 	if err != nil {
-		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + word + ": marshal op: " + err.Error()}, true
+		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + verb + ": marshal op: " + err.Error()}, true
 	}
 	env := r.Env
 	if r.kr != nil {
@@ -92,7 +104,7 @@ func (r *VerbResolver) RunVerb(ctx context.Context, op *spec.Op) (spec.CheckResu
 	}
 	envJSON, err := json.Marshal(env)
 	if err != nil {
-		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + word + ": marshal env: " + err.Error()}, true
+		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + verb + ": marshal env: " + err.Error()}, true
 	}
 	opts := sdk.InvokeProviderOpts{}
 	if r.kr != nil {
@@ -102,14 +114,14 @@ func (r *VerbResolver) RunVerb(ctx context.Context, op *spec.Op) (spec.CheckResu
 			}
 		}
 	}
-	resultJSON, err := r.Ex.InvokeProvider(ctx, "verb", word, sdk.OpRun, params, envJSON, opts)
+	resultJSON, err := r.Ex.InvokeProvider(ctx, "verb", verb, runMode, params, envJSON, opts)
 	if err != nil {
-		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + word + ": " + err.Error()}, true
+		return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + verb + ": " + err.Error()}, true
 	}
 	var res spec.CheckResult
 	if len(resultJSON) > 0 {
 		if uerr := json.Unmarshal(resultJSON, &res); uerr != nil {
-			return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + word + ": decode result: " + uerr.Error()}, true
+			return spec.CheckResult{Status: spec.StatusFail, Message: "verb " + verb + ": decode result: " + uerr.Error()}, true
 		}
 	}
 	return res, true
@@ -122,11 +134,12 @@ func SnapshotCheckEnv(kr *kit.Runner) spec.CheckEnv {
 	}
 
 	return spec.CheckEnv{
-		Mode:      "live",
-		Box:       kr.Box(),
-		Instance:  kr.Instance(),
-		Distros:   kr.Distros(),
-		VenueKind: venueKindOf(kr),
+		Mode:       "live",
+		Box:        kr.Box(),
+		Instance:   kr.Instance(),
+		Distros:    kr.Distros(),
+		VenueKind:  venueKindOf(kr),
+		MCPProvide: kr.MCPProvide(),
 	}
 }
 
