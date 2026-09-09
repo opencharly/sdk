@@ -39,8 +39,19 @@ func TestSnapshotCheckEnvNilRunner(t *testing.T) {
 
 func TestVerbResolverNilExecutor(t *testing.T) {
 	r := &VerbResolver{}
-	_, ok := r.RunVerb(context.Background(), &spec.Op{})
+	_, ok := r.RunVerb(context.Background(), &spec.Op{Plugin: "check"})
 	if !ok {
 		t.Fatal("a nil executor must still return a handled result")
+	}
+}
+
+func TestRunProvisionAct_NilExecutorMapsToFail(t *testing.T) {
+	r := &VerbResolver{}
+	res, ok := r.RunProvisionAct(context.Background(), &spec.Op{Plugin: "check"}, "check")
+	if !ok {
+		t.Fatal("a nil executor must still return a handled result")
+	}
+	if res.Status != spec.StatusFail {
+		t.Errorf("status = %v, want fail (the nil-executor guard)", res.Status)
 	}
 }
