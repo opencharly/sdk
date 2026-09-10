@@ -78,12 +78,14 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 				if node.From == "" {
 					return fmt.Errorf("kind:check bed %q (target: %s) must set `%s: <entity>`", name, node.Target, node.Target)
 				}
-				if _, ok := uf.PluginKinds[node.Target][node.From]; !ok {
-					// The from: name:tag DEPLOY-HOP (Phase 3): the from: may name a kind:check BED
-					// (the clone-base bed) whose own from: names the template.
-					if _, isBed := uf.CheckBeds()[node.From]; !isBed {
-						return fmt.Errorf("kind:check bed %q references %s entity %q which is not defined", name, node.Target, node.From)
-					}
+				// The ONE canonical reference-resolution surface (R3): a template
+				// entity (local or namespace-qualified via ProjectTemplates().ByKind)
+				// OR a clone-base deploy-hop (a kind:check bed, local or
+				// namespace-qualified). The former local-only PluginKinds lookup is
+				// retired — a git-linked (namespace-qualified) from: is legal here,
+				// matching the runtime resolver's scope.
+				if !ResolveEntityRef(uf, node.Target, node.From) {
+					return fmt.Errorf("kind:check bed %q references %s entity %q which is not defined", name, node.Target, node.From)
 				}
 			}
 		default:

@@ -37,7 +37,14 @@ func resolveKindTemplateBodyViaExecutor(ctx context.Context, ex *sdk.Executor, d
 	}
 	body := uf.ProjectTemplates().ByKind(kind)[name]
 	if len(body) == 0 {
-		return nil, fmt.Errorf("resolve kind:%s entity %q: not found", kind, name)
+		// The ONE canonical reference-resolution surface (R3): the template
+		// lookup is namespace-aware (ProjectTemplates().ByKind), and the
+		// deploy-hop (a kind:check bed) is resolved by the same resolver the
+		// load-time validator uses — a ref that validates must resolve here.
+		if !ResolveEntityRef(uf, kind, name) {
+			return nil, fmt.Errorf("resolve kind:%s entity %q: not found", kind, name)
+		}
+		return nil, fmt.Errorf("resolve kind:%s entity %q: found but has no template body (a clone-base bed hop — resolve via the bed's own from:)", kind, name)
 	}
 	return body, nil
 }
