@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
@@ -249,6 +250,25 @@ func DeployTargetEntity(uf *spec.UnifiedFile, name string) (string, bool) {
 	if d, has := uf.Deploy[name]; has && d.From != "" {
 		if _, has := uf.VM()[d.From]; has {
 			return d.From, true
+		}
+	}
+	// The namespace-qualified form (ns.entity — a git-linked import ref, the
+	// canonical reference-resolution surface, ResolveEntityRef): the namespace's
+	// OWN vm templates and deploys resolve under the qualified name. The
+	// returned target is the qualified template name (ns.template) so the
+	// caller's subsequent entity lookup resolves it the same way.
+	for ns, sub := range uf.Namespaces {
+		if sub == nil || !strings.HasPrefix(name, ns+".") {
+			continue
+		}
+		leaf := strings.TrimPrefix(name, ns+".")
+		if _, has := sub.VM()[leaf]; has {
+			return name, true
+		}
+		if d, has := sub.Deploy[leaf]; has && d.From != "" {
+			if _, has := sub.VM()[d.From]; has {
+				return ns + "." + d.From, true
+			}
 		}
 	}
 	return "", false
