@@ -109,3 +109,25 @@ func TestResolveKindEntityBody_Qualified(t *testing.T) {
 		t.Fatal("unqualified namespace body leaked into the local scope")
 	}
 }
+
+// TestDeployTargetEntity_QualifiedFromHop gates the deploy-hop's from:
+// resolution: a bed whose from: is a NAMESPACE-QUALIFIED template
+// (ns.template — a git-linked import ref) must resolve the hop. This test
+// FAILS without the ResolveKindEntityBody fallback in DeployTargetEntity.
+func TestDeployTargetEntity_QualifiedFromHop(t *testing.T) {
+	ns := &spec.UnifiedFile{
+		PluginKinds: map[string]map[string]json.RawMessage{
+			"vm": {"omarchy-vm": json.RawMessage("{}")},
+		},
+	}
+	uf := &spec.UnifiedFile{
+		Deploy: map[string]spec.DeployNode{
+			"check-omarchy-eval-edge-inst": {From: "omarchy.omarchy-vm"},
+		},
+		Namespaces: map[string]*spec.UnifiedFile{"omarchy": ns},
+	}
+	target, ok := DeployTargetEntity(uf, "check-omarchy-eval-edge-inst")
+	if !ok || target != "omarchy.omarchy-vm" {
+		t.Fatalf("DeployTargetEntity(check-omarchy-eval-edge-inst) = (%q, %v), want (omarchy.omarchy-vm, true) — the qualified template after the hop", target, ok)
+	}
+}
