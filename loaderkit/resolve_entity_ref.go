@@ -17,6 +17,7 @@ package loaderkit
 // referenceable — locally AND via git-linked imports.
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/opencharly/spec/spec"
@@ -65,4 +66,28 @@ func bedRef(uf *spec.UnifiedFile, ref string) bool {
 		}
 	}
 	return false
+}
+
+// ResolveKindEntityBody returns the opaque kind:<word> template body named ref
+// — local or namespace-qualified (the git-linked import form). The runtime
+// counterpart of ResolveEntityRef: a ref that validates must resolve here. The
+// namespace-qualified form (ns.entity) matches the namespace's own unqualified
+// template name; the unqualified form is local-only (the same no-leak contract
+// as ResolveEntityRef).
+func ResolveKindEntityBody(uf *spec.UnifiedFile, kind, ref string) (json.RawMessage, bool) {
+	if uf == nil || ref == "" {
+		return nil, false
+	}
+	if body, ok := uf.PluginKinds[kind][ref]; ok {
+		return body, true
+	}
+	for ns, sub := range uf.Namespaces {
+		if sub == nil || !strings.HasPrefix(ref, ns+".") {
+			continue
+		}
+		if body, ok := sub.PluginKinds[kind][strings.TrimPrefix(ref, ns+".")]; ok {
+			return body, true
+		}
+	}
+	return nil, false
 }

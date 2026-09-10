@@ -79,3 +79,33 @@ func TestResolveEntityRef_QualifiedBedHop(t *testing.T) {
 		t.Fatal("unqualified namespace bed leaked into the local scope")
 	}
 }
+
+func TestDeployTargetEntity_Qualified(t *testing.T) {
+	uf := fold()
+	// The qualified bed-hop resolves to the qualified template name.
+	target, ok := DeployTargetEntity(uf, "omarchy.ns-bed")
+	if !ok || target != "omarchy.ns-vm" {
+		t.Fatalf("DeployTargetEntity(omarchy.ns-bed) = %q, %v; want omarchy.ns-vm, true", target, ok)
+	}
+	// The qualified template resolves directly.
+	if target, ok := DeployTargetEntity(uf, "omarchy.ns-vm"); !ok || target != "omarchy.ns-vm" {
+		t.Fatalf("DeployTargetEntity(omarchy.ns-vm) = %q, %v; want omarchy.ns-vm, true", target, ok)
+	}
+	// The unqualified form stays local-only.
+	if _, ok := DeployTargetEntity(uf, "ns-bed"); ok {
+		t.Fatal("unqualified namespace bed leaked into the local scope")
+	}
+}
+
+func TestResolveKindEntityBody_Qualified(t *testing.T) {
+	uf := fold()
+	if body, ok := ResolveKindEntityBody(uf, "vm", "omarchy.ns-vm"); !ok || len(body) == 0 {
+		t.Fatal("qualified vm body did not resolve")
+	}
+	if body, ok := ResolveKindEntityBody(uf, "vm", "local-vm"); !ok || len(body) == 0 {
+		t.Fatal("local vm body did not resolve")
+	}
+	if _, ok := ResolveKindEntityBody(uf, "vm", "ns-vm"); ok {
+		t.Fatal("unqualified namespace body leaked into the local scope")
+	}
+}
