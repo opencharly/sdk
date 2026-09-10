@@ -251,6 +251,13 @@ func DeployTargetEntity(uf *spec.UnifiedFile, name string) (string, bool) {
 		if _, has := uf.VM()[d.From]; has {
 			return d.From, true
 		}
+		// The deploy's from: may be a NAMESPACE-QUALIFIED template
+		// (ns.template — a git-linked import ref): resolve it via the
+		// canonical namespace-aware body lookup (ResolveKindEntityBody), the
+		// same surface the vm-build entity resolution uses.
+		if body, ok := ResolveKindEntityBody(uf, "vm", d.From); ok && len(body) > 0 {
+			return d.From, true
+		}
 	}
 	// The namespace-qualified form (ns.entity — a git-linked import ref, the
 	// canonical reference-resolution surface, ResolveEntityRef): the namespace's
