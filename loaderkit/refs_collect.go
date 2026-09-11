@@ -74,12 +74,21 @@ func normalizeOverrideRepoPath(rp string) string {
 	return rp
 }
 
-// repoOverrideDir returns the configured local override directory for repoPath, or ("", false,
+// RepoOverrideDir returns the configured local override directory for repoPath, or ("", false,
 // nil) when none applies. envValue is the raw CHARLY_REPO_OVERRIDE value (a comma-separated list of
 // `repoPath=localDir` pairs). A malformed entry, a missing/empty directory, or a non-directory
 // target is a hard error — the override was set deliberately, so a typo must fail loud rather than
 // silently fall through to a remote fetch.
-func repoOverrideDir(repoPath, envValue string) (string, bool, error) {
+//
+// This is THE single implementation of the CHARLY_REPO_OVERRIDE parse: the comma-separated
+// repoPath=localDir split, the repo-path normalization (a bare owner/repo LHS auto-prefixes
+// github.com, the same rule as spec.NormalizeRepoSpec), the `~/` home expansion, and the
+// exists-and-is-a-directory check. It serves BOTH this mechanism's own ref resolution
+// (EnsureRepoDownloaded, below) AND external consumers that must answer the same question without
+// re-deriving it — charly core's provenance logging ("was this run served from a local override,
+// and which tree?"). A consumer MUST call this rather than re-parse the env value: a second parse
+// is a divergence waiting to happen (R3 — one canonical implementation per behavior).
+func RepoOverrideDir(repoPath, envValue string) (string, bool, error) {
 	envValue = strings.TrimSpace(envValue)
 	if envValue == "" {
 		return "", false, nil
@@ -144,7 +153,7 @@ func EnsureRepoDownloaded(repoPath, version string, seams spec.RefsCollectSeams)
 	// any consumer before it is pushed. The override is the dev's LIVE tree — it is used verbatim
 	// and NEVER migrated (migration would mutate the working tree); the dev keeps it
 	// schema-current themselves.
-	if dir, ok, err := repoOverrideDir(repoPath, seams.OverrideEnvValue); err != nil {
+	if dir, ok, err := RepoOverrideDir(repoPath, seams.OverrideEnvValue); err != nil {
 		return "", err
 	} else if ok {
 		return dir, nil
