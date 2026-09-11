@@ -3,6 +3,7 @@ package sdk
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -10,6 +11,7 @@ import (
 	"image/png"    // ENCODER too: the OCR upscale writes a PNG, so this is a real import
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -17,12 +19,16 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Artifact validators
+// Artifact landing + validators
 //
-// The post-run artifact-reality assertions (min_bytes / min_dimensions /
-// not_uniform / min_cast_events / contains_text) are the SINGLE implementation (R3) every
-// out-of-tree verb plugin that produces an artifact (appium screenshot, adb
-// screencap, cdp/wl/vnc/record captures) calls — the same property motivating
+// LandArtifact is the ONE caller-side entry point (R3) every capture plugin
+// uses to land an artifact on the HOST and validate it — host-side and
+// venue-side plugins call the SAME function; the executor is the placement
+// abstraction (nil = host-side, no pull). The post-run artifact-reality
+// assertions (min_bytes / min_dimensions / not_uniform / min_cast_events /
+// contains_text) are the SINGLE implementation (R3) every out-of-tree verb
+// plugin that produces an artifact (appium screenshot, adb screencap,
+// cdp/wl/vnc/record captures) calls — the same property motivating
 // MatchAll's home here. Every live-container verb is now served out-of-process,
 // so this SDK copy is the sole implementation (the former host duplicate in
 // charly's core check runner was deleted with the in-proc live-verb runtime).
@@ -34,8 +40,13 @@ import (
 // artifact_min_cast_events. The artifact fields live in the desugared plugin
 // input map (per-verb fields left core #Op in the schema-compaction cutover).
 // Returns nil when every declared validator passes, or the first validator's
-// error. A plugin that produces an artifact calls this after writing the file
-// as the post-run validation pipeline.
+// error.
+//
+// Callers should almost always go through LandArtifact instead — it pulls a
+// venue artifact to the host (when the plugin has an executor + venue path),
+// then invokes this as the post-run validation pipeline. RunArtifactValidators
+// is the bare validation core for the rare caller that has already landed the
+// file host-side itself.
 func RunArtifactValidators(op *spec.Op) error {
 	artifact := inputString(op, "artifact")
 	if n := inputInt(op, "artifact_min_bytes"); n > 0 {
@@ -68,6 +79,42 @@ func RunArtifactValidators(op *spec.Op) error {
 		}
 	}
 	return nil
+}
+
+// LandArtifact is the ONE caller-side entry point every capture plugin uses to
+// land a produced artifact on the HOST and validate it — host-side AND
+// venue-side plugins call the same function; the executor IS the placement
+// abstraction, and only the pull differs:
+//
+//   - ex != nil AND venuePath != "": the artifact was written on the VENUE. Its
+//     bytes are pulled via ex.GetFile (the reverse-channel read), written to the
+//     host artifact path (creating parent dirs), and then validated.
+//   - ex == nil OR venuePath == "": the artifact is already HOST-side — nothing
+//     is pulled or written, and validation runs straight on the existing path.
+//     Host-side capture plugins (spice screenshot, media transcode) pass a nil
+//     executor and a blank venue path.
+//
+// After the pull/write (or the host-side no-op), sdk.RunArtifactValidators runs
+// on the host artifact path with every assertion the op's plugin input
+// declares (artifact_min_bytes / artifact_min_dimensions / artifact_not_uniform
+// / artifact_min_cast_events / artifact_contains_text) and its result is
+// returned. A pull failure returns a descriptive error naming BOTH paths.
+func LandArtifact(ctx context.Context, ex *Executor, venuePath, artifact string, op *spec.Op) error {
+	if ex != nil && venuePath != "" {
+		data, err := ex.GetFile(ctx, venuePath, false)
+		if err != nil {
+			return fmt.Errorf("pull venue artifact %q -> host %q: %w", venuePath, artifact, err)
+		}
+		if dir := filepath.Dir(artifact); dir != "" {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return fmt.Errorf("land artifact %q: create parent dir %q: %w", artifact, dir, err)
+			}
+		}
+		if err := os.WriteFile(artifact, data, 0o644); err != nil {
+			return fmt.Errorf("land artifact %q: write pulled bytes: %w", artifact, err)
+		}
+	}
+	return RunArtifactValidators(op)
 }
 
 // inputString / inputInt / inputBool read typed values from the desugared
