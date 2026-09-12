@@ -228,7 +228,8 @@ func EmitBakedPlugins(ctx context.Context, b *strings.Builder, buildDir, boxName
 			ctxRel := fmt.Sprintf(".build/%s/.plugins/%s", boxName, binName)
 			dest := bakedPluginImageDir + "/" + binName
 			if !envEmitted {
-				fmt.Fprintf(b, "# Baked plugins go to %s — NOT the package-owned %s (issue #595).\n", bakedPluginImageDir, bakedPluginDir)
+				fmt.Fprintf(b, "# Baked plugins go to %s, NOT into the distro package's own plugin directory\n", bakedPluginImageDir)
+				fmt.Fprintf(b, "# (issue #595: a build step writing there makes the charly install refuse the image).\n")
 				fmt.Fprintf(b, "# The in-container charly searches %s FIRST, so they still resolve at runtime.\n", bakedPluginEnv)
 				fmt.Fprintf(b, "ENV %s=%s\n", bakedPluginEnv, bakedPluginImageDir)
 				envEmitted = true
