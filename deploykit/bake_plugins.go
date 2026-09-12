@@ -35,6 +35,32 @@ import (
 // binary to at image-build time. Byte-identical to charly/plugin_loader.go's constant.
 const bakedPluginDir = "/usr/lib/charly/plugins"
 
+// bakedPluginImageDir is where an IMAGE bake writes its provider binaries — deliberately NOT
+// bakedPluginDir, which the DISTRO PACKAGE owns. charly's own package installs
+// /usr/lib/charly/plugins/** and its file list is authoritative there, so a build step writing
+// into that directory collides with the package transaction that installs charly in the SAME
+// image (issue #595):
+//
+//	charly: /usr/lib/charly/plugins/plugin-mcp exists in filesystem
+//	error: failed to commit transaction (conflicting files)
+//
+// The collision cannot be cured by knowing WHICH plugins a package ships: that set varies per
+// package build — the host package ships plugin-{candy,clean,doctor,feature,preempt,secrets,
+// settings,tmux,udev,vm} while the build that failed also shipped plugin-mcp — so any in-tree
+// list is stale by construction. /usr/local is the FHS location for locally-installed software,
+// which no distro package owns, and that is what makes a bake collision-free for EVERY package
+// build rather than for the ones we happen to know about.
+//
+// The image registers the directory through CHARLY_PLUGIN_DIR (see bakedPluginEnv), which
+// charly's loader searches FIRST — ahead of the FHS dir — so every baked plugin still resolves in
+// the deployed container while the package's own plugins stay reachable from the FHS path.
+const bakedPluginImageDir = "/usr/local/lib/charly/plugins"
+
+// bakedPluginEnv is the env var an image sets to register bakedPluginImageDir with the
+// in-container charly. The name is duplicated (not imported) from charly/plugin_loader.go's
+// bakedPluginDirs, which owns the search-order contract; a rename there must be mirrored here.
+const bakedPluginEnv = "CHARLY_PLUGIN_DIR"
+
 // safePluginBinName flattens a candy key (which may be an @github ref with slashes/colons) to a
 // single filesystem-safe filename for the built binary.
 func safePluginBinName(name string) string {
@@ -168,6 +194,7 @@ func buildPluginBinary(ctx context.Context, srcDir, name string) (string, error)
 // no host round-trip.
 func EmitBakedPlugins(ctx context.Context, b *strings.Builder, buildDir, boxName string, candyOrder []string, candies map[string]CandyModel) error {
 	baked := map[string]struct{}{}
+	envEmitted := false
 	for _, candyName := range candyOrder {
 		layer := candies[candyName]
 		if layer == nil || len(layer.GetBakePlugin()) == 0 {
@@ -199,7 +226,14 @@ func EmitBakedPlugins(ctx context.Context, b *strings.Builder, buildDir, boxName
 				return fmt.Errorf("candy %q: bake_plugin %q: stage binary: %w", candyName, key, err)
 			}
 			ctxRel := fmt.Sprintf(".build/%s/.plugins/%s", boxName, binName)
-			dest := bakedPluginDir + "/" + binName
+			dest := bakedPluginImageDir + "/" + binName
+			if !envEmitted {
+				fmt.Fprintf(b, "# Baked plugins go to %s, NOT into the distro package's own plugin directory\n", bakedPluginImageDir)
+				fmt.Fprintf(b, "# (issue #595: a build step writing there makes the charly install refuse the image).\n")
+				fmt.Fprintf(b, "# The in-container charly searches %s FIRST, so they still resolve at runtime.\n", bakedPluginEnv)
+				fmt.Fprintf(b, "ENV %s=%s\n", bakedPluginEnv, bakedPluginImageDir)
+				envEmitted = true
+			}
 			fmt.Fprintf(b, "# Bake plugin %q (required by %q) for in-container charly\n", key, candyName)
 			fmt.Fprintf(b, "COPY %s %s\n", ctxRel, dest)
 			fmt.Fprintf(b, "RUN chmod 0755 %s\n", dest)
