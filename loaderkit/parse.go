@@ -367,6 +367,61 @@ func desugarStep(entity string, idx int, st *yaml.Node, t spec.Threaded) error {
 	return desugarVerbKey(entity, path, st, sugarKeys[0], t)
 }
 
+// DesugarSteps rewrites every element of a YAML step-sequence node in place, converting the
+// `<word>: <input>` plugin-verb authoring sugar into the internal `plugin:`/`plugin_input:`
+// pair exactly as entity plans are desugared. It is the seam for USER-AUTHORED step sequences
+// — e.g. `charly check live <bed> --steps-file <file>` — whose authors use the sugar the plan
+// docs teach, while ENGINE-INJECTED steps stay pre-normalized (plugin-check's CHANGELOG
+// records that injection path's contract).
+//
+// `entity` is used only for error context (typically the steps-file path). Each element of the
+// sequence must be a mapping step carrying exactly one intent keyword (run/check/agent-run/
+// agent-check/include). A verb sugar whose input is a scalar or sequence requires its primary
+// field in `t.Primaries`; a map input needs no vocabulary, so an empty `spec.Threaded{}` is
+// enough for the common authoring form. The wire form (`plugin:`/`plugin_input:` + `op:`/
+// `value:` matchers) passes through unchanged.
+func DesugarSteps(entity string, doc *yaml.Node, t spec.Threaded) error {
+	// Accept either a bare sequence or a parsed document (DocumentNode wrapping it) —
+	// yaml.Unmarshal into a yaml.Node yields the latter.
+	if doc != nil && doc.Kind == yaml.DocumentNode {
+		if len(doc.Content) == 0 {
+			return fmt.Errorf("%s: empty steps document", entity)
+		}
+		doc = doc.Content[0]
+	}
+	if doc == nil || doc.Kind != yaml.SequenceNode {
+		return fmt.Errorf("%s: a steps sequence must be a YAML list", entity)
+	}
+	steps := doc
+	for i, st := range steps.Content {
+		// The wire form (already carrying plugin:/plugin_input:) passes through as-is;
+		// desugarStep would REJECT it (entity docs must author the sugar), but a steps file
+		// may legitimately be either form — the wire form is what --steps-file consumers
+		// like plugin-check have shipped and documented.
+		if isWireFormStep(st) {
+			continue
+		}
+		if err := desugarStep(entity, i, st, t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// isWireFormStep reports whether a step mapping already carries the internal plugin envelope
+// (plugin:/plugin_input:) — the wire form — in which case the sugar rewrite is a no-op.
+func isWireFormStep(st *yaml.Node) bool {
+	if st == nil || st.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(st.Content); i += 2 {
+		if k := st.Content[i].Value; k == "plugin" || k == "plugin_input" {
+			return true
+		}
+	}
+	return false
+}
+
 // desugarInstrumentEntry desugars one `instrument:` capture entry in place: its single
 // verb-position key (rewritten into plugin/plugin_input exactly like a step verb) and
 // its `pipeline:` word list. Authoring plugin:/plugin_input: directly in a capture
