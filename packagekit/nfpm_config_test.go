@@ -8,7 +8,8 @@ import (
 	"github.com/goreleaser/nfpm/v2"
 )
 
-// fixtureInputs writes a fake binary + plugins dir and returns the paths.
+// fixtureInputs writes a fake binary + a shared-host plugins dir (one
+// charly-lib + plugin-<word> symlinks to it) and returns the paths.
 func fixtureInputs(t *testing.T) (binary, pluginsDir string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -20,8 +21,11 @@ func fixtureInputs(t *testing.T) (binary, pluginsDir string) {
 	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(pluginsDir, "charly-lib"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range []string{"plugin-doctor", "plugin-clean", "plugin-secrets"} {
-		if err := os.WriteFile(filepath.Join(pluginsDir, p), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		if err := os.Symlink("charly-lib", filepath.Join(pluginsDir, p)); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(pluginsDir, p+".providers"), []byte(p+"\n"), 0o644); err != nil {
@@ -55,8 +59,8 @@ func TestBuildInfo(t *testing.T) {
 	if info.Version != "2026.225.1200" {
 		t.Errorf("Version = %q", info.Version)
 	}
-	if len(info.Contents) != 3 { // binary + 1 plugin + 1 .providers
-		t.Errorf("Contents = %d entries, want 3", len(info.Contents))
+	if len(info.Contents) != 4 { // binary + charly-lib host + 1 plugin symlink + 1 .providers
+		t.Errorf("Contents = %d entries, want 4", len(info.Contents))
 	}
 	if info.Contents[0].Destination != "/usr/bin/charly" {
 		t.Errorf("binary destination = %q", info.Contents[0].Destination)
