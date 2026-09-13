@@ -139,9 +139,15 @@ func (g *Generator) generateContainerfile(boxName string) error {
 		// emitter's own root-only work so the inUserMode tracking (and the next candy's expectation
 		// of the active user) stays exactly as it was.
 		if c := g.Candies[candyName]; c != nil && OpsInvokeNestedContainerEngine(c.RunOps()) {
-			if inUserMode {
-				b.WriteString("USER 0\n")
-			}
+			// Emit the root switch UNCONDITIONALLY: the active user here is not knowable from
+			// inUserMode alone. That flag says whether the candy's steps ended in user mode — when
+			// false the emitter has usually left root active (its bootstrap/reset emitted
+			// USER root), but a box on an EXTERNAL base inherits whatever user the base image ends
+			// with, and the guard would then run as that user and fail silently. Establishing root
+			// removes the assumption; the restore stays conditional because only user mode has a
+			// user worth restoring to (leaving root otherwise matches the emitter's post-reset
+			// convention).
+			b.WriteString("USER 0\n")
 			g.EmitTmpModeGuard(&b)
 			if inUserMode {
 				fmt.Fprintf(&b, "USER %d\n", img.UID)
