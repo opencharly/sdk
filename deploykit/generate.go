@@ -131,6 +131,22 @@ func (g *Generator) generateContainerfile(boxName string) error {
 		if werr != nil {
 			return werr
 		}
+
+		// A candy that runs a NESTED container engine can leave the image's /tmp non-world-writable
+		// (observed: the container-nesting pre-pull leaves 0755 root:root), and every LATER
+		// unprivileged /tmp write then fails with EACCES. Re-assert the FHS mode here — at the point
+		// of perturbation, before the next candy — and as ROOT: the USER switching below mirrors the
+		// emitter's own root-only work so the inUserMode tracking (and the next candy's expectation
+		// of the active user) stays exactly as it was.
+		if c := g.Candies[candyName]; c != nil && OpsInvokeNestedContainerEngine(c.RunOps()) {
+			if inUserMode {
+				b.WriteString("USER 0\n")
+			}
+			g.EmitTmpModeGuard(&b)
+			if inUserMode {
+				fmt.Fprintf(&b, "USER %d\n", img.UID)
+			}
+		}
 	}
 
 	// Assemble init system configs (driven by the embedded init: vocabulary templates)
