@@ -56,17 +56,31 @@ var pluginMain = transport.Main
 // to transport.Main, which decides serve-vs-CLI mode from the go-plugin
 // handshake cookie — identical behaviour to the per-plugin binary it replaces.
 //
-// A base name absent from the registry is a hard error (exit 2) that lists the
-// known names, so a mis-installed symlink fails loudly instead of silently doing
-// nothing.
+// A base name absent from the registry, or registered with a nil field, is a
+// hard error (exit 2) naming the problem and the known plugins, so a
+// mis-installed symlink or a bad generated registry fails loudly instead of
+// silently doing nothing (or nil-panicking).
 func Run(reg Registry) {
-	name := filepath.Base(os.Args[0])
-	p, ok := reg[name]
-	if !ok {
-		fmt.Fprintf(os.Stderr, "charly-lib: invoked as %q; known plugins: %v\n", name, reg.Names())
+	p, err := resolve(reg, filepath.Base(os.Args[0]))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "charly-lib: "+err.Error())
 		os.Exit(2)
 	}
 	pluginMain(p.Provider(), p.Meta(), p.CLI)
+}
+
+// resolve selects the registry entry for name, failing loudly for an unknown name
+// or a nil field. Split out from Run so both failure modes are unit-testable (Run
+// calls os.Exit).
+func resolve(reg Registry, name string) (Plugin, error) {
+	p, ok := reg[name]
+	if !ok {
+		return Plugin{}, fmt.Errorf("invoked as %q; known plugins: %v", name, reg.Names())
+	}
+	if p.Provider == nil || p.Meta == nil || p.CLI == nil {
+		return Plugin{}, fmt.Errorf("plugin %q is registered with a nil Provider/Meta/CLI", name)
+	}
+	return p, nil
 }
 
 // Names returns the registered binary base names, sorted (diagnostics + tests).

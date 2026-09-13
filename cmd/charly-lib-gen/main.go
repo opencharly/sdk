@@ -125,6 +125,17 @@ func parsePins(path string) ([]pin, error) {
 		})
 	}
 	sort.Slice(pins, func(i, j int) bool { return pins[i].name < pins[j].name })
+
+	// importAlias maps `-`→`_`, so names differing only by that would collide as
+	// Go import identifiers; fail loudly rather than emit ambiguous code.
+	aliases := map[string]string{}
+	for _, p := range pins {
+		a := importAlias(p.name)
+		if other, dup := aliases[a]; dup {
+			return nil, fmt.Errorf("plugins %q and %q both map to Go import alias %q", other, p.name, a)
+		}
+		aliases[a] = p.name
+	}
 	return pins, nil
 }
 

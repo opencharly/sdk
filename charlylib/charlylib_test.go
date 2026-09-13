@@ -58,6 +58,23 @@ func TestRunDispatchesByArgv0(t *testing.T) {
 	}
 }
 
+// TestResolve covers the two loud-failure modes without spawning a process.
+func TestResolve(t *testing.T) {
+	var tag string
+	good := Registry{"plugin-a": fakePlugin(&tag, "plugin-a")}
+
+	if _, err := resolve(good, "plugin-a"); err != nil {
+		t.Errorf("resolve(known) = %v, want nil", err)
+	}
+	if _, err := resolve(good, "plugin-nope"); err == nil || !strings.Contains(err.Error(), "known plugins") {
+		t.Errorf("resolve(unknown) = %v, want a known-plugins error", err)
+	}
+	bad := Registry{"plugin-b": {Provider: func() pb.ProviderServer { return &fakeProvider{} }}}
+	if _, err := resolve(bad, "plugin-b"); err == nil || !strings.Contains(err.Error(), "nil") {
+		t.Errorf("resolve(nil-field) = %v, want a nil-field error", err)
+	}
+}
+
 // TestRunUnknownNameExitsLoudly runs Run in a subprocess (it calls os.Exit) and
 // asserts the mis-installed-symlink failure is loud + non-zero, never silent.
 func TestRunUnknownNameExitsLoudly(t *testing.T) {

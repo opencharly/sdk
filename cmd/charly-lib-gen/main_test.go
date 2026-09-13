@@ -68,6 +68,7 @@ func TestParsePinsRejectsBadInput(t *testing.T) {
 		"no-at":     "plugin-clean\n",
 		"duplicate": "plugin-clean@v2026.239.1615\nplugin-clean@v2026.239.1615\n",
 		"badtag":    "plugin-clean@nope\n",
+		"alias":     "plugin-clean@v2026.239.1615\nplugin_clean@v2026.239.1615\n",
 	} {
 		if _, err := parsePins(writePins(t, body)); err == nil {
 			t.Errorf("%s: parsePins = nil error, want failure", name)
