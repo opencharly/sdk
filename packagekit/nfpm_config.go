@@ -143,6 +143,14 @@ func systemdAndConfigContents(pkg *spec.Packaging) (files.Contents, error) {
 // buildContents assembles the package contents: the binary at /usr/bin/charly +
 // the variant's plugins at /usr/lib/charly/plugins/ (+ their .providers
 // manifests, when present).
+//
+// Shared plugin host (opencharly/sdk#256): when the plugins dir carries a
+// `charly-lib` shared multi-call host, it ships ONCE at
+// /usr/lib/charly/plugins/charly-lib, and any plugin entry that is a SYMLINK
+// (e.g. `plugin-clean -> charly-lib`) ships as a symlink rather than a copied
+// binary — so the shared SDK/spec closure is stored once instead of re-linked
+// into every per-plugin binary. A plain file entry still ships as a real binary
+// (the legacy per-plugin layout), unchanged.
 func buildContents(binary, pluginsDir string, plugins []string) (files.Contents, error) {
 	if _, err := os.Stat(binary); err != nil {
 		return nil, fmt.Errorf("binary %s: %w", binary, err)
@@ -156,16 +164,38 @@ func buildContents(binary, pluginsDir string, plugins []string) (files.Contents,
 			},
 		},
 	}
-	for _, p := range plugins {
-		bin := filepath.Join(pluginsDir, p)
-		if _, err := os.Stat(bin); err != nil {
-			return nil, fmt.Errorf("variant plugin %q: %s: %w", p, bin, err)
-		}
+	if host := filepath.Join(pluginsDir, sharedHostName); fileExists(host) {
 		contents = append(contents, &files.Content{
-			Source:      bin,
-			Destination: filepath.Join("/usr/lib/charly/plugins/", p),
+			Source:      host,
+			Destination: filepath.Join("/usr/lib/charly/plugins/", sharedHostName),
 			FileInfo:    &files.ContentFileInfo{Mode: 0o755},
 		})
+	}
+	for _, p := range plugins {
+		bin := filepath.Join(pluginsDir, p)
+		fi, err := os.Lstat(bin)
+		if err != nil {
+			return nil, fmt.Errorf("variant plugin %q: %s: %w", p, bin, err)
+		}
+		dest := filepath.Join("/usr/lib/charly/plugins/", p)
+		if fi.Mode()&os.ModeSymlink != 0 {
+			// Ship a symlink pointing at its (relative) target — the shared host.
+			target, err := os.Readlink(bin)
+			if err != nil {
+				return nil, fmt.Errorf("variant plugin %q: readlink %s: %w", p, bin, err)
+			}
+			contents = append(contents, &files.Content{
+				Source:      target,
+				Destination: dest,
+				Type:        files.TypeSymlink,
+			})
+		} else {
+			contents = append(contents, &files.Content{
+				Source:      bin,
+				Destination: dest,
+				FileInfo:    &files.ContentFileInfo{Mode: 0o755},
+			})
+		}
 		prov := bin + ".providers"
 		if _, err := os.Stat(prov); err == nil {
 			contents = append(contents, &files.Content{
@@ -176,4 +206,14 @@ func buildContents(binary, pluginsDir string, plugins []string) (files.Contents,
 		}
 	}
 	return contents, nil
+}
+
+// sharedHostName is the filename of the optional shared multi-call plugin host
+// the packaging ships once (opencharly/sdk#256).
+const sharedHostName = "charly-lib"
+
+// fileExists reports whether path exists (any file type).
+func fileExists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
 }
