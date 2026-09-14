@@ -1,6 +1,7 @@
 package vmshared
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -39,5 +40,29 @@ func TestVmDiskDir_PerVM(t *testing.T) {
 	b := VmDiskDir("cachyos-gpu-vm")
 	if a == b {
 		t.Fatalf("VmDiskDir must be per-VM; got identical paths: %s", a)
+	}
+}
+
+// TestVmDiskRoot_ConfigSetting proves the `vm.image_dir` runtime setting is
+// honored, and that the env var still WINS over it — the full precedence chain.
+func TestVmDiskRoot_ConfigSetting(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv(VmImageDirEnv, "")
+	if err := os.MkdirAll(filepath.Join(home, "charly"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "vm:\n  image_dir: /srv/from-config\n"
+	if err := os.WriteFile(filepath.Join(home, "charly", "config.yml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// the setting beats the default.
+	if got := VmDiskRoot(); got != "/srv/from-config" {
+		t.Fatalf("VmDiskRoot() with vm.image_dir set = %q, want /srv/from-config", got)
+	}
+	// the env var beats the setting.
+	t.Setenv(VmImageDirEnv, "/srv/from-env")
+	if got := VmDiskRoot(); got != "/srv/from-env" {
+		t.Fatalf("VmDiskRoot() with the env override = %q, want /srv/from-env", got)
 	}
 }

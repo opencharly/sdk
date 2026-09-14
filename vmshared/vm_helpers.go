@@ -98,12 +98,23 @@ func VmDiskDir(vmName string) string {
 // built-in default "image". A relative result is intentionally returned as-is:
 // call sites resolve it against the working project (the disk is a build product
 // of the project's own VMs), exactly like the former hardcoded relative path.
+//
+// A config-load failure is a MISSING config, not a wrong root: LoadRuntimeConfig
+// returns a zero config (nil error) when the file is absent, so a non-nil error
+// is a genuinely unreadable config. It falls back to the default and SAYS SO —
+// never a silent substitution of a different root (the failure mode this change
+// fixes: a live VM resolving to a path its backing chain does not point at).
 func VmDiskRoot() string {
 	if raw := strings.TrimSpace(os.Getenv(VmImageDirEnv)); raw != "" {
 		return raw
 	}
-	if cfg, err := hostenv.LoadRuntimeConfig(); err == nil && strings.TrimSpace(cfg.Vm.ImageDir) != "" {
-		return strings.TrimSpace(cfg.Vm.ImageDir)
+	cfg, err := hostenv.LoadRuntimeConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: %s: reading the runtime config failed (%v) — using the %q disk root\n", VmImageDirEnv, err, "image")
+		return "image"
+	}
+	if v := strings.TrimSpace(cfg.Vm.ImageDir); v != "" {
+		return v
 	}
 	return "image"
 }
