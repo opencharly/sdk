@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/opencharly/spec/hostenv"
 )
 
 // vm_helpers.go — pure VM helper functions shared by charly core (the `charly vm` command path +
@@ -69,14 +71,41 @@ func QemuSystemBinary() string {
 	}
 }
 
-// VmDiskDir returns the per-VM directory holding a built disk image (disk.qcow2) and, for
-// cloud_image/bootstrap/clone sources, its NoCloud seed.iso. The path is namespaced by the DISK
-// SOURCE (the kind:vm ENTITY), so it is the shared read-only BASE every per-deploy overlay backs
-// onto — building or creating one entity never reuses a SIBLING entity's disk or — critically — its
-// stale seed.iso, whose embedded SSH key would mismatch this VM's own id_ed25519 and silently break
-// the deploy's authentication.
+// VmImageDirEnv overrides the VM image root (the "vm.image_dir" setting's env
+// counterpart, mirroring CHARLY_VM_STATE_DIR). Relative values resolve against
+// the working project; absolute values pin it globally.
+const VmImageDirEnv = "CHARLY_VM_IMAGE_DIR"
+
+// VmDiskDir returns the per-VM directory holding a built disk image (disk.qcow2)
+// and, for cloud_image/bootstrap/clone sources, its NoCloud seed.iso. The path is
+// namespaced by the DISK SOURCE (the kind:vm ENTITY), so it is the shared
+// read-only BASE every per-deploy overlay backs onto — building or creating one
+// entity never reuses a SIBLING entity's disk or — critically — its stale
+// seed.iso, whose embedded SSH key would mismatch this VM's own id_ed25519 and
+// silently break the deploy's authentication.
+//
+// The root is CONFIGURABLE (vm.image_dir setting / CHARLY_VM_IMAGE_DIR env,
+// default "image") — never a hardcoded literal (the former "output" default was
+// a footgun: it read as disposable build scratch, so it got deleted as such
+// while live VMs' backing chains still pointed into it). Resolve the root
+// through VmDiskRoot so every call site shares ONE declaration (R3).
 func VmDiskDir(vmName string) string {
-	return filepath.Join("output", "qcow2", vmName)
+	return filepath.Join(VmDiskRoot(), vmName)
+}
+
+// VmDiskRoot resolves the root directory for built VM disk images. Precedence:
+// the CHARLY_VM_IMAGE_DIR env var > the `vm.image_dir` config setting > the
+// built-in default "image". A relative result is intentionally returned as-is:
+// call sites resolve it against the working project (the disk is a build product
+// of the project's own VMs), exactly like the former hardcoded relative path.
+func VmDiskRoot() string {
+	if raw := strings.TrimSpace(os.Getenv(VmImageDirEnv)); raw != "" {
+		return raw
+	}
+	if cfg, err := hostenv.LoadRuntimeConfig(); err == nil && strings.TrimSpace(cfg.Vm.ImageDir) != "" {
+		return strings.TrimSpace(cfg.Vm.ImageDir)
+	}
+	return "image"
 }
 
 // KillQemuByPID force-kills a direct-QEMU VM by the PID recorded in its state dir (the last-resort

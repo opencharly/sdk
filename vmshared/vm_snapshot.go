@@ -97,18 +97,18 @@ func snapshotsDir(vmName string) (string, error) {
 
 // vmDiskPath returns the absolute path to the VM's primary qcow2 disk
 // (the file that holds internal snapshots and that external snapshots
-// back onto). For charly-built VMs this is output/qcow2/disk.qcow2 in the
+// back onto). For charly-built VMs this is <vm.image_dir>/<vm>/disk.qcow2 in the
 // project tree; for adopted (imported) VMs this is the path recorded in
 // VmSource.DiskPath.
 //
-// V1 returns a best-effort guess: project-relative output path if it
+// V1 returns a best-effort guess: project-relative image path if it
 // exists, otherwise empty. Callers that need authoritative resolution
 // (for clone backing, for libvirt snapshot XML) should pass an
 // explicit override; this helper is for the registry's own bookkeeping.
 func vmDiskPath(vmName string) (string, error) {
 	// Per-VM disk dir used by the charly vm build cloud_image / bootc / bootstrap
 	// paths. (See charly/vm_create_spec.go which resolves the same per-VM
-	// output/qcow2/<vm>/disk.qcow2.)
+	// <vm.image_dir>/<vm>/disk.qcow2.)
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
