@@ -112,7 +112,11 @@ func vmDiskPath(vmName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	candidate := filepath.Join(cwd, VmDiskDir(vmName), "disk.qcow2")
+	diskDir, err := VmDiskDir(vmName)
+	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(cwd, diskDir, "disk.qcow2")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate, nil
 	}
@@ -125,7 +129,7 @@ func vmDiskPath(vmName string) (string, error) {
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate, nil
 	}
-	return "", fmt.Errorf("vm %q: cannot locate primary disk (looked in %s/disk.qcow2 and %s/charly-%s/disk.qcow2)", vmName, VmDiskDir(vmName), base, vmName)
+	return "", fmt.Errorf("vm %q: cannot locate primary disk (looked in %s/disk.qcow2 and %s/charly-%s/disk.qcow2)", vmName, diskDir, base, vmName)
 }
 
 // registryPath returns the registry.json path for a VM.

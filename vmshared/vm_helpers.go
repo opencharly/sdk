@@ -87,10 +87,16 @@ const VmImageDirEnv = "CHARLY_VM_IMAGE_DIR"
 // The root is CONFIGURABLE (vm.image_dir setting / CHARLY_VM_IMAGE_DIR env,
 // default "image") — never a hardcoded literal (the former "output" default was
 // a footgun: it read as disposable build scratch, so it got deleted as such
-// while live VMs' backing chains still pointed into it). Resolve the root
-// through VmDiskRoot so every call site shares ONE declaration (R3).
-func VmDiskDir(vmName string) string {
-	return filepath.Join(VmDiskRoot(), vmName)
+// while live VMs' backing chains still pointed into it). The (string, error)
+// shape mirrors VmStateRoot: a root-resolution failure is PROPAGATED, never
+// silently substituted with a different root (which would point a live VM at a
+// path its backing chain does not use — the exact failure mode this replaces).
+func VmDiskDir(vmName string) (string, error) {
+	root, err := VmDiskRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, vmName), nil
 }
 
 // VmDiskRoot resolves the root directory for built VM disk images. Precedence:
@@ -99,24 +105,21 @@ func VmDiskDir(vmName string) string {
 // call sites resolve it against the working project (the disk is a build product
 // of the project's own VMs), exactly like the former hardcoded relative path.
 //
-// A config-load failure is a MISSING config, not a wrong root: LoadRuntimeConfig
-// returns a zero config (nil error) when the file is absent, so a non-nil error
-// is a genuinely unreadable config. It falls back to the default and SAYS SO —
-// never a silent substitution of a different root (the failure mode this change
-// fixes: a live VM resolving to a path its backing chain does not point at).
-func VmDiskRoot() string {
+// A MISSING config is not an error (LoadRuntimeConfig returns a zero config, nil)
+// — the "image" default applies. A non-nil error means the config file exists but
+// could not be read; that is PROPAGATED (never masked by substituting a root).
+func VmDiskRoot() (string, error) {
 	if raw := strings.TrimSpace(os.Getenv(VmImageDirEnv)); raw != "" {
-		return raw
+		return raw, nil
 	}
 	cfg, err := hostenv.LoadRuntimeConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: %s: reading the runtime config failed (%v) — using the %q disk root\n", VmImageDirEnv, err, "image")
-		return "image"
+		return "", fmt.Errorf("resolving the VM disk-image root: reading the runtime config failed: %w", err)
 	}
 	if v := strings.TrimSpace(cfg.Vm.ImageDir); v != "" {
-		return v
+		return v, nil
 	}
-	return "image"
+	return "image", nil
 }
 
 // KillQemuByPID force-kills a direct-QEMU VM by the PID recorded in its state dir (the last-resort

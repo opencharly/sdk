@@ -6,26 +6,44 @@ import (
 	"testing"
 )
 
+// mustRoot / mustDir wrap the (string, error) resolvers for the tests.
+func mustRoot(t *testing.T) string {
+	t.Helper()
+	got, err := VmDiskRoot()
+	if err != nil {
+		t.Fatalf("VmDiskRoot: %v", err)
+	}
+	return got
+}
+
+func mustDir(t *testing.T, vm string) string {
+	t.Helper()
+	got, err := VmDiskDir(vm)
+	if err != nil {
+		t.Fatalf("VmDiskDir(%q): %v", vm, err)
+	}
+	return got
+}
+
 // TestVmDiskRoot_Configurable asserts the VM image root is CONFIGURABLE and never
 // a hardcoded literal: the env override wins, and the default is the obvious
 // "image" (not the former "output", which read as disposable scratch).
 func TestVmDiskRoot_Configurable(t *testing.T) {
-	// default (no env, no config): the built-in "image".
 	t.Setenv(VmImageDirEnv, "")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isolate from any real vm.image_dir config
-	if got := VmDiskRoot(); got != "image" {
+	if got := mustRoot(t); got != "image" {
 		t.Fatalf("VmDiskRoot() default = %q, want %q", got, "image")
 	}
-	if got := VmDiskDir("cachyos-gpu"); got != filepath.Join("image", "cachyos-gpu") {
+	if got := mustDir(t, "cachyos-gpu"); got != filepath.Join("image", "cachyos-gpu") {
 		t.Fatalf("VmDiskDir default = %q, want %q", got, filepath.Join("image", "cachyos-gpu"))
 	}
 
 	// env override wins.
 	t.Setenv(VmImageDirEnv, "/srv/vm-images")
-	if got := VmDiskRoot(); got != "/srv/vm-images" {
+	if got := mustRoot(t); got != "/srv/vm-images" {
 		t.Fatalf("VmDiskRoot() env override = %q, want %q", got, "/srv/vm-images")
 	}
-	if got := VmDiskDir("x"); got != filepath.Join("/srv/vm-images", "x") {
+	if got := mustDir(t, "x"); got != filepath.Join("/srv/vm-images", "x") {
 		t.Fatalf("VmDiskDir env override = %q", got)
 	}
 }
@@ -36,8 +54,8 @@ func TestVmDiskRoot_Configurable(t *testing.T) {
 func TestVmDiskDir_PerVM(t *testing.T) {
 	t.Setenv(VmImageDirEnv, "")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	a := VmDiskDir("cachyos-gpu")
-	b := VmDiskDir("cachyos-gpu-vm")
+	a := mustDir(t, "cachyos-gpu")
+	b := mustDir(t, "cachyos-gpu-vm")
 	if a == b {
 		t.Fatalf("VmDiskDir must be per-VM; got identical paths: %s", a)
 	}
@@ -57,12 +75,12 @@ func TestVmDiskRoot_ConfigSetting(t *testing.T) {
 		t.Fatal(err)
 	}
 	// the setting beats the default.
-	if got := VmDiskRoot(); got != "/srv/from-config" {
+	if got := mustRoot(t); got != "/srv/from-config" {
 		t.Fatalf("VmDiskRoot() with vm.image_dir set = %q, want /srv/from-config", got)
 	}
 	// the env var beats the setting.
 	t.Setenv(VmImageDirEnv, "/srv/from-env")
-	if got := VmDiskRoot(); got != "/srv/from-env" {
+	if got := mustRoot(t); got != "/srv/from-env" {
 		t.Fatalf("VmDiskRoot() with the env override = %q, want /srv/from-env", got)
 	}
 }
