@@ -97,23 +97,34 @@ func snapshotsDir(vmName string) (string, error) {
 
 // vmDiskPath returns the absolute path to the VM's primary qcow2 disk
 // (the file that holds internal snapshots and that external snapshots
-// back onto). For charly-built VMs this is output/qcow2/disk.qcow2 in the
+// back onto). For charly-built VMs this is <vm.image_dir>/<vm>/disk.qcow2 in the
 // project tree; for adopted (imported) VMs this is the path recorded in
 // VmSource.DiskPath.
 //
-// V1 returns a best-effort guess: project-relative output path if it
+// V1 returns a best-effort guess: project-relative image path if it
 // exists, otherwise empty. Callers that need authoritative resolution
 // (for clone backing, for libvirt snapshot XML) should pass an
 // explicit override; this helper is for the registry's own bookkeeping.
 func vmDiskPath(vmName string) (string, error) {
 	// Per-VM disk dir used by the charly vm build cloud_image / bootc / bootstrap
-	// paths. (See charly/vm_create_spec.go which resolves the same per-VM
-	// output/qcow2/<vm>/disk.qcow2.)
+	// paths — the same <vm.image_dir>/<vm>/disk.qcow2 layout VmDiskDir derives.
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	candidate := filepath.Join(cwd, VmDiskDir(vmName), "disk.qcow2")
+	diskDir, err := VmDiskDir(vmName)
+	if err != nil {
+		return "", err
+	}
+	// An ABSOLUTE vm.image_dir pins the root globally (VmImageDirEnv's documented
+	// contract): use it as-is. filepath.Join does NOT reset on an absolute element
+	// (Join("/home/u", "/srv/img") == "/home/u/srv/img"), so gluing cwd onto an
+	// absolute root would stat a path that does not exist and break exactly the
+	// relocation this feature exists to enable.
+	if !filepath.IsAbs(diskDir) {
+		diskDir = filepath.Join(cwd, diskDir)
+	}
+	candidate := filepath.Join(diskDir, "disk.qcow2")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate, nil
 	}
@@ -126,7 +137,7 @@ func vmDiskPath(vmName string) (string, error) {
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate, nil
 	}
-	return "", fmt.Errorf("vm %q: cannot locate primary disk (looked in %s/disk.qcow2 and %s/charly-%s/disk.qcow2)", vmName, VmDiskDir(vmName), base, vmName)
+	return "", fmt.Errorf("vm %q: cannot locate primary disk (looked in %s/disk.qcow2 and %s/charly-%s/disk.qcow2)", vmName, diskDir, base, vmName)
 }
 
 // registryPath returns the registry.json path for a VM.

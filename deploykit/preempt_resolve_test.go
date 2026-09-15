@@ -65,7 +65,7 @@ func TestFindVMClaimant(t *testing.T) {
 			Descent: &spec.DescentDescriptor{Venue: ""},
 		},
 	}
-	name, node, ok := FindVMClaimant(tree, "gpu-check-vm")
+	name, node, ok := FindVMClaimant(tree, "gpu-check-vm", "")
 	if !ok {
 		t.Fatal("expected a claimant match")
 	}
@@ -76,7 +76,7 @@ func TestFindVMClaimant(t *testing.T) {
 		t.Errorf("node.From = %q, want gpu-check-vm", node.From)
 	}
 
-	if _, _, ok := FindVMClaimant(tree, "no-such-entity"); ok {
+	if _, _, ok := FindVMClaimant(tree, "no-such-entity", ""); ok {
 		t.Error("expected no match for an unreferenced VM entity")
 	}
 }
@@ -92,7 +92,7 @@ func TestFindVMClaimant_RequiresSSHVenue(t *testing.T) {
 			RequiresExclusive: []string{"nvidia-gpu"},
 		},
 	}
-	if _, _, ok := FindVMClaimant(tree, "gpu-check-vm"); ok {
+	if _, _, ok := FindVMClaimant(tree, "gpu-check-vm", ""); ok {
 		t.Error("a non-ssh-venue node must never be treated as a VM claimant")
 	}
 }
