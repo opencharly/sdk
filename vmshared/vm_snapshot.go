@@ -116,7 +116,15 @@ func vmDiskPath(vmName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	candidate := filepath.Join(cwd, diskDir, "disk.qcow2")
+	// An ABSOLUTE vm.image_dir pins the root globally (VmImageDirEnv's documented
+	// contract): use it as-is. filepath.Join does NOT reset on an absolute element
+	// (Join("/home/u", "/srv/img") == "/home/u/srv/img"), so gluing cwd onto an
+	// absolute root would stat a path that does not exist and break exactly the
+	// relocation this feature exists to enable.
+	if !filepath.IsAbs(diskDir) {
+		diskDir = filepath.Join(cwd, diskDir)
+	}
+	candidate := filepath.Join(diskDir, "disk.qcow2")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate, nil
 	}

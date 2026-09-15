@@ -84,3 +84,30 @@ func TestVmDiskRoot_ConfigSetting(t *testing.T) {
 		t.Fatalf("VmDiskRoot() with the env override = %q, want /srv/from-env", got)
 	}
 }
+
+// TestVmDiskPath_AbsoluteRoot pins the absolute-root fix: an absolute vm.image_dir
+// must be used AS-IS. filepath.Join does NOT reset on an absolute element, so the
+// former cwd-gluing stat()ed "cwd + /srv/..." and never found the disk — breaking the
+// exact relocation the configurable root exists to enable. This FAILS without the
+// IsAbs guard.
+func TestVmDiskPath_AbsoluteRoot(t *testing.T) {
+	root := t.TempDir() // ABSOLUTE
+	t.Setenv(VmImageDirEnv, root)
+	vm := "abs-root-vm"
+	dir := filepath.Join(root, vm)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "disk.qcow2"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// chdir elsewhere so a cwd-glue bug would look in the WRONG place.
+	t.Chdir(t.TempDir())
+	got, err := vmDiskPath(vm)
+	if err != nil {
+		t.Fatalf("vmDiskPath with an absolute root: %v", err)
+	}
+	if want := filepath.Join(root, vm, "disk.qcow2"); got != want {
+		t.Fatalf("vmDiskPath = %q, want %q", got, want)
+	}
+}
