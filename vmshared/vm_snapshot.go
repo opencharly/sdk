@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"time"
@@ -225,6 +226,60 @@ func snapshotExternalDiskPath(vmName, snapName string) (string, error) {
 	return filepath.Join(dir, snapName, "disk.qcow2"), nil
 }
 
+// SnapshotBackingStalePath reports whether an external snapshot's backing chain
+// has been REBUILT after the snapshot was captured, returning the offending
+// backing file path. A non-empty return means the snapshot is STALE.
+//
+// Why a snapshot goes stale: the guest filesystem captured inside the snapshot
+// (btrfs, ext4) references inodes in the BASE disks of its backing chain. When a
+// later `vm build` rewrites one of those base disks (a re-provision, a disk-root
+// change), the snapshot's superblock still points at the OLD data, so any clone
+// backed by it boots into a broken/grub-rescue guest. The mtime ordering — a
+// backing file newer than the snapshot's `Created` — is the detectable proxy.
+//
+// This is the ONE staleness definition (R3). The clone path (candy/plugin-vm)
+// and the capture path (CreateSnapshot below) MUST agree on it: the clone guard
+// already refuses a stale snapshot with an actionable error, so if capture did
+// not also treat the same snapshot as stale it would refuse to refresh it
+// (`already exists`), making the clone guard's promised recovery impossible.
+//
+// Second-precision comparison: the registry stores `Created` at RFC3339 second
+// precision while a capture-finalization write can land sub-second later, so a
+// same-second mtime is NOT stale (a false STALE would force needless re-captures).
+func SnapshotBackingStalePath(entry *SnapshotEntry) (string, error) {
+	if entry == nil || entry.DiskPath == "" || entry.Created == "" {
+		return "", nil // nothing to check
+	}
+	created, err := time.Parse(time.RFC3339, entry.Created)
+	if err != nil {
+		return "", fmt.Errorf("parsing snapshot created time %q: %w", entry.Created, err)
+	}
+	cmd := exec.Command("qemu-img", "info", "--backing-chain", "-U", "--output", "json", entry.DiskPath)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("qemu-img info --backing-chain %s: %w", entry.DiskPath, err)
+	}
+	var chain []struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.Unmarshal(out, &chain); err != nil {
+		return "", fmt.Errorf("parsing qemu-img backing chain: %w", err)
+	}
+	for _, img := range chain {
+		if img.Filename == "" || img.Filename == entry.DiskPath {
+			continue // the snapshot's own disk is not a backing file
+		}
+		fi, err := os.Stat(img.Filename)
+		if err != nil {
+			continue // a missing backing file is a different error (overlay create fails loudly)
+		}
+		if fi.ModTime().Truncate(time.Second).After(created.Truncate(time.Second)) {
+			return img.Filename, nil
+		}
+	}
+	return "", nil
+}
+
 // SnapshotCreateOpts parameterizes the creation of a snapshot.
 type SnapshotCreateOpts struct {
 	// VmName is the kind:vm entity name (without charly- prefix).
@@ -273,23 +328,99 @@ func CreateSnapshot(opts SnapshotCreateOpts) (*SnapshotEntry, error) {
 		return nil, err
 	}
 	if entry, exists := reg.Snapshots[opts.SnapName]; exists {
-		// Golden-refresh idempotency: a registry entry whose disk is MISSING is a
-		// stale record (the golden was deleted to force a re-capture, or a crashed
-		// run left the record behind). Re-capturing over it is the operator's
-		// intent — drop the stale entry and proceed. A live entry (disk present)
-		// is still a hard conflict. ONLY os.IsNotExist qualifies as stale: any
-		// other stat failure (permission, transient I/O) must NOT delete a live
-		// entry — it falls through to the hard-conflict path.
+		// Golden-refresh idempotency — a snapshot may be re-captured in place when
+		// it is STALE, and refused only when it is LIVE. "Stale" has TWO forms, and
+		// both must be honoured (R3: one definition shared with the clone guard):
+		//
+		//   1. The disk is MISSING — the golden was deleted to force a re-capture,
+		//      or a crashed run left the record behind. ONLY os.IsNotExist qualifies;
+		//      any other stat failure (permission, transient I/O) must NOT delete a
+		//      live entry — it falls through to the hard-conflict path.
+		//   2. The disk is PRESENT but its backing chain was REBUILT after capture
+		//      (SnapshotBackingStalePath). The clone guard refuses such a snapshot
+		//      with "re-run the base bed to refresh it" — so capture MUST treat it as
+		//      refreshable, or that promised recovery is impossible (the capture
+		//      would answer `already exists` and bed_run would keep the stale golden
+		//      forever). This is exactly the auto-recovery the guard's error names.
+		//
+		// A genuinely live external snapshot (disk present AND fresh) is still a hard
+		// conflict.
+		refreshable := false
 		if entry.Mode == "external" && entry.DiskPath != "" {
-			if _, err := os.Stat(entry.DiskPath); err == nil || !os.IsNotExist(err) {
-				return nil, fmt.Errorf("vm %q: snapshot %q already exists", opts.VmName, opts.SnapName)
+			if _, serr := os.Stat(entry.DiskPath); serr != nil {
+				if os.IsNotExist(serr) {
+					refreshable = true // form 1: missing disk
+				}
+				// non-IsNotExist stat error falls through to the hard conflict
+			} else {
+				staleBacking, berr := SnapshotBackingStaleProbe(entry)
+				// CONSERVATIVE on an indeterminate probe: a freshness check that
+				// cannot run (a non-qcow2 disk, a transient qemu-img failure) must
+				// NOT delete a possibly-live snapshot. Treat it as live (hard
+				// conflict) and say why — the burden is on a PROVEN staleness.
+				if berr != nil {
+					fmt.Fprintf(os.Stderr, "note: snapshot %q on %q exists but its freshness could not be determined: %v — treating it as live\n",
+						opts.SnapName, opts.VmName, berr)
+				} else if staleBacking != "" {
+					refreshable = true // form 2: stale backing chain
+					fmt.Fprintf(os.Stderr, "note: snapshot %q on %q is STALE (backing %s was rebuilt after capture) — re-capturing over it\n",
+						opts.SnapName, opts.VmName, staleBacking)
+				}
 			}
-		} else {
+		}
+		if !refreshable {
 			return nil, fmt.Errorf("vm %q: snapshot %q already exists", opts.VmName, opts.SnapName)
+		}
+		// Clear BOTH stores the snapshot lives in before the re-create, for an
+		// external snapshot:
+		//
+		//   1. LIBVIRT metadata — DomainSnapshotDelete (metadata-only). Left
+		//      behind, the re-create fails ("snapshot already exists") and domain
+		//      teardown is blocked ("cannot delete inactive domain with N
+		//      snapshots"). Best-effort + idempotent: absent libvirt metadata (the
+		//      crashed-run case) is not an error (DeleteExternalSnapshot tolerates
+		//      a missing snapshot).
+		//   2. The per-snapshot DIRECTORY on disk — libvirt's external-snapshot
+		//      create REFUSES a target file that already exists ("external snapshot
+		//      file for disk vda already exists and is not a block device"), and it
+		//      OWNS creating that file. charly owns the disk lifecycle, so the
+		//      stale disk.qcow2 (+ meta.json) is removed here, exactly as
+		//      DeleteSnapshot does for a full delete. The dir is keyed by the same
+		//      name the create below will write to.
+		if entry.Mode == "external" {
+			if derr := DeleteExternalSnapshot(opts.VmName, entry); derr != nil {
+				return nil, fmt.Errorf("vm %q: clearing the stale snapshot %q from libvirt before re-capture: %w",
+					opts.VmName, opts.SnapName, derr)
+			}
+			if dir, derr := snapshotsDir(opts.VmName); derr == nil {
+				if rmerr := os.RemoveAll(filepath.Join(dir, opts.SnapName)); rmerr != nil {
+					return nil, fmt.Errorf("vm %q: removing the stale snapshot %q dir before re-capture: %w",
+						opts.VmName, opts.SnapName, rmerr)
+				}
+			}
 		}
 		delete(reg.Snapshots, opts.SnapName)
 		if err := saveRegistry(opts.VmName, reg); err != nil {
 			return nil, err
+		}
+	} else if mode == "external" {
+		// No registry entry, but an ORPHANED snapshot dir may still exist on disk
+		// (a crashed run, or a re-capture whose registry delete landed but whose
+		// dir removal did not). libvirt's external-snapshot create REFUSES a target
+		// file that already exists ("external snapshot file for disk vda already
+		// exists and is not a block device"), and it OWNS creating that file — so
+		// charly (the disk-lifecycle owner) clears a leftover dir before every
+		// external create. Without this the very first re-capture after an
+		// interrupted one can never succeed.
+		if dir, derr := snapshotsDir(opts.VmName); derr == nil {
+			orphan := filepath.Join(dir, opts.SnapName)
+			if _, serr := os.Stat(orphan); serr == nil {
+				fmt.Fprintf(os.Stderr, "note: clearing an orphaned snapshot dir %s (no registry entry) before capture\n", orphan)
+				if rmerr := os.RemoveAll(orphan); rmerr != nil {
+					return nil, fmt.Errorf("vm %q: removing the orphaned snapshot dir %s before capture: %w",
+						opts.VmName, orphan, rmerr)
+				}
+			}
 		}
 	}
 
