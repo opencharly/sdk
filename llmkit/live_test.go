@@ -113,9 +113,9 @@ func TestLive_ReasoningDeltaShape(t *testing.T) {
 }
 
 // TestLive_VisionContentParts: ChatVision against the real endpoint — the verb's
-// primitive. Sends a 1x1 red PNG as a base64 data URL and asserts the model
-// describes the color, proving the content-parts shape and the data-URL encoding
-// reach a real vision model.
+// primitive. Sends a 64x64 solid-red PNG as a base64 data URL and asserts the
+// model describes the color, proving the content-parts shape and the data-URL
+// encoding reach a real vision model.
 func TestLive_VisionContentParts(t *testing.T) {
 	if !endpointUp(t) {
 		t.Skip("no OpenAI-compatible endpoint at " + liveBaseURL())
