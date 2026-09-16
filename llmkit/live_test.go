@@ -84,24 +84,32 @@ func TestLive_TextStreaming(t *testing.T) {
 }
 
 // TestLive_ReasoningDeltaShape: the load-bearing claim that ollama emits a
-// NON-STANDARD `reasoning` field the SDK accumulator does not type — read from
-// raw JSON with Raw() present while Valid() is false. This asserts against REAL
-// bytes, not a mock: a reasoning-capable model returns reasoning alongside (or
-// instead of) content, and the client's accumulation must observe it.
+// NON-STANDARD `reasoning` field the OpenAI schema has no slot for, and that the
+// client reads it from REAL bytes. The test FAILS when no reasoning-bearing output
+// is observed, so it cannot pass vacuously (the round-1 defect: it merely called
+// Chat and logged content, which is the same path as the text test and would pass
+// with the reasoning read deleted).
+//
+// It probes a reasoning-capable model and requires Reasoning to be non-empty. The
+// model is configurable (EVAL_LLM_MODEL); the default cloud model emits reasoning
+// on a deliberate prompt, so the assertion is real on the default endpoint.
 func TestLive_ReasoningDeltaShape(t *testing.T) {
 	if !endpointUp(t) {
 		t.Skip("no OpenAI-compatible endpoint at " + liveBaseURL())
 	}
 	cfg := liveCfg()
-	// Ask something that reliably elicits reasoning; capture the reply either way.
-	msg, err := Chat(context.Background(), cfg, []openai.ChatCompletionMessageParamUnion{Text("What is 17 times 23? Answer with just the number.")}, nil)
+	// A prompt that elicits step-by-step thinking: the model emits `reasoning`
+	// alongside (or before) content.
+	msg, err := Chat(context.Background(), cfg,
+		[]openai.ChatCompletionMessageParamUnion{Text("Think step by step, then answer: what is 17 times 23?")}, nil)
 	if err != nil {
 		t.Fatalf("live Chat: %v", err)
 	}
-	if msg.Content == nil {
-		t.Fatal("nil content")
+	if strings.TrimSpace(msg.Reasoning) == "" {
+		t.Fatalf("the live model returned NO reasoning-bearing output, so the non-standard `reasoning` read is UNOBSERVED (model=%s). "+
+			"Set EVAL_LLM_MODEL to a reasoning-capable model to run this proof.", cfg.Model)
 	}
-	t.Logf("LIVE REPLY: %q", *msg.Content)
+	t.Logf("LIVE REASONING observed: %d bytes; content=%q", len(msg.Reasoning), derefOr(msg.Content, ""))
 }
 
 // TestLive_VisionContentParts: ChatVision against the real endpoint — the verb's
@@ -143,6 +151,14 @@ func TestLive_AuthAbsentOnKeylessEndpoint(t *testing.T) {
 		t.Fatalf("live keyless Chat: %v", err)
 	}
 	t.Logf("LIVE keyless call succeeded (no Authorization header sent)")
+}
+
+// derefOr returns *p or a default.
+func derefOr(p *string, def string) string {
+	if p == nil {
+		return def
+	}
+	return *p
 }
 
 // solidPNG renders a w x h solid-color PNG (an unambiguous vision fixture).

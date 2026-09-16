@@ -264,11 +264,18 @@ func ParseDuration(s string) (time.Duration, bool) {
 // Message is the caller's transcript row. It is deliberately NOT a wire type (the
 // SDK owns the wire): Content is a *string so "no content" (a pure tool-call
 // turn) is distinguishable from "".
+//
+// Reasoning carries ollama's NON-STANDARD `reasoning` output for the turn when the
+// provider emitted one. It is SURFACED here rather than only used for the
+// empty-completion diagnostic, so a caller (and a test) can observe that the
+// non-standard field was actually read — the client captures it from the raw JSON
+// because the OpenAI schema has no slot for it.
 type Message struct {
 	Role       string
 	Content    *string
 	ToolCalls  []ToolCall
 	ToolCallID string
+	Reasoning  string
 }
 
 // ToolCall is one assembled tool call.
@@ -642,6 +649,7 @@ func Chat(ctx context.Context, cfg Config, msgs []openai.ChatCompletionMessagePa
 		out.ToolCalls = FromSDKTools(m.ToolCalls)
 	}
 	reasoning := reasoningSB.String()
+	out.Reasoning = reasoning
 	if out.Content == nil && len(out.ToolCalls) == 0 {
 		if reasoning != "" {
 			return Message{}, fmt.Errorf("LLM: empty completion (no content, no tool calls — the model emitted only %d byte(s) of reasoning; set reasoning_effort: none or raise max_tokens)", len(reasoning))
