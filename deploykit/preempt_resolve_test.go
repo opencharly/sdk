@@ -170,3 +170,42 @@ func TestMergedDeployTree_PerHostWinsOverCommittedNode(t *testing.T) {
 		t.Errorf("committed vm field lost in merge: got %q", node.From)
 	}
 }
+
+// TestFindVMClaimant_IdentityScoped is the coverage for the claimantID argument the
+// spec #135 fix added (FindVMClaimant gained a 3rd param: "scope the claim to the
+// requesting deploy identity"). Many deploys routinely share one kind:vm entity and
+// exactly one carries requires_exclusive — the entity-wide scan returned the FIRST
+// match regardless of which sibling asked, so every VM created from that entity
+// inherited the GPU claim (observed live: a GPU-free bed failed `charly vm create`
+// demanding nvidia-gpu).
+//
+// Non-empty claimantID must resolve ONLY that exact deploy, compared after
+// VmDomainIdentity normalization (deploy key with a slash and domain identity with
+// a dash both match); a sibling with the same From but a different identity must
+// NEVER be returned.
+func TestFindVMClaimant_IdentityScoped(t *testing.T) {
+	tree := map[string]spec.DeployNode{
+		// the sibling that actually holds the GPU claim
+		"vm/owned-bed": {
+			Target:            "vm",
+			From:              "gpu-check-vm",
+			Descent:           &spec.DescentDescriptor{Venue: "ssh"},
+			RequiresExclusive: []string{"nvidia-gpu"},
+		},
+		// a SIBLING from the same VM entity, NOT exclusive
+		"vm/gpu-free-bed": {
+			Target:  "vm",
+			From:    "gpu-check-vm",
+			Descent: &spec.DescentDescriptor{Venue: "ssh"},
+		},
+	}
+	// the GPU-free sibling asks: it must NOT be handed the owned bed's claim.
+	if name, _, ok := FindVMClaimant(tree, "gpu-check-vm", "gpu-free-bed"); ok {
+		t.Errorf("a sibling must not inherit the claim: got %q", name)
+	}
+	// the owner asks: it gets its own claim, matched across the slash/dash identity forms.
+	name, _, ok := FindVMClaimant(tree, "gpu-check-vm", "vm/owned-bed")
+	if !ok || name != "vm/owned-bed" {
+		t.Errorf("the owning deploy must resolve its own claim, got name=%q ok=%v", name, ok)
+	}
+}
