@@ -10,10 +10,11 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/goreleaser/nfpm/v2 v2.47.0
 	github.com/klauspost/compress v1.19.2
+	github.com/openai/openai-go/v3 v3.61.0
 	github.com/opencharly/plugin-egress/candy/plugin-egress v0.2026237.1419
 	github.com/opencharly/plugin-init/candy/plugin-init v0.2026237.1424
-	github.com/opencharly/spec v0.2026254.503
-	golang.org/x/term v0.43.0
+	github.com/opencharly/spec v0.2026259.2033
+	golang.org/x/term v0.45.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 	gopkg.in/yaml.v3 v3.0.1
@@ -67,16 +68,20 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
+	github.com/tidwall/gjson v1.19.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	gitlab.com/digitalxero/go-conventional-commit v1.0.7 // indirect
 	go.digitalxero.dev/go-msix v0.3.1 // indirect
 	go.mozilla.org/pkcs7 v0.9.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.7.1 // indirect
