@@ -116,7 +116,9 @@ func TestCreateSnapshot_StaleRegistryEntryRecaptures(t *testing.T) {
 		t.Fatalf("saveRegistry: %v", err)
 	}
 
-	// Stub the external capture so the test never touches libvirt.
+	// Stub the external capture so the test never touches libvirt. The stale
+	// re-capture path ALSO clears the libvirt-side snapshot first (the registry
+	// and libvirt are two stores), so that seam is stubbed too.
 	called := false
 	original := CreateExternalSnapshot
 	CreateExternalSnapshot = func(opts SnapshotCreateOpts, outFile string) error {
@@ -124,6 +126,9 @@ func TestCreateSnapshot_StaleRegistryEntryRecaptures(t *testing.T) {
 		return os.WriteFile(outFile, []byte("captured"), 0o644)
 	}
 	defer func() { CreateExternalSnapshot = original }()
+	origDel := DeleteExternalSnapshot
+	DeleteExternalSnapshot = func(vmName string, entry *SnapshotEntry) error { return nil }
+	defer func() { DeleteExternalSnapshot = origDel }()
 
 	entry, err := CreateSnapshot(SnapshotCreateOpts{VmName: vm, SnapName: snap, Mode: "external"})
 	if err != nil {
@@ -220,5 +225,115 @@ func TestCreateSnapshot_StatErrorStillConflicts(t *testing.T) {
 	}
 	if reg2.Snapshots[snap] == nil {
 		t.Fatal("registry entry must survive a non-not-exists stat error")
+	}
+}
+
+// TestCreateSnapshot_StaleBackingRecaptures: the SECOND form of refreshable
+// staleness — the snapshot disk EXISTS, but its backing chain was rebuilt after
+// capture (the clone guard refuses such a snapshot with "re-run the base bed to
+// refresh it"). Capture MUST treat the same snapshot as refreshable, or that
+// promised recovery is impossible: it would answer `already exists` and bed_run
+// would keep the stale golden forever. This test pins the auto-recovery, and
+// FAILS without SnapshotBackingStaleProbe's form-2 arm.
+func TestCreateSnapshot_StaleBackingRecaptures(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(VmStateDirEnv, root)
+	vm := "test-vm"
+	snap := "golden"
+
+	diskPath, err := snapshotExternalDiskPath(vm, snap)
+	if err != nil {
+		t.Fatalf("snapshotExternalDiskPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(diskPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The snapshot disk EXISTS (so it is not form-1 stale) …
+	if err := os.WriteFile(diskPath, []byte("present"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg := SnapshotRegistry{Version: 1, Snapshots: map[string]*SnapshotEntry{
+		snap: {Name: snap, Mode: "external", LibvirtName: snap, DiskPath: diskPath, Refcount: 3},
+	}}
+	if err := saveRegistry(vm, &reg); err != nil {
+		t.Fatalf("saveRegistry: %v", err)
+	}
+
+	// … but the probe reports a rebuilt backing file (form 2).
+	origProbe := SnapshotBackingStaleProbe
+	SnapshotBackingStaleProbe = func(entry *SnapshotEntry) (string, error) {
+		return "/some/rebuilt/base/disk.qcow2", nil
+	}
+	defer func() { SnapshotBackingStaleProbe = origProbe }()
+
+	createCalled, deleteCalled := false, false
+	origCreate := CreateExternalSnapshot
+	CreateExternalSnapshot = func(opts SnapshotCreateOpts, outFile string) error {
+		createCalled = true
+		return os.WriteFile(outFile, []byte("recaptured"), 0o644)
+	}
+	defer func() { CreateExternalSnapshot = origCreate }()
+	origDel := DeleteExternalSnapshot
+	DeleteExternalSnapshot = func(vmName string, entry *SnapshotEntry) error {
+		deleteCalled = true
+		return nil
+	}
+	defer func() { DeleteExternalSnapshot = origDel }()
+
+	entry, err := CreateSnapshot(SnapshotCreateOpts{VmName: vm, SnapName: snap, Mode: "external"})
+	if err != nil {
+		t.Fatalf("a stale-backing snapshot must be re-captured, got: %v", err)
+	}
+	if !deleteCalled {
+		t.Fatal("the stale snapshot's libvirt metadata must be cleared before re-capture")
+	}
+	if !createCalled {
+		t.Fatal("CreateExternalSnapshot must be invoked for the re-capture")
+	}
+	if entry == nil || entry.Name != snap {
+		t.Fatalf("unexpected entry: %+v", entry)
+	}
+}
+
+// TestCreateSnapshot_FreshBackingStillConflicts: the negative twin — a snapshot
+// whose disk exists AND whose probe reports FRESH must remain a hard conflict.
+// Without this, form-2 would degenerate into "always re-capture".
+func TestCreateSnapshot_FreshBackingStillConflicts(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(VmStateDirEnv, root)
+	vm := "test-vm"
+	snap := "golden"
+
+	diskPath, err := snapshotExternalDiskPath(vm, snap)
+	if err != nil {
+		t.Fatalf("snapshotExternalDiskPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(diskPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(diskPath, []byte("present"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg := SnapshotRegistry{Version: 1, Snapshots: map[string]*SnapshotEntry{
+		snap: {Name: snap, Mode: "external", LibvirtName: snap, DiskPath: diskPath, Refcount: 1},
+	}}
+	if err := saveRegistry(vm, &reg); err != nil {
+		t.Fatalf("saveRegistry: %v", err)
+	}
+
+	origProbe := SnapshotBackingStaleProbe
+	SnapshotBackingStaleProbe = func(entry *SnapshotEntry) (string, error) { return "", nil }
+	defer func() { SnapshotBackingStaleProbe = origProbe }()
+
+	called := false
+	origCreate := CreateExternalSnapshot
+	CreateExternalSnapshot = func(opts SnapshotCreateOpts, outFile string) error { called = true; return nil }
+	defer func() { CreateExternalSnapshot = origCreate }()
+
+	if _, err := CreateSnapshot(SnapshotCreateOpts{VmName: vm, SnapName: snap, Mode: "external"}); err == nil {
+		t.Fatal("a fresh snapshot must still conflict")
+	}
+	if called {
+		t.Fatal("CreateExternalSnapshot must NOT be invoked for a fresh snapshot")
 	}
 }

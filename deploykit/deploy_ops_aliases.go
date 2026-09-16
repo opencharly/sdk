@@ -42,7 +42,9 @@ var (
 var (
 	// HolderAddrFor derives the resource-arbiter holder address for a deploy-tree node.
 	HolderAddrFor = deploy.HolderAddrFor
-	// FindVMClaimant returns the first node claiming a VM entity via requires_exclusive.
+	// FindVMClaimant returns the node claiming the given VM entity via
+	// requires_exclusive. The claimantID argument (spec#135) scopes the lookup
+	// to one deploy identity; empty falls back to the entity-wide scan.
 	FindVMClaimant = deploy.FindVMClaimant
 )
 

@@ -44,3 +44,11 @@ var (
 	DeleteExternalSnapshot    func(vmName string, entry *SnapshotEntry) error
 	RevertExternalSnapshot    func(vmName string, entry *SnapshotEntry) error
 )
+
+// SnapshotBackingStaleProbe reports the stale backing file (non-empty == stale)
+// for an external snapshot, or ("", nil) when fresh. Defaults to
+// SnapshotBackingStalePath (the qemu-img --backing-chain mtime probe); it is a
+// seam so the capture path's stale-re-capture decision is unit-testable without
+// a real qcow2 chain on disk. A consumer that does not override it gets the real
+// probe — the seam is only for tests.
+var SnapshotBackingStaleProbe = SnapshotBackingStalePath
