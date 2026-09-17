@@ -1,0 +1,73 @@
+# The sdk contract module's Go gates.
+#
+# This repo carried no CI of its own (only the two org-wide dispatchers), which
+# is the mechanism that let opencharly/sdk#262 land: a 32-bit-only compile
+# failure in sdk/buildkit was invisible until someone cross-compiled by hand.
+# The cross-arch matrix below is the gate that makes that class impossible to
+# reintroduce silently.
+#
+# It ADDS gates only — it removes and weakens nothing.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.13.2
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+  # The regression gate for opencharly/sdk#262: the module must build for the
+  # 32-bit targets too, not just the 64-bit ones CI usually runs on. A type-width
+  # difference (Statfs_t.Bsize int32 vs int64) is only observable off amd64, so
+  # this matrix is the only thing that can catch it.
+  cross-compile:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64, arm, "386"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: go build ./... for linux/${{ matrix.goarch }}
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build ./...
