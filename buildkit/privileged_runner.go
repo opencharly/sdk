@@ -72,7 +72,12 @@ func checkFreeSpace(path string, minBytes int64) error {
 	if err := syscall.Statfs(path, &st); err != nil {
 		return fmt.Errorf("checking free space on %s: %w", path, err)
 	}
-	free := int64(st.Bavail) * st.Bsize
+	// Convert BOTH operands: syscall.Statfs_t.Bsize is int64 on 64-bit targets
+	// but int32 on 32-bit ones (arm, 386), so the mixed-type multiplication
+	// fails to compile for GOOS=linux GOARCH=arm — see opencharly/sdk#262.
+	//
+	//nolint:unconvert // st.Bsize is int32 on 32-bit targets; the cast is a no-op on 64-bit ones and REQUIRED on 32-bit
+	free := int64(st.Bavail) * int64(st.Bsize)
 	if free < minBytes {
 		return fmt.Errorf("insufficient free space on %s: %.1f GiB free, %.1f GiB required (%.0f bytes free, %d bytes required); free disk space and retry",
 			path, float64(free)/gib, float64(minBytes)/gib, float64(free), minBytes)
