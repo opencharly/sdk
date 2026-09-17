@@ -187,3 +187,27 @@ func TestRenderBootstrapScript(t *testing.T) {
 		}
 	})
 }
+
+// TestFreeSpaceArithmeticIs32BitSafe pins the fix for opencharly/sdk#262: the
+// free-space product must convert BOTH Statfs_t operands to int64. On 32-bit
+// targets (linux/arm, linux/386) Statfs_t.Bsize is int32, so `int64(st.Bavail)
+// * st.Bsize` is a compile error and the whole module fails to build there.
+//
+// A test cannot observe a compile failure of its own package, so this pins the
+// invariant from the source side: the only free-space multiplication in
+// buildkit must cast both operands. It is a guard against a future refactor
+// reintroducing the mixed-type form.
+func TestFreeSpaceArithmeticIs32BitSafe(t *testing.T) {
+	const file = "privileged_runner.go"
+	src, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read %s: %v", file, err)
+	}
+	text := string(src)
+	if strings.Contains(text, "int64(st.Bavail) * st.Bsize") {
+		t.Error("privileged_runner.go multiplies int64 by a possibly-int32 Statfs_t field; convert BOTH operands (int64(st.Bsize)) — see opencharly/sdk#262")
+	}
+	if !strings.Contains(text, "int64(st.Bavail) * int64(st.Bsize)") {
+		t.Errorf("%s no longer contains the 32-bit-safe free-space product; if the expression moved, move this guard with it", file)
+	}
+}
