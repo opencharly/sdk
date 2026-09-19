@@ -416,7 +416,7 @@ func MergeDeployOntoMetadata(meta *spec.BoxMetadata, dc *DeployConfig, deployNam
 		meta.Network = overlay.Network
 	}
 	if overlay.Engine != "" {
-		meta.Engine = overlay.Engine
+		meta.Engine = string(overlay.Engine)
 	}
 	// Merge charly.yml secrets onto image label secrets
 	if overlay.Secret != nil {

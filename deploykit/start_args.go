@@ -18,8 +18,18 @@ import (
 // BuildStartArgs constructs the container run argument list for a detached service.
 // entrypoint is the init system command (e.g., ["supervisord", "-n", "-c", "/etc/supervisord.conf"])
 // or the fallback (e.g., ["sleep", "infinity"]).
+//
+// The engine-specific bits are capability-driven (kit.EngineCapabilityFor), not
+// switched on the engine name:
+//   - the CLI binary comes from EngineBinary (podman / docker / nerdctl);
+//   - GPU passthrough comes from GPURunArgs (CDI for podman, --gpus for the rest);
+//   - host-identical bind-mount sharing uses the engine's own keep-id flag when
+//     it has one (podman --userns=keep-id:uid=…,gid=…), and otherwise launches the
+//     workload as WorkloadUser — container-uid 0 for rootless nerdctl, where
+//     container-uid 0 IS the invoking host user in the rootless userns.
 func BuildStartArgs(engine, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
 	binary := kit.EngineBinary(engine)
+	capability, hasCapability := kit.EngineCapabilityFor(engine)
 	args := []string{
 		binary, "run", "-d", "--rm",
 		"--name", name,
@@ -49,8 +59,17 @@ func BuildStartArgs(engine, imageRef string, uid, gid int, ports []string, name 
 			args = append(args, "-v", m)
 		}
 	}
-	if engine == "podman" && len(bindMounts) > 0 {
-		args = append(args, fmt.Sprintf("--userns=keep-id:uid=%d,gid=%d", uid, gid))
+	if len(bindMounts) > 0 {
+		switch {
+		case hasCapability && capability.SupportsUsernsKeepID && capability.UsernsKeepIDArg != "":
+			// podman: map the invoking user in, so host files stay the caller's.
+			args = append(args, fmt.Sprintf("%s:uid=%d,gid=%d", capability.UsernsKeepIDArg, uid, gid))
+		case hasCapability && capability.WorkloadUser != "":
+			// nerdctl rootless: no keep-id, so run the workload as the user that
+			// maps to the invoking host user (container-uid 0) and host bind-mount
+			// files keep the host uid identity.
+			args = append(args, "--user", capability.WorkloadUser)
+		}
 	}
 	for _, e := range envVars {
 		args = append(args, "-e", e)

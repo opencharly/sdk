@@ -17,7 +17,7 @@ import "github.com/opencharly/spec/spec"
 // falling back to globalEngine. No charly.yml (project) dependency.
 func ResolveBoxEngineForDeploy(boxName, instance, globalEngine string) string {
 	if entry, ok := LoadDeployConfigForRead("ResolveBoxEngineForDeploy").Lookup(boxName, instance); ok && entry.Engine != "" {
-		return entry.Engine
+		return string(entry.Engine)
 	}
 	return globalEngine
 }
