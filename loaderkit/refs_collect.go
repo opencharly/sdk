@@ -29,10 +29,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/opencharly/spec/calver"
+	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/refs"
 	"github.com/opencharly/spec/spec"
 )
@@ -63,67 +63,13 @@ func markRepoAutoMigrating(path string) bool {
 	return true
 }
 
-// normalizeOverrideRepoPath canonicalizes the LHS of a CHARLY_REPO_OVERRIDE pair to the repo-root
-// form spec.ParseRemoteRef yields, so `opencharly/charly` and `github.com/opencharly/charly` both
-// match (same auto-prefix rule as spec.NormalizeRepoSpec).
-func normalizeOverrideRepoPath(rp string) string {
-	rp = strings.TrimSpace(strings.TrimSuffix(rp, "/"))
-	if i := strings.Index(rp, "/"); i > 0 && !strings.Contains(rp[:i], ".") {
-		return "github.com/" + rp
-	}
-	return rp
-}
-
 // RepoOverrideDir returns the configured local override directory for repoPath, or ("", false,
-// nil) when none applies. envValue is the raw CHARLY_REPO_OVERRIDE value (a comma-separated list of
-// `repoPath=localDir` pairs). A malformed entry, a missing/empty directory, or a non-directory
-// target is a hard error — the override was set deliberately, so a typo must fail loud rather than
-// silently fall through to a remote fetch.
-//
-// This is THE single implementation of the CHARLY_REPO_OVERRIDE parse: the comma-separated
-// repoPath=localDir split, the repo-path normalization (a bare owner/repo LHS auto-prefixes
-// github.com, the same rule as spec.NormalizeRepoSpec), the `~/` home expansion, and the
-// exists-and-is-a-directory check. It serves BOTH this mechanism's own ref resolution
-// (EnsureRepoDownloaded, below) AND external consumers that must answer the same question without
-// re-deriving it — charly core's provenance logging ("was this run served from a local override,
-// and which tree?"). A consumer MUST call this rather than re-parse the env value: a second parse
-// is a divergence waiting to happen (R3 — one canonical implementation per behavior).
+// nil) when none applies. The parse itself lives in spec/proc (next to RepoOverrideEnv) so the
+// fetch LEAF (spec/refs.DownloadRepo) can share the SAME one — R3, one implementation per
+// behavior. This wrapper keeps the sdk-side seam (spec.ProjectLoader.RepoOverrideDir / charly
+// core's provenance logging) on that single source.
 func RepoOverrideDir(repoPath, envValue string) (string, bool, error) {
-	envValue = strings.TrimSpace(envValue)
-	if envValue == "" {
-		return "", false, nil
-	}
-	for pair := range strings.SplitSeq(envValue, ",") {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
-			continue
-		}
-		eq := strings.LastIndex(pair, "=")
-		if eq < 0 {
-			return "", false, fmt.Errorf("CHARLY_REPO_OVERRIDE: malformed entry %q (want repoPath=localDir)", pair)
-		}
-		if normalizeOverrideRepoPath(pair[:eq]) != repoPath {
-			continue
-		}
-		dir := strings.TrimSpace(pair[eq+1:])
-		if dir == "" {
-			return "", false, fmt.Errorf("CHARLY_REPO_OVERRIDE: empty directory for repo %q", repoPath)
-		}
-		if strings.HasPrefix(dir, "~/") {
-			if home, err := os.UserHomeDir(); err == nil {
-				dir = filepath.Join(home, dir[2:])
-			}
-		}
-		info, err := os.Stat(dir)
-		if err != nil {
-			return "", false, fmt.Errorf("CHARLY_REPO_OVERRIDE: override dir for %q not accessible: %w", repoPath, err)
-		}
-		if !info.IsDir() {
-			return "", false, fmt.Errorf("CHARLY_REPO_OVERRIDE: override for %q is not a directory: %s", repoPath, dir)
-		}
-		return dir, true, nil
-	}
-	return "", false, nil
+	return proc.RepoOverrideDir(repoPath, envValue)
 }
 
 // cacheBehindHead reports whether a cached repo still needs migration: its root config
