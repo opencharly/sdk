@@ -13,15 +13,11 @@ var (
 	GPURunArgs   = container.GPURunArgs
 	DetectEngine = container.DetectEngine
 
-	// EngineCapabilityFor / EngineRunModeFor expose the engine capability DATA
-	// (the name→facts table) so kit consumers stop switching on the engine name.
-	// EngineCapability is the capability struct type (pod/secret/keep-id/run-mode
-	// support), the sdk-visible mirror of the authored #EngineCapability CUE def.
+	// EngineCapabilityFor / EngineRunModeFor / IsUnitRunMode expose the engine
+	// capability DATA (the name→facts table) so kit consumers stop switching on
+	// the engine name. The capability STRUCT TYPE is spec.EngineCapability (the
+	// generated schema type) — consumers name it directly; no alias here.
 	EngineCapabilityFor = container.EngineCapabilityFor
 	EngineRunModeFor    = container.EngineRunModeFor
+	IsUnitRunMode       = container.IsUnitRunMode
 )
-
-// EngineCapability is the sdk-visible alias of the spec/container capability
-// struct — callers write kit.EngineCapability rather than importing the fabric
-// slice directly (import-purity, zero aliases in reverse).
-type EngineCapability = container.EngineCapability
