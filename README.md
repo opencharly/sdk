@@ -7,7 +7,7 @@ CUE schema source it all derives from live in a SEPARATE contract module,
 NOT own or generate them). What this repo owns:
 
 - **`/` (package `sdk`)** — the go-plugin serve/handshake surface (`Serve`,
-  `ServeCheckVerb`, `Main`, `Handshake`, `ProtocolVersion`), the executor
+  `ServeCheckVerb`, `Main`, `Handshake`), the executor
   reverse-channel client (`Executor`), capability building
   (`BuildCapabilities`, `ProvidedCapability`, `StepContract`), and the streaming
   channel primitives (`RelayChannel`, `SequenceGate`, `ReplayBuffer`). It
@@ -42,10 +42,12 @@ Mapping example: superproject `v2026.185.0751` ⇄ sdk `v0.2026185.751`. Tags ar
 immutable and add-only; minor (`YYYYDDD`) and patch (minutes-of-day) sort
 chronologically under semver comparison.
 
-The plugin PROTOCOL gates are carried separately: `sdk.ProtocolVersion` (the
-go-plugin handshake) and the schema CalVer (`kit.LatestSchemaVersion()`, which
-reads the CUE-owned `spec.SchemaVersion` const from the `github.com/opencharly/spec`
-module, advertised in `Capabilities.calver`).
+The wireframe contract is the plugin's served CUE schema, spliced onto the host base
+by the loader (a real capability gap is a hard schema error). The schema CalVer
+(`kit.LatestSchemaVersion()`, which reads the CUE-owned `spec.SchemaVersion` const from
+the `github.com/opencharly/spec` module) is advertised in `Capabilities.calver`. The
+go-plugin handshake version is hashicorp/go-plugin's own transport negotiation, owned
+by `github.com/opencharly/spec/transport`.
 
 ## Schema + wire types
 
