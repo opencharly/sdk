@@ -19,10 +19,6 @@ import (
 	"github.com/opencharly/spec/transport"
 )
 
-// ProtocolVersion is the go-plugin/proto contract version — a thin secondary gate.
-// CalVer (charly's version.go) is the authority; matching CalVer ⇒ matching proto.
-const ProtocolVersion = transport.ProtocolVersion
-
 // DispenseKey is the single go-plugin plugin name; charly serves/dispenses ONE
 // gRPC plugin exposing the uniform Provider + PluginMeta services.
 const DispenseKey = transport.DispenseKey

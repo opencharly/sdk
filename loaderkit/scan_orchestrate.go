@@ -191,10 +191,10 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		// same candy with different content and Go's map order picked the winner. The
 		// plugin loader is where that bit: it host-builds a plugin candy's SourceDir per entry,
 		// so a shadowed plugin was built from the local tree or from the OLD pinned remote at
-		// random — and when the remote lost the go-plugin handshake (a pre-sdk-split source
-		// serving ProtocolVersion 1 against a v2 client), that surfaced as an intermittent
-		// "incompatible API version" warning. Resolving both keys to the local body makes the
-		// choice deterministic at the source instead of per consumer.
+		// random — and a remote whose go-plugin handshake did not agree with the client
+		// surfaced as an intermittent "incompatible API version" warning. Resolving both
+		// keys to the local body makes the choice deterministic at the source instead of
+		// per consumer.
 		if local, ok := localScanned[winner.Scanned.Model.Name]; ok {
 			// Same reasoning as the skew advisory: route it through the seam so a caller can
 			// collect it as data. nil keeps today's stderr behaviour.

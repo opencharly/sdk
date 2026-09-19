@@ -119,9 +119,8 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 		out = append(out, pc)
 	}
 	return &pb.Capabilities{
-		Calver:          calver,
-		ProtocolVersion: ProtocolVersion,
-		Provided:        out,
-		SchemaCue:       body,
+		Calver:    calver,
+		Provided:  out,
+		SchemaCue: body,
 	}, nil
 }
