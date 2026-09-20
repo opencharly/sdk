@@ -308,8 +308,23 @@ func TestChat_IdleWatchdogBoundsAStall(t *testing.T) {
 	start := time.Now()
 	_, err := Chat(t.Context(), cfg, []openai.ChatCompletionMessageParamUnion{Text("hi")}, nil)
 	elapsed := time.Since(start)
-	if err == nil || !strings.Contains(err.Error(), "stream stalled") {
-		t.Fatalf("want the stall error, got: %v", err)
+	if err == nil {
+		t.Fatal("a stalled stream must error")
+	}
+	// The stall is a TYPED error (so a caller classifies via errors.As, not by
+	// matching this package's wording) and carries the idle bound + counters an
+	// RCA needs. Reverting to a plain fmt.Errorf makes errors.As fail here.
+	var stall *StallError
+	if !errors.As(err, &stall) {
+		t.Fatalf("stall must be *StallError, got %T: %v", err, err)
+	}
+	if stall.Idle != cfg.IdleTimeout {
+		t.Fatalf("StallError.Idle = %v, want %v", stall.Idle, cfg.IdleTimeout)
+	}
+	// The counters are present (all zero here — no chunk arrived before the
+	// silence) and the message still names the stall for a human.
+	if !strings.Contains(err.Error(), "stream stalled") {
+		t.Fatalf("the emitted message must still name the stall: %v", err)
 	}
 	if elapsed > 5*time.Second {
 		t.Fatalf("the idle watchdog did not bound the stall: %s", elapsed)
