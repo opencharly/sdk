@@ -71,14 +71,15 @@ type Config struct {
 	Params       spec.LLMParams
 }
 
-// Default returns the built-in config layer.
+// Default returns the built-in config layer, NORMALIZED so its `Params` reflect
+// the same defaults every call applies (include_usage in particular).
 func Default() Config {
 	return Config{
 		BaseURL:     DefaultBaseURL,
 		Model:       DefaultModel,
 		IdleTimeout: DefaultIdleTimeout,
 		MaxRetries:  2,
-	}
+	}.normalize()
 }
 
 // Apply overlays an authored #LLMSpec FIELD-WISE: a layer fills only what the
@@ -157,6 +158,15 @@ func (c Config) normalize() Config {
 	}
 	if c.IdleTimeout <= 0 {
 		c.IdleTimeout = DefaultIdleTimeout
+	}
+	// include_usage is ON unless explicitly set: every provider that honours it
+	// (OpenAI, Ollama's compat layer) then reports the prompt/completion/reasoning
+	// token split, which is what makes an unbounded reasoning generation
+	// MEASURABLE. A provider that ignores the field is unaffected. This is the
+	// ONE place the default is applied, so a hand-built Config gets it too.
+	if c.Params.Stream_options.Include_usage == nil {
+		usage := true
+		c.Params.Stream_options.Include_usage = &usage
 	}
 	return c
 }
@@ -276,6 +286,28 @@ type Message struct {
 	ToolCalls  []ToolCall
 	ToolCallID string
 	Reasoning  string
+	// FinishReason is the provider's completion stop reason for the turn
+	// ("stop", "length", "tool_calls", "content_filter", …). It is surfaced so a
+	// caller can tell a TRUNCATED turn ("length") from a natural stop — the
+	// distinction the unbounded-generation RCA turns on. Empty when the provider
+	// reported none.
+	FinishReason string
+	// Usage is the provider's token accounting for the turn when it reports one
+	// (llmkit requests it via stream_options.include_usage). It carries the
+	// reasoning-token count that makes an unbounded reasoning generation
+	// measurable rather than inferred. nil when the provider reported no usage.
+	Usage *Usage
+}
+
+// Usage is one turn's token accounting. ReasoningTokens is the subset of
+// CompletionTokens the model spent thinking (ollama/OpenAI-compatible providers
+// report it under completion_tokens_details.reasoning_tokens); it is 0 when the
+// provider does not break it out.
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	ReasoningTokens  int
 }
 
 // ToolCall is one assembled tool call.
@@ -629,8 +661,7 @@ func Chat(ctx context.Context, cfg Config, msgs []openai.ChatCompletionMessagePa
 		if len(acc.Choices) > 0 {
 			content = len(acc.Choices[0].Message.Content)
 		}
-		return Message{}, fmt.Errorf("LLM stream stalled: no chunk for %s after %d byte(s) of content, %d byte(s) of reasoning and %d tool call(s) (provider stopped streaming); raise the llm idle_timeout (or EVAL_LLM_IDLE_TIMEOUT) for an unusually slow endpoint",
-			idle, content, reasoningSB.Len(), len(acc.Choices))
+		return Message{}, &StallError{Idle: idle, ContentBytes: content, ReasoningBytes: reasoningSB.Len(), ToolCalls: len(acc.Choices)}
 	}
 	if err := stream.Err(); err != nil {
 		return Message{}, fmt.Errorf("LLM: %w", err)
@@ -647,16 +678,74 @@ func Chat(ctx context.Context, cfg Config, msgs []openai.ChatCompletionMessagePa
 			out.Content = &s
 		}
 		out.ToolCalls = FromSDKTools(m.ToolCalls)
+		out.FinishReason = acc.Choices[0].FinishReason
+	}
+	// Usage is present only when the provider honoured include_usage; surface it
+	// as a value (never a zero-struct masquerading as real accounting) so a
+	// caller can distinguish "reported 0" from "not reported".
+	if acc.Usage.CompletionTokens != 0 || acc.Usage.PromptTokens != 0 || acc.Usage.TotalTokens != 0 {
+		out.Usage = &Usage{
+			PromptTokens:     int(acc.Usage.PromptTokens),
+			CompletionTokens: int(acc.Usage.CompletionTokens),
+			TotalTokens:      int(acc.Usage.TotalTokens),
+			ReasoningTokens:  int(acc.Usage.CompletionTokensDetails.ReasoningTokens),
+		}
 	}
 	reasoning := reasoningSB.String()
 	out.Reasoning = reasoning
 	if out.Content == nil && len(out.ToolCalls) == 0 {
-		if reasoning != "" {
-			return Message{}, fmt.Errorf("LLM: empty completion (no content, no tool calls — the model emitted only %d byte(s) of reasoning; set reasoning_effort: none or raise max_tokens)", len(reasoning))
+		// The generation stopped without an answer. Distinguish the case where the
+		// provider said WHY (finish_reason) so the caller can act deterministically
+		// instead of blind-retrying a doomed request: `length` means the output
+		// budget ran out — for a reasoning model the reasoning consumed it — and
+		// re-issuing the SAME request cannot change that outcome.
+		fr := ""
+		if len(acc.Choices) > 0 {
+			fr = acc.Choices[0].FinishReason
 		}
-		return Message{}, fmt.Errorf("LLM: empty completion (no content, no tool calls)")
+		return Message{}, &EmptyCompletionError{ReasoningBytes: len(reasoning), FinishReason: fr}
 	}
 	return out, nil
+}
+
+// StallError is the typed "the stream stopped producing chunks for the idle
+// bound" failure — the provider-unanswered class. It is TYPED (not a string to
+// match) so a caller can classify it without coupling to the message wording,
+// and it carries the diagnostic counters (how much content/reasoning/tool
+// activity preceded the silence) that an RCA needs.
+type StallError struct {
+	Idle           time.Duration
+	ContentBytes   int
+	ReasoningBytes int
+	ToolCalls      int
+}
+
+func (e *StallError) Error() string {
+	return fmt.Sprintf("LLM stream stalled: no chunk for %s after %d byte(s) of content, %d byte(s) of reasoning and %d tool call(s) (provider stopped streaming); raise the llm idle_timeout (or EVAL_LLM_IDLE_TIMEOUT) for an unusually slow endpoint",
+		e.Idle, e.ContentBytes, e.ReasoningBytes, e.ToolCalls)
+}
+
+// EmptyCompletionError is the DETERMINISTIC "the provider returned a completion
+// with no content and no tool calls" failure. It is exported and typed so a
+// caller can tell it apart from a transport/idle failure: it is NOT retryable
+// with the same parameters (a `finish_reason: length` outcome is a budget
+// decision, not a flake), and it carries the diagnostic fields an RCA needs —
+// how much reasoning was produced and the provider's own stop reason.
+type EmptyCompletionError struct {
+	ReasoningBytes int
+	FinishReason   string
+}
+
+func (e *EmptyCompletionError) Error() string {
+	msg := fmt.Sprintf("LLM: empty completion (no content, no tool calls; finish_reason=%q", e.FinishReason)
+	if e.ReasoningBytes > 0 {
+		msg += fmt.Sprintf("; the model emitted only %d byte(s) of reasoning and no answer", e.ReasoningBytes)
+	}
+	if e.FinishReason == "length" {
+		msg += " — the output token budget was exhausted before any answer; this is NOT retryable with the same max_tokens/reasoning_effort"
+	}
+	msg += ")"
+	return msg
 }
 
 // ── vision ───────────────────────────────────────────────────────────────────
