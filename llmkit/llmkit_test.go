@@ -2,6 +2,7 @@ package llmkit
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -307,8 +308,23 @@ func TestChat_IdleWatchdogBoundsAStall(t *testing.T) {
 	start := time.Now()
 	_, err := Chat(t.Context(), cfg, []openai.ChatCompletionMessageParamUnion{Text("hi")}, nil)
 	elapsed := time.Since(start)
-	if err == nil || !strings.Contains(err.Error(), "stream stalled") {
-		t.Fatalf("want the stall error, got: %v", err)
+	if err == nil {
+		t.Fatal("a stalled stream must error")
+	}
+	// The stall is a TYPED error (so a caller classifies via errors.As, not by
+	// matching this package's wording) and carries the idle bound + counters an
+	// RCA needs. Reverting to a plain fmt.Errorf makes errors.As fail here.
+	var stall *StallError
+	if !errors.As(err, &stall) {
+		t.Fatalf("stall must be *StallError, got %T: %v", err, err)
+	}
+	if stall.Idle != cfg.IdleTimeout {
+		t.Fatalf("StallError.Idle = %v, want %v", stall.Idle, cfg.IdleTimeout)
+	}
+	// The counters are present (all zero here — no chunk arrived before the
+	// silence) and the message still names the stall for a human.
+	if !strings.Contains(err.Error(), "stream stalled") {
+		t.Fatalf("the emitted message must still name the stall: %v", err)
 	}
 	if elapsed > 5*time.Second {
 		t.Fatalf("the idle watchdog did not bound the stall: %s", elapsed)
@@ -374,3 +390,108 @@ func TestConfig_AuthAbsentWhenKeyEmpty(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// TestChat_SurfacesFinishReasonAndUsage: the accumulator's stop reason and the
+// provider's token accounting are SURFACED on Message, not dropped. This is the
+// RCA-critical data — "finish_reason: length" (truncated) vs "stop", and the
+// reasoning-token count that makes an unbounded generation measurable rather
+// than inferred. Without it a caller cannot tell WHY a turn was slow or empty.
+func TestChat_SurfacesFinishReasonAndUsage(t *testing.T) {
+	srv := mock(t, func(rw http.ResponseWriter) {
+		rw.Header().Set("Content-Type", "text/event-stream")
+		rw.WriteHeader(http.StatusOK)
+		// A content delta, a finish_reason on the choice, and a usage chunk.
+		c1 := sseChunk(map[string]any{"role": "assistant", "content": "hi"})
+		c1["choices"] = []any{map[string]any{"index": 0, "delta": map[string]any{"content": "hi"}, "finish_reason": "length"}}
+		b1, _ := json.Marshal(c1)
+		_, _ = rw.Write([]byte("data: " + string(b1) + "\n\n"))
+		usage := map[string]any{
+			"id": "chatcmpl-test", "object": "chat.completion.chunk", "created": 1700000000, "model": "m",
+			"choices": []any{},
+			"usage": map[string]any{
+				"prompt_tokens": 123, "completion_tokens": 456, "total_tokens": 579,
+				"completion_tokens_details": map[string]any{"reasoning_tokens": 400},
+			},
+		}
+		b2, _ := json.Marshal(usage)
+		_, _ = rw.Write([]byte("data: " + string(b2) + "\n\n"))
+		_, _ = rw.Write([]byte("data: [DONE]\n\n"))
+	}, nil)
+	cfg := Default()
+	cfg.BaseURL = srv.URL
+	msg, err := Chat(t.Context(), cfg, []openai.ChatCompletionMessageParamUnion{Text("hi")}, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if msg.FinishReason != "length" {
+		t.Fatalf("FinishReason = %q, want length", msg.FinishReason)
+	}
+	if msg.Usage == nil {
+		t.Fatal("Usage must be surfaced when the provider reports it")
+	}
+	if msg.Usage.PromptTokens != 123 || msg.Usage.CompletionTokens != 456 || msg.Usage.TotalTokens != 579 || msg.Usage.ReasoningTokens != 400 {
+		t.Fatalf("usage = %+v, want prompt=123 completion=456 total=579 reasoning=400", *msg.Usage)
+	}
+}
+
+// TestChat_NoUsageReportedLeavesItNil: a provider that does not honour
+// include_usage must leave Usage nil (not a zero struct) so a caller can tell
+// "reported zero" from "not reported".
+func TestChat_NoUsageReportedLeavesItNil(t *testing.T) {
+	srv := mock(t, func(rw http.ResponseWriter) { writeContent(rw, "hello") }, nil)
+	cfg := Default()
+	cfg.BaseURL = srv.URL
+	msg, err := Chat(t.Context(), cfg, []openai.ChatCompletionMessageParamUnion{Text("hi")}, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if msg.Usage != nil {
+		t.Fatalf("Usage = %+v, want nil when unreported", *msg.Usage)
+	}
+}
+
+// TestChat_EmptyCompletionIsTypedAndNamesFinishReason: an empty completion is a
+// DETERMINISTIC, typed failure carrying the provider's stop reason and the
+// reasoning byte count — so a caller can fail hard instead of blind-retrying a
+// doomed `finish_reason: length` request. A reasoning-only turn is the
+// measured real-world shape of this failure.
+func TestChat_EmptyCompletionIsTypedAndNamesFinishReason(t *testing.T) {
+	srv := mock(t, func(rw http.ResponseWriter) {
+		rw.Header().Set("Content-Type", "text/event-stream")
+		rw.WriteHeader(http.StatusOK)
+		// reasoning-only delta, finish_reason=length, no content.
+		c := sseChunk(map[string]any{"role": "assistant", "reasoning": "thinking hard"})
+		c["choices"] = []any{map[string]any{"index": 0, "delta": map[string]any{"reasoning": "thinking hard"}, "finish_reason": "length"}}
+		b, _ := json.Marshal(c)
+		_, _ = rw.Write([]byte("data: " + string(b) + "\n\n"))
+		_, _ = rw.Write([]byte("data: [DONE]\n\n"))
+	}, nil)
+	cfg := Default()
+	cfg.BaseURL = srv.URL
+	_, err := Chat(t.Context(), cfg, []openai.ChatCompletionMessageParamUnion{Text("hi")}, nil)
+	if err == nil {
+		t.Fatal("an empty completion must be an error")
+	}
+	var ece *EmptyCompletionError
+	if !errors.As(err, &ece) {
+		t.Fatalf("error must be *EmptyCompletionError, got %T: %v", err, err)
+	}
+	if ece.FinishReason != "length" {
+		t.Fatalf("FinishReason = %q, want length", ece.FinishReason)
+	}
+	if ece.ReasoningBytes == 0 {
+		t.Fatal("ReasoningBytes must be surfaced so the RCA can name the cause")
+	}
+	if !strings.Contains(err.Error(), "budget") {
+		t.Fatalf("a length-truncated empty completion must say the budget ran out: %v", err)
+	}
+}
+
+// TestDefaultEnablesUsage: the built-in layer requests token accounting so the
+// prompt/completion/reasoning split is available on every call.
+func TestDefaultEnablesUsage(t *testing.T) {
+	d := Default()
+	if d.Params.Stream_options.Include_usage == nil || !*d.Params.Stream_options.Include_usage {
+		t.Fatal("Default() must request stream_options.include_usage")
+	}
+}
