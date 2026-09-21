@@ -482,6 +482,11 @@ func TestChat_EmptyCompletionIsTypedAndNamesFinishReason(t *testing.T) {
 	if ece.ReasoningBytes == 0 {
 		t.Fatal("ReasoningBytes must be surfaced so the RCA can name the cause")
 	}
+	// The FULL reasoning text must be preserved on the error, not only its byte
+	// count: an RCA cannot tell a loop from a long deliberation from bytes alone.
+	if ece.Reasoning != "thinking hard" {
+		t.Fatalf("Reasoning text must be carried on the error, got %q", ece.Reasoning)
+	}
 	if !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("a length-truncated empty completion must say the budget ran out: %v", err)
 	}

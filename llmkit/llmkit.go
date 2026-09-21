@@ -661,7 +661,7 @@ func Chat(ctx context.Context, cfg Config, msgs []openai.ChatCompletionMessagePa
 		if len(acc.Choices) > 0 {
 			content = len(acc.Choices[0].Message.Content)
 		}
-		return Message{}, &StallError{Idle: idle, ContentBytes: content, ReasoningBytes: reasoningSB.Len(), ToolCalls: len(acc.Choices)}
+		return Message{}, &StallError{Idle: idle, ContentBytes: content, ReasoningBytes: reasoningSB.Len(), ToolCalls: len(acc.Choices), Reasoning: reasoningSB.String()}
 	}
 	if err := stream.Err(); err != nil {
 		return Message{}, fmt.Errorf("LLM: %w", err)
@@ -703,7 +703,7 @@ func Chat(ctx context.Context, cfg Config, msgs []openai.ChatCompletionMessagePa
 		if len(acc.Choices) > 0 {
 			fr = acc.Choices[0].FinishReason
 		}
-		return Message{}, &EmptyCompletionError{ReasoningBytes: len(reasoning), FinishReason: fr}
+		return Message{}, &EmptyCompletionError{ReasoningBytes: len(reasoning), FinishReason: fr, Reasoning: reasoning}
 	}
 	return out, nil
 }
@@ -718,6 +718,8 @@ type StallError struct {
 	ContentBytes   int
 	ReasoningBytes int
 	ToolCalls      int
+	// Reasoning is the FULL reasoning text produced before the stream stalled.
+	Reasoning string
 }
 
 func (e *StallError) Error() string {
@@ -734,6 +736,11 @@ func (e *StallError) Error() string {
 type EmptyCompletionError struct {
 	ReasoningBytes int
 	FinishReason   string
+	// Reasoning is the FULL reasoning text produced before the empty completion.
+	// It is the diagnostic a runaway RCA needs: a byte count cannot distinguish a
+	// model re-deriving one point (a loop) from one deliberating a genuinely long
+	// chain. Kept on the typed error so no caller can drop it.
+	Reasoning string
 }
 
 func (e *EmptyCompletionError) Error() string {
