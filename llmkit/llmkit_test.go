@@ -331,6 +331,45 @@ func TestChat_IdleWatchdogBoundsAStall(t *testing.T) {
 	}
 }
 
+// TestChat_StallErrorCarriesReasoningText: the stall path must carry the FULL
+// reasoning text produced before the silence, not only its byte count — a byte
+// count cannot tell a loop from a long deliberation (the runaway RCA). Mutation-
+// verified: dropping the field fails this assertion.
+func TestChat_StallErrorCarriesReasoningText(t *testing.T) {
+	release := make(chan struct{})
+	const think = "step one; step two; step three;"
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "text/event-stream")
+		rw.WriteHeader(http.StatusOK)
+		// Emit reasoning deltas, THEN go silent so the watchdog trips.
+		b, _ := json.Marshal(sseChunk(map[string]any{"role": "assistant", "reasoning": think}))
+		_, _ = rw.Write([]byte("data: " + string(b) + "\n\n"))
+		if f, ok := rw.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+	cfg := Default()
+	cfg.BaseURL = srv.URL
+	cfg.IdleTimeout = 300 * time.Millisecond
+	_, err := Chat(t.Context(), cfg, []openai.ChatCompletionMessageParamUnion{Text("hi")}, nil)
+	if err == nil {
+		t.Fatal("a stalled stream must error")
+	}
+	var stall *StallError
+	if !errors.As(err, &stall) {
+		t.Fatalf("stall must be *StallError, got %T: %v", err, err)
+	}
+	if stall.Reasoning != think {
+		t.Fatalf("StallError.Reasoning = %q, want %q (the full text must be carried)", stall.Reasoning, think)
+	}
+	if stall.ReasoningBytes != len(think) {
+		t.Fatalf("StallError.ReasoningBytes = %d, want %d", stall.ReasoningBytes, len(think))
+	}
+}
+
 // TestChat_NoOpenAIEnvBleed: a stray operator OPENAI_API_KEY / OPENAI_BASE_URL
 // must NOT hijack a call. The client is NewChatCompletionService (given options
 // only), never NewClient (which prepends the OPENAI_*-reading defaults).
@@ -481,6 +520,11 @@ func TestChat_EmptyCompletionIsTypedAndNamesFinishReason(t *testing.T) {
 	}
 	if ece.ReasoningBytes == 0 {
 		t.Fatal("ReasoningBytes must be surfaced so the RCA can name the cause")
+	}
+	// The FULL reasoning text must be preserved on the error, not only its byte
+	// count: an RCA cannot tell a loop from a long deliberation from bytes alone.
+	if ece.Reasoning != "thinking hard" {
+		t.Fatalf("Reasoning text must be carried on the error, got %q", ece.Reasoning)
 	}
 	if !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("a length-truncated empty completion must say the budget ran out: %v", err)
