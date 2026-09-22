@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/cache"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -214,18 +215,17 @@ func TestMaterializedCache_ValidWhileInputsUnchanged(t *testing.T) {
 		t.Fatalf("first load must materialize once, got %d", exec.materializeCalls)
 	}
 	// Age the entry far beyond any possible TTL (the timestamp is RECLAMATION data only now).
-	cacheDir, err := materializedCacheDir()
-	if err != nil {
-		t.Fatalf("cache dir: %v", err)
-	}
-	key, comps, err := loadedProjectCacheKey(&lp)
+	store := materializedStore()
+	key, _, err := loadedProjectCacheKey(&lp)
 	if err != nil {
 		t.Fatalf("key: %v", err)
 	}
-	old := time.Now().Add(-720 * time.Hour)
-	if err := os.Chtimes(filepath.Join(cacheDir, key+".json"), old, old); err != nil {
-		t.Fatalf("age the entry: %v", err)
+	e, ok := store.Get(key)
+	if !ok {
+		t.Fatalf("store.Get: no entry for the materialized key")
 	}
+	e.Resolved = time.Now().Add(-720 * time.Hour)
+	store.PutEntry(key, e)
 	// Same inputs, very old entry: still a HIT (no time validity).
 	merged2 := &spec.UnifiedFile{}
 	if err := seams.MaterializeLoadedProject(&lp, merged2, map[int64]*spec.UnifiedFile{}); err != nil {
@@ -234,7 +234,6 @@ func TestMaterializedCache_ValidWhileInputsUnchanged(t *testing.T) {
 	if exec.materializeCalls != 1 {
 		t.Fatalf("an old entry with matching components MUST be served (Docker rule — no time expiry), got %d calls", exec.materializeCalls)
 	}
-	_ = comps
 }
 
 // TestMaterializedCache_PruneReclaimsStorage is the Docker builder --keep-storage analogue: the
@@ -259,16 +258,8 @@ func TestMaterializedCache_PruneReclaimsStorage(t *testing.T) {
 			t.Fatalf("state %d: %v", i, err)
 		}
 	}
-	cacheDir, err := materializedCacheDir()
-	if err != nil {
-		t.Fatalf("cache dir: %v", err)
-	}
-	entries, err := os.ReadDir(cacheDir)
-	if err != nil {
-		t.Fatalf("read cache dir: %v", err)
-	}
-	if len(entries) > 2 {
-		t.Fatalf("prune must keep at most %d entries, got %d", materializedCacheMaxEntries, len(entries))
+	if n := materializedStore().Len(); n > 2 {
+		t.Fatalf("prune must keep at most %d entries, got %d", materializedCacheMaxEntries, n)
 	}
 }
 
@@ -321,11 +312,10 @@ func TestMaterializedCache_KeySensitiveToEnvelope(t *testing.T) {
 func TestMaterializedCache_CorruptEntryDegradesAndSelfHeals(t *testing.T) {
 	isolateCacheRoot(t)
 	lp, res := testMaterializedState()
-	key, comps, err := loadedProjectCacheKey(&lp)
+	key, _, err := loadedProjectCacheKey(&lp)
 	if err != nil {
 		t.Fatalf("key: %v", err)
 	}
-	_ = comps
 	cacheDir, err := materializedCacheDir()
 	if err != nil {
 		t.Fatalf("cache dir: %v", err)
@@ -333,7 +323,8 @@ func TestMaterializedCache_CorruptEntryDegradesAndSelfHeals(t *testing.T) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatalf("mkdir cache dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cacheDir, key+".json"), []byte("{not json"), 0o644); err != nil {
+	// The Store's on-disk filename is sha256(key).json — seed the corrupt bytes there.
+	if err := os.WriteFile(filepath.Join(cacheDir, cache.HashHex(key)+".json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatalf("seed corrupt entry: %v", err)
 	}
 
