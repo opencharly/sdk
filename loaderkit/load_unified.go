@@ -99,12 +99,13 @@ func GateSchemaVersion(root, version string) error {
 // touches the provider registry.
 func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 	root := filepath.Join(dir, spec.UnifiedFileName)
-	// THE CONFIG STACK: read the layered charly.yml files (system → user →
+	// THE CONFIG STACK: read the layered PROJECT charly.yml files (system →
 	// in-dir, later files winning) and merge them at the raw document level.
 	// The merged bytes ARE the root document — the bootstrap phase, the early
 	// schema gate, the kind-blind walk, and the validation chain all operate on
-	// the merged config (config_stack.go). A missing system/user layer is
-	// skipped; no layer at all means no project.
+	// the merged config (config_stack.go). A missing system layer is skipped; no
+	// layer at all means no project. The per-host DEPLOY OVERLAY is NOT a layer
+	// (runtime state applied by the designed per-field merge, not a project doc).
 	rootData, ok, err := readConfigStack(dir)
 	if err != nil {
 		return nil, true, err
