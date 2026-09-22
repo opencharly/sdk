@@ -1,8 +1,10 @@
 package loaderkit
 
-// config_stack_test.go — the LAYERED CONFIG STACK (system → user → in-dir,
-// later files winning). The raw-document merge preserves every node (P1 — a
-// typed UnifiedFile parse drops the opaque candy bodies).
+// config_stack_test.go — the LAYERED CONFIG STACK (system → in-dir, later files
+// winning). The raw-document merge preserves every node (P1 — a typed UnifiedFile
+// parse drops the opaque candy bodies). The per-host DEPLOY OVERLAY is NOT a
+// stack layer (it is runtime state, applied by the designed per-field merge) —
+// TestConfigStack_DeployOverlayIsNotALayer pins that, the R1 regression.
 
 import (
 	"os"
@@ -25,15 +27,13 @@ func writeLayer(t *testing.T, dir, name, content string) string {
 }
 
 // TestConfigStack_LaterWins — a candy node declared in the system layer is
-// overridden by the user layer, overridden by the in-dir layer (later wins).
+// overridden by the in-dir layer (later wins).
 func TestConfigStack_LaterWins(t *testing.T) {
 	tmp := t.TempDir()
 	project := t.TempDir()
 	system := writeLayer(t, tmp, "system.yml", "version: 2026.249.2125\nalpha:\n    candy:\n        version: 2026.249.2125\n        description: system-alpha\n")
-	user := writeLayer(t, tmp, "user.yml", "version: 2026.249.2125\nalpha:\n    candy:\n        version: 2026.249.2125\n        description: user-alpha\n")
 	writeLayer(t, project, spec.UnifiedFileName, "version: 2026.249.2125\nalpha:\n    candy:\n        version: 2026.249.2125\n        description: project-alpha\nbeta:\n    candy:\n        version: 2026.249.2125\n        description: project-beta\n")
 	t.Setenv(SystemConfigEnv, system)
-	t.Setenv(spec.DeployConfigEnv, user)
 
 	data, ok, err := readConfigStack(project)
 	if err != nil {
@@ -51,36 +51,30 @@ func TestConfigStack_LaterWins(t *testing.T) {
 		t.Fatalf("merged alpha candy missing: %v", merged["alpha"])
 	}
 	if got := alpha["description"]; got != "project-alpha" {
-		t.Errorf("alpha.description = %v, want project-alpha (in-dir wins over user and system)", got)
+		t.Errorf("alpha.description = %v, want project-alpha (in-dir wins over system)", got)
 	}
 	if _, ok := merged["beta"]; !ok {
 		t.Error("beta (project-only) missing from the merged doc")
 	}
 }
 
-// TestConfigStack_UserWinsOverSystem — without an in-dir layer, the user layer
-// wins over the system layer (and the stack alone forms a project).
-func TestConfigStack_UserWinsOverSystem(t *testing.T) {
+// TestConfigStack_SystemLayerFormsProject — without an in-dir layer, the system
+// layer alone forms a project (the packaged /etc/charly fallback).
+func TestConfigStack_SystemLayerFormsProject(t *testing.T) {
 	tmp := t.TempDir()
 	project := t.TempDir() // no charly.yml in the project dir
 	system := writeLayer(t, tmp, "system.yml", "version: 2026.249.2125\nalpha:\n    candy:\n        version: 2026.249.2125\n        description: system-alpha\n")
-	user := writeLayer(t, tmp, "user.yml", "version: 2026.249.2125\nalpha:\n    candy:\n        version: 2026.249.2125\n        description: user-alpha\n")
 	t.Setenv(SystemConfigEnv, system)
-	t.Setenv(spec.DeployConfigEnv, user)
 
 	data, ok, err := readConfigStack(project)
 	if err != nil {
 		t.Fatalf("readConfigStack: %v", err)
 	}
 	if !ok {
-		t.Fatal("readConfigStack: ok=false, want the system/user layers to form a project")
+		t.Fatal("readConfigStack: ok=false, want the system layer to form a project")
 	}
-	s := string(data)
-	if !strings.Contains(s, "user-alpha") {
-		t.Errorf("merged doc lacks the user layer's override: %s", s)
-	}
-	if strings.Contains(s, "system-alpha") {
-		t.Errorf("merged doc kept the system layer value over the user layer: %s", s)
+	if !strings.Contains(string(data), "system-alpha") {
+		t.Errorf("merged doc lacks the system layer's candy: %s", data)
 	}
 }
 
@@ -89,10 +83,8 @@ func TestConfigStack_VersionLaterWins(t *testing.T) {
 	tmp := t.TempDir()
 	project := t.TempDir()
 	system := writeLayer(t, tmp, "system.yml", "version: 2026.249.2125\n")
-	user := writeLayer(t, tmp, "user.yml", "version: 2026.249.2000\n")
 	writeLayer(t, project, spec.UnifiedFileName, "version: 2026.250.0001\n")
 	t.Setenv(SystemConfigEnv, system)
-	t.Setenv(spec.DeployConfigEnv, user)
 
 	data, _, err := readConfigStack(project)
 	if err != nil {
@@ -106,13 +98,54 @@ func TestConfigStack_VersionLaterWins(t *testing.T) {
 // TestConfigStack_NoProject — no layer exists → (nil, false).
 func TestConfigStack_NoProject(t *testing.T) {
 	t.Setenv(SystemConfigEnv, filepath.Join(t.TempDir(), "absent.yml"))
-	t.Setenv(spec.DeployConfigEnv, filepath.Join(t.TempDir(), "absent.yml"))
 	data, ok, err := readConfigStack(t.TempDir())
 	if err != nil {
 		t.Fatalf("readConfigStack: %v", err)
 	}
 	if ok || data != nil {
 		t.Fatalf("readConfigStack = (%v, %v), want (nil, false)", data != nil, ok)
+	}
+}
+
+// TestConfigStack_DeployOverlayIsNotALayer is the R1 regression for the peer-name
+// collision: the per-host DEPLOY OVERLAY (CHARLY_DEPLOY_CONFIG) must NOT enter the
+// project stack. A member-bearing bed declares its holder/taker NESTED under the bed
+// root, while the overlay persists each member FLATTENED to a top-level key (so each
+// member is independently addressable). Raw-merging the overlay as a document layer put
+// both copies into the authored deploy map, and FoldMembers then hard-failed on the
+// collision (`peer name "preempt-holder" ... collides with an existing deploy/bed/peer
+// entry`) — the live failure on every member-bearing bed. The overlay is applied only
+// by the designed per-field merge onto the loaded tree (deploykit.MergeDeployConfigs).
+func TestConfigStack_DeployOverlayIsNotALayer(t *testing.T) {
+	tmp := t.TempDir()
+	project := t.TempDir()
+	// The project: a bed root with a NESTED member.
+	writeLayer(t, project, spec.UnifiedFileName,
+		"version: 2026.249.2125\nbed:\n    pod:\n        image: img\n        disposable: true\n    holder:\n        pod:\n            image: img\n            preemptible:\n                holds: [test-lock]\n")
+	// The overlay: the same member persisted TOP-LEVEL (MarshalDeployNode unwraps the
+	// member tree to siblings so a member's own `charly config` can address it by name).
+	overlay := writeLayer(t, tmp, "overlay.yml",
+		"version: 2026.249.2125\nholder:\n    pod:\n        image: img\n        preemptible:\n            holds: [test-lock]\n")
+	t.Setenv(SystemConfigEnv, filepath.Join(tmp, "absent.yml"))
+	t.Setenv(spec.DeployConfigEnv, overlay)
+
+	data, ok, err := readConfigStack(project)
+	if err != nil {
+		t.Fatalf("readConfigStack: %v", err)
+	}
+	if !ok {
+		t.Fatal("readConfigStack: ok=false, want a project")
+	}
+	var merged map[string]any
+	if err := yaml.Unmarshal(data, &merged); err != nil {
+		t.Fatalf("parse merged: %v", err)
+	}
+	if _, leaked := merged["holder"]; leaked {
+		t.Fatalf("deploy overlay leaked into the project stack as a top-level 'holder' entry — the FoldMembers collision returns: %s", data)
+	}
+	bed, _ := merged["bed"].(map[string]any)
+	if _, ok := bed["holder"]; !ok {
+		t.Fatalf("the project's nested member 'holder' is missing from the merged doc: %s", data)
 	}
 }
 

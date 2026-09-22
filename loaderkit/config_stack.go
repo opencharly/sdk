@@ -1,15 +1,30 @@
 package loaderkit
 
 // config_stack.go — the LAYERED CONFIG STACK: charly reads and MERGES charly.yml
-// files in the order system → user → in-dir, LATER files winning, so the effective
-// config of any invocation (and of the systemd-started MCP server) is the merged
-// document.
+// PROJECT documents in the order system → in-dir, LATER files winning, so the
+// effective PROJECT config of any invocation (and of the systemd-started MCP
+// server) is the merged document.
 //
 //   - system: /etc/charly/charly.yml (CHARLY_SYSTEM_CONFIG override) — shipped by
-//     the charly package (`charly generate-packages`, packaging.config);
-//   - user:   spec.DefaultDeployConfigPath() (~/.config/charly/charly.yml) — the
-//     existing per-host deploy overlay, resolved per invoking user;
+//     the charly package (`charly generate-packages`, packaging.config) as a bare
+//     minimal PROJECT (a version + a charly-mcp candy node), so a host with no
+//     project directory still resolves one;
 //   - in-dir: <dir>/charly.yml — the project's own config (existing resolution).
+//
+// The per-host DEPLOY OVERLAY (~/.config/charly/charly.yml, spec.DefaultDeployConfigPath)
+// is deliberately NOT a project-stack layer. It is a DeployConfig — per-host RUNTIME
+// STATE (deploy entries + cache/ledger/system), not an authored project document. Raw-
+// merging it as a document layer injects its deploy entries into the authored deploy map
+// BEFORE FoldMembers runs, and a folded deploy-level MEMBER (which the overlay persists
+// flattened to a TOP-LEVEL key so each member is independently addressable) then collides
+// with the member the owner still declares nested — `peer name ... collides with an
+// existing deploy/bed/peer entry`, seen live on every member-bearing bed
+// (check-preempt-live-pod, check-cross-pod-cdp). The overlay has ALWAYS been applied the
+// correct way — a per-field MERGE onto the loaded project tree (deploykit.MergeDeployConfigs
+// / deploy.MergeDeployNode, driven by loaderkit.ResolveMergedTreeViaExecutor and
+// deploykit.MergedDeployTree), whose lookup recurses into a node's Member tree, so it can
+// never create a stray top-level key. That merge remains the overlay's ONE application
+// (R3); this stack is projects only.
 //
 // The merge happens at the RAW yaml.Node document level (top-level keys, later
 // files winning). The raw round-trip preserves EVERY node — a typed
@@ -33,22 +48,19 @@ const SystemConfigEnv = "CHARLY_SYSTEM_CONFIG"
 // DefaultSystemConfigPath is the system config layer path.
 const DefaultSystemConfigPath = "/etc/charly/charly.yml"
 
-// readConfigStack reads the three config layers and merges them (later files
-// winning) at the raw document level. Returns (nil, false) when no layer exists
-// (no project). A missing system/user layer is skipped (a stat).
+// readConfigStack reads the PROJECT config layers (system → in-dir) and merges them
+// (later files winning) at the raw document level. Returns (nil, false) when no layer
+// exists (no project). A missing system layer is skipped (a stat). The per-host deploy
+// overlay is NOT a layer here — see the file header for why.
 func readConfigStack(dir string) ([]byte, bool, error) {
 	systemPath := os.Getenv(SystemConfigEnv)
 	if systemPath == "" {
 		systemPath = DefaultSystemConfigPath
 	}
-	userPath, err := spec.DefaultDeployConfigPath()
-	if err != nil {
-		userPath = ""
-	}
 	projectPath := filepath.Join(dir, spec.UnifiedFileName)
 
 	var layers [][]byte
-	for _, p := range []string{systemPath, userPath, projectPath} {
+	for _, p := range []string{systemPath, projectPath} {
 		if p == "" || !kit.FileExists(p) {
 			continue
 		}
