@@ -90,7 +90,7 @@ func TestNestedExecutorRunCapture_ClassifiesContainerInfra(t *testing.T) {
 
 	t.Run("container jump + infra stderr -> marked error", func(t *testing.T) {
 		p := &infraStubParent{stderr: "creating temporary passwd file for container c: ...", exit: 127}
-		n := &NestedExecutor{Parent: p, Jump: NestedJump{Kind: JumpPodmanExec, Target: "charly-checkbox-1-1"}}
+		n := &NestedExecutor{Parent: p, Jump: NestedJump{Kind: JumpContainerExec, Engine: "podman", Target: "charly-checkbox-1-1"}}
 		_, _, exit, err := n.RunCapture(ctx, "true")
 		if err == nil || !strings.Contains(err.Error(), ContainerInfraErrMarker) {
 			t.Fatalf("infra container-run must return a marked error (%q); got exit=%d err=%v",
@@ -100,7 +100,7 @@ func TestNestedExecutorRunCapture_ClassifiesContainerInfra(t *testing.T) {
 
 	t.Run("container jump + genuine command-not-found -> plain result (no marker)", func(t *testing.T) {
 		p := &infraStubParent{stderr: "bash: line 1: foo: command not found", exit: 127}
-		n := &NestedExecutor{Parent: p, Jump: NestedJump{Kind: JumpPodmanExec, Target: "charly-checkbox-1-1"}}
+		n := &NestedExecutor{Parent: p, Jump: NestedJump{Kind: JumpContainerExec, Engine: "podman", Target: "charly-checkbox-1-1"}}
 		_, _, exit, err := n.RunCapture(ctx, "true")
 		if err != nil {
 			t.Fatalf("a genuine in-container command-not-found is a CHECK result, not an infra error; got %v", err)

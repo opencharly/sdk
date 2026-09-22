@@ -33,10 +33,13 @@ const (
 	PodmanInfraExitCode     = exec.PodmanInfraExitCode
 	ContainerInfraErrMarker = exec.ContainerInfraErrMarker
 
-	JumpPodmanExec   = exec.JumpPodmanExec
-	JumpDockerExec   = exec.JumpDockerExec
-	JumpSSH          = exec.JumpSSH
-	JumpVirshConsole = exec.JumpVirshConsole
+	// JumpContainerExec is the ONE container-exec jump arm; the ENGINE is DATA
+	// (NestedJump.Engine, a podman/docker/nerdctl word), so there is no per-engine
+	// arm (the former JumpPodmanExec/JumpDockerExec are removed — a new engine sets
+	// NestedJump.Engine, it does not add a JumpKind).
+	JumpContainerExec = exec.JumpContainerExec
+	JumpSSH           = exec.JumpSSH
+	JumpVirshConsole  = exec.JumpVirshConsole
 
 	CharlyInstallAuto = exec.CharlyInstallAuto
 	CharlyInstallScp  = exec.CharlyInstallScp

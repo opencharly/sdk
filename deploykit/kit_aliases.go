@@ -19,10 +19,9 @@ type (
 const (
 	VenueLocal = kit.VenueLocal
 
-	JumpPodmanExec   = kit.JumpPodmanExec
-	JumpDockerExec   = kit.JumpDockerExec
-	JumpSSH          = kit.JumpSSH
-	JumpVirshConsole = kit.JumpVirshConsole
+	JumpContainerExec = kit.JumpContainerExec
+	JumpSSH           = kit.JumpSSH
+	JumpVirshConsole  = kit.JumpVirshConsole
 )
 
 var (
