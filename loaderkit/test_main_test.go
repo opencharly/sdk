@@ -1,14 +1,18 @@
 package loaderkit
 
 // test_main_test.go — isolate the CONFIG STACK for every loaderkit test: the
-// real per-host ~/.config/charly/charly.yml (and any /etc/charly/charly.yml)
-// must NOT leak into LoadUnified-based tests as the user/system layer (a real
-// deploy config would add its deploy nodes to every merged doc). Tests that
-// exercise the stack override the env vars themselves (config_stack_test.go).
+// real /etc/charly/charly.yml must NOT leak into LoadUnified-based tests as the
+// system layer (a real system project would add its nodes to every merged doc).
+// Tests that exercise the stack override the env var themselves
+// (config_stack_test.go).
 //
-// CHARLY_SYSTEM_CONFIG + CHARLY_DEPLOY_CONFIG point at absent files in the
-// system temp dir, so readConfigStack skips both layers and the stack reduces
-// to the in-dir project — the pre-stack behavior.
+// CHARLY_SYSTEM_CONFIG points at an absent file in the system temp dir, so
+// readConfigStack skips the system layer and the stack reduces to the in-dir
+// project. CHARLY_DEPLOY_CONFIG is ALSO pointed at an absent file, even though
+// the per-host deploy overlay is no longer a stack layer (config_stack.go): a
+// loaderkit test that reaches the overlay through its designed per-field merge
+// (deploykit.MergedDeployTree / ResolveMergedTreeViaExecutor) must still not pick
+// up the operator's real ~/.config/charly/charly.yml.
 
 import (
 	"os"
