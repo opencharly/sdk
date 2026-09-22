@@ -19,7 +19,7 @@ package loaderkit
 // (load_executor.go) — the ONE seam constructor BOTH loader placements drive loaderkit.LoadUnified
 // through (the compiled-in host placement, hostLoaderExecutor — the CLI subcommand child's own
 // load — and every genuine out-of-process plugin over Executor.HostBuild). One change point covers
-// every consumer, and the shared on-disk cache under ~/.cache/charly is what lets the wave's
+// every consumer, and the shared on-disk Store under the charly cache dir is what lets the wave's
 // separate OS processes reuse ONE another's work.
 //
 // STORAGE. The mechanism is the ONE shared spec/cache.Store (R3): a directory of one JSON entry
@@ -150,9 +150,12 @@ const sdkModulePath = "github.com/opencharly/sdk"
 // see the file header for the root + design. materialize must have the LoaderExecutor
 // contract's semantics: fill merged (and the byID registration) from lp.
 //
-// Failure contract: the cache NEVER fails a load. A key error, a Store error, a corrupt entry, or
-// a marshal failure degrades to materialize(lp, merged, byID) exactly as if the cache did not
-// exist; a hit that fails to decode is re-materialized.
+// Failure contract: the cache NEVER fails a load. A key error, a corrupt entry, or a marshal
+// failure degrades to materialize(lp, merged, byID) exactly as if the cache did not exist, and a
+// hit that fails to decode is re-materialized. Store-INTERNAL failures (an inert store, a lock
+// timeout, an IO error) never reach here either: Store.Fill degrades them to computing the value
+// directly, so the ONLY error Fill returns is the materialize callback's own — which is the real
+// load error and is propagated.
 func MaterializeLoadedProjectCached(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile, materialize func(lp *spec.LoadedProject, merged *spec.UnifiedFile, byID map[int64]*spec.UnifiedFile) error) error {
 	if !materializedTreeCacheEnabled || lp == nil {
 		// Disabled cache → every load materializes directly, exactly as before the cache
