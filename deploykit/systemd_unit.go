@@ -2,6 +2,7 @@ package deploykit
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -96,8 +97,10 @@ func GenerateSystemdUnit(cfg SystemdUnitConfig) string {
 	if len(cfg.StopArgv) > 0 {
 		fmt.Fprintf(&b, "ExecStop=%s\n", systemdEscapeArgv(cfg.StopArgv))
 	}
-	for k, v := range cfg.Environment {
-		fmt.Fprintf(&b, "Environment=%q\n", k+"="+v)
+	// Deterministic order: a Go map range is non-deterministic, so the same config
+	// would emit different units across runs (defeating any drift gate). Sort keys.
+	for _, k := range sortedKeys(cfg.Environment) {
+		fmt.Fprintf(&b, "Environment=%s\n", systemdQuote(k+"="+cfg.Environment[k]))
 	}
 	if cfg.WorkingDirectory != "" {
 		fmt.Fprintf(&b, "WorkingDirectory=%s\n", cfg.WorkingDirectory)
@@ -125,11 +128,38 @@ func systemdEscapeArgv(argv []string) string {
 
 // systemdEscapeArg quotes ONE argument when it needs it. Safe characters pass
 // through unquoted so generated units stay readable.
+//
+// SYSTEMD SPECIFIERS: `%` is expanded by systemd even inside quotes (`%i`, `%n`,
+// …), so a LITERAL percent must be doubled to `%%`. systemdQuote applies that
+// doubling in EVERY path (quoted or not) — a `%` is never passed through raw.
 func systemdEscapeArg(a string) string {
-	if a != "" && !strings.ContainsAny(a, " \t\n\"'\\$%&*()[]{};<>|`~?!#") {
+	return systemdQuote(a)
+}
+
+// systemdQuote renders one systemd field value: it doubles any literal `%`
+// (systemd specifier escaping) and double-quotes with backslash escaping when
+// the value contains whitespace or a systemd-special character. Order matters —
+// the `%`→`%%` doubling is applied to the RAW value first, then quoting, so a
+// value that needs quoting still gets its `%` doubled inside the quotes.
+func systemdQuote(a string) string {
+	// Escape the systemd specifier prefix first — this is required whether or not
+	// the value ends up quoted.
+	a = strings.ReplaceAll(a, "%", "%%")
+	if a != "" && !strings.ContainsAny(a, " \t\n\"'\\$&*()[]{};<>|`~?!#") {
 		return a
 	}
 	// Double-quote and escape the characters systemd treats specially inside quotes.
 	r := strings.NewReplacer("\\", "\\\\", "\"", "\\\"")
 	return "\"" + r.Replace(a) + "\""
+}
+
+// sortedKeys returns a map's keys in sorted order, so a rendered unit is
+// deterministic across runs.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

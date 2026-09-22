@@ -96,3 +96,49 @@ func TestBuildStartArgs_PodmanKeepsKeepID(t *testing.T) {
 		t.Errorf("podman must not fall back to --user 0: %s", joined)
 	}
 }
+
+// TestGenerateSystemdUnit_DeterministicEnvOrder is the regression gate for the
+// map-iteration defect: the same multi-entry Environment must render identically
+// across runs (sorted keys), not in Go's randomized map order.
+func TestGenerateSystemdUnit_DeterministicEnvOrder(t *testing.T) {
+	cfg := SystemdUnitConfig{
+		Name:      "svc",
+		StartArgv: []string{"nerdctl", "run", "img"},
+		Environment: map[string]string{
+			"ZED": "1", "ALPHA": "2", "MID": "3", "BETA": "4", "YANKEE": "5",
+		},
+	}
+	first := GenerateSystemdUnit(cfg)
+	for i := 0; i < 20; i++ {
+		if got := GenerateSystemdUnit(cfg); got != first {
+			t.Fatalf("Environment order is non-deterministic across runs:\nfirst=%s\nnow=%s", first, got)
+		}
+	}
+	// And the order is the SORTED one.
+	want := "Environment=ALPHA=2\nEnvironment=BETA=4\nEnvironment=MID=3\nEnvironment=YANKEE=5\nEnvironment=ZED=1\n"
+	if !strings.Contains(first, want) {
+		t.Errorf("Environment lines must be sorted:\n%s", first)
+	}
+}
+
+// TestGenerateSystemdUnit_EscapesSystemdSpecifier is the regression gate for the
+// % escaping defect: a literal percent must be emitted as %%, everywhere (an
+// ExecStart arg AND an Environment value), because systemd expands % specifiers
+// even inside quotes.
+func TestGenerateSystemdUnit_EscapesSystemdSpecifier(t *testing.T) {
+	cfg := SystemdUnitConfig{
+		Name:        "svc",
+		StartArgv:   []string{"nerdctl", "run", "-e", "PCT=100%done", "img"},
+		Environment: map[string]string{"LOG": "50%"},
+	}
+	got := GenerateSystemdUnit(cfg)
+	if strings.Contains(got, "100%done") || strings.Contains(got, "LOG=50%\n") {
+		t.Errorf("a literal %% must be doubled for systemd:\n%s", got)
+	}
+	if !strings.Contains(got, "100%%done") {
+		t.Errorf("argv %% not doubled:\n%s", got)
+	}
+	if !strings.Contains(got, "Environment=LOG=50%%") {
+		t.Errorf("env %% not doubled:\n%s", got)
+	}
+}
