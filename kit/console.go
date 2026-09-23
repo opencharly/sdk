@@ -1,18 +1,22 @@
-// console.go is the TRANSPORT-AGNOSTIC console-wizard driver: the mechanism for
-// driving a text-console wizard (an OS installer, a first-boot provisioning flow,
-// a firmware setup screen) from screenshots + OCR + keyboard input, with the
-// recipe supplied as DATA.
+// console.go is the TRANSPORT-AGNOSTIC console-wizard driving MECHANISM: driving
+// a text-console wizard (an OS installer, a first-boot provisioning flow, a
+// firmware setup screen) from screenshots + OCR + keyboard input, with the recipe
+// supplied as plain Go DATA.
 //
 // It is shared (R3) because MORE THAN ONE transport drives the same wizard: the
-// JetKVM verb drives a real machine's keyboard/video, and the SPICE verb drives a
-// VM's console — the SAME recipe must produce the SAME drive on either. So the
-// engine lives here (an sdk kit is exactly the mechanism this project uses to
-// share code across plugin module boundaries) and each transport implements the
-// small ConsoleTransport interface.
+// jetkvm verb drives a real machine's keyboard/video, and the spice verb drives a
+// VM's console — the SAME recipe must produce the SAME drive on either. An sdk kit
+// is the mechanism this project uses to share code across plugin module
+// boundaries, so the engine lives here and each transport implements the small
+// ConsoleTransport interface.
 //
-// The recipe is generic DATA: `steps` are {wait_for → action}, `answers` fill
-// `{{name}}` placeholders, and the engine knows nothing about any specific
-// installer. One engine, any installer, any transport.
+// NO WIRE TYPE LIVES HERE (SDD): ConsoleStep, the recipe maps and the answer maps
+// are engine-internal Go inputs. The AUTHORED shape is CUE-sourced in each
+// consuming plugin's own `schema/*.cue` (#JetkvmInput / #JetkvmInstallStep,
+// #SpiceInput / #SpiceConsoleStep); each plugin decodes its generated params and
+// converts them to this neutral form. So the schema stays the single source of the
+// authored surface, exactly as the kernel/plugin boundary law requires, and this
+// kit holds only the mechanism that consumes it.
 
 package kit
 
@@ -26,20 +30,20 @@ import (
 	"time"
 )
 
-// ConsoleStep is ONE step of a console-wizard recipe: OCR-wait for its `wait_for`
-// anchor to appear on screen, then perform ONE input action. `wait_for` MUST be a
+// ConsoleStep is ONE step of a console-wizard recipe: OCR-wait for its WaitFor
+// anchor to appear on screen, then perform ONE input action. WaitFor MUST be a
 // screen-UNIQUE string — a string present on every screen (an OS logo, a window
 // title) passes vacuously and desynchronises the whole drive.
 type ConsoleStep struct {
-	WaitFor     string `json:"wait_for"`
-	Action      string `json:"action,omitempty"` // key | type | key-combo ("" = pure wait)
-	Key         string `json:"key,omitempty"`
-	Combo       string `json:"combo,omitempty"`
-	Text        string `json:"text,omitempty"`
-	TimeoutSec  int    `json:"timeout_sec,omitempty"`
-	Optional    bool   `json:"optional,omitempty"`
-	Artifact    string `json:"artifact,omitempty"`
-	Description string `json:"description,omitempty"`
+	WaitFor     string
+	Action      string // key | type | key-combo ("" = pure wait)
+	Key         string
+	Combo       string
+	Text        string
+	TimeoutSec  int
+	Optional    bool
+	Artifact    string
+	Description string
 }
 
 // ConsoleTransport is the per-transport primitive set the engine drives: capture
@@ -56,18 +60,14 @@ type ConsoleTransport interface {
 	Type(ctx context.Context, text string) error
 }
 
-// ConsoleOCR runs OCR over a PNG and returns the text. Both transports pass
-// OCRBytes (the one canonical tesseract implementation) so the engine and the
-// artifact validator agree on how the screen is read.
-type ConsoleOCR func(png []byte) (string, error)
-
-// ConsoleWizard drives a recipe over a transport.
+// ConsoleWizard drives a recipe over a transport. OCR defaults to OCRBytes when
+// nil, so both transports read the screen the same way as the artifact validator.
 type ConsoleWizard struct {
 	Steps        []ConsoleStep
 	Answers      map[string]string
 	Transport    ConsoleTransport
-	OCR          ConsoleOCR
-	PollInterval time.Duration // default 3s
+	OCR          func(png []byte) (string, error)
+	PollInterval time.Duration
 	// Logger, when set, receives a line per screen seen / input sent (evidence).
 	Logger func(format string, args ...any)
 }
@@ -177,9 +177,69 @@ func SubstituteConsoleAnswers(s string, answers map[string]string) string {
 	return b.String()
 }
 
+// SelectRecipe returns the named recipe from a set of named recipes, with the bare
+// `steps` list serving as the single default recipe. PURE over plain Go data: the
+// caller decodes its OWN CUE-sourced recipe and passes the result here, so this
+// engine holds no wire type. An unknown name (when recipes are declared) is a
+// clear error, never a silent empty drive.
+func SelectRecipe(recipes map[string][]ConsoleStep, steps []ConsoleStep, name string) ([]ConsoleStep, error) {
+	if name == "" {
+		name = "install"
+	}
+	if len(recipes) > 0 {
+		if r, ok := recipes[name]; ok {
+			return r, nil
+		}
+		return nil, fmt.Errorf("no recipe named %q (declared: %s)", name, strings.Join(sortedRecipeNames(recipes), ", "))
+	}
+	if name != "install" {
+		return nil, fmt.Errorf("no recipe named %q (only the bare steps shortcut is declared)", name)
+	}
+	return steps, nil
+}
+
+func sortedRecipeNames(m map[string][]ConsoleStep) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// MergeAnswers resolves the three answer sources into one map. Precedence
+// (lowest first): env < secret < authored. `envName` reads an ENVIRONMENT VARIABLE
+// name; `secretName` reads a credential-store key. An unresolved env var or secret
+// is left OUT (so a missing var fails visibly as an unsubstituted {{placeholder}}
+// rather than silently empty). PURE over its inputs — the caller owns the readers.
+func MergeAnswers(envVars, secrets, authored map[string]string, envName, secretName func(string) string) map[string]string {
+	out := map[string]string{}
+	for name, key := range envVars {
+		if key == "" || envName == nil {
+			continue
+		}
+		if v := envName(key); v != "" {
+			out[name] = v
+		}
+	}
+	for name, key := range secrets {
+		if key == "" || secretName == nil {
+			continue
+		}
+		if v := secretName(key); v != "" {
+			out[name] = v
+		}
+	}
+	for name, v := range authored {
+		out[name] = v
+	}
+	return out
+}
+
 // Run drives the recipe on the transport, OCR-gating each screen. It returns a
 // per-step evidence log on success; on a wait timeout it FAILS naming the step,
-// the anchor and what OCR actually read (never a silent pass).
+// the anchor and what OCR actually read (never a silent pass). An `Optional` step
+// whose anchor times out is SKIPPED instead (its action not sent).
 func (w *ConsoleWizard) Run(ctx context.Context) (string, error) {
 	plan, err := BuildConsolePlan(w.Steps, w.Answers)
 	if err != nil {
@@ -319,8 +379,7 @@ const ConsoleOCRPSM = "11"
 
 // OCRBytes runs tesseract over a PNG held in memory and returns its text. It is
 // the ONE OCR implementation both console transports and the artifact validator
-// rely on (R3). The bytes are written to a temp file because tesseract reads a
-// path.
+// rely on (R3). The bytes are written to a temp file because tesseract reads a path.
 //
 // FAILING TO RUN IS NOT FAILING TO MATCH: a missing engine, or missing language
 // data (tesseract writes the complaint to stderr and can still exit 0 with EMPTY
@@ -360,82 +419,4 @@ func OCRBytes(png []byte) (string, error) {
 		return "", fmt.Errorf("console OCR: tesseract failed on the capture: %w (stderr: %s)", runErr, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
-}
-
-// ConsoleRecipe is the TRANSPORT-NEUTRAL recipe bundle a device/recipe entity
-// carries: the named recipes, plus the answer sources that fill their
-// `{{placeholders}}`. It is the ONE shape both the JetKVM and SPICE console
-// drivers decode, so a single authored recipe drives either transport (R3).
-type ConsoleRecipe struct {
-	// Recipes — name → ordered recipe. Conventional names: "install" (the OS
-	// installer) and "first_boot" (the post-reboot provisioning wizard).
-	Recipes map[string][]ConsoleStep `json:"recipes,omitempty"`
-	// Steps — a shortcut for recipes.install on a single-recipe holder.
-	Steps []ConsoleStep `json:"steps,omitempty"`
-	// Answers / AnswerSecrets / AnswersEnv — the three answer sources, merged
-	// lowest-to-highest: AnswersEnv (env vars) < AnswerSecrets (credential store)
-	// < Answers (authored literals).
-	Answers       map[string]string `json:"answers,omitempty"`
-	AnswerSecrets map[string]string `json:"answer_secrets,omitempty"`
-	AnswersEnv    map[string]string `json:"answers_env,omitempty"`
-}
-
-// Select returns the named recipe, with the bare `steps:` shortcut serving as the
-// default. An unknown name (when recipes are declared) is a clear error.
-func (r ConsoleRecipe) Select(name string) ([]ConsoleStep, error) {
-	if name == "" {
-		name = "install"
-	}
-	if len(r.Recipes) > 0 {
-		if steps, ok := r.Recipes[name]; ok {
-			return steps, nil
-		}
-		return nil, fmt.Errorf("no recipe named %q (declared: %s)", name, strings.Join(sortedRecipeNames(r.Recipes), ", "))
-	}
-	if name != "install" {
-		return nil, fmt.Errorf("no recipe named %q (only the bare steps: shortcut is declared)", name)
-	}
-	return r.Steps, nil
-}
-
-func sortedRecipeNames(m map[string][]ConsoleStep) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// MergeAnswers resolves the three answer sources into one map. `env` reads an
-// environment variable name, `secret` reads a credential-store key. Precedence
-// (lowest first): answers_env < answer_secrets < answers. A nil/empty reader is
-// skipped. An unresolved ENV var or secret is left OUT (so a missing var fails
-// visibly as an unsubstituted {{placeholder}} rather than silently empty).
-func (r ConsoleRecipe) MergeAnswers(env func(string) string, secret func(string) string) map[string]string {
-	out := map[string]string{}
-	if env != nil {
-		for name, key := range r.AnswersEnv {
-			if key == "" {
-				continue
-			}
-			if v := env(key); v != "" {
-				out[name] = v
-			}
-		}
-	}
-	if secret != nil {
-		for name, key := range r.AnswerSecrets {
-			if key == "" {
-				continue
-			}
-			if v := secret(key); v != "" {
-				out[name] = v
-			}
-		}
-	}
-	for name, v := range r.Answers {
-		out[name] = v
-	}
-	return out
 }
