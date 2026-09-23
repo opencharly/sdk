@@ -86,12 +86,12 @@ func materializedCacheDir() (string, error) {
 }
 
 // materializedStore opens the shared Store for the materialized tree (the ONE cache mechanism).
-func materializedStore() *cache.Store {
+func materializedStore() *cache.Layout {
 	dir, err := materializedCacheDir()
 	if err != nil {
-		return cache.Open("")
+		return cache.OpenLayout("")
 	}
-	return cache.OpenLimited(dir, materializedCacheMaxEntries)
+	return cache.OpenLayoutLimited(dir, materializedCacheMaxEntries)
 }
 
 // loadedProjectCacheKey derives the Store key (the components digest) AND the components
@@ -184,7 +184,7 @@ func MaterializeLoadedProjectCached(lp *spec.LoadedProject, merged *spec.Unified
 			// directly-materialized `merged`.
 			return cache.Entry{}, nil
 		}
-		return cache.Entry{Value: tree, Components: comps}, nil
+		return cache.Entry{Payload: tree, Components: comps}, nil
 	})
 	if ferr != nil {
 		return ferr
@@ -192,7 +192,7 @@ func MaterializeLoadedProjectCached(lp *spec.LoadedProject, merged *spec.Unified
 	if materialized {
 		return nil
 	}
-	if err := UnmarshalMaterialized(e.Value, merged); err != nil {
+	if err := UnmarshalMaterialized(e.Payload, merged); err != nil {
 		// An empty (marshal-degrade) or corrupt entry: re-materialize directly.
 		return materialize(lp, merged, byID)
 	}

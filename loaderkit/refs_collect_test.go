@@ -1,12 +1,14 @@
 package loaderkit
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/opencharly/spec/calver"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -232,5 +234,123 @@ func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
 	// the seam is NIL — the fallback (gitClient().LatestTag) must serve the cached tag
 	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{}); err != nil {
 		t.Fatalf("collect with the fallback: %v", err)
+	}
+}
+
+// TestDeriveRepoViewNeverMutatesPristine locks the ROOT-CAUSE fix: deriving a
+// head-schema view must copy + migrate a SEPARATE directory and leave the pristine
+// cache export byte-for-byte untouched. The pre-cutover code migrated the export
+// IN PLACE, so a newer binary rewrote the shared cache to its own schema CalVer
+// and poisoned every older consumer — the exact check-substrate deploy-add failure
+// ("config schema <newer> is newer than this charly supports").
+func TestDeriveRepoViewNeverMutatesPristine(t *testing.T) {
+	dir := t.TempDir()
+	pristine := filepath.Join(dir, "repo@main")
+	if err := os.MkdirAll(pristine, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// An OLD-schema charly.yml (behind HEAD) so the view must be derived.
+	const oldSchema = "2026.100.0000"
+	root := []byte("version: " + oldSchema + "\nbox:\n  b:\n    candy: [a]\n")
+	if err := os.WriteFile(filepath.Join(pristine, spec.UnifiedFileName), root, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(pristine, spec.UnifiedFileName))
+
+	var migrated []string
+	migrate := func(p string) error {
+		migrated = append(migrated, p)
+		// Simulate the migrate engine: stamp the head schema.
+		head := []byte("version: " + calver.LatestSchemaCalVer().String() + "\nbox:\n  b:\n    candy: [a]\n")
+		return os.WriteFile(filepath.Join(p, spec.UnifiedFileName), head, 0o644)
+	}
+
+	view, err := DeriveRepoView(pristine, migrate)
+	if err != nil {
+		t.Fatalf("DeriveRepoView: %v", err)
+	}
+	if view == pristine {
+		t.Fatal("a behind-head tree must derive a SEPARATE view, not return the pristine path")
+	}
+	// The migration runs ONCE, on the private staging copy (never the pristine export nor the
+	// shared view path directly — publication is an atomic rename of the completed copy).
+	if len(migrated) != 1 {
+		t.Fatalf("migrate must run exactly once, got %v", migrated)
+	}
+	if migrated[0] == pristine {
+		t.Fatalf("migrate ran on the PRISTINE export %s — the whole defect was mutating it in place", pristine)
+	}
+	// The pristine export is untouched.
+	after, _ := os.ReadFile(filepath.Join(pristine, spec.UnifiedFileName))
+	if string(after) != string(before) {
+		t.Fatalf("pristine export was MUTATED:\n before=%q\n after =%q", before, after)
+	}
+	if !bytes.Contains(after, []byte(oldSchema)) {
+		t.Fatalf("pristine export no longer carries its own schema: %q", after)
+	}
+	// The view carries the head schema and a completeness marker.
+	viewRoot, _ := os.ReadFile(filepath.Join(view, spec.UnifiedFileName))
+	if !bytes.Contains(viewRoot, []byte(calver.LatestSchemaCalVer().String())) {
+		t.Fatalf("derived view not migrated: %q", viewRoot)
+	}
+	if _, err := os.Stat(filepath.Join(view, viewMarkerName)); err != nil {
+		t.Fatalf("derived view missing its completeness marker: %v", err)
+	}
+}
+
+// TestDeriveRepoViewReusesBuiltView proves the view is built once and reused: a
+// second call does not re-run migrate and returns the same path.
+func TestDeriveRepoViewReusesBuiltView(t *testing.T) {
+	dir := t.TempDir()
+	pristine := filepath.Join(dir, "repo@v1.0.0")
+	if err := os.MkdirAll(pristine, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pristine, spec.UnifiedFileName), []byte("version: 2026.100.0000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	migrate := func(p string) error {
+		calls++
+		return os.WriteFile(filepath.Join(p, spec.UnifiedFileName), []byte("version: "+calver.LatestSchemaCalVer().String()+"\n"), 0o644)
+	}
+	view1, err := DeriveRepoView(pristine, migrate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view2, err := DeriveRepoView(pristine, migrate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view1 != view2 {
+		t.Fatalf("view path changed between calls: %s vs %s", view1, view2)
+	}
+	if calls != 1 {
+		t.Fatalf("migrate ran %d times, want 1 (a built view must be reused)", calls)
+	}
+}
+
+// TestDeriveRepoViewAtHeadIsIdentity proves an already-head tree is returned as-is
+// with no copy and no migrate — the fast path.
+func TestDeriveRepoViewAtHeadIsIdentity(t *testing.T) {
+	dir := t.TempDir()
+	pristine := filepath.Join(dir, "repo@v2.0.0")
+	if err := os.MkdirAll(pristine, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	head := "version: " + calver.LatestSchemaCalVer().String() + "\n"
+	if err := os.WriteFile(filepath.Join(pristine, spec.UnifiedFileName), []byte(head), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	view, err := DeriveRepoView(pristine, func(string) error { called = true; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view != pristine {
+		t.Fatalf("an at-head tree must be returned as-is, got %s", view)
+	}
+	if called {
+		t.Fatal("migrate must not run for an at-head tree")
 	}
 }
