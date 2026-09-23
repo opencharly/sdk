@@ -2,19 +2,17 @@ package sdk
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg" // register JPEG decoder for image.DecodeConfig / image.Decode
-	"image/png"    // ENCODER too: the OCR upscale writes a PNG, so this is a real import
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -277,99 +275,23 @@ const ocrUpscale = 4
 // and every other artifact validator here would pass it. min_bytes passes on a
 // blank PNG, not_uniform passes on a wallpaper with no text at all.
 //
-// FAILING TO RUN IS NOT FAILING TO MATCH. If tesseract is absent, or its
-// language data is missing, this returns an error that says so instead of
-// reporting the text as not found — the distinction cost real debugging time to
-// learn: with eng.traineddata absent, tesseract writes its complaint to STDERR
-// and exits with EMPTY stdout, so a caller that discards stderr sees exactly
-// what a genuine no-match looks like. A check verb that cannot tell "I looked
-// and it wasn't there" from "I could not look" is the failure-open shape this
-// SDK has been bitten by before.
+// The OCR itself is the SHARED kit.OCRBytesScaled (R3) — the SAME tesseract
+// invocation the console transports use, so there is exactly one place the OCR
+// path can be wrong. This function owns only the upscale factor (a screen
+// capture needs ocrUpscale; a framebuffer console reads at 1) and the
+// artifact-specific error wrapping.
 func assertArtifactContainsText(path, want string) error {
-	if _, err := os.Stat(path); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return fmt.Errorf("artifact %q not found: %w", path, err)
 	}
-	bin, err := exec.LookPath("tesseract")
+	got, err := kit.OCRBytesScaled(data, ocrUpscale)
 	if err != nil {
-		return fmt.Errorf("artifact_contains_text needs the `tesseract` OCR engine on the HOST "+
-			"(this validator runs host-side, on the pulled artifact) and it is not on PATH: %w", err)
+		return fmt.Errorf("artifact_contains_text: %w", err)
 	}
-
-	scaled, cleanup, err := upscaleForOCR(path)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	// --psm 11 is sparse-text mode: a desktop capture is scattered labels, not a
-	// page of prose, and the default page-segmentation model finds little in it.
-	cmd := exec.Command(bin, scaled, "stdout", "--psm", "11")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	runErr := cmd.Run()
-
-	// Tesseract reports a missing language pack on stderr and still exits 0 in
-	// some builds, so the stderr check comes FIRST and is not conditional on the
-	// exit status.
-	if msg := stderr.String(); strings.Contains(msg, "Error opening data file") ||
-		strings.Contains(msg, "Failed loading language") {
-		return fmt.Errorf("artifact_contains_text: tesseract has no usable language data, so OCR "+
-			"never ran (install the eng data pack, e.g. tesseract-data-eng): %s", strings.TrimSpace(msg))
-	}
-	if runErr != nil {
-		return fmt.Errorf("artifact_contains_text: tesseract failed on %q: %w (stderr: %s)",
-			path, runErr, strings.TrimSpace(stderr.String()))
-	}
-
-	got := stdout.String()
 	if strings.Contains(strings.ToLower(got), strings.ToLower(want)) {
 		return nil
 	}
 	return fmt.Errorf("artifact_contains_text: %q not found in the text OCR read from %q "+
-		"(read %d characters; first 200: %q)", want, path, len(got), truncateForError(got, 200))
-}
-
-// upscaleForOCR writes an enlarged copy of the artifact and returns its path
-// plus a cleanup. Nearest-neighbour keeps glyph edges hard, which is what
-// tesseract thresholds against; a smoothing filter blurs thin UI type.
-func upscaleForOCR(path string) (string, func(), error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", func() {}, fmt.Errorf("artifact_contains_text: open %q: %w", path, err)
-	}
-	src, _, err := image.Decode(f)
-	f.Close()
-	if err != nil {
-		return "", func() {}, fmt.Errorf("artifact_contains_text: decode %q: %w", path, err)
-	}
-
-	b := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, b.Dx()*ocrUpscale, b.Dy()*ocrUpscale))
-	for y := 0; y < dst.Bounds().Dy(); y++ {
-		for x := 0; x < dst.Bounds().Dx(); x++ {
-			dst.Set(x, y, src.At(b.Min.X+x/ocrUpscale, b.Min.Y+y/ocrUpscale))
-		}
-	}
-
-	out, err := os.CreateTemp("", "charly-ocr-*.png")
-	if err != nil {
-		return "", func() {}, fmt.Errorf("artifact_contains_text: temp file: %w", err)
-	}
-	name := out.Name()
-	cleanup := func() { os.Remove(name) }
-	if err := png.Encode(out, dst); err != nil {
-		out.Close()
-		cleanup()
-		return "", func() {}, fmt.Errorf("artifact_contains_text: encode upscaled copy: %w", err)
-	}
-	out.Close()
-	return name, cleanup, nil
-}
-
-func truncateForError(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+		"(read %d characters; first 200: %q)", want, path, len(got), kit.ConsolePreview(got, 200))
 }
