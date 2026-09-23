@@ -182,6 +182,32 @@ func TestOCRBytes_MissingBinaryIsNotANoMatch(t *testing.T) {
 	}
 }
 
+// ConsolePreview is the ONE error-line clip (the artifact validator's error
+// paths call it too), so its contract is pinned: collapse ALL whitespace runs
+// (newlines included) to single spaces, truncate to n, append an ellipsis ONLY
+// when truncated.
+func TestConsolePreview_CollapsesAndTruncates(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		n    int
+		want string
+	}{
+		{"collapses newlines and runs", "a\n\nb   c\td", 100, "a b c d"},
+		{"trims leading/trailing", "  hi  ", 100, "hi"},
+		{"exact fit has no ellipsis", "abcde", 5, "abcde"},
+		{"truncation appends ellipsis", "abcdef", 5, "abcde…"},
+		{"empty stays empty", "   \n ", 100, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ConsolePreview(tc.in, tc.n); got != tc.want {
+				t.Errorf("ConsolePreview(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+			}
+		})
+	}
+}
+
 // The enlargement is a real behavior, not decoration: tesseract read ZERO words
 // from a real 1280x800 desktop capture at 1x, 2x and 3x and read it correctly
 // once enlarged. This pins the OUTPUT GEOMETRY, so deleting the upscale (or
