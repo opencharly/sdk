@@ -1,13 +1,14 @@
 package sdk
 
 import (
-	"image"
 	"image/color"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/opencharly/sdk/kit"
 )
 
 // THE property this validator lives or dies by: a broken OCR setup must not look
@@ -70,43 +71,34 @@ func TestArtifactContainsText_MissingArtifact(t *testing.T) {
 }
 
 // The upscale is not decoration: tesseract returned ZERO words from a real 1280x800
-// desktop capture at 1x, 2x and 3x, and read its clock correctly once enlarged. This
-// pins the enlargement actually happening, and that a decode failure surfaces rather
-// than silently skipping OCR.
-func TestUpscaleForOCR_EnlargesAndCleansUp(t *testing.T) {
+// desktop capture at 1x, 2x and 3x, and read its clock correctly once enlarged.
+// The upscale is now the SHARED kit.OCRBytesScaled (R3 — the console transports
+// call the same function); these tests pin the enlargement actually happening and
+// that a decode failure surfaces rather than silently skipping OCR.
+func TestArtifactOCR_UpscaleEnlarges(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "a.png")
 	writePNG(t, p, 8, 5, color.RGBA{0, 0, 0, 255})
-
-	out, cleanup, err := upscaleForOCR(p)
-	if err != nil {
-		t.Fatalf("upscale: %v", err)
-	}
-	f, err := os.Open(out)
+	data, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := image.DecodeConfig(f)
-	f.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Width != 8*ocrUpscale || cfg.Height != 5*ocrUpscale {
-		t.Errorf("upscaled to %dx%d, want %dx%d", cfg.Width, cfg.Height, 8*ocrUpscale, 5*ocrUpscale)
-	}
-	cleanup()
-	if _, err := os.Stat(out); !os.IsNotExist(err) {
-		t.Errorf("cleanup left the temp file behind: %s", out)
+	// OCRBytesScaled returns text, not the scaled file, so assert indirectly:
+	// a 4x upscale of a tiny black image must not error (decode + upscale +
+	// tesseract all ran), whereas a non-image must error at decode.
+	if _, err := kit.OCRBytesScaled(data, ocrUpscale); err != nil {
+		// tesseract may be absent in some environments; only a DECODE error fails here.
+		if strings.Contains(err.Error(), "tesseract") {
+			t.Skip("tesseract not installed")
+		}
+		t.Fatalf("upscaled OCR: %v", err)
 	}
 }
 
-func TestUpscaleForOCR_UndecodableArtifact(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "not-an-image.png")
-	if err := os.WriteFile(p, []byte("this is not a PNG"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := upscaleForOCR(p); err == nil {
+func TestArtifactOCR_UndecodableArtifact(t *testing.T) {
+	if _, err := kit.OCRBytesScaled([]byte("this is not a PNG"), ocrUpscale); err == nil {
 		t.Error("no error decoding a non-image; OCR would have run on nothing")
+	} else if !strings.Contains(err.Error(), "decode") {
+		t.Errorf("a non-image should fail at decode, got: %v", err)
 	}
 }

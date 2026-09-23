@@ -247,14 +247,14 @@ func drawText(img *image.RGBA, text string, scale int, c color.RGBA) {
 	}
 }
 
-// fakeTransport records the inputs it receives and replays canned screens.
+// fakeTransport records the inputs it receives. It implements the input half of
+// ConsoleTransport; scriptedTransport EMBEDS it and overrides only Capture.
 type fakeTransport struct {
 	keys   []string
 	combos []string
 	types  []string
 }
 
-func (f *fakeTransport) Capture(context.Context) ([]byte, error) { return nil, nil }
 func (f *fakeTransport) PressKey(_ context.Context, k string) error {
 	f.keys = append(f.keys, k)
 	return nil
@@ -283,7 +283,7 @@ func TestConsoleWizard_RunDrivesScreens(t *testing.T) {
 			{WaitFor: "Username>", Action: "type", Text: "aitrawog"},
 			{WaitFor: "Reboot Now", Action: "key", Key: "Return"},
 		},
-		Transport: &scriptedTransport{ft: ft, script: script},
+		Transport: &scriptedTransport{fakeTransport: ft, script: script},
 		OCR:       func(png []byte) (string, error) { return string(png), nil },
 	}
 	out, err := w.Run(context.Background())
@@ -307,7 +307,7 @@ func TestConsoleWizard_OptionalStepSkips(t *testing.T) {
 			{WaitFor: "Never on screen", Action: "key", Key: "Return", Optional: true, TimeoutSec: 1},
 			{WaitFor: "Always", Action: "key", Key: "Return", TimeoutSec: 5},
 		},
-		Transport:    &scriptedTransport{ft: ft, fixed: "Always here"},
+		Transport:    &scriptedTransport{fakeTransport: ft, fixed: "Always here"},
 		OCR:          func(png []byte) (string, error) { return string(png), nil },
 		PollInterval: 1,
 	}
@@ -325,9 +325,10 @@ func TestConsoleWizard_OptionalStepSkips(t *testing.T) {
 }
 
 // scriptedTransport replays a script of screens (advancing on each capture) or a
-// fixed screen.
+// fixed screen. It embeds *fakeTransport for the input half, overriding only
+// Capture — so the input-recording bodies live in ONE place (R3).
 type scriptedTransport struct {
-	ft     *fakeTransport
+	*fakeTransport
 	script []string
 	fixed  string
 	idx    int
@@ -343,15 +344,6 @@ func (a *scriptedTransport) Capture(context.Context) ([]byte, error) {
 	}
 	return []byte(s), nil
 }
-func (a *scriptedTransport) PressKey(_ context.Context, k string) error {
-	a.ft.keys = append(a.ft.keys, k)
-	return nil
-}
-func (a *scriptedTransport) PressCombo(_ context.Context, c string) error {
-	a.ft.combos = append(a.ft.combos, c)
-	return nil
-}
-func (a *scriptedTransport) Type(_ context.Context, s string) error {
-	a.ft.types = append(a.ft.types, s)
-	return nil
-}
+
+// compile-time proof scriptedTransport IS a ConsoleTransport.
+var _ ConsoleTransport = (*scriptedTransport)(nil)

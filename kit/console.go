@@ -21,8 +21,12 @@
 package kit
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	_ "image/jpeg" // register the JPEG decoder so a captured JPEG frame can be upscaled
+	"image/png"
 	"os"
 	"os/exec"
 	"sort"
@@ -378,29 +382,64 @@ func ConsolePreview(s string, n int) string {
 const ConsoleOCRPSM = "11"
 
 // OCRBytes runs tesseract over a PNG held in memory and returns its text. It is
-// the ONE OCR implementation both console transports and the artifact validator
-// rely on (R3). The bytes are written to a temp file because tesseract reads a path.
+// the ONE OCR implementation in the SDK — the console transports AND the
+// artifact validator (RunArtifactValidators' artifact_contains_text) both call
+// it, so there is exactly one tesseract invocation to keep correct (R3). The
+// bytes are written to a temp file because tesseract reads a path.
 //
 // FAILING TO RUN IS NOT FAILING TO MATCH: a missing engine, or missing language
 // data (tesseract writes the complaint to stderr and can still exit 0 with EMPTY
 // stdout), returns an error that NAMES the cause — never an empty string a caller
 // would read as "the text is absent".
-func OCRBytes(png []byte) (string, error) {
+func OCRBytes(pngBytes []byte) (string, error) {
+	return OCRBytesScaled(pngBytes, 1)
+}
+
+// OCRBytesScaled is OCRBytes with an explicit nearest-neighbour upscale factor
+// applied first (1 = none). The artifact validator upscales a screen-resolution
+// capture (see sdk's ocrUpscale); a framebuffer console reads at 1.
+func OCRBytesScaled(pngBytes []byte, scale int) (string, error) {
+	if scale < 1 {
+		scale = 1
+	}
+	if scale > 1 {
+		src, _, err := image.Decode(bytes.NewReader(pngBytes))
+		if err != nil {
+			return "", fmt.Errorf("console OCR: decode capture: %w", err)
+		}
+		b := src.Bounds()
+		dst := image.NewRGBA(image.Rect(0, 0, b.Dx()*scale, b.Dy()*scale))
+		for y := 0; y < dst.Bounds().Dy(); y++ {
+			for x := 0; x < dst.Bounds().Dx(); x++ {
+				dst.Set(x, y, src.At(b.Min.X+x/scale, b.Min.Y+y/scale))
+			}
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, dst); err != nil {
+			return "", fmt.Errorf("console OCR: encode upscaled copy: %w", err)
+		}
+		pngBytes = buf.Bytes()
+	}
+	return ocrPNGFile(pngBytes)
+}
+
+// ocrPNGFile writes the bytes to a temp PNG and runs tesseract over it.
+func ocrPNGFile(pngBytes []byte) (string, error) {
 	bin, err := exec.LookPath("tesseract")
 	if err != nil {
-		return "", fmt.Errorf("console OCR needs the `tesseract` engine on the HOST running charly and it is not on PATH: %w", err)
+		return "", fmt.Errorf("OCR needs the `tesseract` engine on the HOST running charly and it is not on PATH: %w", err)
 	}
-	f, err := os.CreateTemp("", "charly-console-ocr-*.png")
+	f, err := os.CreateTemp("", "charly-ocr-*.png")
 	if err != nil {
-		return "", fmt.Errorf("console OCR: temp file: %w", err)
+		return "", fmt.Errorf("OCR: temp file: %w", err)
 	}
 	defer func() { _ = os.Remove(f.Name()) }()
-	if _, err := f.Write(png); err != nil {
+	if _, err := f.Write(pngBytes); err != nil {
 		_ = f.Close()
-		return "", fmt.Errorf("console OCR: writing temp capture: %w", err)
+		return "", fmt.Errorf("OCR: writing temp capture: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("console OCR: closing temp capture: %w", err)
+		return "", fmt.Errorf("OCR: closing temp capture: %w", err)
 	}
 
 	var stdout, stderr strings.Builder
@@ -413,10 +452,10 @@ func OCRBytes(png []byte) (string, error) {
 	// status: some tesseract builds exit 0 while writing the error to stderr.
 	if msg := stderr.String(); strings.Contains(msg, "Error opening data file") ||
 		strings.Contains(msg, "Failed loading language") {
-		return "", fmt.Errorf("console OCR: tesseract has no usable language data (install the eng data pack, e.g. tesseract-data-eng): %s", strings.TrimSpace(msg))
+		return "", fmt.Errorf("OCR: tesseract has no usable language data (install the eng data pack, e.g. tesseract-data-eng): %s", strings.TrimSpace(msg))
 	}
 	if runErr != nil {
-		return "", fmt.Errorf("console OCR: tesseract failed on the capture: %w (stderr: %s)", runErr, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("OCR: tesseract failed on the capture: %w (stderr: %s)", runErr, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
 }
