@@ -11,14 +11,13 @@ import (
 // podman has a native systemd generator (quadlet): a `.container` file under
 // ~/.config/containers/systemd/ that podman's generator turns into a service.
 // nerdctl has NO such generator, so charly emits a plain systemd USER unit that
-// wraps the nerdctl CLI directly — `ExecStart=/usr/bin/nerdctl run …` with an
-// `ExecStop=/usr/bin/nerdctl stop <name>`. This is the spike-proven persistence
-// path for nerdctl (a generated unit starts the container and `systemctl --user
-// enable` links it for autostart).
+// wraps the nerdctl CLI directly — `ExecStart=/usr/bin/nerdctl run -d …` with an
+// `ExecStop=/usr/bin/nerdctl stop <name>`.
 //
-// The unit is deliberately a thin wrapper: run lifecycle is nerdctl's, systemd
-// only supervises the CLI process and restarts it on failure. The container is
-// given `--rm` by the caller's argv, so a clean stop leaves no dead container.
+// The unit is a thin wrapper: the run lifecycle is the engine's. StartArgv must be
+// a FOREGROUND launch (`<engine> run --rm …`, no `-d`) so systemd supervises the
+// CLI for the container's whole lifetime; ExecStop stops the container and the
+// `--rm` cleans it up. `systemctl --user enable` links it for autostart.
 
 // SystemdUnitConfig describes a generated systemd user unit wrapping an engine
 // CLI. The caller supplies already-resolved argv (from BuildStartArgs or the
@@ -84,6 +83,12 @@ func GenerateSystemdUnit(cfg SystemdUnitConfig) string {
 	fmt.Fprintf(&b, "Wants=%s\n", strings.Join(wants, " "))
 
 	b.WriteString("\n[Service]\n")
+	// Type=simple: StartArgv must be a FOREGROUND engine launch (`<engine> run
+	// --rm …`, NO `-d`) — the CLI stays in the foreground for the container's
+	// lifetime, so systemd supervises it directly and ExecStop stops the container.
+	// This is the spike-proven persistence model. A DETACHED argv (`-d`) would make
+	// the unit go inactive the moment the CLI returned, AND nerdctl rejects `-d`
+	// with `--rm` outright — so the unit's argv is foreground by contract.
 	b.WriteString("Type=simple\n")
 	for _, pre := range cfg.ExecStartPre {
 		if len(pre) == 0 {

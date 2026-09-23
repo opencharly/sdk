@@ -142,3 +142,20 @@ func TestGenerateSystemdUnit_EscapesSystemdSpecifier(t *testing.T) {
 		t.Errorf("env %% not doubled:\n%s", got)
 	}
 }
+
+// TestBuildStartArgs_NerdctlDropsRemoveWithDetach is the live-found gate: nerdctl
+// REJECTS `-d --rm` ("flags -d and --rm cannot be specified together"), so the
+// detached argv must NOT carry --rm for nerdctl; podman/docker must keep it.
+func TestBuildStartArgs_NerdctlDropsRemoveWithDetach(t *testing.T) {
+	nerd := strings.Join(BuildStartArgs("nerdctl", "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+	if strings.Contains(nerd, "--rm") {
+		t.Errorf("nerdctl rejects -d --rm; the detached argv must drop --rm: %s", nerd)
+	}
+	if !strings.HasPrefix(nerd, "nerdctl run -d --name svc") {
+		t.Errorf("nerdctl argv shape unexpected: %s", nerd)
+	}
+	pod := strings.Join(BuildStartArgs("podman", "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+	if !strings.Contains(pod, "--rm") {
+		t.Errorf("podman accepts -d --rm; it must keep --rm: %s", pod)
+	}
+}

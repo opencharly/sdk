@@ -23,6 +23,8 @@ import (
 // switched on the engine name:
 //   - the CLI binary comes from EngineBinary (podman / docker / nerdctl);
 //   - GPU passthrough comes from GPURunArgs (CDI for podman, --gpus for the rest);
+//   - `--rm` is emitted with `-d` only where the engine allows both (nerdctl
+//     REJECTS `-d --rm`, a measured capability fact — NoRemoveWithDetach);
 //   - host-identical bind-mount sharing uses the engine's own keep-id flag when
 //     it has one (podman --userns=keep-id:uid=…,gid=…), and otherwise launches the
 //     workload as WorkloadUser — container-uid 0 for rootless nerdctl, where
@@ -30,11 +32,18 @@ import (
 func BuildStartArgs(engine, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
 	binary := kit.EngineBinary(engine)
 	capability, hasCapability := kit.EngineCapabilityFor(engine)
+	// `-d` (detached) and `--rm` (auto-remove on exit): podman accepts them
+	// together; nerdctl REJECTS `-d --rm` ("flags -d and --rm cannot be specified
+	// together", measured live on nerdctl 2.3.5). So `--rm` is emitted only where
+	// the engine's capability allows it alongside detach; the container is then
+	// cleaned up by the unit's ExecStop (`<engine> stop`) / an explicit rm.
 	args := []string{
-		binary, "run", "-d", "--rm",
-		"--name", name,
-		"-w", workingDir,
+		binary, "run", "-d",
 	}
+	if !hasCapability || !capability.NoRemoveWithDetach {
+		args = append(args, "--rm")
+	}
+	args = append(args, "--name", name, "-w", workingDir)
 	if len(network) > 0 && network[0] != "" {
 		args = append(args, "--network", network[0])
 	}
