@@ -12,4 +12,12 @@ var (
 	EngineBinary = container.EngineBinary
 	GPURunArgs   = container.GPURunArgs
 	DetectEngine = container.DetectEngine
+
+	// EngineCapabilityFor / EngineRunModeFor / IsUnitRunMode expose the engine
+	// capability DATA (the name→facts table) so kit consumers stop switching on
+	// the engine name. The capability STRUCT TYPE is spec.EngineCapability (the
+	// generated schema type) — consumers name it directly; no alias here.
+	EngineCapabilityFor = container.EngineCapabilityFor
+	EngineRunModeFor    = container.EngineRunModeFor
+	IsUnitRunMode       = container.IsUnitRunMode
 )
