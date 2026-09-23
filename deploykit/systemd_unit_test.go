@@ -9,7 +9,7 @@ func TestGenerateSystemdUnit_WrapsNerdctlArgv(t *testing.T) {
 	cfg := SystemdUnitConfig{
 		Name:        "my-app",
 		Description: "my-app (nerdctl)",
-		StartArgv:   []string{"nerdctl", "run", "-d", "--rm", "--name", "my-app", "--userns", "host", "img:latest"},
+		StartArgv:   []string{"nerdctl", "run", "--rm", "--name", "my-app", "--userns", "host", "img:latest"},
 		StopArgv:    []string{"nerdctl", "stop", "my-app"},
 		ExecStartPre: [][]string{
 			{"nerdctl", "rm", "-f", "my-app"},
@@ -23,7 +23,7 @@ func TestGenerateSystemdUnit_WrapsNerdctlArgv(t *testing.T) {
 		"[Unit]",
 		"[Service]",
 		"[Install]",
-		"ExecStart=nerdctl run -d --rm --name my-app --userns host img:latest",
+		"ExecStart=nerdctl run --rm --name my-app --userns host img:latest",
 		"ExecStop=nerdctl stop my-app",
 		"ExecStartPre=-nerdctl rm -f my-app",
 		"Restart=on-failure",
@@ -157,5 +157,23 @@ func TestBuildStartArgs_NerdctlDropsRemoveWithDetach(t *testing.T) {
 	pod := strings.Join(BuildStartArgs("podman", "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
 	if !strings.Contains(pod, "--rm") {
 		t.Errorf("podman accepts -d --rm; it must keep --rm: %s", pod)
+	}
+}
+
+// TestBuildForegroundRunArgs_NoDetach_WithRemove pins the unit's ExecStart argv
+// contract: BuildForegroundRunArgs emits NO `-d` and DOES emit `--rm` (foreground
+// --rm is always legal, including nerdctl, where `-d --rm` is rejected).
+func TestBuildForegroundRunArgs_NoDetach_WithRemove(t *testing.T) {
+	for _, engine := range []string{"podman", "docker", "nerdctl"} {
+		joined := strings.Join(BuildForegroundRunArgs(engine, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+		if strings.Contains(joined, " -d ") {
+			t.Errorf("%s foreground argv must NOT detach: %s", engine, joined)
+		}
+		if !strings.Contains(joined, " --rm ") {
+			t.Errorf("%s foreground argv must keep --rm: %s", engine, joined)
+		}
+		if !strings.HasPrefix(joined, engine+" run --rm --name svc") {
+			t.Errorf("%s foreground argv shape unexpected: %s", engine, joined)
+		}
 	}
 }

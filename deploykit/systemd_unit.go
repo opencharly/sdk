@@ -11,8 +11,8 @@ import (
 // podman has a native systemd generator (quadlet): a `.container` file under
 // ~/.config/containers/systemd/ that podman's generator turns into a service.
 // nerdctl has NO such generator, so charly emits a plain systemd USER unit that
-// wraps the nerdctl CLI directly — `ExecStart=/usr/bin/nerdctl run -d …` with an
-// `ExecStop=/usr/bin/nerdctl stop <name>`.
+// wraps the nerdctl CLI directly — `ExecStart=/usr/bin/nerdctl run --rm …`
+// (FOREGROUND; no `-d`) with an `ExecStop=/usr/bin/nerdctl stop <name>`.
 //
 // The unit is a thin wrapper: the run lifecycle is the engine's. StartArgv must be
 // a FOREGROUND launch (`<engine> run --rm …`, no `-d`) so systemd supervises the
@@ -20,15 +20,18 @@ import (
 // `--rm` cleans it up. `systemctl --user enable` links it for autostart.
 
 // SystemdUnitConfig describes a generated systemd user unit wrapping an engine
-// CLI. The caller supplies already-resolved argv (from BuildStartArgs or the
-// provider's start_plan op), so this generator stays engine-agnostic: it is the
-// unit WRAPPER, not an argv builder.
+// CLI. The caller supplies already-resolved FOREGROUND argv (from
+// BuildForegroundRunArgs or the provider's start_plan op), so this generator
+// stays engine-agnostic: it is the unit WRAPPER, not an argv builder.
 type SystemdUnitConfig struct {
 	// Name is the deployment/container name (also the unit basename).
 	Name string
 	// Description is the [Unit] Description.
 	Description string
-	// StartArgv is the full argv for ExecStart (e.g. nerdctl run -d …).
+	// StartArgv is the full argv for ExecStart. It must be a FOREGROUND launch
+	// (e.g. nerdctl run --rm … — NO `-d`): systemd supervises the CLI for the
+	// container's lifetime, so a detached argv would make the unit inactive as soon
+	// as the CLI returned. Build it with BuildForegroundRunArgs.
 	StartArgv []string
 	// StopArgv is the argv for ExecStop (e.g. nerdctl stop <name>); optional.
 	StopArgv []string
