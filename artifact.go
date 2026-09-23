@@ -293,13 +293,5 @@ func assertArtifactContainsText(path, want string) error {
 		return nil
 	}
 	return fmt.Errorf("artifact_contains_text: %q not found in the text OCR read from %q "+
-		"(read %d characters; first 200: %q)", want, path, len(got), truncateForError(got, 200))
-}
-
-func truncateForError(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+		"(read %d characters; first 200: %q)", want, path, len(got), kit.ConsolePreview(got, 200))
 }

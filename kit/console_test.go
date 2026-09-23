@@ -182,6 +182,48 @@ func TestOCRBytes_MissingBinaryIsNotANoMatch(t *testing.T) {
 	}
 }
 
+// The enlargement is a real behavior, not decoration: tesseract read ZERO words
+// from a real 1280x800 desktop capture at 1x, 2x and 3x and read it correctly
+// once enlarged. This pins the OUTPUT GEOMETRY, so deleting the upscale (or
+// returning the input unchanged when scale>1) makes the test fail.
+func TestUpscalePNG_Enlarges(t *testing.T) {
+	src := renderTextPNG(t, "HELLO")
+	before, _, err := image.DecodeConfig(strings.NewReader(string(src)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, scale := range []int{2, ocrUpscaleTest} {
+		out, err := UpscalePNG(src, scale)
+		if err != nil {
+			t.Fatalf("UpscalePNG scale=%d: %v", scale, err)
+		}
+		cfg, _, err := image.DecodeConfig(strings.NewReader(string(out)))
+		if err != nil {
+			t.Fatalf("scale=%d output is not a valid image: %v", scale, err)
+		}
+		if cfg.Width != before.Width*scale || cfg.Height != before.Height*scale {
+			t.Errorf("scale=%d: got %dx%d, want %dx%d",
+				scale, cfg.Width, cfg.Height, before.Width*scale, before.Height*scale)
+		}
+	}
+	// A scale of 1 is an identity: same geometry, no decode required.
+	out, err := UpscalePNG(src, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := image.DecodeConfig(strings.NewReader(string(out)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Width != before.Width || cfg.Height != before.Height {
+		t.Errorf("scale=1 changed geometry: got %dx%d, want %dx%d", cfg.Width, cfg.Height, before.Width, before.Height)
+	}
+}
+
+// ocrUpscaleTest mirrors the artifact upscale factor without importing sdk.
+const ocrUpscaleTest = 4
+
 // renderTextPNG draws text with Go's built-in bitmap font at 6x, which
 // tesseract reads reliably — the deterministic fixture the OCR tests use.
 func renderTextPNG(t *testing.T, text string) []byte {

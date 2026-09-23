@@ -367,13 +367,17 @@ func consoleActionSummary(s ConsoleStepPlan) string {
 	return "(wait only)"
 }
 
-// ConsolePreview clips s for an error message (single line).
+// ConsolePreview clips s to a single line of at most n characters, for an error
+// message. It collapses ALL whitespace runs (newlines included) to single spaces
+// and appends an ellipsis when it truncates. It is the ONE such clip in the
+// SDK — artifact.go's error paths call it too, so OCR text is rendered the same
+// way wherever it is quoted back.
 func ConsolePreview(s string, n int) string {
-	s = strings.ReplaceAll(strings.TrimSpace(s), "\n", " ")
+	s = strings.Join(strings.Fields(s), " ")
 	if len(s) <= n {
 		return s
 	}
-	return s[:n]
+	return s[:n] + "…"
 }
 
 // ConsoleOCRPSM is tesseract's sparse-text page-segmentation mode. A framebuffer
@@ -399,28 +403,42 @@ func OCRBytes(pngBytes []byte) (string, error) {
 // applied first (1 = none). The artifact validator upscales a screen-resolution
 // capture (see sdk's ocrUpscale); a framebuffer console reads at 1.
 func OCRBytesScaled(pngBytes []byte, scale int) (string, error) {
+	scaled, err := UpscalePNG(pngBytes, scale)
+	if err != nil {
+		return "", err
+	}
+	return ocrPNGFile(scaled)
+}
+
+// UpscalePNG returns the PNG enlarged by an integer nearest-neighbour factor
+// (scale <= 1 returns the bytes unchanged). Nearest-neighbour keeps glyph edges
+// hard, which is what tesseract thresholds against; a smoothing filter blurs thin
+// UI type. Exposed because the ENLARGEMENT ITSELF is a behavior worth pinning —
+// tesseract read ZERO words from a real 1280x800 desktop capture at 1x, 2x and 3x
+// and read it once enlarged, so a test asserts the output geometry.
+func UpscalePNG(pngBytes []byte, scale int) ([]byte, error) {
 	if scale < 1 {
 		scale = 1
 	}
-	if scale > 1 {
-		src, _, err := image.Decode(bytes.NewReader(pngBytes))
-		if err != nil {
-			return "", fmt.Errorf("console OCR: decode capture: %w", err)
-		}
-		b := src.Bounds()
-		dst := image.NewRGBA(image.Rect(0, 0, b.Dx()*scale, b.Dy()*scale))
-		for y := 0; y < dst.Bounds().Dy(); y++ {
-			for x := 0; x < dst.Bounds().Dx(); x++ {
-				dst.Set(x, y, src.At(b.Min.X+x/scale, b.Min.Y+y/scale))
-			}
-		}
-		var buf bytes.Buffer
-		if err := png.Encode(&buf, dst); err != nil {
-			return "", fmt.Errorf("console OCR: encode upscaled copy: %w", err)
-		}
-		pngBytes = buf.Bytes()
+	if scale == 1 {
+		return pngBytes, nil
 	}
-	return ocrPNGFile(pngBytes)
+	src, _, err := image.Decode(bytes.NewReader(pngBytes))
+	if err != nil {
+		return nil, fmt.Errorf("console OCR: decode capture: %w", err)
+	}
+	b := src.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dx()*scale, b.Dy()*scale))
+	for y := 0; y < dst.Bounds().Dy(); y++ {
+		for x := 0; x < dst.Bounds().Dx(); x++ {
+			dst.Set(x, y, src.At(b.Min.X+x/scale, b.Min.Y+y/scale))
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, dst); err != nil {
+		return nil, fmt.Errorf("console OCR: encode upscaled copy: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // ocrPNGFile writes the bytes to a temp PNG and runs tesseract over it.
