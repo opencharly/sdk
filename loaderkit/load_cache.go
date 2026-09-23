@@ -22,10 +22,11 @@ package loaderkit
 // every consumer, and the shared on-disk Store under the charly cache dir is what lets the wave's
 // separate OS processes reuse ONE another's work.
 //
-// STORAGE. The mechanism is the ONE shared spec/cache.Store (R3): a directory of one JSON entry
-// per key, lock-free atomic reads, a per-key flock + double-check on the miss path (Fill), and
-// Docker-style prune by entry cap. This file OWNS only the materialize-specific inputs — the KEY
-// (the components digest) and the tree wire codec.
+// STORAGE. The mechanism is the ONE shared spec/cache ArtifactStore (R3): an OCI
+// Image Layout (oci-layout + index.json + blobs/<alg>/<digest>) — lock-free
+// atomic reads, a per-key flock + double-check on the miss path (Fill), and
+// Docker-style prune by entry cap. This file OWNS only the materialize-specific
+// inputs — the KEY (the components digest) and the tree wire codec.
 //
 // KEY (the project config state + the resolved refs' hashes, content-addressed). The key is the
 // components digest of three inputs: (1) the walk envelope's SHA-256 — the FULL materialize input:
