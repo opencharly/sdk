@@ -11,7 +11,6 @@ import (
 	"image/png"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -356,5 +355,3 @@ func (a *scriptedTransport) Type(_ context.Context, s string) error {
 	a.ft.types = append(a.ft.types, s)
 	return nil
 }
-
-var _ = filepath.Join
