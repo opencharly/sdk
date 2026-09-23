@@ -32,6 +32,7 @@ import (
 	"sync"
 
 	"github.com/opencharly/spec/calver"
+	"github.com/opencharly/spec/lock"
 	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/refs"
 	"github.com/opencharly/spec/spec"
@@ -41,13 +42,12 @@ import (
 // for everything registry-coupled (Downloader/MigrateCache/ResolveLocal/OverrideEnvValue) — this
 // mechanism never touches the provider registry directly.
 
-// autoMigratedRepos guards the remote-cache auto-migration against unbounded re-entry. A migration
-// that re-enters LoadUnified would resolve @github refs and re-enter EnsureRepoDownloaded → the
-// command:migrate Invoke. With a self- or mutual import (the main <-> cachyos cycle), and
-// especially right after a LatestSchemaVersion bump (when EVERY cache reads as behind-head), that
-// could recurse without bound. markRepoAutoMigrating returns true exactly once per cache path per
-// process, so each cache is auto-migrated at most once and the cycle terminates — safe because the
-// migration engine is idempotent, so a single pass per process is sufficient.
+// autoMigratedRepos guards the DERIVED-VIEW build against unbounded re-entry. Building a view runs
+// the migration, which re-enters LoadUnified, which resolves @github refs and re-enters
+// EnsureRepoDownloaded → DeriveRepoView for the SAME view (a self- or mutual import cycle such as
+// main <-> cachyos). markRepoAutoMigrating returns true exactly once per view path per process, so
+// each view is derived at most once and the cycle terminates — safe because the migration engine is
+// idempotent, so a single pass per process is sufficient.
 var (
 	autoMigratedRepos   = map[string]bool{}
 	autoMigratedReposMu sync.Mutex
@@ -72,8 +72,8 @@ func RepoOverrideDir(repoPath, envValue string) (string, bool, error) {
 	return proc.RepoOverrideDir(repoPath, envValue)
 }
 
-// cacheBehindHead reports whether a cached repo still needs migration: its root config
-// (charly.yml) is absent or carries a schema version older than HEAD. A cache already at HEAD with
+// cacheBehindHead reports whether a tree still needs migration: its root config
+// (charly.yml) is absent or carries a schema version older than HEAD. A tree already at HEAD with
 // charly.yml returns false — the fast, silent path.
 func cacheBehindHead(path string) bool {
 	data, err := os.ReadFile(filepath.Join(path, spec.UnifiedFileName))
@@ -85,6 +85,128 @@ func cacheBehindHead(path string) bool {
 		return true
 	}
 	return cv.Less(calver.LatestSchemaCalVer())
+}
+
+// derivedViewPath is the schema-keyed derived-view directory for a pristine cache
+// export: <cachePath>.view.<headSchema>. The view holds the SAME tree migrated to
+// HEAD schema. It is keyed by the head schema CalVer only, because the pristine
+// cache path is already keyed by the resolved commit (<repo>@<ref>, and a mutable
+// ref is RE-FETCHED to a fresh export when it moves) — so a schema bump is the only
+// thing that can make an existing view stale, and it yields a new path.
+func derivedViewPath(cachePath string) string {
+	return cachePath + ".view." + calver.LatestSchemaCalVer().String()
+}
+
+// viewMarkerName marks a fully-built derived view. Its presence (after the atomic
+// rename of the completed copy) is the completeness proof: a half-built view has no
+// marker and is rebuilt, so a crash mid-migrate never publishes a torn view.
+const viewMarkerName = ".charly-view-ok"
+
+// DeriveRepoView returns a directory holding the repo's project files migrated to the
+// HEAD schema, WITHOUT ever mutating the pristine cache export. The pristine export
+// is read-only shared state across binaries of different schema versions; the OLD
+// implementation rewrote it in place (auto-migrating charly.yml to the CONSUMER's
+// schema CalVer), so a newer binary poisoned the cache for every older consumer —
+// the exact defect that failed check-substrate's deploy-add with "config schema
+// <newer> is newer than this charly supports".
+//
+// Behavior:
+//   - a tree already at HEAD is returned AS-IS (no copy, the fast path);
+//   - otherwise a schema-keyed view is materialized once (copy + migrate under a
+//     per-view flock, published by atomic rename) and reused on later accesses.
+//
+// The migrate callback is the registry-coupled command:migrate leg (seams.MigrateCache);
+// passing it in keeps this mechanism kind-blind and unit-testable.
+func DeriveRepoView(cachePath string, migrate func(path string) error) (string, error) {
+	if !cacheBehindHead(cachePath) {
+		return cachePath, nil
+	}
+	viewPath := derivedViewPath(cachePath)
+	if _, err := os.Stat(filepath.Join(viewPath, viewMarkerName)); err == nil {
+		return viewPath, nil
+	}
+	// Re-entry guard: a migration re-enters LoadUnified, which resolves @github
+	// refs and re-enters EnsureRepoDownloaded → DeriveRepoView for the SAME view (a
+	// self/mutual import cycle such as main <-> cachyos). Without this the second
+	// acquire of the view flock would deadlock (flock is per open-file-description,
+	// so a re-acquire in the same process blocks). Admit each view once per process;
+	// a re-entrant call uses whatever the in-flight build will publish, preferring an
+	// already-published view and otherwise the pristine tree. Idempotent migration
+	// makes one pass sufficient.
+	if !markRepoAutoMigrating(viewPath) {
+		if _, err := os.Stat(filepath.Join(viewPath, viewMarkerName)); err == nil {
+			return viewPath, nil
+		}
+		return cachePath, nil
+	}
+	release, err := lock.AcquireFileLock(viewPath+".lock", true)
+	if err != nil {
+		// NEVER fall back to migrating cachePath in place: the pristine export is
+		// read-only shared state across binaries of different schema versions, and
+		// rewriting it is the exact defect this function exists to remove. A lock/IO
+		// failure is a hard load failure (the caller propagates it) — the pristine
+		// tree stays untouched, so a retry derives cleanly.
+		return "", fmt.Errorf("deriving schema view of %s: acquiring view lock: %w", cachePath, err)
+	}
+	defer func() { _ = release() }()
+	// Re-check under the lock: a concurrent first-misser may have built the view.
+	if _, err := os.Stat(filepath.Join(viewPath, viewMarkerName)); err == nil {
+		return viewPath, nil
+	}
+	tmpPath := viewPath + ".tmp"
+	_ = os.RemoveAll(tmpPath)
+	if err := copyTree(cachePath, tmpPath); err != nil {
+		_ = os.RemoveAll(tmpPath)
+		return "", fmt.Errorf("deriving schema view of %s: %w", cachePath, err)
+	}
+	if err := migrate(tmpPath); err != nil {
+		_ = os.RemoveAll(tmpPath)
+		return "", fmt.Errorf("migrating derived view of %s: %w", cachePath, err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpPath, viewMarkerName), []byte(calver.LatestSchemaCalVer().String()+"\n"), 0o644); err != nil {
+		_ = os.RemoveAll(tmpPath)
+		return "", err
+	}
+	_ = os.RemoveAll(viewPath)
+	if err := os.Rename(tmpPath, viewPath); err != nil {
+		_ = os.RemoveAll(tmpPath)
+		return "", fmt.Errorf("publishing derived view of %s: %w", cachePath, err)
+	}
+	return viewPath, nil
+}
+
+// copyTree copies a directory tree (files, modes, symlink targets). It is the derive
+// step's pure half — no git, no network.
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, rerr := filepath.Rel(src, path)
+		if rerr != nil {
+			return rerr
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, lerr := os.Readlink(path)
+			if lerr != nil {
+				return lerr
+			}
+			return os.Symlink(link, target)
+		}
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		return os.WriteFile(target, data, info.Mode().Perm())
+	})
 }
 
 // EnsureRepoDownloaded downloads the repo if not already cached. Returns the cache path. The cache
@@ -128,17 +250,11 @@ func EnsureRepoDownloaded(repoPath, version string, seams spec.RefsCollectSeams)
 	if err != nil {
 		return "", err
 	}
-	// Migrate a fresh clone ALWAYS; migrate a cache HIT only when it is actually behind HEAD (an
-	// older-schema cache). The chain is idempotent, but re-running it on every access of an
-	// already-current cache is costly (re-parses every cached repo) and re-emits benign
-	// "unknown field" warnings from very old transitive deps — so the already-current hit takes the
-	// fast, silent path.
-	if (!cached || cacheBehindHead(path)) && markRepoAutoMigrating(path) {
-		if err := seams.MigrateCache(path); err != nil {
-			return path, fmt.Errorf("auto-migrating remote cache %s: %w", path, err)
-		}
-	}
-	return path, nil
+	// DERIVE the head-schema view instead of MUTATING the pristine cache. Sharing one mutable
+	// export across binaries of different schema versions is what let a newer binary poison the
+	// cache for older consumers (the check-substrate deploy-add failure). The pristine export
+	// stays exactly as fetched; each schema version reads its own derived view.
+	return DeriveRepoView(path, seams.MigrateCache)
 }
 
 // CollectRemoteRefs is the default-opts wrapper (enabled images only) around CollectRemoteRefsOpts.
