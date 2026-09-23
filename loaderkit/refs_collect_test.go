@@ -354,3 +354,46 @@ func TestDeriveRepoViewAtHeadIsIdentity(t *testing.T) {
 		t.Fatal("migrate must not run for an at-head tree")
 	}
 }
+
+// TestDeriveRepoViewNeverMigratesPristineOnFailure locks the read-only guarantee
+// on the FAILURE path: when the migration of the derived copy fails, the
+// pristine export must still be byte-identical and migrate must never have been
+// called with the pristine path. The pre-fix code fell back to migrating
+// cachePath in place on a lock error — the exact shared-cache poisoning this
+// function removes.
+func TestDeriveRepoViewNeverMigratesPristineOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	pristine := filepath.Join(dir, "repo@main")
+	if err := os.MkdirAll(pristine, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := []byte("version: 2026.100.0000\nbox:\n  b:\n    candy: [a]\n")
+	if err := os.WriteFile(filepath.Join(pristine, spec.UnifiedFileName), root, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(pristine, spec.UnifiedFileName))
+
+	// Force the LOCK-acquire failure the old code fell back from: make the view
+	// lock path an unopenable DIRECTORY, so AcquireFileLock errors.
+	viewPath := derivedViewPath(pristine)
+	if err := os.MkdirAll(viewPath+".lock", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var sawPristine bool
+	migrate := func(p string) error {
+		if p == pristine {
+			sawPristine = true
+		}
+		return nil
+	}
+	if _, err := DeriveRepoView(pristine, migrate); err == nil {
+		t.Fatal("a lock-acquire failure must fail the derive, never mutate the pristine export")
+	}
+	if sawPristine {
+		t.Fatal("migrate was called with the PRISTINE export on the lock-failure path — the read-only guarantee is broken")
+	}
+	after, _ := os.ReadFile(filepath.Join(pristine, spec.UnifiedFileName))
+	if string(after) != string(before) {
+		t.Fatalf("pristine export mutated on the failure path:\n before=%q\n after =%q", before, after)
+	}
+}

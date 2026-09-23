@@ -141,12 +141,12 @@ func DeriveRepoView(cachePath string, migrate func(path string) error) (string, 
 	}
 	release, err := lock.AcquireFileLock(viewPath+".lock", true)
 	if err != nil {
-		// Lock contention/IO failure: fall back to migrating the pristine tree in place
-		// (the pre-cutover behavior) rather than failing the load.
-		if merr := migrate(cachePath); merr != nil {
-			return cachePath, merr
-		}
-		return cachePath, nil
+		// NEVER fall back to migrating cachePath in place: the pristine export is
+		// read-only shared state across binaries of different schema versions, and
+		// rewriting it is the exact defect this function exists to remove. A lock/IO
+		// failure is a hard load failure (the caller propagates it) — the pristine
+		// tree stays untouched, so a retry derives cleanly.
+		return "", fmt.Errorf("deriving schema view of %s: acquiring view lock: %w", cachePath, err)
 	}
 	defer func() { _ = release() }()
 	// Re-check under the lock: a concurrent first-misser may have built the view.
