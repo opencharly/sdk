@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -28,7 +29,7 @@ func TestRenderConfig_ValidatesWithCharly(t *testing.T) {
 	}
 	cfg := &spec.PackagingConfig{
 		Path:        "/etc/charly/charly.yml",
-		Version:     "2026.249.2125",
+		Version:     kit.LatestSchemaVersion().String(),
 		Description: "System-wide charly MCP server project (started via systemd)",
 		Plugins:     []string{"@github.com/opencharly/plugin-mcp/candy/plugin-mcp:v2026.250.0635"},
 	}
