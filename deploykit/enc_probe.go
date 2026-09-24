@@ -227,17 +227,38 @@ func EncServiceFilename(boxName string) string {
 // delete an instance's cipher dir and the instance would fail to remount. Each
 // mount is unmounted best-effort before removal; a purge never hard-fails on cleanup.
 func RemoveEncryptedVolumes(boxName, instance string) {
+	dc, _ := LoadDeployConfig()
+	RemoveEncryptedVolumesWithConfig(boxName, instance, dc)
+}
+
+// RemoveEncryptedVolumesWithConfig is RemoveEncryptedVolumes with the per-host
+// deploy config SUPPLIED rather than read through the bare deploykit.LoadDeployConfig
+// — which is a documented silent no-op out-of-process (it returns nil,nil unless
+// deploykit.DeployStateHost is registered, which only charly-core's own init
+// does). An out-of-process caller (candy/plugin-pod) therefore MUST route its
+// executor-loaded config here, exactly as it already does for resolveSidecarNames
+// and the remove-time engine resolution (see remove_orchestration.go's header).
+// Without this the sibling list would be empty in the live purge and the
+// prefix-only over-match would return.
+func RemoveEncryptedVolumesWithConfig(boxName, instance string, dc *DeployConfig) {
 	rt, err := kit.ResolveRuntime()
 	if err != nil {
 		return
 	}
-	base := rt.EncryptedStoragePath
+	removeEncryptedVolumesUnder(rt.EncryptedStoragePath, boxName, instance, dc)
+}
+
+// removeEncryptedVolumesUnder is the testable core: it purges the deploy's
+// encrypted-volume dirs under an explicit base path with an explicit config, so
+// the sibling-safety of the filter is provable without resolving the host
+// runtime or the reverse channel.
+func removeEncryptedVolumesUnder(base, boxName, instance string, dc *DeployConfig) {
 	prefix := "charly-" + DeployStorageDir(boxName, instance) + "-"
 	// The deploy config may already be gone (an orphaned-after-a-crash dir) — then
 	// no siblings are known and the prefix is the only signal, matching the
 	// pre-existing best-effort contract.
 	var siblings []string
-	if dc, derr := LoadDeployConfig(); derr == nil {
+	if dc != nil {
 		siblings = SiblingVolumePrefixes(dc, boxName, instance)
 	}
 	entries, err := os.ReadDir(base)
