@@ -1,10 +1,10 @@
 package loaderkit
 
-// beds_test.go — the ONE bed resolver's unit tests: Beds() enumerates LOCAL +
-// namespace-qualified beds (recursively), ResolveBed resolves both forms, and
-// BedScope returns the OWNING namespace so a namespaced bed's bare `from:`
-// resolves against its own scope. Locks the fix for the namespaced-bed
-// validate-but-not-run defect.
+// beds_test.go — exercises the bed resolver that the spec bump (v0.2026267.2121)
+// provides (spec.UnifiedFile.Beds/ResolveBed/BedScope) AS SEEN THROUGH the sdk's
+// own consumers: it pins the behavior the sdk relies on. The sdk's OWN changed
+// logic — ValidateCheckBeds enumerating + scope-resolving namespaced beds — is
+// covered by validate_check_beds_namespace_test.go.
 
 import (
 	"sort"

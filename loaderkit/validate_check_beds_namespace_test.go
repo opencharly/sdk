@@ -8,11 +8,18 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// validate_check_beds_namespace_test.go — the namespaced-bed validation coverage:
-// ValidateCheckBeds iterates uf.Beds() (local + namespace-qualified) and validates
-// each bed's `from:` against its OWNING namespace (uf.BedScope). FAILS without the
-// scope change: a namespaced bed whose bare `from:` resolves only inside its own
-// namespace was rejected when validated against the merged root.
+// validate_check_beds_namespace_test.go — the namespaced-bed validation coverage.
+//
+// TRUE pre-change behavior: ValidateCheckBeds iterated uf.CheckBeds() (LOCAL-ONLY),
+// so a namespaced bed was NEVER ENUMERATED — not rejected, simply never validated.
+// The changed code iterates uf.Beds() (local + namespace-qualified) and validates
+// each bed's from: against its OWNING namespace (uf.BedScope).
+//
+// The test that FAILS WITHOUT the change is _NamespacedFromRejectedWhenUndefined:
+// pre-change, the namespaced bed was never enumerated, so its undefined from:
+// produced NO error (the test's `want rejection` assertion fails); post-change it
+// is enumerated and rejected. _NamespacedFromResolvesInOwnScope is the companion
+// regression guard (a valid namespaced bed must NOT be over-rejected).
 
 // nsThreaded reports bed_target for vm so the bed-target arm runs (the substrate
 // trait check is data-driven, so the fixture must declare the trait).
@@ -22,11 +29,9 @@ func nsThreaded() spec.Threaded {
 	}}
 }
 
-// TestValidateCheckBeds_NamespacedFromResolvesInOwnScope: an `omarchy` namespace
-// carries a vm template `omarchy-vm` and a bed `edge-inst` with bare `from:
-// omarchy-vm`. The bed's from: resolves ONLY within omarchy — validating it against
-// the root (the pre-fix local-only path) rejects it; validating against the owning
-// scope accepts it.
+// TestValidateCheckBeds_NamespacedFromResolvesInOwnScope: a valid namespaced bed
+// (bare from: resolving in its own namespace) must NOT be rejected — the regression
+// guard against over-rejection once namespaced beds enter the enumeration.
 func TestValidateCheckBeds_NamespacedFromResolvesInOwnScope(t *testing.T) {
 	disp := true
 	vmBody := json.RawMessage(`{"vm":{"source":{"kind":"iso"}}}`)
@@ -44,8 +49,9 @@ func TestValidateCheckBeds_NamespacedFromResolvesInOwnScope(t *testing.T) {
 	}
 }
 
-// TestValidateCheckBeds_NamespacedFromRejectedWhenUndefined: a namespaced bed whose
-// from: names nothing in its own namespace is rejected (the gate still bites).
+// TestValidateCheckBeds_NamespacedFromRejectedWhenUndefined LOCKS the change: a
+// namespaced bed whose from: names nothing in its own namespace is rejected. This
+// FAILS before the change (the namespaced bed was not enumerated, so no error).
 func TestValidateCheckBeds_NamespacedFromRejectedWhenUndefined(t *testing.T) {
 	disp := true
 	ns := &spec.UnifiedFile{
