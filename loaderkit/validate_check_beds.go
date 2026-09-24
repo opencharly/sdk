@@ -19,7 +19,14 @@ import (
 // `box:` requirement). Runs at LOAD time so EVERY command that resolves a bed (charly check run,
 // charly deploy add, charly config, charly box validate, …) sees the same friendly error.
 func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
-	for name, node := range uf.CheckBeds() {
+	for name, node := range uf.Beds() {
+		// A bed's `from:`/`box:` cross-ref resolves WITHIN its owning scope, so a
+		// namespaced bed's bare reference is validated against its own namespace,
+		// not the merged root. scope is the owning UnifiedFile (uf for a local bed).
+		scope, _ := uf.BedScope(name)
+		if scope == nil {
+			scope = uf
+		}
 		// An iterate: bed is a benchmark (the former kind:score), NOT a deterministic R10 bed: it
 		// drives the AI loop scoring its plan's check:/agent-check: steps against an
 		// operator-provisioned sandbox, so the target/disposable/cross-ref requirements do not apply.
@@ -83,8 +90,9 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 				// OR a clone-base deploy-hop (a kind:check bed, local or
 				// namespace-qualified). The former local-only PluginKinds lookup is
 				// retired — a git-linked (namespace-qualified) from: is legal here,
-				// matching the runtime resolver's scope.
-				if !ResolveEntityRef(uf, node.Target, node.From) {
+				// matching the runtime resolver's scope. `scope` is the bed's OWNING
+				// namespace, so a bare from: resolves as that namespace sees it.
+				if !ResolveEntityRef(scope, node.Target, node.From) {
 					return fmt.Errorf("kind:check bed %q references %s entity %q which is not defined", name, node.Target, node.From)
 				}
 			}

@@ -82,7 +82,7 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 	}
 	out := make([]*pb.ProvidedCapability, 0, len(provided))
 	for _, c := range provided {
-		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary}
+		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary, Interactive: c.Interactive}
 		if c.CommandModel != nil {
 			if c.Class != "command" {
 				return nil, fmt.Errorf("plugin capability %s:%s declares a command model outside class=command", c.Class, c.Word)

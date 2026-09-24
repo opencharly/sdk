@@ -37,35 +37,9 @@ func ResolveEntityRef(uf *spec.UnifiedFile, kind, ref string) bool {
 		return true
 	}
 	// (b) the clone-base deploy-hop — a kind:check bed, local or
-	// namespace-qualified.
-	return bedRef(uf, ref)
-}
-
-// bedRef walks the fold (local + namespaces) for a disposable kind:check bed
-// named ref. The qualified form `ns.bed` matches the namespace's own
-// unqualified bed name; the unqualified form matches the local beds.
-func bedRef(uf *spec.UnifiedFile, ref string) bool {
-	if uf == nil {
-		return false
-	}
-	if _, ok := uf.CheckBeds()[ref]; ok {
-		return true
-	}
-	for ns, sub := range uf.Namespaces {
-		if sub == nil {
-			continue
-		}
-		// ONLY the qualified form (ns.bed) reaches into a namespace — the
-		// unqualified form is local-only (an unqualified ref into a namespace
-		// would be ambiguous; the runtime template lookup has the same
-		// contract: ProjectTemplates().ByKind keys are ns-qualified).
-		if strings.HasPrefix(ref, ns+".") {
-			if _, ok := sub.CheckBeds()[strings.TrimPrefix(ref, ns+".")]; ok {
-				return true
-			}
-		}
-	}
-	return false
+	// namespace-qualified, via the ONE bed resolver (spec.UnifiedFile.ResolveBed).
+	_, ok := uf.ResolveBed(ref)
+	return ok
 }
 
 // ResolveKindEntityBody returns the opaque kind:<word> template body named ref
