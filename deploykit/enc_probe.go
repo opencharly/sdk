@@ -220,8 +220,12 @@ func EncServiceFilename(boxName string) string {
 // It enumerates the on-disk dirs by the deploy's `charly-<storageDir>-` prefix
 // (the same per-deploy prefix removeVolumes filters podman volumes by) rather than
 // via LoadEncryptedVolume, so it works even when the deploy config is already gone
-// (the orphaned-after-a-crash case is exactly when the dir persists). Each mount
-// is unmounted best-effort before removal; a purge never hard-fails on cleanup.
+// (the orphaned-after-a-crash case is exactly when the dir persists). The prefix
+// match is SIBLING-SAFE: a base deploy's prefix is a prefix of its instances'
+// dirs, so the live deploy config is consulted (when readable) to exclude any
+// sibling's prefix — without this, `charly remove --purge githubrunner` would
+// delete an instance's cipher dir and the instance would fail to remount. Each
+// mount is unmounted best-effort before removal; a purge never hard-fails on cleanup.
 func RemoveEncryptedVolumes(boxName, instance string) {
 	rt, err := kit.ResolveRuntime()
 	if err != nil {
@@ -229,12 +233,22 @@ func RemoveEncryptedVolumes(boxName, instance string) {
 	}
 	base := rt.EncryptedStoragePath
 	prefix := "charly-" + DeployStorageDir(boxName, instance) + "-"
+	// The deploy config may already be gone (an orphaned-after-a-crash dir) — then
+	// no siblings are known and the prefix is the only signal, matching the
+	// pre-existing best-effort contract.
+	var siblings []string
+	if dc, derr := LoadDeployConfig(); derr == nil {
+		siblings = SiblingVolumePrefixes(dc, boxName, instance)
+	}
 	entries, err := os.ReadDir(base)
 	if err != nil {
 		return // no encrypted storage dir — nothing to purge
 	}
 	for _, e := range entries {
 		if !e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		if !VolumeNameBelongsTo(e.Name(), boxName, instance, siblings) {
 			continue
 		}
 		volName := strings.TrimPrefix(e.Name(), prefix)
