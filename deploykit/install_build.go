@@ -448,6 +448,15 @@ func CompileShellSnippetSteps(layer CandyModel, img *ResolvedBox, hostCtx HostCo
 		if body == "" {
 			continue
 		}
+		// Container-build POSIX drop-ins live in /etc/profile.d/, which every
+		// POSIX login shell sources in full — so the per-shell file NAME does not
+		// confine execution to its shell. Guard the body so a bash host cannot run
+		// the zsh/sh body (and vice versa). Host/vm targets append into the
+		// per-shell rc file (~/.bashrc/~/.zshrc/~/.profile), which is already
+		// shell-scoped, so no guard is added there.
+		if !hostCtx.MachineVenue {
+			body = GuardShellDropin(shell, body)
+		}
 		out = append(out, &ShellSnippetStep{
 			CandyName:   layer.GetName(),
 			Origin:      layer.GetName(),
@@ -533,6 +542,55 @@ func shellSnippetDestination(candyName, shell string, hostCtx HostContext, home,
 		return fmt.Sprintf("/etc/fish/conf.d/charly-%s.fish", candyName), true
 	}
 	return "", false
+}
+
+// GuardShellDropin wraps a POSIX-shell init snippet in a runtime guard that
+// makes it execute only under its own shell. The container-build emitter writes
+// one file per POSIX shell — /etc/profile.d/charly-<candy>-bash.sh,
+// -zsh.sh, -sh.sh — but /etc/profile sources EVERY /etc/profile.d/*.sh in
+// every POSIX login shell, so the filename does NOT scope execution: a bash
+// login ran the zsh body (syntax error) and the sh body. This guard is the
+// mechanism that makes the per-shell file name truthful.
+//
+//   - bash: executes iff BASH_VERSION is set and ZSH_VERSION is not.
+//   - zsh:  executes iff ZSH_VERSION is set.
+//   - sh:   executes iff NEITHER BASH_VERSION nor ZSH_VERSION is set.
+//
+// The BASH_VERSION-vs-ZSH_VERSION discrimination matters because bash exports
+// BASH_VERSION even when invoked as `sh`; a plain `-n "$BASH_VERSION"` test
+// would still fire under bash. `sh` covers dash/ash/busybox where neither
+// variable is set. fish never uses this path (its own conf.d drop-in). The body
+// is embedded in an `if … fi` so an early `return`/`exit` inside a snippet
+// cannot abort the caller's shell startup.
+func GuardShellDropin(shell, body string) string {
+	var cond string
+	switch shell {
+	case "bash":
+		cond = `[ -n "${BASH_VERSION:-}" ] && [ -z "${ZSH_VERSION:-}" ]`
+	case "zsh":
+		cond = `[ -n "${ZSH_VERSION:-}" ]`
+	case "sh":
+		cond = `[ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_VERSION:-}" ]`
+	default:
+		// fish and any future shell: the conf.d drop-in is already shell-scoped
+		// (direnv's own fish hook, etc.), so return the body unchanged.
+		return body
+	}
+	trimmed := strings.TrimRight(body, "\n")
+	var b strings.Builder
+	fmt.Fprintf(&b, "# opencharly: guard — this drop-in is for %s only (every /etc/profile.d/*.sh is sourced by every POSIX login shell)\n", shell)
+	fmt.Fprintf(&b, "if %s; then\n", cond)
+	for _, line := range strings.Split(trimmed, "\n") {
+		if line == "" {
+			b.WriteString("\n")
+			continue
+		}
+		b.WriteString("\t")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("fi\n")
+	return b.String()
 }
 
 // AppendShellPathLines appends path_append entries to the snippet body
