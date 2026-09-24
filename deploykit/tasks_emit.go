@@ -330,8 +330,20 @@ func wrapUnlessExists(cmd, guard, verb, prefix, term string) string {
 	return head + fmt.Sprintf("{%s%s%s}; fi", prefix, cmd, term)
 }
 
+// The default build-cache locations. Deliberately under /var/cache, NOT /tmp:
+// a BuildKit cache mount rooted under /tmp combined with a nested container
+// runtime writing under /tmp in the same RUN makes BuildKit materialise /tmp at
+// the process umask (0755) instead of the lower layer's 1777, breaking every
+// uid-1000 writer of /tmp (supervisord's logfile, pod-dbus's socket) — RCA
+// 2026-09-24. /var/cache is the correct home for build caches on every distro.
+const (
+	buildCacheRoot    = "/var/cache/charly"
+	downloadsCacheDir = buildCacheRoot + "/downloads"
+	npmCacheDir       = buildCacheRoot + "/npm-cache"
+)
+
 // EmitDownload emits one RUN per download task: fetch to a content-addressed
-// /tmp/downloads cache, then extract. Honors candy-declared `cache:` mounts.
+// downloads cache, then extract. Honors candy-declared `cache:` mounts.
 func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) error {
 	url := t.Download
 	dest := TaskSubstPath(t.To, img)
@@ -369,7 +381,7 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		return fmt.Errorf("download %q: extract=none requires `to:` destination", url)
 	}
 
-	fetch := fmt.Sprintf(`%s mkdir -p /tmp/downloads; __u=%q; __c=/tmp/downloads/$(printf %%s "$__u" | sha256sum | cut -c1-64); [ -s "$__c" ] || { curl -fsSL "$__u" -o "$__c.part" && mv -f "$__c.part" "$__c"; }`, envPrefix.String(), url)
+	fetch := fmt.Sprintf(`%s mkdir -p %s; __u=%q; __c=%s/$(printf %%s "$__u" | sha256sum | cut -c1-64); [ -s "$__c" ] || { curl -fsSL "$__u" -o "$__c.part" && mv -f "$__c.part" "$__c"; }`, envPrefix.String(), downloadsCacheDir, url, downloadsCacheDir)
 
 	var extractCmd string
 	switch extract {
@@ -412,9 +424,9 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 	// non-root downloads the moment any root stage has written to it (the
 	// curl-23 build failure).
 	if taskRunsAsRoot(t.RunAs, img) {
-		mounts = append(mounts, buildkit.SharedCacheMount("/tmp/downloads", "").String())
+		mounts = append(mounts, buildkit.SharedCacheMount(downloadsCacheDir, "").String())
 	} else {
-		mounts = append(mounts, buildkit.OwnedCacheMount("/tmp/downloads", img.UID, img.GID).String())
+		mounts = append(mounts, buildkit.OwnedCacheMount(downloadsCacheDir, img.UID, img.GID).String())
 	}
 	mounts = append(mounts, cacheMounts...)
 	fmt.Fprintf(b, "RUN %s %s %s\n", strings.Join(mounts, " "), BuildStepShellDashC(), shellquote.ShellQuote(cmd))
@@ -458,7 +470,7 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 			}
 		}
 	} else {
-		mounts = append(mounts, buildkit.OwnedCacheMount("/tmp/npm-cache", img.UID, img.GID).String())
+		mounts = append(mounts, buildkit.OwnedCacheMount(npmCacheDir, img.UID, img.GID).String())
 	}
 
 	mounts = append(mounts, TaskCacheMounts(t, img)...)
