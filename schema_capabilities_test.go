@@ -65,3 +65,28 @@ func TestBuildCapabilitiesDropsProtocolVersion(t *testing.T) {
 		wire = wire[n:]
 	}
 }
+
+// TestBuildCapabilitiesCarriesInteractive locks the ProvidedCapability.Interactive
+// pass-through: a class=command capability declaring Interactive=true must carry it
+// onto the emitted proto capability. FAILS without the sdk's `Interactive:
+// c.Interactive` line in BuildCapabilities (spec's capability.Interactive field is
+// present, but the sdk mapping is what this test exercises).
+func TestBuildCapabilitiesCarriesInteractive(t *testing.T) {
+	caps, err := BuildCapabilities("2026.261.1747", []ProvidedCapability{
+		{Class: "command", Word: "shell", Interactive: true},
+		{Class: "command", Word: "check", Interactive: false},
+	}, nil, "")
+	if err != nil {
+		t.Fatalf("BuildCapabilities: %v", err)
+	}
+	byWord := map[string]*pb.ProvidedCapability{}
+	for _, c := range caps.GetProvided() {
+		byWord[c.GetWord()] = c
+	}
+	if !byWord["shell"].GetInteractive() {
+		t.Fatal("command:shell Interactive=true not carried onto the proto capability")
+	}
+	if byWord["check"].GetInteractive() {
+		t.Fatal("command:check Interactive=false must not be set")
+	}
+}
