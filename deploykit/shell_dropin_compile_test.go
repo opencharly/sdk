@@ -7,12 +7,13 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// TestCompileShellSnippetSteps_GuardsContainerDropins proves the wiring: on the
-// CONTAINER-BUILD path (every /etc/profile.d/*.sh is sourced by every POSIX login
-// shell) each bash/zsh/sh snippet is wrapped in its shell guard, while the
-// HOST/VENUE path (per-shell rc files, already shell-scoped) is left unguarded.
-// This is the regression the direnv field bug exposed: bash executed the zsh body.
-func TestCompileShellSnippetSteps_GuardsContainerDropins(t *testing.T) {
+// TestCompileShellSnippetSteps_GuardsDropins proves the wiring: BOTH paths wrap
+// each POSIX snippet in its shell guard. On the container path every
+// /etc/profile.d/*.sh is sourced by every POSIX login shell. On the host path the
+// `sh` snippet goes to ~/.profile — the SHARED POSIX login profile that bash also
+// sources when ~/.bash_profile/~/.bash_login are absent — so the guard is needed
+// there too. fish (its own conf.d drop-in) is never guarded.
+func TestCompileShellSnippetSteps_GuardsDropins(t *testing.T) {
 	const candy = "direnv"
 	layer := newTestCandy(candy, spec.CandyModel{
 		Shell: &spec.Shell{
@@ -21,46 +22,36 @@ func TestCompileShellSnippetSteps_GuardsContainerDropins(t *testing.T) {
 	})
 	img := &ResolvedBox{ResolvedBox: spec.ResolvedBox{Home: "/home/user"}}
 
-	// Container build path.
-	steps := CompileShellSnippetSteps(layer, img, HostContext{})
-	byShell := map[string]spec.ShellSnippetStep{}
-	for _, st := range steps {
-		s, ok := st.(*ShellSnippetStep)
-		if !ok {
-			t.Fatalf("unexpected step type %T", st)
-		}
-		byShell[s.Shell] = *s
-	}
-
-	for _, sh := range []string{"bash", "zsh", "sh"} {
-		s, ok := byShell[sh]
-		if !ok {
-			t.Fatalf("no snippet emitted for shell %q", sh)
-		}
-		if !strings.Contains(s.Snippet, "BASH_VERSION") && !strings.Contains(s.Snippet, "ZSH_VERSION") {
-			t.Errorf("container %s drop-in is UNGUARDED (bash would run it):\n%s", sh, s.Snippet)
-		}
-		if !strings.HasPrefix(s.Destination, "/etc/profile.d/") {
-			t.Errorf("%s destination = %q, want /etc/profile.d/", sh, s.Destination)
-		}
-	}
-
-	// fish is shell-scoped by its conf.d drop-in — must NOT be wrapped.
-	if fish, ok := byShell["fish"]; ok {
-		if strings.Contains(fish.Snippet, "BASH_VERSION") {
-			t.Errorf("fish drop-in must not carry a POSIX shell guard:\n%s", fish.Snippet)
-		}
-	}
-
-	// Host/venue path: per-shell rc files are already shell-scoped — no guard.
-	hostSteps := CompileShellSnippetSteps(layer, img, HostContext{MachineVenue: true})
-	for _, st := range hostSteps {
-		s, _ := st.(*ShellSnippetStep)
-		if s == nil {
-			continue
-		}
-		if strings.Contains(s.Snippet, "BASH_VERSION") {
-			t.Errorf("host %s snippet must not be guarded (rc file is shell-scoped):\n%s", s.Shell, s.Snippet)
-		}
+	for _, venue := range []struct {
+		name   string
+		ctx    HostContext
+		prefix string
+	}{
+		{"container", HostContext{}, "/etc/profile.d/"},
+		{"host", HostContext{MachineVenue: true}, ""},
+	} {
+		t.Run(venue.name, func(t *testing.T) {
+			steps := CompileShellSnippetSteps(layer, img, venue.ctx)
+			byShell := map[string]spec.ShellSnippetStep{}
+			for _, st := range steps {
+				s, ok := st.(*ShellSnippetStep)
+				if !ok {
+					t.Fatalf("unexpected step type %T", st)
+				}
+				byShell[s.Shell] = *s
+			}
+			for _, sh := range []string{"bash", "zsh", "sh"} {
+				s, ok := byShell[sh]
+				if !ok {
+					t.Fatalf("no snippet emitted for shell %q", sh)
+				}
+				if !strings.Contains(s.Snippet, "BASH_VERSION") && !strings.Contains(s.Snippet, "ZSH_VERSION") {
+					t.Errorf("%s %s snippet is UNGUARDED (a sibling shell would run it):\n%s", venue.name, sh, s.Snippet)
+				}
+			}
+			if fish, ok := byShell["fish"]; ok && strings.Contains(fish.Snippet, "BASH_VERSION") {
+				t.Errorf("%s fish snippet must not carry a POSIX guard:\n%s", venue.name, fish.Snippet)
+			}
+		})
 	}
 }

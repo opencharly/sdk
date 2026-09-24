@@ -448,15 +448,16 @@ func CompileShellSnippetSteps(layer CandyModel, img *ResolvedBox, hostCtx HostCo
 		if body == "" {
 			continue
 		}
-		// Container-build POSIX drop-ins live in /etc/profile.d/, which every
-		// POSIX login shell sources in full — so the per-shell file NAME does not
-		// confine execution to its shell. Guard the body so a bash host cannot run
-		// the zsh/sh body (and vice versa). Host/vm targets append into the
-		// per-shell rc file (~/.bashrc/~/.zshrc/~/.profile), which is already
-		// shell-scoped, so no guard is added there.
-		if !hostCtx.MachineVenue {
-			body = GuardShellDropin(shell, body)
-		}
+		// Guard the POSIX body so it executes only under its own shell. On the
+		// CONTAINER path every /etc/profile.d/*.sh is sourced by every POSIX
+		// login shell, so the per-shell file NAME does not confine execution. On
+		// the HOST/VENUE path bash/zsh use per-shell rc files (~/.bashrc /
+		// ~/.zshrc), but `sh` appends to ~/.profile — the SHARED POSIX login
+		// profile that bash ALSO sources when ~/.bash_profile/~/.bash_login are
+		// absent — so the sh body leaks into a bash/zsh login there too. Applying
+		// the guard on both paths is correct and harmless: it is TRUE whenever the
+		// file is sourced by its own shell.
+		body = GuardShellDropin(shell, body)
 		out = append(out, &ShellSnippetStep{
 			CandyName:   layer.GetName(),
 			Origin:      layer.GetName(),

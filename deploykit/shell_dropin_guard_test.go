@@ -3,6 +3,7 @@ package deploykit
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -39,6 +40,34 @@ func TestGuardShellDropin_Unit(t *testing.T) {
 				t.Errorf("GuardShellDropin(%q) dropped the body:\n%s", tc.shell, got)
 			}
 		})
+	}
+}
+
+// TestGuardShellDropin_HostProfileLeak proves the host-path half the validator
+// required: the `sh` snippet is appended to ~/.profile, which bash ALSO sources
+// when ~/.bash_profile/~/.bash_login are absent. Run a REAL bash login against a
+// fake HOME: the guarded sh body must be inert, the guarded bash body must fire.
+func TestGuardShellDropin_HostProfileLeak(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not installed")
+	}
+	home := t.TempDir()
+	body := `echo "RAN:$SHELL_MARKER"`
+	// Write the guarded sh body into ~/.profile (the host destination for `sh`),
+	// exactly as the compiler would emit it.
+	prof := GuardShellDropin("sh", body)
+	if err := os.WriteFile(filepath.Join(home, ".profile"), []byte(prof), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// No ~/.bash_profile / ~/.bash_login → bash reads ~/.profile.
+	cmd := exec.Command("bash", "-lc", "true")
+	cmd.Env = append([]string{"HOME=" + home, "SHELL_MARKER=sh-guard"}, "PATH="+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bash login failed: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "RAN:sh-guard") {
+		t.Errorf("bash login ran the guarded SH body via ~/.profile (the cross-shell leak):\n%s", out)
 	}
 }
 
