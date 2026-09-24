@@ -82,13 +82,38 @@ func TestValidateCheckBeds_NamespacedIsEnumerated(t *testing.T) {
 		},
 	}
 	uf := &spec.UnifiedFile{Namespaces: map[string]*spec.UnifiedFile{"omarchy": ns}}
-	// No vm trait registered → the vm target is "unsupported", proving the
-	// namespaced bed reached the validator's target arm.
 	err := ValidateCheckBeds(uf, spec.Threaded{})
 	if err == nil {
 		t.Fatal("namespaced bed with an unregistered target passed validation, want rejection")
 	}
 	if !strings.Contains(err.Error(), "unsupported target") {
 		t.Fatalf("rejection does not name the target arm: %v", err)
+	}
+}
+
+// TestValidateCheckBeds_NamespacedIterateAgentScoped LOCKS the owning-scope agent
+// catalog read: an `omarchy` namespace carries an `agent:` catalog entry `claude`
+// and an iterate bed referencing it. The catalog resolves in the bed's OWN
+// namespace, so validation passes. FAILS before the change (the agent catalog was
+// read from the merged ROOT, where `claude` is undefined).
+func TestValidateCheckBeds_NamespacedIterateAgentScoped(t *testing.T) {
+	disp := true
+	ns := &spec.UnifiedFile{
+		PluginKinds: map[string]map[string]json.RawMessage{
+			"agent": {"claude": json.RawMessage(`{"agent":{"command":["claude"]}}`)},
+		},
+		Deploy: map[string]spec.DeployNode{
+			"preflight": {
+				Target:     "pod",
+				Image:      "x",
+				Disposable: &disp,
+				Iterate:    &spec.Iterate{Sandbox: "some-sandbox", Agent: []string{"claude"}},
+				Plan:       []spec.Step{{Check: "a scored check"}},
+			},
+		},
+	}
+	uf := &spec.UnifiedFile{Namespaces: map[string]*spec.UnifiedFile{"omarchy": ns}}
+	if err := ValidateCheckBeds(uf, spec.Threaded{}); err != nil {
+		t.Fatalf("namespaced iterate bed's own-namespace agent catalog not honored: %v", err)
 	}
 }

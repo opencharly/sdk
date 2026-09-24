@@ -40,15 +40,22 @@ func capturePluginKinds(uf *spec.UnifiedFile, prefix string, out pluginKindsByPa
 	capturePluginKindsSeen(uf, prefix, out, map[*spec.UnifiedFile]bool{})
 }
 
-// capturePluginKindsSeen walks the namespace tree with a POINTER-IDENTITY cycle-break:
-// a mutual-import cycle (main<->sub, the loader aliasing semantics) makes the Namespaces
-// graph cyclic, so the plain recursion looped forever (R1: sdk pin-bump regression caught
-// by charly's TestImportNamespace_MutualCycle). Same aliasing rule the walk uses.
-func capturePluginKindsSeen(uf *spec.UnifiedFile, prefix string, out pluginKindsByPath, seen map[*spec.UnifiedFile]bool) {
-	if uf == nil || seen[uf] {
+// capturePluginKindsSeen walks the namespace tree with a PATH-SCOPED ancestor guard.
+//
+// The guard MUST be path-scoped, not a global pointer-identity set: the SAME *UnifiedFile is mounted
+// at MULTIPLE namespace paths by design — a diamond import (`c` imported by both `a` and `b`, so
+// mounted at `a.c` AND `b.c` as ONE pointer via the REFERENCE-mount pointer identity) and a
+// multi-alias mount (one repo at `arch` + `cachyos.arch`). A global `seen[uf]` guard recorded the
+// maps at only the FIRST alias reachable in map-iteration order (nondeterministic), so every later
+// alias restored WITH EMPTY PluginKinds — a namespaced bed (`b.c.check-*`, `from: vm`) then
+// false-failed "not defined". The ancestor stack records the maps at EVERY path while still
+// terminating a genuine cycle (a namespace that contains itself up the stack, e.g. main<->sub).
+func capturePluginKindsSeen(uf *spec.UnifiedFile, prefix string, out pluginKindsByPath, ancestors map[*spec.UnifiedFile]bool) {
+	if uf == nil || ancestors[uf] {
 		return
 	}
-	seen[uf] = true
+	ancestors[uf] = true
+	defer delete(ancestors, uf)
 	if len(uf.PluginKinds) > 0 {
 		out[prefix] = uf.PluginKinds
 	}
@@ -57,7 +64,7 @@ func capturePluginKindsSeen(uf *spec.UnifiedFile, prefix string, out pluginKinds
 		if prefix != "" {
 			child = prefix + "." + name
 		}
-		capturePluginKindsSeen(ns, child, out, seen)
+		capturePluginKindsSeen(ns, child, out, ancestors)
 	}
 }
 
@@ -67,11 +74,12 @@ func restorePluginKinds(uf *spec.UnifiedFile, prefix string, in pluginKindsByPat
 	restorePluginKindsSeen(uf, prefix, in, map[*spec.UnifiedFile]bool{})
 }
 
-func restorePluginKindsSeen(uf *spec.UnifiedFile, prefix string, in pluginKindsByPath, seen map[*spec.UnifiedFile]bool) {
-	if uf == nil || seen[uf] {
+func restorePluginKindsSeen(uf *spec.UnifiedFile, prefix string, in pluginKindsByPath, ancestors map[*spec.UnifiedFile]bool) {
+	if uf == nil || ancestors[uf] {
 		return
 	}
-	seen[uf] = true
+	ancestors[uf] = true
+	defer delete(ancestors, uf)
 	if pk, ok := in[prefix]; ok {
 		uf.PluginKinds = pk
 	}
@@ -80,7 +88,7 @@ func restorePluginKindsSeen(uf *spec.UnifiedFile, prefix string, in pluginKindsB
 		if prefix != "" {
 			child = prefix + "." + name
 		}
-		restorePluginKindsSeen(ns, child, in, seen)
+		restorePluginKindsSeen(ns, child, in, ancestors)
 	}
 }
 

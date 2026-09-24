@@ -32,7 +32,7 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 		// operator-provisioned sandbox, so the target/disposable/cross-ref requirements do not apply.
 		// Validate the iterate block instead.
 		if node.Iterate != nil {
-			if err := ValidateIterateBed(uf, name, &node); err != nil {
+			if err := validateIterateBedScoped(scope, name, &node); err != nil {
 				return err
 			}
 			continue
@@ -187,8 +187,16 @@ func declaredStructuralKindUnconnected(t spec.Threaded) bool {
 // `agent:` catalog; iterate.sandbox names a deployment (non-empty); and the bed's plan: carries at
 // least one direct `check:` step. Pure — reads uf.PluginKinds["agent"] + node.Iterate + node.Plan.
 func ValidateIterateBed(uf *spec.UnifiedFile, name string, node *spec.DeployNode) error {
+	return validateIterateBedScoped(uf, name, node)
+}
+
+// validateIterateBedScoped is ValidateIterateBed against the bed's OWNING scope: a
+// namespaced iterate bed's `agent:` catalog is read from the namespace that owns it,
+// not the merged root (a root-only read false-failed "agent claude is not defined"
+// for a namespaced iterate bed whose agent: catalog lives in its own namespace).
+func validateIterateBedScoped(scope *spec.UnifiedFile, name string, node *spec.DeployNode) error {
 	it := node.Iterate
-	agents := uf.PluginKinds["agent"] // agent is a plugin kind; opaque name-keyed catalog
+	agents := scope.PluginKinds["agent"] // agent is a plugin kind; opaque name-keyed catalog
 	for _, a := range it.Agent {
 		if _, ok := agents[a]; !ok {
 			return fmt.Errorf("iterate bed %q: agent %q is not defined in the agent: catalog", name, a)
