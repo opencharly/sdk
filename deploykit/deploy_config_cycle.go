@@ -62,7 +62,11 @@ type DeployConfigMutator func(dc *DeployConfig) (changed bool, err error)
 // deploy-kind-specific marshal and the placement-specific read are the caller's responsibility,
 // and this shell stays kind-blind.
 //
-// The lock is BLOCKING: a config write is brief, so a concurrent writer waits rather than failing.
+// The lock is BLOCKING, with a SHORT bound: a config read-modify-write hold is milliseconds, so a
+// concurrent writer normally QUEUES and proceeds; but the wait is bounded (deployConfigLockWait) so
+// a holder that outlives it — a cross-bed overlay collision or a stuck writer — fails FAST with the
+// holder named rather than reading as a legitimate slow build for the 30-minute image-build bound
+// (RCA issue 2).
 func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *DeployConfig) error, mutate DeployConfigMutator, ctxs ...context.Context) (*DeployConfig, error) {
 	if read == nil {
 		return nil, fmt.Errorf("MutateDeployConfig: read callback is nil")
@@ -116,8 +120,11 @@ func AcquireDeployConfigLock(ctxs ...context.Context) (func() error, error) {
 }
 
 // deployConfigLockWait bounds a contended deploy-config write. A whole overlay write is
-// milliseconds, so a legitimate same-overlay queue clears well inside this; a hold that
-// outlives it is a cross-bed collision or a stuck writer, and both deserve a fast, named error.
+// milliseconds, so a legitimate same-overlay queue clears well inside this; a hold that outlives
+// it is a cross-bed collision or a stuck writer, and both deserve a fast, named error. The value
+// is a deliberate FIXED constant, NOT config-sourced: it is a SAFETY bound on an internal lock,
+// and a config knob would let a misconfiguration re-introduce the unbounded hang this closes. It
+// is hundreds of times a measured legitimate hold yet far below the 30-minute image-build bound.
 const deployConfigLockWait = 10 * time.Second
 
 // ensureDeployConfig self-heals a nil config / nil Deploy map into a usable empty overlay — the

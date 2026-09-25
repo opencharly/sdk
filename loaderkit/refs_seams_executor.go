@@ -51,9 +51,10 @@ func RefsSeamsFromExecutor(ctx context.Context, ex *sdk.Executor) spec.RefsColle
 			return resolveLocalViaPeer(ctx, ex, body)
 		},
 		// The env var NAME lives in spec/proc (shared with candy/plugin-check's bed session, which
-		// computes its own override independently); reading its VALUE honors the per-invocation
-		// RunEnv on ctx FIRST (a concurrent in-process bed roster), else os.Getenv (the legacy
-		// single-invocation host CLI).
+		// computes its own override independently). spec.RunEnvGet reads a per-invocation RunEnv
+		// value from ctx FIRST (a concurrent in-process bed roster) and falls back to os.Getenv
+		// (the legacy single-invocation host CLI, which has no RunEnv) — byte-identical to the
+		// former plain os.Getenv for the operator path.
 		OverrideEnvValue: runEnvValue(ctx, proc.RepoOverrideEnv),
 		// The centralized git layer: a process-wide GitClient whose cache lives in
 		// the `cache:` section of the PER-HOST charly.yml (~/.config/charly/charly.yml)
@@ -149,12 +150,11 @@ func resolveLocalViaPeer(ctx context.Context, ex *sdk.Executor, body json.RawMes
 	return reply.Resolved, nil
 }
 
-// runEnvValue resolves a per-invocation env key honoring the ctx RunEnv first (a
-// concurrent in-process bed roster threads its own per-bed values), falling back to
-// os.Getenv for the legacy single-invocation host CLI (no RunEnv on ctx).
+// runEnvValue resolves a per-invocation env key via spec.RunEnvGet: a ctx RunEnv value wins (a
+// concurrent in-process bed roster threads its own per-bed values), and an absent RunEnv falls
+// back to os.Getenv inside spec.RunEnvGet itself (the legacy single-invocation host CLI) — so a
+// no-RunEnv host call is byte-identical to the former plain os.Getenv.
 func runEnvValue(ctx context.Context, key string) string {
-	if v, ok := spec.RunEnvGet(ctx, key); ok {
-		return v
-	}
-	return ""
+	v, _ := spec.RunEnvGet(ctx, key)
+	return v
 }
