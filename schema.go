@@ -41,6 +41,20 @@ type CLISubcommand = climodel.CLISubcommand
 // plugin candy call sites compile UNCHANGED.
 type StepContract = spec.StepContract
 
+// Requirement is one declared inter-plugin dependency an authoring plugin supplies,
+// mirroring the candy `plugin.requires:` entry and the wire PluginRequirement. Class+Word
+// name the peer ("<class>:<word>"); Source is the peer's candy ref for a peer outside the
+// project closure (fetched declaratively instead of by a call-time ExtraRef); Optional
+// makes an absent peer a recorded skip rather than a load failure. The host resolves every
+// requirement against the provider registry and connects it — identically in every
+// placement (compiled-in, project-declared external, demand-loaded).
+type Requirement struct {
+	Class    string // the peer's ProviderClass ("verb"/"kind"/...)
+	Word     string // the peer's reserved word, e.g. "enc"
+	Source   string // optional canonical candy ref for a peer outside the project closure
+	Optional bool   // an absent peer is recorded and skipped rather than failing the load
+}
+
 // BuildCapabilities is the serve-side half of the "every plugin ships its own CUE
 // schema" contract. It concatenates the plugin's embedded schema/*.cue via the SAME
 // schemaconcat contract charly uses for its base (R3 — one concat loop, no
@@ -54,6 +68,15 @@ type StepContract = spec.StepContract
 // schemaconcat because the SDK lives under charly/ — an external module imports
 // only this SDK, never charly/internal directly.
 func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs.FS, dir string) (*pb.Capabilities, error) {
+	return BuildCapabilitiesWithRequires(calver, provided, nil, schemaFS, dir)
+}
+
+// BuildCapabilitiesWithRequires is BuildCapabilities plus the plugin's declared
+// inter-plugin dependencies. They travel on the wire Capabilities.requires field, so
+// the host can resolve + connect each peer declaratively (identical in every
+// placement). A plugin with no dependencies calls BuildCapabilities, which forwards a
+// nil requires — byte-identical to before.
+func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability, requires []Requirement, schemaFS fs.FS, dir string) (*pb.Capabilities, error) {
 	// Stub-gate relaxation (schema-compaction cutover): an INPUT-LESS plugin (no
 	// capability declares an InputDef) may ship no schema at all — pass a nil
 	// schemaFS. A plugin that declares an input def must serve the schema
@@ -118,9 +141,19 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 		}
 		out = append(out, pc)
 	}
+	reqs := make([]*pb.PluginRequirement, 0, len(requires))
+	for _, r := range requires {
+		reqs = append(reqs, &pb.PluginRequirement{
+			Class:    r.Class,
+			Word:     r.Word,
+			Source:   r.Source,
+			Optional: r.Optional,
+		})
+	}
 	return &pb.Capabilities{
 		Calver:    calver,
 		Provided:  out,
 		SchemaCue: body,
+		Requires:  reqs,
 	}, nil
 }
