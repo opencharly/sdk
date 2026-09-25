@@ -11,6 +11,7 @@ package deploykit
 // no longer exists at this layer.
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -60,10 +61,10 @@ func TestIsVmVenue_IsContainerVenue(t *testing.T) {
 // it never invokes flag parsing, which is exactly how a `--yes`/`--force` drift once slipped
 // through).
 func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
-	orig := proc.RunCharlySubcommand
-	defer func() { proc.RunCharlySubcommand = orig }()
+	orig := proc.RunCharlySubcommandCtx
+	defer func() { proc.RunCharlySubcommandCtx = orig }()
 	var calls [][]string
-	proc.RunCharlySubcommand = func(args ...string) error {
+	proc.RunCharlySubcommandCtx = func(_ context.Context, args ...string) error {
 		calls = append(calls, args)
 		return nil
 	}
@@ -74,7 +75,7 @@ func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
 		{Name: "alpha-host", Position: spec.PositionDeployLevel, Node: localNode()},
 		{Name: "zeta-pod", Position: spec.PositionDeployLevel, Node: podNode()},
 	}}
-	if err := TearDownMembers(node); err != nil {
+	if err := TearDownMembers(context.Background(), node); err != nil {
 		t.Fatalf("TearDownMembers: %v", err)
 	}
 	want := [][]string{
@@ -88,11 +89,11 @@ func TestTearDownMembers_RoutingAndOrder(t *testing.T) {
 
 // TestTearDownMembers_NoMembersNoop: nothing happens when there are no members.
 func TestTearDownMembers_NoMembersNoop(t *testing.T) {
-	orig := proc.RunCharlySubcommand
-	defer func() { proc.RunCharlySubcommand = orig }()
+	orig := proc.RunCharlySubcommandCtx
+	defer func() { proc.RunCharlySubcommandCtx = orig }()
 	called := false
-	proc.RunCharlySubcommand = func(args ...string) error { called = true; return nil }
-	if err := TearDownMembers(&spec.DeployNode{}); err != nil {
+	proc.RunCharlySubcommandCtx = func(_ context.Context, args ...string) error { called = true; return nil }
+	if err := TearDownMembers(context.Background(), &spec.DeployNode{}); err != nil {
 		t.Fatalf("TearDownMembers(empty): %v", err)
 	}
 	if called {
@@ -101,19 +102,19 @@ func TestTearDownMembers_NoMembersNoop(t *testing.T) {
 }
 
 func TestTearDownMembers_AttemptsAllAndReturnsJoinedErrors(t *testing.T) {
-	orig := proc.RunCharlySubcommand
-	defer func() { proc.RunCharlySubcommand = orig }()
+	orig := proc.RunCharlySubcommandCtx
+	defer func() { proc.RunCharlySubcommandCtx = orig }()
 	firstErr := errors.New("first teardown failed")
 	secondErr := errors.New("second teardown failed")
 	var calls [][]string
-	proc.RunCharlySubcommand = func(args ...string) error {
+	proc.RunCharlySubcommandCtx = func(_ context.Context, args ...string) error {
 		calls = append(calls, args)
 		if len(calls) == 1 {
 			return firstErr
 		}
 		return secondErr
 	}
-	err := TearDownMembers(&spec.DeployNode{Member: []spec.Member{
+	err := TearDownMembers(context.Background(), &spec.DeployNode{Member: []spec.Member{
 		{Name: "a-local", Position: spec.PositionDeployLevel, Node: localNode()},
 		{Name: "b-pod", Position: spec.PositionDeployLevel, Node: podNode()},
 	}})
@@ -127,11 +128,11 @@ func TestTearDownMembers_AttemptsAllAndReturnsJoinedErrors(t *testing.T) {
 
 // TestBringUpMembers_NoMembersNoop mirrors the teardown no-op guard on the bring-up side.
 func TestBringUpMembers_NoMembersNoop(t *testing.T) {
-	orig := proc.RunCharlySubcommand
-	defer func() { proc.RunCharlySubcommand = orig }()
+	orig := proc.RunCharlySubcommandCtx
+	defer func() { proc.RunCharlySubcommandCtx = orig }()
 	called := false
-	proc.RunCharlySubcommand = func(args ...string) error { called = true; return nil }
-	if err := BringUpMembers(&spec.DeployNode{}, ""); err != nil {
+	proc.RunCharlySubcommandCtx = func(_ context.Context, args ...string) error { called = true; return nil }
+	if err := BringUpMembers(context.Background(), &spec.DeployNode{}, ""); err != nil {
 		t.Fatalf("BringUpMembers(empty): %v", err)
 	}
 	if called {

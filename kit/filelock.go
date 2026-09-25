@@ -10,6 +10,7 @@ import "github.com/opencharly/spec/lock"
 var (
 	ErrLockBusy              = lock.ErrLockBusy
 	AcquireFileLock          = lock.AcquireFileLock
+	AcquireFileLockWithin    = lock.AcquireFileLockWithin
 	ImageBuildLockPath       = lock.ImageBuildLockPath
 	AcquireImageBuildLock    = lock.AcquireImageBuildLock
 	AcquireLocalPkgBuildLock = lock.AcquireLocalPkgBuildLock
