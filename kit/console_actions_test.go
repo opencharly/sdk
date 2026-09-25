@@ -17,7 +17,7 @@ import (
 
 // TestRunCommands_SharedEmptyFails guards the required list before any session.
 func TestRunCommands_SharedEmptyFails(t *testing.T) {
-	if _, err := RunCommands(context.Background(), nil, nil, "", false); err == nil {
+	if _, err := RunCommands(context.Background(), nil, nil, "", false, nil); err == nil {
 		t.Fatal("empty commands must fail")
 	}
 }

@@ -391,3 +391,27 @@ func TestConsoleFlow_DetectStart_AmbiguousFails(t *testing.T) {
 }
 
 func colorOf(r, g, b uint8) color.RGBA { return color.RGBA{r, g, b, 255} }
+
+// TestConsoleFlow_DeadlineStopsCleanly proves the wall-clock budget stops the
+// flow BETWEEN nodes and returns the collected evidence — never a mid-node kill.
+func TestConsoleFlow_DeadlineStopsCleanly(t *testing.T) {
+	tr := &screenScriptTransport{screens: []string{"loop"}}
+	f := &ConsoleFlow{
+		Start: "a",
+		Nodes: map[string]ConsoleFlowNode{
+			"a": {Wait: []ConsoleFlowOutcome{{Name: "o", Match: "loop"}}, Transitions: map[string]string{"o": "b"}},
+			"b": {Wait: []ConsoleFlowOutcome{{Name: "o", Match: "loop"}}, Transitions: map[string]string{"o": "a"}},
+		},
+		Transport: tr, OCR: idOCR, PollInterval: time.Millisecond,
+		MaxSteps: 1000, MaxLoops: 1000,
+		Deadline: time.Now().Add(-time.Second), // already elapsed
+	}
+	res, err := f.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "wall-clock budget") {
+		t.Fatalf("want wall-clock budget stop, got %v", err)
+	}
+	// The evidence must be returned (clean stop), even if empty.
+	if res.LogText != "" && !strings.Contains(res.LogText, "step") {
+		t.Fatalf("evidence not rendered on budget stop: %q", res.LogText)
+	}
+}

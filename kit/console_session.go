@@ -66,6 +66,15 @@ type ConsoleSession struct {
 	OCR func(png []byte) (string, error)
 	// SudoPassword is entered at a sudo password prompt (`[sudo] password for …`).
 	SudoPassword string
+	// PromptAnchors, when set, makes every command FIRST verify a shell prompt is
+	// on screen (case-insensitive substring match) before typing. It is the
+	// fast-fail guard against typing into the WRONG screen — a pager (`omarchy`
+	// help), a menu, a login prompt — where the command and its marker are
+	// swallowed and the wait then burns the full timeout. Without it a command is
+	// typed blindly (the previous behavior). Default nil = no preflight.
+	PromptAnchors []string
+	// PromptTimeoutSec bounds the preflight prompt wait (default 30).
+	PromptTimeoutSec int
 	// PollInterval is how often the engine re-captures while waiting (default
 	// ConsoleSessionDefaultPollInterval). A real condition poll, not a sleep.
 	PollInterval time.Duration
@@ -77,6 +86,10 @@ type ConsoleSession struct {
 
 // ConsoleSessionDefaultTimeoutSec bounds one command's wait for its marker.
 const ConsoleSessionDefaultTimeoutSec = 120
+
+// ConsoleSessionDefaultPromptTimeoutSec bounds the preflight shell-prompt wait
+// (how long to poll for a shell prompt before refusing to type).
+const ConsoleSessionDefaultPromptTimeoutSec = 30
 
 // ConsoleSessionDefaultPollInterval mirrors the wizard's poll cadence.
 const ConsoleSessionDefaultPollInterval = 3 * time.Second
@@ -149,6 +162,26 @@ func (s *ConsoleSession) RunCommand(ctx context.Context, c ConsoleCommand) (Cons
 	if poll <= 0 {
 		poll = ConsoleSessionDefaultPollInterval
 	}
+	// Preflight: when prompt anchors are configured, refuse to type into a screen
+	// that is not a shell. This is the fast-fail guard against a pager/menu/login
+	// prompt swallowing the command and marker (which would otherwise burn the
+	// whole timeout and report a misleading "marker not seen").
+	if len(s.PromptAnchors) > 0 {
+		pt := s.PromptTimeoutSec
+		if pt <= 0 {
+			pt = ConsoleSessionDefaultPromptTimeoutSec
+		}
+		got, ok, err := s.WaitForAny(ctx, s.PromptAnchors, pt, "")
+		if err != nil {
+			return ConsoleCommandResult{}, fmt.Errorf("console session: %q: checking for a shell prompt: %w", cmd, err)
+		}
+		if !ok {
+			return ConsoleCommandResult{Command: cmd, Output: got, Sudo: c.Sudo},
+				fmt.Errorf("console session: %q: no shell prompt (%v) is on screen — refusing to type into %q (a pager, menu, or login screen would swallow the command)",
+					cmd, s.PromptAnchors, ConsolePreview(got, 200))
+		}
+	}
+
 	marker := s.NextMarker()
 
 	// Submit `command; echo MARKER`.

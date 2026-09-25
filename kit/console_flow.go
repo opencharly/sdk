@@ -137,6 +137,17 @@ type ConsoleFlow struct {
 	// from earliest to latest step resumes at the most-advanced match). Without
 	// it, an ambiguous match FAILS naming the candidates.
 	ResumeOrder []string
+	// PromptAnchors, when set, are passed to the internal session so a node's
+	// `command` action first verifies a shell prompt before typing (the fast-fail
+	// guard against typing into a pager/menu/login screen).
+	PromptAnchors []string
+	// Deadline, when non-zero, is a WALL-CLOCK budget for the whole flow. It is
+	// checked between nodes (and bounds each node's wait to the remaining time),
+	// so a flow that would exceed the host's per-step never-hang kill instead
+	// returns its collected evidence CLEANLY, naming where it stopped — rather
+	// than being SIGKILLed mid-node with no result (RCA: a long login+install
+	// flow was killed at the 2m bound with only "context deadline exceeded").
+	Deadline time.Time
 	// Logger, when set, receives one line per node (evidence).
 	Logger func(format string, args ...any)
 	// session is the internal terminal session for Command actions, created once.
@@ -229,11 +240,12 @@ func (f *ConsoleFlow) Run(ctx context.Context) (ConsoleFlowResult, error) {
 		maxLoops = ConsoleFlowDefaultMaxLoops
 	}
 	f.session = &ConsoleSession{
-		Transport:    f.Transport,
-		SudoPassword: f.SudoPassword,
-		OCR:          f.OCR,
-		PollInterval: f.PollInterval,
-		Logger:       f.Logger,
+		Transport:     f.Transport,
+		SudoPassword:  f.SudoPassword,
+		PromptAnchors: f.PromptAnchors,
+		OCR:           f.OCR,
+		PollInterval:  f.PollInterval,
+		Logger:        f.Logger,
 	}
 
 	start := f.Start
@@ -254,21 +266,32 @@ func (f *ConsoleFlow) Run(ctx context.Context) (ConsoleFlowResult, error) {
 	cur := start
 	for step := 0; ; step++ {
 		if step >= maxSteps {
+			res.LogText = renderFlowLog(res.Steps)
 			return res, fmt.Errorf("console flow: exceeded max_steps %d (a cycle never reached a terminal node); visited: %s",
 				maxSteps, describeVisits(visits))
 		}
+		// Wall-clock budget: stop CLEANLY between nodes, returning the evidence so
+		// the caller sees where the flow got to — never a mid-node SIGKILL.
+		if !f.Deadline.IsZero() && time.Now().After(f.Deadline) {
+			res.LogText = renderFlowLog(res.Steps)
+			return res, fmt.Errorf("console flow: wall-clock budget elapsed after %d step(s); stopped before node %q (raise `timeout:` or shorten the flow)",
+				len(res.Steps), cur)
+		}
 		node, ok := f.Nodes[cur]
 		if !ok {
+			res.LogText = renderFlowLog(res.Steps)
 			return res, fmt.Errorf("console flow: node %q is not defined", cur)
 		}
 		visits[cur]++
 		if visits[cur] > maxLoops {
+			res.LogText = renderFlowLog(res.Steps)
 			return res, fmt.Errorf("console flow: node %q entered %d times (> max_loops %d) — the loop condition never became true",
 				cur, visits[cur], maxLoops)
 		}
 
 		outcome, text, cmdOut, err := f.runNode(ctx, node)
 		if err != nil {
+			res.LogText = renderFlowLog(res.Steps)
 			return res, fmt.Errorf("console flow: node %q (%s): %w", cur, node.Description, err)
 		}
 		res.Steps = append(res.Steps, ConsoleStepResult{Node: cur, Outcome: outcome, Text: text, CommandOutput: cmdOut})
@@ -424,7 +447,15 @@ func (f *ConsoleFlow) waitOutcome(ctx context.Context, node ConsoleFlowNode) (*C
 		}
 		refs[i] = sig
 	}
-	deadline := time.Now().Add(time.Duration(nodeTimeout(node)) * time.Second)
+	budget := nodeTimeout(node)
+	// Bound this node's wait to the remaining wall-clock budget so a slow node
+	// fails with a clean "timed out" rather than overrunning the host's kill.
+	if !f.Deadline.IsZero() {
+		if rem := int(time.Until(f.Deadline).Seconds()); rem > 0 && rem < budget {
+			budget = rem
+		}
+	}
+	deadline := time.Now().Add(time.Duration(budget) * time.Second)
 	poll := f.PollInterval
 	if poll <= 0 {
 		poll = ConsoleSessionDefaultPollInterval

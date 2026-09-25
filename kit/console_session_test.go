@@ -274,8 +274,10 @@ func (m *markerTransport) Capture(context.Context) ([]byte, error) {
 }
 
 // markerFromLine extracts the marker token from a typed `cmd; echo <marker>` line.
+// It uses the LAST `echo ` so a command that itself contains `echo` (e.g.
+// `echo PROMPT_OK; echo MARKER`) still yields the marker.
 func markerFromLine(line string) string {
-	if i := strings.Index(line, "echo "); i >= 0 {
+	if i := strings.LastIndex(line, "echo "); i >= 0 {
 		return strings.TrimSpace(line[i+len("echo "):])
 	}
 	return ""
@@ -309,3 +311,49 @@ var (
 	_ ConsoleTransport = (*sudoTransport)(nil)
 	_ ConsoleTransport = (*fixedTransport)(nil)
 )
+
+// TestConsoleSession_PromptPreflightRefusesNonShell is the RCA fix: with prompt
+// anchors set, a command is NOT typed into a screen that is not a shell (a pager,
+// a menu) — it fails FAST naming what was on screen, instead of burning the
+// marker timeout after swallowing the command.
+func TestConsoleSession_PromptPreflightRefusesNonShell(t *testing.T) {
+	ft := &fakeTransport{}
+	s := &ConsoleSession{
+		Transport:        &fixedTransport{fakeTransport: ft, screen: "omarchy help: cmd Command and shortcut helpers"},
+		OCR:              func(png []byte) (string, error) { return string(png), nil },
+		PromptAnchors:    []string{"~", "#", "$"},
+		PromptTimeoutSec: 1,
+		PollInterval:     time.Millisecond,
+	}
+	_, err := s.RunCommand(context.Background(), ConsoleCommand{Command: "echo hi"})
+	if err == nil || !strings.Contains(err.Error(), "no shell prompt") {
+		t.Fatalf("want prompt-preflight refusal, got %v", err)
+	}
+	// The command must NOT have been typed.
+	if len(ft.types) != 0 {
+		t.Fatalf("the command must not be typed into a non-shell screen: %v", ft.types)
+	}
+}
+
+// TestConsoleSession_PromptPreflightProceedsInShell proves the guard is
+// transparent in a real shell: the prompt is present, so the command runs.
+func TestConsoleSession_PromptPreflightProceedsInShell(t *testing.T) {
+	ft := &fakeTransport{}
+	mt := &markerTransport{fakeTransport: ft, markerOn: "PROMPT_OK"}
+	s := &ConsoleSession{
+		Transport:        mt,
+		OCR:              func(png []byte) (string, error) { return string(png), nil },
+		PromptAnchors:    []string{"$"},
+		PromptTimeoutSec: 1,
+		PollInterval:     time.Millisecond,
+	}
+	// The markerTransport returns "prompt $ " before anything typed, so the
+	// preflight sees a prompt and proceeds.
+	res, err := s.RunCommand(context.Background(), ConsoleCommand{Command: "echo PROMPT_OK", Expect: "PROMPT_OK"})
+	if err != nil {
+		t.Fatalf("RunCommand in a shell: %v", err)
+	}
+	if !strings.Contains(res.Output, "PROMPT_OK") {
+		t.Fatalf("output not read: %q", res.Output)
+	}
+}

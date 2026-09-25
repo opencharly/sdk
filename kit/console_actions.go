@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // TerminalOpen describes an `open-terminal` action.
@@ -63,12 +64,14 @@ func OpenTerminal(ctx context.Context, tr ConsoleTransport, o TerminalOpen) (str
 
 // RunCommands runs ordered commands in an open terminal, reading each result by
 // OCR. It is the generic `run-command`; sudoPassword is entered at a sudo prompt.
-// closeTerminal sends `exit` afterwards. One implementation, either transport (R3).
-func RunCommands(ctx context.Context, tr ConsoleTransport, cmds []ConsoleCommand, sudoPassword string, closeTerminal bool) (string, error) {
+// closeTerminal sends `exit` afterwards. promptAnchors, when set, make every
+// command verify a shell prompt first (the fast-fail guard against typing into a
+// pager/menu/login screen). One implementation, either transport (R3).
+func RunCommands(ctx context.Context, tr ConsoleTransport, cmds []ConsoleCommand, sudoPassword string, closeTerminal bool, promptAnchors []string) (string, error) {
 	if len(cmds) == 0 {
 		return "", fmt.Errorf("run-command requires a non-empty commands list")
 	}
-	s := &ConsoleSession{Transport: tr, SudoPassword: sudoPassword}
+	s := &ConsoleSession{Transport: tr, SudoPassword: sudoPassword, PromptAnchors: promptAnchors}
 	results, runErr := s.RunCommands(ctx, cmds)
 	var b strings.Builder
 	for _, r := range results {
@@ -194,27 +197,41 @@ func RunBootOrder(ctx context.Context, tr ConsoleTransport, o BootOrder) (string
 	return fmt.Sprintf("boot-order %s ok:\n%s", action, res.Output), nil
 }
 
-// RunConsoleFlow drives a bounded console flow on the transport. The generic
-// `flow` (R3). It returns the flow result on success, or the partial result plus
-// the error.
-func RunConsoleFlow(ctx context.Context, tr ConsoleTransport, start string, nodes map[string]ConsoleFlowNode, sudoPassword string, maxSteps, maxLoops int) (ConsoleFlowResult, error) {
-	return RunConsoleFlowResume(ctx, tr, start, nodes, sudoPassword, maxSteps, maxLoops, false, nil)
+// ConsoleFlowSpec is the transport-neutral input to RunConsoleFlow — the fields
+// both plugins decode their CUE params into.
+type ConsoleFlowSpec struct {
+	Start        string
+	Nodes        map[string]ConsoleFlowNode
+	SudoPassword string
+	MaxSteps     int
+	MaxLoops     int
+	// ResumeFromScreen + ResumeOrder: auto-detect the entry node from the current
+	// screen (see ConsoleFlow.ResumeFromScreen / DetectStart).
+	ResumeFromScreen bool
+	ResumeOrder      []string
+	// PromptAnchors guards a node's `command` action against typing into a
+	// non-shell screen (a pager/menu/login).
+	PromptAnchors []string
+	// Deadline bounds the whole flow's wall clock so it returns clean evidence
+	// before the host's per-step never-hang kill.
+	Deadline time.Time
 }
 
-// RunConsoleFlowResume is RunConsoleFlow with the auto-resume options: when
-// resume is true the flow detects its entry node from the current screen (see
-// ConsoleFlow.ResumeFromScreen / DetectStart), disambiguated by resumeOrder.
-// One implementation, both transports (R3).
-func RunConsoleFlowResume(ctx context.Context, tr ConsoleTransport, start string, nodes map[string]ConsoleFlowNode, sudoPassword string, maxSteps, maxLoops int, resume bool, resumeOrder []string) (ConsoleFlowResult, error) {
+// RunConsoleFlow drives a bounded console flow on the transport. The generic
+// `flow` (R3). It returns the flow result on success, or the partial result plus
+// the error. One implementation, both transports.
+func RunConsoleFlow(ctx context.Context, tr ConsoleTransport, spec ConsoleFlowSpec) (ConsoleFlowResult, error) {
 	f := &ConsoleFlow{
-		Start:            start,
-		Nodes:            nodes,
+		Start:            spec.Start,
+		Nodes:            spec.Nodes,
 		Transport:        tr,
-		SudoPassword:     sudoPassword,
-		MaxSteps:         maxSteps,
-		MaxLoops:         maxLoops,
-		ResumeFromScreen: resume,
-		ResumeOrder:      resumeOrder,
+		SudoPassword:     spec.SudoPassword,
+		MaxSteps:         spec.MaxSteps,
+		MaxLoops:         spec.MaxLoops,
+		ResumeFromScreen: spec.ResumeFromScreen,
+		ResumeOrder:      spec.ResumeOrder,
+		PromptAnchors:    spec.PromptAnchors,
+		Deadline:         spec.Deadline,
 	}
 	return f.Run(ctx)
 }
