@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -457,7 +458,7 @@ func ScopeVolumesToDeployKey(meta *spec.BoxMetadata, deployName, instance string
 // caller supplies (the callback SaveDeployConfig invokes per entry).
 //
 //nolint:gocyclo // field-by-field conditional persist; every branch is a peer (write-when-set)
-func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error)) {
+func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error), ctxs ...context.Context) {
 	// read is the current-state re-read this load-mutate-save performs. A nil read falls back to
 	// LoadDeployConfigForWrite — the DeployStateHost-backed host read — so an IN-PROCESS host
 	// caller passes nil and behaves exactly as before, INCLUDING the "can't read → don't write"
@@ -473,7 +474,7 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 		if DeployStateHost == nil {
 			return
 		}
-		loadBase = func() (*DeployConfig, error) { return LoadDeployConfigForWrite("saveDeployState") }
+		loadBase = func() (*DeployConfig, error) { return LoadDeployConfigForWrite("saveDeployState", ctxs...) }
 	}
 	// The lock hold, the fresh re-read inside it, and the nil-config self-heal are
 	// MutateDeployConfig's (deploy_config_cycle.go) — THE one locked read-modify-write cycle every
@@ -481,10 +482,10 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 	// than propagating, exactly as this body's own inline lock did before.
 	// Thread the same reader into the fail-safe re-check so an out-of-process caller's write
 	// path never falls back to the DeployStateHost-backed LoadDeployConfig (nil → host default).
-	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read) }
+	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read, ctxs...) }
 	if _, err := MutateDeployConfig(loadBase, save, func(dc *DeployConfig) (bool, error) {
 		return applyDeployState(dc, boxName, instance, input), nil
-	}); err != nil {
+	}, ctxs...); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not save to charly.yml: %v\n", err)
 	}
 }
@@ -603,16 +604,16 @@ func applyDeployState(dc *DeployConfig, boxName, instance string, input SaveDepl
 // DeployStateHost package var (#55 coneC-dsh — mirrors the SaveDeployConfig/SaveDeployState
 // reader-callback precedent). The reader is ALSO threaded as SaveDeployConfig's failsafeRead so the
 // data-safety re-check uses the same loader-backed read, not the DeployStateHost-backed one.
-func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error)) {
+func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error), ctxs ...context.Context) {
 	loadBase := read
 	if loadBase == nil {
 		if DeployStateHost == nil {
 			return
 		}
-		loadBase = LoadDeployConfig
+		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
 	}
 	key := DeployKey(boxName, instance)
-	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read) }
+	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read, ctxs...) }
 	cleaned := false
 	// The lock hold and the fresh re-read inside it are MutateDeployConfig's — the same locked
 	// cycle every other overlay writer uses. This clean is the one writer whose mutation may end
@@ -624,13 +625,13 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 		}
 		cleaned = true
 		if len(dc.Deploy) == 0 && dc.Provides == nil {
-			if path, pathErr := kit.DefaultDeployConfigPath(); pathErr == nil {
+			if path, pathErr := kit.DefaultDeployConfigPath(ctxs...); pathErr == nil {
 				_ = os.Remove(path)
 			}
 			return false, nil
 		}
 		return true, nil
-	}); err != nil {
+	}, ctxs...); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not clean charly.yml: %v\n", err)
 		return
 	}

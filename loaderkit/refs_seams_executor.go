@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/opencharly/sdk"
@@ -52,14 +51,24 @@ func RefsSeamsFromExecutor(ctx context.Context, ex *sdk.Executor) spec.RefsColle
 			return resolveLocalViaPeer(ctx, ex, body)
 		},
 		// The env var NAME lives in spec/proc (shared with candy/plugin-check's bed session, which
-		// computes its own override independently); reading its VALUE is plain os.Getenv, never
-		// something core had to do for us.
-		OverrideEnvValue: os.Getenv(proc.RepoOverrideEnv),
+		// computes its own override independently). spec.RunEnvGet reads a per-invocation RunEnv
+		// value from ctx FIRST (a concurrent in-process bed roster) and falls back to os.Getenv
+		// (the legacy single-invocation host CLI, which has no RunEnv) — byte-identical to the
+		// former plain os.Getenv for the operator path.
+		OverrideEnvValue: runEnvValue(ctx, proc.RepoOverrideEnv),
 		// The centralized git layer: a process-wide GitClient whose cache lives in
 		// the `cache:` section of the PER-HOST charly.yml (~/.config/charly/charly.yml)
 		// — the single home for local system state (deployments, ledger, system,
 		// cache). Every git operation in the loader goes through it, so a git command
 		// runs only when the answer is not already cached (issue #423, #208).
+		//
+		// It is deliberately NOT keyed by a bed's per-invocation RunEnv (the ctx
+		// CHARLY_DEPLOY_CONFIG override): a bed's overlay is an ephemeral temp dir that
+		// teardown REMOVES, so a client bound to it would go stale mid-roster. The
+		// `cache:` section is a batch-dedupe cache (tags/branches/refs), not deploy
+		// STATE — sharing it across a concurrent roster is correct AND faster, and it
+		// never touches the operator's `deploy:` entries (the thing bed isolation
+		// protects). Beds no longer os.Setenv, so this resolves the real per-host path.
 		LatestTag: gitClient().LatestTag,
 	}
 }
@@ -139,4 +148,13 @@ func resolveLocalViaPeer(ctx context.Context, ex *sdk.Executor, body json.RawMes
 		return nil, err
 	}
 	return reply.Resolved, nil
+}
+
+// runEnvValue resolves a per-invocation env key via spec.RunEnvGet: a ctx RunEnv value wins (a
+// concurrent in-process bed roster threads its own per-bed values), and an absent RunEnv falls
+// back to os.Getenv inside spec.RunEnvGet itself (the legacy single-invocation host CLI) — so a
+// no-RunEnv host call is byte-identical to the former plain os.Getenv.
+func runEnvValue(ctx context.Context, key string) string {
+	v, _ := spec.RunEnvGet(ctx, key)
+	return v
 }
