@@ -105,3 +105,22 @@ func ResolveAndroidEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir,
 	}
 	return reply.Resolved, nil
 }
+
+// ResolveKubeVirtEntityViaExecutor loads the project and resolves the named kind:kubevirt template
+// entity via candy/plugin-substrate's OpResolve leg — the plugin-side self-load twin for the
+// kubevirt substrate (the analogue of ResolveKubernetesEntityViaExecutor).
+func ResolveKubeVirtEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir, name string) (*spec.ResolvedKubeVirt, error) {
+	body, err := resolveKindTemplateBodyViaExecutor(ctx, ex, dir, "kubevirt", name)
+	if err != nil {
+		return nil, err
+	}
+	res, err := resolveSubstrateViaExecutor(ctx, ex, "local", spec.SubstrateTemplateResolveRequest{KubeVirt: &spec.KubeVirtResolveInput{KubeVirt: body}})
+	if err != nil {
+		return nil, err
+	}
+	var reply spec.KubeVirtResolveReply
+	if err := decodeResolveReply(res, &reply, fmt.Sprintf("kubevirt entity %q", name)); err != nil {
+		return nil, err
+	}
+	return reply.Resolved, nil
+}

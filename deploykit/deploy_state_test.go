@@ -513,3 +513,24 @@ func TestSaveDeployState_PluginSideReader(t *testing.T) {
 		t.Errorf("written overlay missing the deploy entry:\n%s", string(data))
 	}
 }
+
+// TestApplyDeployState_KubeVirtState proves deploykit.SaveDeployState's applyDeployState
+// persists a non-nil KubeVirtState (the kind:kubevirt venue identity) onto the entry —
+// the mirror of the VmState path. Fails without the input.KubeVirtState write.
+func TestApplyDeployState_KubeVirtState(t *testing.T) {
+	dc := &DeployConfig{Deploy: map[string]DeployNode{"kv": {Target: "kubevirt"}}}
+	in := SaveDeployStateInput{
+		Target: "kubevirt",
+		KubeVirtState: &spec.KubeVirtDeployState{
+			Cluster: "prod", KubeContext: "ctx", Namespace: "vms",
+			VMName: "charly-kv", BootKind: "container_disk", SSHPort: 2224, SSHUser: "arch",
+		},
+	}
+	if !applyDeployState(dc, "kv", "", in) {
+		t.Fatal("applyDeployState reported nothing to persist")
+	}
+	got := dc.Deploy["kv"].KubeVirtState
+	if got == nil || got.Cluster != "prod" || got.VMName != "charly-kv" || got.SSHPort != 2224 {
+		t.Fatalf("KubeVirtState not persisted: %+v", got)
+	}
+}
