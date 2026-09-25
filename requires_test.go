@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"testing"
 
 	pb "github.com/opencharly/spec/proto"
@@ -9,7 +10,7 @@ import (
 
 // BuildCapabilities with no requires must be byte-identical to the pre-change shape:
 // the wire Capabilities.requires field stays empty, so a plugin with no dependencies
-// is unaffected (the NewMeta/BuildCapabilities call sites are 144 across the corpus).
+// is unaffected (the 145 sdk.NewMeta( call sites across the corpus are unchanged).
 func TestBuildCapabilitiesNoRequiresIsEmpty(t *testing.T) {
 	caps, err := BuildCapabilities("2026.176.0001", []ProvidedCapability{{Class: "verb", Word: "x"}}, nil, "schema")
 	if err != nil {
@@ -52,5 +53,40 @@ func TestBuildCapabilitiesRequiresRoundTrip(t *testing.T) {
 	if reqs[1].GetClass() != "kind" || reqs[1].GetWord() != "sidecar" ||
 		reqs[1].GetSource() != "github.com/opencharly/plugin-sidecar/candy/plugin-sidecar" || !reqs[1].GetOptional() {
 		t.Errorf("requirement[1] = %+v, want {kind sidecar <ref> true}", reqs[1])
+	}
+}
+
+// NewMetaWithRequires must wire its declared requirements through fixedMeta.Describe —
+// the authoring entry point a plugin actually uses. This test fails if the
+// fixedMeta.requires field or the Describe wiring were dropped (the BuildCapabilities
+// tests above would still pass, so this exercises the branch they do not).
+func TestNewMetaWithRequiresDescribeCarriesRequires(t *testing.T) {
+	srv := NewMetaWithRequires("2026.176.0001",
+		[]ProvidedCapability{{Class: "verb", Word: "x"}},
+		[]Requirement{{Class: "verb", Word: "enc"}},
+		nil)
+	caps, err := srv.Describe(context.Background(), &pb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqs := caps.GetRequires()
+	if len(reqs) != 1 {
+		t.Fatalf("Describe requires length = %d, want 1 (fixedMeta.requires not wired?)", len(reqs))
+	}
+	if reqs[0].GetClass() != "verb" || reqs[0].GetWord() != "enc" {
+		t.Errorf("requirement = %+v, want {verb enc}", reqs[0])
+	}
+}
+
+// NewMeta (no requires) must Describe with an empty requires — the unchanged path the
+// existing 145 sdk.NewMeta( call sites rely on.
+func TestNewMetaDescribeHasNoRequires(t *testing.T) {
+	srv := NewMeta("2026.176.0001", []ProvidedCapability{{Class: "verb", Word: "x"}}, nil)
+	caps, err := srv.Describe(context.Background(), &pb.Empty{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := caps.GetRequires(); len(got) != 0 {
+		t.Fatalf("Describe requires = %v, want empty", got)
 	}
 }
