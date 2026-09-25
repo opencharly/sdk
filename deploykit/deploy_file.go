@@ -282,8 +282,9 @@ func removeDeployKeys(m *yaml.Node) {
 // giving the operator visibility into why a command behaved as if charly.yml were absent.
 // Relocated from charly/deploy.go (K5-Unit-1).
 //
-// context is a short human-readable label included in the warning message so the operator can
+// label is a short human-readable diagnostic included in the warning message so the operator can
 // trace which code path noticed the problem (e.g. "charly status", "config injectEnvProvides").
+// ctx carries the invocation's RunEnv (a bed's deploy-config path).
 func LoadDeployConfigForRead(label string, ctx context.Context) *DeployConfig {
 	dc, err := LoadDeployConfig(ctx)
 	if err != nil {
@@ -307,9 +308,10 @@ func LoadDeployConfigForRead(label string, ctx context.Context) *DeployConfig {
 // an empty config → SaveDeployConfig truncates the file), this helper PROPAGATES the load error
 // so writers can ABORT instead of destroying data. Relocated from charly/deploy.go (K5-Unit-1).
 //
-// context is a short human-readable label included in the error message (e.g. "saveDeployState").
-// Returns (nil, error) when the file exists but failed parse/validation; (fresh empty config,
-// nil) when the file doesn't exist; (parsed config, nil) on clean load.
+// label is a short human-readable diagnostic included in the error message (e.g.
+// "saveDeployState"). ctx carries the invocation's RunEnv. Returns (nil, error) when the file
+// exists but failed parse/validation; (fresh empty config, nil) when the file doesn't exist;
+// (parsed config, nil) on clean load.
 func LoadDeployConfigForWrite(label string, ctx context.Context) (*DeployConfig, error) {
 	dc, err := LoadDeployConfig(ctx)
 	if err != nil {
