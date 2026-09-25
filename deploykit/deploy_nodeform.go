@@ -28,7 +28,7 @@ import (
 // deployCrossRefKeys are the deploy-value scalar keys that NAME another top-level
 // entity (the key equals the referenced entity's kind).
 var deployCrossRefKeys = map[string]bool{
-	"box": true, "vm": true, "kubernetes": true, "local": true, "android": true,
+	"box": true, "vm": true, "kubernetes": true, "local": true, "android": true, "kubevirt": true,
 }
 
 // MarshalDeployNode emits a DeployNode as the compact name-first node-form the per-host
