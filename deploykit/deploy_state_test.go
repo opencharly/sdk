@@ -18,6 +18,7 @@ package deploykit
 //   - The pure helpers DescriptionInfo / IsSameBaseBox / RemoveBySource / RemoveByExactSource.
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -164,7 +165,7 @@ func TestSaveDeployConfig_RoundTrip(t *testing.T) {
 		return content, nil
 	}
 
-	if err := SaveDeployConfig(dc, stubMarshalNode, nil); err != nil {
+	if err := SaveDeployConfig(dc, stubMarshalNode, nil, context.Background()); err != nil {
 		t.Fatalf("SaveDeployConfig: %v", err)
 	}
 
@@ -197,7 +198,7 @@ func TestSaveDeployConfig_ErrorsWhenCallbackNil(t *testing.T) {
 	DeployStateHost = nil // no fail-safe re-check dep when the seam is nil
 	t.Cleanup(func() { DeployStateHost = prev })
 
-	err := SaveDeployConfig(&DeployConfig{Deploy: map[string]DeployNode{"x": {Image: "x"}}}, nil, nil)
+	err := SaveDeployConfig(&DeployConfig{Deploy: map[string]DeployNode{"x": {Image: "x"}}}, nil, nil, context.Background())
 	if err == nil {
 		t.Fatal("SaveDeployConfig with nil callback returned nil; want an error")
 	}
@@ -500,7 +501,7 @@ func TestSaveDeployState_PluginSideReader(t *testing.T) {
 		return content, nil
 	}
 
-	SaveDeployState("web", "", SaveDeployStateInput{Box: "web", Target: "pod"}, marshalNode, reader)
+	SaveDeployState("web", "", SaveDeployStateInput{Box: "web", Target: "pod"}, marshalNode, reader, context.Background())
 
 	if !kit.FileExists(dest) {
 		t.Fatalf("SaveDeployState with a non-nil reader wrote nothing at %s (DeployStateHost==nil); the injected reader must bypass the host-only guard", dest)

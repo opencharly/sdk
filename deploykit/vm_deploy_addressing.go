@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
@@ -22,7 +23,7 @@ import (
 // (idempotent across rebuilds) when ssh.port_auto is set. The project-config READ is the one
 // deploykit-coupled bit (LoadDeployConfigForRead over the per-host overlay); the
 // resolution/allocation decision itself is the shared kit.ResolveVmSshPort.
-func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
+func ResolveVmSshPort(ctx context.Context, sp *spec.ResolvedVm, vmName string) (int, error) {
 	if sp == nil {
 		// NIL-SPEC guard (the live-check panic RCA 2026-09-06): the check-live spec
 		// lookup can legitimately miss (the deploy-hop name vs the template) — a nil
@@ -39,7 +40,7 @@ func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
 		// (check-live crash, instrument bed). A nil config simply means "no persisted state" —
 		// the shared allocator (kit.ResolveVmSshPort) picks a fresh port, exactly the
 		// plugin-process contract the deploy-vm's resolvePriorVmState already uses.
-		cfg := LoadDeployConfigForRead("charly vm ssh-port")
+		cfg := LoadDeployConfigForRead("charly vm ssh-port", ctx)
 		if cfg != nil {
 			if entry, ok := cfg.LookupKey("vm:" + vmName); ok && entry.VmState != nil && entry.VmState.SSHPort > 0 {
 				persisted = entry.VmState.SSHPort

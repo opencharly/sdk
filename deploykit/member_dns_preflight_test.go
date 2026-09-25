@@ -7,6 +7,7 @@ package deploykit
 // container.
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -81,7 +82,7 @@ func TestPreflightMemberDNS_NoRefsSkipsProbing(t *testing.T) {
 		{Name: "a", Position: spec.PositionDeployLevel, Node: podNode()},
 		{Name: "b", Position: spec.PositionDeployLevel, Node: podNode()},
 	}}
-	if err := preflightMemberDNS(node); err != nil {
+	if err := preflightMemberDNS(context.Background(), node); err != nil {
 		t.Fatalf("preflightMemberDNS on a group with no cross-member refs: %v", err)
 	}
 	if called != 0 {
@@ -99,7 +100,7 @@ func TestPreflightMemberDNS_FailureNamesRecovery(t *testing.T) {
 		resolveNameFromMember = origResolve
 		resolveContainerForPreflight = origContainer
 	}()
-	resolveContainerForPreflight = func(name, _ string) (string, error) { return "charly-" + name, nil }
+	resolveContainerForPreflight = func(_ context.Context, name, _ string) (string, error) { return "charly-" + name, nil }
 	resolveNameFromMember = func(memberKey, name string) error {
 		return errors.New("getent: no such host")
 	}
@@ -108,7 +109,7 @@ func TestPreflightMemberDNS_FailureNamesRecovery(t *testing.T) {
 		{Name: "chrome", Position: spec.PositionDeployLevel, Node: hostRefStep("web")},
 		{Name: "web", Position: spec.PositionDeployLevel, Node: podNode()},
 	}}
-	err := preflightMemberDNS(node)
+	err := preflightMemberDNS(context.Background(), node)
 	if err == nil {
 		t.Fatal("expected an unresolvable sibling to fail the preflight")
 	}
@@ -128,7 +129,7 @@ func TestPreflightMemberDNS_ResolvableSiblingPasses(t *testing.T) {
 		resolveNameFromMember = origResolve
 		resolveContainerForPreflight = origContainer
 	}()
-	resolveContainerForPreflight = func(name, _ string) (string, error) { return "charly-" + name, nil }
+	resolveContainerForPreflight = func(_ context.Context, name, _ string) (string, error) { return "charly-" + name, nil }
 	var probed [][2]string
 	resolveNameFromMember = func(memberKey, name string) error {
 		probed = append(probed, [2]string{memberKey, name})
@@ -139,7 +140,7 @@ func TestPreflightMemberDNS_ResolvableSiblingPasses(t *testing.T) {
 		{Name: "chrome", Position: spec.PositionDeployLevel, Node: hostRefStep("web")},
 		{Name: "web", Position: spec.PositionDeployLevel, Node: podNode()},
 	}}
-	if err := preflightMemberDNS(node); err != nil {
+	if err := preflightMemberDNS(context.Background(), node); err != nil {
 		t.Fatalf("preflightMemberDNS with a resolvable sibling: %v", err)
 	}
 	want := [][2]string{{"chrome", "charly-web"}}

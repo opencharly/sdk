@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/opencharly/sdk/kit"
@@ -23,7 +24,7 @@ import (
 
 // ResolveContainer resolves engine + container name, verifying the container is running.
 // Use "." as image name for local mode (returns empty engine and name).
-func ResolveContainer(box, instance string) (engine, name string, err error) {
+func ResolveContainer(ctx context.Context, box, instance string) (engine, name string, err error) {
 	if box == "." {
 		return "", "", nil
 	}
@@ -32,7 +33,7 @@ func ResolveContainer(box, instance string) (engine, name string, err error) {
 		return "", "", err
 	}
 	boxName := kit.ResolveBoxName(box)
-	runEngine := ResolveBoxEngineForDeploy(boxName, instance, rt.RunEngine)
+	runEngine := ResolveBoxEngineForDeploy(ctx, boxName, instance, rt.RunEngine)
 	engine = kit.EngineBinary(runEngine)
 	name = kit.ContainerNameInstance(boxName, instance)
 	if !kit.ContainerRunning(engine, name) {
@@ -43,13 +44,13 @@ func ResolveContainer(box, instance string) (engine, name string, err error) {
 
 // ResolveSidecarContainer resolves engine + container name for a named sidecar, verifying it is
 // running.
-func ResolveSidecarContainer(box, instance, sidecar string) (engine, name string, err error) {
+func ResolveSidecarContainer(ctx context.Context, box, instance, sidecar string) (engine, name string, err error) {
 	rt, err := kit.ResolveRuntime()
 	if err != nil {
 		return "", "", err
 	}
 	boxName := kit.ResolveBoxName(box)
-	runEngine := ResolveBoxEngineForDeploy(boxName, instance, rt.RunEngine)
+	runEngine := ResolveBoxEngineForDeploy(ctx, boxName, instance, rt.RunEngine)
 	engine = kit.EngineBinary(runEngine)
 	name = kit.SidecarContainerNameInstance(boxName, instance, sidecar)
 	if !kit.ContainerRunning(engine, name) {

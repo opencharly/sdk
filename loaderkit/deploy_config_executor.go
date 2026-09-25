@@ -64,8 +64,8 @@ func LoadDeployConfigViaExecutor(ctx context.Context, ex *sdk.Executor, dir stri
 // can't be resolved (the read then degrades to a non-nil &DeployConfig{}, matching
 // deploykit.LoadDeployConfig's absent/empty contract). An optional ctx carries the invocation's
 // RunEnv (spec.WithRunEnv), so a concurrent in-process bed roster reads its OWN overlay.
-func hostDeployConfigDir(ctxs ...context.Context) string {
-	path, err := kit.DefaultDeployConfigPath(ctxs...)
+func hostDeployConfigDir(ctx context.Context) string {
+	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
 		return ""
 	}

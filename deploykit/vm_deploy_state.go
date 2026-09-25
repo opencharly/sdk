@@ -47,15 +47,15 @@ import (
 // loader-backed reader (loaderkit.LoadHostDeployConfigViaExecutor), so SaveVmDeployState no longer
 // requires the DeployStateHost package var (#55 coneC-dsh config-write seam-collapse — mirrors the
 // SaveDeployConfig/SaveDeployState reader-callback precedent).
-func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, save func(*DeployConfig) error, read func() (*DeployConfig, error), ctxs ...context.Context) error {
+func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, save func(*DeployConfig) error, read func() (*DeployConfig, error), ctx context.Context) error {
 	loadBase := read
 	if loadBase == nil {
-		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
+		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctx) }
 	}
 	_, err := MutateDeployConfig(loadBase, save, func(dc *DeployConfig) (bool, error) {
 		saveVmStateInto(dc, deployName, vmEntity, state)
 		return true, nil
-	}, ctxs...)
+	}, ctx)
 	return err
 }
 
@@ -118,14 +118,14 @@ func saveVmStateInto(dc *DeployConfig, deployName, vmEntity string, state *spec.
 // load→decide→write runs under the SAME MutateDeployConfig lock hold. read is the SAME
 // reader-callback SaveVmDeployState takes (nil → DeployStateHost-backed LoadDeployConfig; a plugin
 // caller injects its own loader-backed reader).
-func RemoveVmDeployEntry(deployName string, save func(*DeployConfig) error, read func() (*DeployConfig, error), ctxs ...context.Context) error {
+func RemoveVmDeployEntry(deployName string, save func(*DeployConfig) error, read func() (*DeployConfig, error), ctx context.Context) error {
 	loadBase := read
 	if loadBase == nil {
-		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
+		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctx) }
 	}
 	_, err := MutateDeployConfig(loadBase, save, func(dc *DeployConfig) (bool, error) {
 		return removeVmEntriesFrom(dc, deployName), nil
-	}, ctxs...)
+	}, ctx)
 	return err
 }
 

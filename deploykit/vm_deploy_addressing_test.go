@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -17,17 +18,17 @@ func TestResolveVmSshPort(t *testing.T) {
 	t.Setenv(kit.DeployConfigEnv, filepath.Join(t.TempDir(), "charly.yml"))
 
 	// Default: no SSH block → 2222.
-	if p, err := ResolveVmSshPort(&spec.ResolvedVm{}, "vm-ssh-port-default-zzz"); err != nil || p != 2222 {
+	if p, err := ResolveVmSshPort(context.Background(), &spec.ResolvedVm{}, "vm-ssh-port-default-zzz"); err != nil || p != 2222 {
 		t.Fatalf("default: got (%d, %v), want (2222, nil)", p, err)
 	}
 	// Explicit fixed port.
-	if p, err := ResolveVmSshPort(&spec.ResolvedVm{SSH: &spec.VmSsh{Port: 2244}}, "vm-ssh-port-fixed-zzz"); err != nil || p != 2244 {
+	if p, err := ResolveVmSshPort(context.Background(), &spec.ResolvedVm{SSH: &spec.VmSsh{Port: 2244}}, "vm-ssh-port-fixed-zzz"); err != nil || p != 2244 {
 		t.Fatalf("fixed: got (%d, %v), want (2244, nil)", p, err)
 	}
 	// port_auto with a VM name absent from the (redirected, empty) overlay → allocate a free
 	// port. (The ephemeral range is high, so it is never the 2222 default — a default here would
 	// mean the port_auto branch silently did nothing.)
-	p, err := ResolveVmSshPort(&spec.ResolvedVm{SSH: &spec.VmSsh{PortAuto: true}}, "vm-ssh-port-auto-nonexistent-zzz")
+	p, err := ResolveVmSshPort(context.Background(), &spec.ResolvedVm{SSH: &spec.VmSsh{PortAuto: true}}, "vm-ssh-port-auto-nonexistent-zzz")
 	if err != nil {
 		t.Fatalf("port_auto: unexpected error: %v", err)
 	}

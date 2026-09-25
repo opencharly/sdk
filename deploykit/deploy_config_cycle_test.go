@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -81,7 +82,7 @@ func TestMutateDeployConfig_ConcurrentMutatorsOfDifferentEntriesAllSurvive(t *te
 			_, errs[i] = MutateDeployConfig(store.read, store.save, func(dc *DeployConfig) (bool, error) {
 				dc.Deploy[name] = DeployNode{Image: name, ResolvedImage: name + ":latest"}
 				return true, nil
-			})
+			}, context.Background())
 		}(i)
 	}
 	close(start)

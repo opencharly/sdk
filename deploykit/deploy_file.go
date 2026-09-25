@@ -88,8 +88,8 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 // deploy-validation block subsume the legacy check; the ephemeral/naming validators +
 // promotion were consolidated there so a PROJECT charly.yml's inline deploy: entries get them
 // too — R3, one path).
-func LoadDeployConfig(ctxs ...context.Context) (*DeployConfig, error) {
-	path, err := kit.DefaultDeployConfigPath(ctxs...)
+func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
+	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
 		return nil, nil
 	}
@@ -144,8 +144,8 @@ func LoadDeployConfig(ctxs ...context.Context) (*DeployConfig, error) {
 // (enc_probe / status_flat / vm state, RemoveVmDeployEntry), NOT a transitional shim — the
 // migrated caller (command:deploy) already never passes nil. The nil path dies when the LAST of
 // those host callers migrates plugin-side in its own deferred cone (enc floor / check-cone).
-func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctxs ...context.Context) error {
-	path, err := kit.DefaultDeployConfigPath(ctxs...)
+func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctx context.Context) error {
+	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
 		return fmt.Errorf("determining deploy config path: %w", err)
 	}
@@ -157,7 +157,7 @@ func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *Depl
 	// disk for the migration to recover.
 	recheck := failsafeRead
 	if recheck == nil {
-		recheck = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
+		recheck = func() (*DeployConfig, error) { return LoadDeployConfig(ctx) }
 	}
 	if _, lerr := recheck(); lerr != nil {
 		return fmt.Errorf("refusing to overwrite %s — the existing per-host config fails to load (%w); fix it (or remove it to regenerate) first", path, lerr)
@@ -284,10 +284,10 @@ func removeDeployKeys(m *yaml.Node) {
 //
 // context is a short human-readable label included in the warning message so the operator can
 // trace which code path noticed the problem (e.g. "charly status", "config injectEnvProvides").
-func LoadDeployConfigForRead(context string, ctxs ...context.Context) *DeployConfig {
-	dc, err := LoadDeployConfig(ctxs...)
+func LoadDeployConfigForRead(label string, ctx context.Context) *DeployConfig {
+	dc, err := LoadDeployConfig(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %s: charly.yml unavailable for read: %v\n", context, err)
+		fmt.Fprintf(os.Stderr, "Warning: %s: charly.yml unavailable for read: %v\n", label, err)
 	}
 	// NEVER return nil — a caller dereferences `dc.Deploy[...]` directly (and some assign into
 	// it), so an absent config (LoadDeployConfig → (nil, nil)) or a load error both degrade to
@@ -310,10 +310,10 @@ func LoadDeployConfigForRead(context string, ctxs ...context.Context) *DeployCon
 // context is a short human-readable label included in the error message (e.g. "saveDeployState").
 // Returns (nil, error) when the file exists but failed parse/validation; (fresh empty config,
 // nil) when the file doesn't exist; (parsed config, nil) on clean load.
-func LoadDeployConfigForWrite(context string, ctxs ...context.Context) (*DeployConfig, error) {
-	dc, err := LoadDeployConfig(ctxs...)
+func LoadDeployConfigForWrite(label string, ctx context.Context) (*DeployConfig, error) {
+	dc, err := LoadDeployConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: refusing to write — charly.yml load failed: %w", context, err)
+		return nil, fmt.Errorf("%s: refusing to write — charly.yml load failed: %w", label, err)
 	}
 	if dc == nil {
 		dc = &DeployConfig{Deploy: make(map[string]DeployNode)}
