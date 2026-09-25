@@ -2,6 +2,7 @@ package deploykit
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -88,8 +89,8 @@ func DefaultIsEncryptedMounted(plainDir string) bool {
 // bare box name for the ensure path (a pre-existing derivation difference, identical
 // for the common empty-instance case, preserved exactly by this cutover). The result
 // is the self-contained plan candy/plugin-enc executes over OpExecute.
-func EncPlanFor(boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
-	mounts, storagePath, err := LoadEncryptedVolume(boxName, instance)
+func EncPlanFor(ctx context.Context, boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
+	mounts, storagePath, err := LoadEncryptedVolume(ctx, boxName, instance)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +161,7 @@ func FuseAllowOtherEnabled() bool {
 
 // LoadEncryptedVolume loads encrypted volume configs from charly.yml for an image.
 // Returns the deploy volume configs with type=encrypted and the encrypted storage path.
-func LoadEncryptedVolume(boxName, instance string) ([]vmshared.DeployVolumeConfig, string, error) {
+func LoadEncryptedVolume(ctx context.Context, boxName, instance string) ([]vmshared.DeployVolumeConfig, string, error) {
 	// Propagate LoadDeployConfig errors instead of swallowing them. A
 	// schema error (e.g. the 2026-05-12 require-image cutover rejecting
 	// pre-cutover deploy.yml entries) used to silently degrade to "no
@@ -169,7 +170,7 @@ func LoadEncryptedVolume(boxName, instance string) ([]vmshared.DeployVolumeConfi
 	// password → indefinite hang waiting for stdin. Surfacing the error
 	// turns that hang into a clean error message with a remediation
 	// hint pointing at `charly migrate`.
-	dc, err := LoadDeployConfig()
+	dc, err := LoadDeployConfig(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("loading deploy config for encrypted volumes: %w", err)
 	}
@@ -226,8 +227,8 @@ func EncServiceFilename(boxName string) string {
 // sibling's prefix — without this, `charly remove --purge githubrunner` would
 // delete an instance's cipher dir and the instance would fail to remount. Each
 // mount is unmounted best-effort before removal; a purge never hard-fails on cleanup.
-func RemoveEncryptedVolumes(boxName, instance string) {
-	dc, _ := LoadDeployConfig()
+func RemoveEncryptedVolumes(ctx context.Context, boxName, instance string) {
+	dc, _ := LoadDeployConfig(ctx)
 	RemoveEncryptedVolumesWithConfig(boxName, instance, dc)
 }
 
@@ -293,8 +294,8 @@ func removeEncryptedVolumesUnder(base, boxName, instance string, dc *DeployConfi
 }
 
 // EncStatus prints the status of encrypted bind mounts for an image.
-func EncStatus(boxName, instance string) error {
-	mounts, storagePath, err := LoadEncryptedVolume(boxName, instance)
+func EncStatus(ctx context.Context, boxName, instance string) error {
+	mounts, storagePath, err := LoadEncryptedVolume(ctx, boxName, instance)
 	if err != nil {
 		return err
 	}

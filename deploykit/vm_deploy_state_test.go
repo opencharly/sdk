@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -71,7 +72,7 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			name := fmt.Sprintf("vm:e%02d", i)
-			errs[i] = SaveVmDeployState(name, "", &spec.VmDeployState{SSHPort: 3000 + i, Backend: "auto"}, save, nil)
+			errs[i] = SaveVmDeployState(name, "", &spec.VmDeployState{SSHPort: 3000 + i, Backend: "auto"}, save, nil, context.Background())
 		}(i)
 	}
 	wg.Wait()
@@ -82,7 +83,7 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 		}
 	}
 
-	dc, err := LoadDeployConfig()
+	dc, err := LoadDeployConfig(context.Background())
 	if err != nil {
 		t.Fatalf("final load: %v", err)
 	}
@@ -107,15 +108,15 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 func TestSaveVmDeployState_LockReleasedBetweenCalls(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
-	if err := SaveVmDeployState("vm:one", "", &spec.VmDeployState{SSHPort: 2201}, save, nil); err != nil {
+	if err := SaveVmDeployState("vm:one", "", &spec.VmDeployState{SSHPort: 2201}, save, nil, context.Background()); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
 	// If the first call leaked the lock, this blocking acquire inside the second call would hang
 	// the test (a self-deadlock surfaces as a timeout, never a silent pass).
-	if err := SaveVmDeployState("vm:two", "", &spec.VmDeployState{SSHPort: 2202}, save, nil); err != nil {
+	if err := SaveVmDeployState("vm:two", "", &spec.VmDeployState{SSHPort: 2202}, save, nil, context.Background()); err != nil {
 		t.Fatalf("second write (lock not released?): %v", err)
 	}
-	dc, err := LoadDeployConfig()
+	dc, err := LoadDeployConfig(context.Background())
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -138,15 +139,15 @@ func TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry(t *testing.T) {
 
 	// Seed through the REAL write path under the deploy/bed key (dctx.Name) with the resolved VM
 	// entity — exactly how the vm lifecycle hook PrepareVenue persists it.
-	if err := SaveVmDeployState("check-k3s-vm", "k3s-vm", &spec.VmDeployState{SSHPort: 40161, Backend: "auto"}, save, nil); err != nil {
+	if err := SaveVmDeployState("check-k3s-vm", "k3s-vm", &spec.VmDeployState{SSHPort: 40161, Backend: "auto"}, save, nil, context.Background()); err != nil {
 		t.Fatalf("seed write: %v", err)
 	}
 	// An UNRELATED VM deploy that must survive the k3s-vm teardown (no over-match).
-	if err := SaveVmDeployState("check-other-vm", "other-vm", &spec.VmDeployState{SSHPort: 40162, Backend: "auto"}, save, nil); err != nil {
+	if err := SaveVmDeployState("check-other-vm", "other-vm", &spec.VmDeployState{SSHPort: 40162, Backend: "auto"}, save, nil, context.Background()); err != nil {
 		t.Fatalf("seed unrelated: %v", err)
 	}
 
-	dc, err := LoadDeployConfig()
+	dc, err := LoadDeployConfig(context.Background())
 	if err != nil {
 		t.Fatalf("reload after seed: %v", err)
 	}
@@ -160,11 +161,11 @@ func TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry(t *testing.T) {
 
 	// The DIRECT `charly vm destroy k3s-vm` path reaches RemoveVmDeployEntry with the prefixed
 	// ENTITY form — NOT the deploy key the entry was written under. The From-scan bridges the gap.
-	if err := RemoveVmDeployEntry("vm:k3s-vm", save, nil); err != nil {
+	if err := RemoveVmDeployEntry("vm:k3s-vm", save, nil, context.Background()); err != nil {
 		t.Fatalf("RemoveVmDeployEntry: %v", err)
 	}
 
-	got, err := LoadDeployConfig()
+	got, err := LoadDeployConfig(context.Background())
 	if err != nil {
 		t.Fatalf("reload after teardown: %v", err)
 	}
@@ -193,11 +194,11 @@ func TestSaveVmDeployState_SelfHealsStaleDottedTwin(t *testing.T) {
 	}
 
 	// The canonical write — matches candy/plugin-vm's hostConfigPersist("vm:"+domainID, ...) call shape.
-	if err := SaveVmDeployState("vm:check-sidecar-pod-check-sidecar-pod-ephvm", "eval-vm", &spec.VmDeployState{SSHPort: 33799}, save, nil); err != nil {
+	if err := SaveVmDeployState("vm:check-sidecar-pod-check-sidecar-pod-ephvm", "eval-vm", &spec.VmDeployState{SSHPort: 33799}, save, nil, context.Background()); err != nil {
 		t.Fatalf("canonical write: %v", err)
 	}
 
-	dc, err := LoadDeployConfig()
+	dc, err := LoadDeployConfig(context.Background())
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -238,11 +239,11 @@ func TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite(t *testing.T) {
 
 	// Step 2: `charly vm create`'s own state write — the SAME key, a state that knows NOTHING
 	// about the ephemeral block (this is the exact shape vm_create_orchestrate.go constructs).
-	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SSHPort: 41897, Backend: "auto"}, save, nil); err != nil {
+	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SSHPort: 41897, Backend: "auto"}, save, nil, context.Background()); err != nil {
 		t.Fatalf("vm-create state write: %v", err)
 	}
 
-	dc, err := LoadDeployConfig()
+	dc, err := LoadDeployConfig(context.Background())
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -275,17 +276,17 @@ func TestSaveVmDeployState_ReverseOrderingRoundTrips(t *testing.T) {
 	const key = "vm:reverse-order-vm"
 
 	// vm-create writes FIRST — no ephemeral knowledge yet.
-	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SSHPort: 50001}, save, nil); err != nil {
+	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SSHPort: 50001}, save, nil, context.Background()); err != nil {
 		t.Fatalf("vm-create state write: %v", err)
 	}
 	// A SECOND SaveVmDeployState call carrying an Ephemeral block (mirrors what
 	// persistEphemeralRuntime effectively produces when it runs after vm-create: it reads the
 	// EXISTING entry, so the passed-in state already contains the merged prior fields).
-	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SSHPort: 50001, Ephemeral: &spec.EphemeralRuntime{ID: "xyz789", Status: "active"}}, save, nil); err != nil {
+	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SSHPort: 50001, Ephemeral: &spec.EphemeralRuntime{ID: "xyz789", Status: "active"}}, save, nil, context.Background()); err != nil {
 		t.Fatalf("ephemeral-carrying write: %v", err)
 	}
 
-	dc, err := LoadDeployConfig()
+	dc, err := LoadDeployConfig(context.Background())
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}

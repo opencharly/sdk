@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,7 +29,7 @@ import (
 // effects — callers layer those on. Used by `charly stop` and the resource
 // arbiter's preemption path, which wants a bare, reversible service stop that
 // leaves the holder's disk/container intact for restart.
-func StopPodService(boxName, instance string) error {
+func StopPodService(ctx context.Context, boxName, instance string) error {
 	quadletActive, _ := kit.QuadletExistsInstance(boxName, instance)
 	if quadletActive {
 		svc := kit.ServiceNameInstance(boxName, instance)
@@ -46,7 +47,7 @@ func StopPodService(boxName, instance string) error {
 	if err != nil {
 		return err
 	}
-	runEngine := ResolveBoxEngineForDeploy(boxName, instance, rt.RunEngine)
+	runEngine := ResolveBoxEngineForDeploy(ctx, boxName, instance, rt.RunEngine)
 	engine := kit.EngineBinary(runEngine)
 	name := kit.ContainerNameInstance(boxName, instance)
 
@@ -77,7 +78,7 @@ func StopPodService(boxName, instance string) error {
 // the deployment's quadlet/container already exists (the holder was running
 // before preemption), so this is a plain service/container start, not a full
 // `charly start` re-config.
-func StartPodService(boxName, instance string) error {
+func StartPodService(ctx context.Context, boxName, instance string) error {
 	quadletActive, _ := kit.QuadletExistsInstance(boxName, instance)
 	if quadletActive {
 		svc := kit.ServiceNameInstance(boxName, instance)
@@ -95,7 +96,7 @@ func StartPodService(boxName, instance string) error {
 	if err != nil {
 		return err
 	}
-	runEngine := ResolveBoxEngineForDeploy(boxName, instance, rt.RunEngine)
+	runEngine := ResolveBoxEngineForDeploy(ctx, boxName, instance, rt.RunEngine)
 	engine := kit.EngineBinary(runEngine)
 	name := kit.ContainerNameInstance(boxName, instance)
 
@@ -113,7 +114,7 @@ func StartPodService(boxName, instance string) error {
 // serve --off) runs before ExecStartPost (tailscale serve), and the unit ends in either active or
 // failed, never the silent stopped state a manual stop+start sequence can produce when start
 // fails. Direct mode delegates to the resolved engine's restart. Used by `charly restart`.
-func RestartPodService(boxName, instance string) error {
+func RestartPodService(ctx context.Context, boxName, instance string) error {
 	rt, err := kit.ResolveRuntime()
 	if err != nil {
 		return err
@@ -133,7 +134,7 @@ func RestartPodService(boxName, instance string) error {
 	}
 
 	// Direct mode: delegate to engine restart.
-	runEngine := ResolveBoxEngineForDeploy(boxName, instance, rt.RunEngine)
+	runEngine := ResolveBoxEngineForDeploy(ctx, boxName, instance, rt.RunEngine)
 	engine := kit.EngineBinary(runEngine)
 	name := kit.ContainerNameInstance(boxName, instance)
 
