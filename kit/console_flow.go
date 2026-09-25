@@ -39,12 +39,22 @@ import (
 )
 
 // ConsoleFlowOutcome is ONE named condition a node waits for. The engine
-// OCR-polls until any outcome's Match substring is present.
+// OCR-polls until any outcome matches. An outcome matches EITHER by an OCR
+// substring (Match) OR by a reference SCREENSHOT (Reference) — so a screen that
+// OCRs badly (a firmware menu, a graphical lock) is still recognisable.
 type ConsoleFlowOutcome struct {
 	// Name is the outcome's identifier, keyed in a node's Transitions.
 	Name string
-	// Match is the case-insensitive substring that identifies this outcome.
+	// Match is the case-insensitive OCR substring that identifies this outcome
+	// (empty when the outcome is a screen-reference match).
 	Match string
+	// Reference is a host path to a PREVIOUSLY-CAPTURED screenshot of this
+	// screen. When set, the outcome matches when the CURRENT frame's perceptual
+	// hash is within MaxDistance of that reference — no OCR needed.
+	Reference string
+	// MaxDistance is the Hamming threshold for a Reference match (default
+	// ScreenDefaultMaxDistance; only meaningful with Reference).
+	MaxDistance int
 	// Failure marks an outcome that is a FAILURE unless a transition routes it
 	// explicitly. It lets a flow fail fast on a wrong passphrase / an error
 	// screen while still allowing a deliberate recovery branch.
@@ -116,6 +126,17 @@ type ConsoleFlow struct {
 	MaxSteps int
 	// MaxLoops is the per-node revisit bound (default ConsoleFlowDefaultMaxLoops).
 	MaxLoops int
+	// ResumeFromScreen, when true, makes Run AUTO-DETECT the node whose wait
+	// matches the CURRENT screen and start there, instead of at Start — so a flow
+	// re-run after a stall/restart recovers to the right step rather than
+	// replaying from the beginning. A node with a reference-screenshot wait is
+	// detectable even when its screen OCRs badly.
+	ResumeFromScreen bool
+	// ResumeOrder, when set, disambiguates a screen that matches SEVERAL nodes:
+	// the matching node that appears LAST in this list wins (so an authored list
+	// from earliest to latest step resumes at the most-advanced match). Without
+	// it, an ambiguous match FAILS naming the candidates.
+	ResumeOrder []string
 	// Logger, when set, receives one line per node (evidence).
 	Logger func(format string, args ...any)
 	// session is the internal terminal session for Command actions, created once.
@@ -164,11 +185,11 @@ func (f *ConsoleFlow) Validate() error {
 			return fmt.Errorf("console flow: node %q sets both command and key (one action per node)", id)
 		}
 		for _, o := range n.Wait {
-			if strings.TrimSpace(o.Match) == "" {
-				return fmt.Errorf("console flow: node %q has an outcome %q with an empty match", id, o.Name)
+			if strings.TrimSpace(o.Match) == "" && strings.TrimSpace(o.Reference) == "" {
+				return fmt.Errorf("console flow: node %q has an outcome %q with neither an OCR match nor a reference screenshot", id, o.Name)
 			}
 			if o.Name == "" {
-				return fmt.Errorf("console flow: node %q has an outcome with a match but no name", id)
+				return fmt.Errorf("console flow: node %q has an outcome with no name", id)
 			}
 		}
 		for name, target := range n.Transitions {
@@ -192,6 +213,9 @@ func (f *ConsoleFlow) Validate() error {
 // an undefined node (should be caught by Validate), a wait timeout (naming the
 // node, its outcomes, and what OCR read), a failure outcome with no recovery
 // transition, exceeding MaxSteps, or exceeding a node's MaxLoops.
+//
+// With ResumeFromScreen set, the entry node is AUTO-DETECTED from the current
+// screen (see DetectStart), so a re-run recovers to the right step.
 func (f *ConsoleFlow) Run(ctx context.Context) (ConsoleFlowResult, error) {
 	if err := f.Validate(); err != nil {
 		return ConsoleFlowResult{}, err
@@ -212,9 +236,22 @@ func (f *ConsoleFlow) Run(ctx context.Context) (ConsoleFlowResult, error) {
 		Logger:       f.Logger,
 	}
 
+	start := f.Start
+	if f.ResumeFromScreen {
+		detected, reason, err := f.DetectStart(ctx)
+		if err != nil {
+			return ConsoleFlowResult{}, err
+		}
+		if detected == "" {
+			return ConsoleFlowResult{}, fmt.Errorf("console flow: resume-from-screen could not identify the current screen: %s", reason)
+		}
+		f.logf("resume-from-screen: current screen matches node %q; starting there", detected)
+		start = detected
+	}
+
 	var res ConsoleFlowResult
 	visits := map[string]int{}
-	cur := f.Start
+	cur := start
 	for step := 0; ; step++ {
 		if step >= maxSteps {
 			return res, fmt.Errorf("console flow: exceeded max_steps %d (a cycle never reached a terminal node); visited: %s",
@@ -251,6 +288,94 @@ func (f *ConsoleFlow) Run(ctx context.Context) (ConsoleFlowResult, error) {
 	}
 }
 
+// DetectStart identifies which node's wait matches the CURRENT screen, so a flow
+// can resume at the right step. It captures ONCE, then tests every node's wait
+// outcomes (reference-screenshot first, then OCR substring). It returns the node
+// ID. When several nodes match:
+//
+//   - if ResumeOrder is set, the matching node appearing LAST in it wins (the
+//     authored earliest→latest order, so the most-advanced match resumes);
+//   - otherwise the match is AMBIGUOUS and it returns an error naming the
+//     candidates — never a silent arbitrary choice.
+//
+// It returns ("", reason, nil) when NO node matches, with a reason for the caller.
+func (f *ConsoleFlow) DetectStart(ctx context.Context) (string, string, error) {
+	frame, err := f.Transport.Capture(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	cur, err := ScreenHash(frame)
+	if err != nil {
+		return "", "", err
+	}
+	var ocrText string
+	ocrDone := false
+	getOCR := func() (string, error) {
+		if ocrDone {
+			return ocrText, nil
+		}
+		ocr := f.OCR
+		if ocr == nil {
+			ocr = OCRBytes
+		}
+		ocrText, err = ocr(frame)
+		ocrDone = true
+		return ocrText, err
+	}
+
+	matches := []string{}
+	for id, n := range f.Nodes {
+		hit := false
+		for _, o := range n.Wait {
+			if o.Reference != "" {
+				ref, rerr := LoadScreenSignature(o.Reference)
+				if rerr != nil {
+					return "", "", rerr
+				}
+				if ScreenMatches(cur, ref, o.MaxDistance) {
+					hit = true
+					break
+				}
+			}
+			if o.Match != "" {
+				text, oerr := getOCR()
+				if oerr != nil {
+					return "", "", oerr
+				}
+				if strings.Contains(strings.ToLower(text), strings.ToLower(o.Match)) {
+					hit = true
+					break
+				}
+			}
+		}
+		if hit {
+			matches = append(matches, id)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", "no node's wait matched the current screen", nil
+	case 1:
+		return matches[0], "", nil
+	}
+	// Ambiguous. ResumeOrder disambiguates: the LATEST-listed match wins.
+	if len(f.ResumeOrder) > 0 {
+		best, bestPos := "", -1
+		for _, id := range matches {
+			for pos, id2 := range f.ResumeOrder {
+				if id2 == id && pos > bestPos {
+					best, bestPos = id, pos
+				}
+			}
+		}
+		if best != "" {
+			return best, "", nil
+		}
+	}
+	sort.Strings(matches)
+	return "", "", fmt.Errorf("console flow: resume-from-screen is ambiguous — the current screen matches nodes %v; set ResumeOrder or tighten the waits", matches)
+}
+
 // runNode performs one node: OCR-poll for a wait outcome (if any), then the
 // action. It returns the matched outcome name ("" for an action-only node), the
 // OCR text at the decision, and any command action's OCR-read output.
@@ -282,8 +407,23 @@ func (f *ConsoleFlow) runNode(ctx context.Context, node ConsoleFlowNode) (string
 
 // waitOutcome OCR-polls until any wait outcome matches, returning the FIRST match
 // (checked in declaration order) and the OCR text. A capture/OCR error is
-// distinct from "no match" and returned as an error.
+// distinct from "no match" and returned as an error. An outcome matches by OCR
+// substring OR by reference screenshot (its perceptual hash within threshold).
 func (f *ConsoleFlow) waitOutcome(ctx context.Context, node ConsoleFlowNode) (*ConsoleFlowOutcome, string, error) {
+	// Pre-load any reference signatures ONCE (a flow re-captures many times; the
+	// reference file is stable, so hashing it per poll would be wasteful and a
+	// disk error per tick). A load failure is a real error, not a non-match.
+	refs := map[int]ScreenSignature{}
+	for i, o := range node.Wait {
+		if o.Reference == "" {
+			continue
+		}
+		sig, err := LoadScreenSignature(o.Reference)
+		if err != nil {
+			return nil, "", err
+		}
+		refs[i] = sig
+	}
 	deadline := time.Now().Add(time.Duration(nodeTimeout(node)) * time.Second)
 	poll := f.PollInterval
 	if poll <= 0 {
@@ -291,14 +431,51 @@ func (f *ConsoleFlow) waitOutcome(ctx context.Context, node ConsoleFlowNode) (*C
 	}
 	var last string
 	for {
-		_, got, err := f.session.screenHasAny(ctx, nil, node.Artifact)
+		frame, err := f.Transport.Capture(ctx)
 		if err != nil {
 			return nil, last, err
 		}
+		if node.Artifact != "" {
+			if werr := AtomicWriteFile(node.Artifact, frame, 0o644); werr != nil {
+				return nil, last, fmt.Errorf("saving node artifact %s: %w", node.Artifact, werr)
+			}
+		}
+		var got string
+		// Only pay OCR when at least one outcome is substring-based (a
+		// reference-only node hashes the frame and never invokes tesseract).
+		if frameNeedsOCR(node.Wait) {
+			ocr := f.session.OCR
+			if ocr == nil {
+				ocr = OCRBytes
+			}
+			got, err = ocr(frame)
+			if err != nil {
+				return nil, last, err
+			}
+		}
 		last = got
 		lower := strings.ToLower(got)
+
+		// Reference outcomes first: a visual match is stronger than a substring.
+		// The frame is hashed ONLY when a reference outcome exists, so an
+		// OCR-only flow never pays the decode.
+		if len(refs) > 0 {
+			cur, hashErr := ScreenHash(frame)
+			if hashErr != nil {
+				return nil, last, hashErr
+			}
+			for i := range node.Wait {
+				o := node.Wait[i]
+				if o.Reference == "" {
+					continue
+				}
+				if ScreenMatches(cur, refs[i], o.MaxDistance) {
+					return &node.Wait[i], got, nil
+				}
+			}
+		}
 		for i := range node.Wait {
-			if strings.Contains(lower, strings.ToLower(node.Wait[i].Match)) {
+			if node.Wait[i].Match != "" && strings.Contains(lower, strings.ToLower(node.Wait[i].Match)) {
 				return &node.Wait[i], got, nil
 			}
 		}
@@ -311,6 +488,17 @@ func (f *ConsoleFlow) waitOutcome(ctx context.Context, node ConsoleFlowNode) (*C
 		case <-time.After(poll):
 		}
 	}
+}
+
+// frameNeedsOCR reports whether any outcome in the list is substring-based (so the
+// engine must OCR rather than hash-only).
+func frameNeedsOCR(os []ConsoleFlowOutcome) bool {
+	for _, o := range os {
+		if o.Match != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // apply sends the node's action, if any, returning a command action's OCR-read

@@ -198,13 +198,23 @@ func RunBootOrder(ctx context.Context, tr ConsoleTransport, o BootOrder) (string
 // `flow` (R3). It returns the flow result on success, or the partial result plus
 // the error.
 func RunConsoleFlow(ctx context.Context, tr ConsoleTransport, start string, nodes map[string]ConsoleFlowNode, sudoPassword string, maxSteps, maxLoops int) (ConsoleFlowResult, error) {
+	return RunConsoleFlowResume(ctx, tr, start, nodes, sudoPassword, maxSteps, maxLoops, false, nil)
+}
+
+// RunConsoleFlowResume is RunConsoleFlow with the auto-resume options: when
+// resume is true the flow detects its entry node from the current screen (see
+// ConsoleFlow.ResumeFromScreen / DetectStart), disambiguated by resumeOrder.
+// One implementation, both transports (R3).
+func RunConsoleFlowResume(ctx context.Context, tr ConsoleTransport, start string, nodes map[string]ConsoleFlowNode, sudoPassword string, maxSteps, maxLoops int, resume bool, resumeOrder []string) (ConsoleFlowResult, error) {
 	f := &ConsoleFlow{
-		Start:        start,
-		Nodes:        nodes,
-		Transport:    tr,
-		SudoPassword: sudoPassword,
-		MaxSteps:     maxSteps,
-		MaxLoops:     maxLoops,
+		Start:            start,
+		Nodes:            nodes,
+		Transport:        tr,
+		SudoPassword:     sudoPassword,
+		MaxSteps:         maxSteps,
+		MaxLoops:         maxLoops,
+		ResumeFromScreen: resume,
+		ResumeOrder:      resumeOrder,
 	}
 	return f.Run(ctx)
 }

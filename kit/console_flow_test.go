@@ -6,6 +6,9 @@ package kit
 
 import (
 	"context"
+	"image/color"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -249,7 +252,7 @@ func TestConsoleFlow_Validate(t *testing.T) {
 		{"no start", &ConsoleFlow{Nodes: map[string]ConsoleFlowNode{"a": {}}}, "start node"},
 		{"undefined start", &ConsoleFlow{Start: "z", Nodes: map[string]ConsoleFlowNode{"a": {}}}, "not defined"},
 		{"bad transition", &ConsoleFlow{Start: "a", Nodes: map[string]ConsoleFlowNode{"a": {Transitions: map[string]string{"o": "missing"}}}}, "undefined node"},
-		{"empty match", &ConsoleFlow{Start: "a", Nodes: map[string]ConsoleFlowNode{"a": {Wait: []ConsoleFlowOutcome{{Name: "o"}}}}}, "empty match"},
+		{"empty match", &ConsoleFlow{Start: "a", Nodes: map[string]ConsoleFlowNode{"a": {Wait: []ConsoleFlowOutcome{{Name: "o"}}}}}, "neither an OCR match nor a reference"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -279,3 +282,112 @@ func TestConsoleFlow_MaxStepsBounds(t *testing.T) {
 }
 
 var _ ConsoleTransport = (*screenScriptTransport)(nil)
+
+// imgTransport replays a script of PNG frames, advancing on each capture. It
+// embeds fakeTransport for the input-recording half (keys/combos/types), so that
+// logic lives in ONE place (R3).
+type imgTransport struct {
+	*fakeTransport
+	frames [][]byte
+	idx    int
+}
+
+func (t *imgTransport) Capture(context.Context) ([]byte, error) {
+	f := t.frames[t.idx]
+	if t.idx < len(t.frames)-1 {
+		t.idx++
+	}
+	return f, nil
+}
+
+var _ ConsoleTransport = (*imgTransport)(nil)
+
+// TestConsoleFlow_ReferenceOutcomeMatches proves an outcome matches by REFERENCE
+// SCREENSHOT (no OCR): the flow triggers its action when the current frame's hash
+// is within threshold of the reference.
+func TestConsoleFlow_ReferenceOutcomeMatches(t *testing.T) {
+	ref := makePNG(t, 100, 80, colorOf(0, 0, 0), colorOf(255, 255, 255))
+	dir := t.TempDir()
+	refPath := filepath.Join(dir, "ref.png")
+	if err := os.WriteFile(refPath, ref, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr := &imgTransport{fakeTransport: &fakeTransport{}, frames: [][]byte{ref, ref}}
+	f := &ConsoleFlow{
+		Start: "wait",
+		Nodes: map[string]ConsoleFlowNode{
+			"wait": {
+				Wait:        []ConsoleFlowOutcome{{Name: "ref", Reference: refPath}},
+				Action:      ConsoleFlowAction{Key: "Return"},
+				Transitions: map[string]string{"ref": "done"},
+			},
+			"done": {},
+		},
+		Transport: tr, PollInterval: time.Millisecond,
+	}
+	res, err := f.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Steps[0].Outcome != "ref" || res.Final != "done" {
+		t.Fatalf("reference outcome did not route: %+v", res.Steps)
+	}
+	if len(tr.keys) != 1 || tr.keys[0] != "Return" {
+		t.Fatalf("action not sent on reference match: %v", tr.keys)
+	}
+}
+
+// TestConsoleFlow_DetectStart_ResumesAtMatchingNode proves auto-resume: the flow
+// starts at the node whose wait matches the CURRENT screen, not at Start.
+func TestConsoleFlow_DetectStart_ResumesAtMatchingNode(t *testing.T) {
+	// The current screen matches node "step3"; the flow must resume there.
+	screen := makePNG(t, 100, 80, colorOf(0, 0, 0), colorOf(255, 255, 255))
+	tr := &imgTransport{fakeTransport: &fakeTransport{}, frames: [][]byte{screen, screen}}
+	f := &ConsoleFlow{
+		Start: "step1",
+		Nodes: map[string]ConsoleFlowNode{
+			"step1": {Wait: []ConsoleFlowOutcome{{Name: "a", Match: "never-a"}}, Transitions: map[string]string{"a": "step2"}},
+			"step2": {Wait: []ConsoleFlowOutcome{{Name: "b", Match: "never-b"}}, Transitions: map[string]string{"b": "step3"}},
+			"step3": {Wait: []ConsoleFlowOutcome{{Name: "c", Reference: ""}}, TimeoutSec: 1},
+		},
+		Transport: tr, PollInterval: time.Millisecond,
+	}
+	// Give step3 a reference that matches the screen; steps 1/2 have anchors that
+	// never appear, so only step3 is detectable.
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s3.png")
+	if err := os.WriteFile(p, screen, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	n := f.Nodes["step3"]
+	n.Wait = []ConsoleFlowOutcome{{Name: "c", Reference: p}}
+	f.Nodes["step3"] = n
+	f.ResumeFromScreen = true
+
+	detected, reason, err := f.DetectStart(context.Background())
+	if err != nil {
+		t.Fatalf("DetectStart: %v", err)
+	}
+	if detected != "step3" {
+		t.Fatalf("resume must detect step3 (reason=%q), got %q", reason, detected)
+	}
+}
+
+// TestConsoleFlow_DetectStart_AmbiguousFails proves an ambiguous match FAILS
+// naming the candidates rather than choosing arbitrarily.
+func TestConsoleFlow_DetectStart_AmbiguousFails(t *testing.T) {
+	tr := &imgTransport{fakeTransport: &fakeTransport{}, frames: [][]byte{makePNG(t, 100, 80, colorOf(0, 0, 0), colorOf(255, 255, 255))}}
+	f := &ConsoleFlow{
+		Start: "a",
+		Nodes: map[string]ConsoleFlowNode{
+			"a": {Wait: []ConsoleFlowOutcome{{Name: "x", Match: "same"}}},
+			"b": {Wait: []ConsoleFlowOutcome{{Name: "y", Match: "same"}}},
+		},
+		Transport: tr, OCR: func([]byte) (string, error) { return "same", nil }, PollInterval: time.Millisecond,
+	}
+	if _, _, err := f.DetectStart(context.Background()); err == nil {
+		t.Fatal("an ambiguous resume must fail")
+	}
+}
+
+func colorOf(r, g, b uint8) color.RGBA { return color.RGBA{r, g, b, 255} }
