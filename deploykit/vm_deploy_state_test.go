@@ -70,7 +70,7 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func(i int) {
 			defer wg.Done()
-			name := fmt.Sprintf("vm:e%02d", i)
+			name := fmt.Sprintf("eval-vm-%02d", i)
 			errs[i] = SaveVmDeployState(name, "", &spec.VmDeployState{SSHPort: 3000 + i, Backend: "auto"}, save, nil)
 		}(i)
 	}
@@ -90,7 +90,7 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 		t.Fatal("no config persisted")
 	}
 	for i := 0; i < n; i++ {
-		name := fmt.Sprintf("vm:e%02d", i)
+		name := fmt.Sprintf("eval-vm-%02d", i)
 		entry, ok := dc.Deploy[name]
 		if !ok {
 			t.Errorf("entry %q was lost — concurrent write race (lock not serializing)", name)
@@ -107,36 +107,36 @@ func TestSaveVmDeployState_ConcurrentWritersAllSurvive(t *testing.T) {
 func TestSaveVmDeployState_LockReleasedBetweenCalls(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
-	if err := SaveVmDeployState("vm:one", "", &spec.VmDeployState{SSHPort: 2201}, save, nil); err != nil {
+	if err := SaveVmDeployState("eval-vm-one", "", &spec.VmDeployState{SSHPort: 2201}, save, nil); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
 	// If the first call leaked the lock, this blocking acquire inside the second call would hang
 	// the test (a self-deadlock surfaces as a timeout, never a silent pass).
-	if err := SaveVmDeployState("vm:two", "", &spec.VmDeployState{SSHPort: 2202}, save, nil); err != nil {
+	if err := SaveVmDeployState("eval-vm-two", "", &spec.VmDeployState{SSHPort: 2202}, save, nil); err != nil {
 		t.Fatalf("second write (lock not released?): %v", err)
 	}
 	dc, err := LoadDeployConfig()
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if _, ok := dc.Deploy["vm:one"]; !ok {
-		t.Error("vm:one lost across the second write")
+	if _, ok := dc.Deploy["eval-vm-one"]; !ok {
+		t.Error("eval-vm-one lost across the second write")
 	}
-	if _, ok := dc.Deploy["vm:two"]; !ok {
-		t.Error("vm:two not persisted")
+	if _, ok := dc.Deploy["eval-vm-two"]; !ok {
+		t.Error("eval-vm-two not persisted")
 	}
 }
 
-// TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry exercises the `vm:`-form From-scan in
+// TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry exercises the entity From-scan in
 // VmDeployEntryKeys: a kind:check VM bed (e.g. check-k3s-vm) writes its vm_state under the DEPLOY
-// key (check-k3s-vm) cross-referencing the VM ENTITY (k3s-vm). The scan lets the DIRECT
-// `charly vm destroy k3s-vm` path (which builds "vm:k3s-vm") still resolve the deploy-keyed entry
-// via that cross-ref — an exact-key delete on "vm:k3s-vm" alone would miss it and leak it. The
-// From-scan must not over-match an UNRELATED deploy (check-other-vm, From=other-vm).
+// IDENTITY (check-k3s-vm) cross-referencing the VM ENTITY (k3s-vm). The scan lets the DIRECT
+// `charly vm destroy k3s-vm` path (which passes the ENTITY, not a deploy identity) still resolve
+// the deploy-keyed entry via that cross-ref — an exact-key delete on the entity alone would miss it
+// and leak it. The From-scan must not over-match an UNRELATED deploy (check-other-vm, From=other-vm).
 func TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
-	// Seed through the REAL write path under the deploy/bed key (dctx.Name) with the resolved VM
+	// Seed through the REAL write path under the deploy/bed IDENTITY (dctx.Name) with the resolved VM
 	// entity — exactly how the vm lifecycle hook PrepareVenue persists it.
 	if err := SaveVmDeployState("check-k3s-vm", "k3s-vm", &spec.VmDeployState{SSHPort: 40161, Backend: "auto"}, save, nil); err != nil {
 		t.Fatalf("seed write: %v", err)
@@ -158,9 +158,9 @@ func TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry(t *testing.T) {
 		t.Fatalf("seed entry missing vm: cross-ref (teardown linkage): got %q", seeded.From)
 	}
 
-	// The DIRECT `charly vm destroy k3s-vm` path reaches RemoveVmDeployEntry with the prefixed
-	// ENTITY form — NOT the deploy key the entry was written under. The From-scan bridges the gap.
-	if err := RemoveVmDeployEntry("vm:k3s-vm", save, nil); err != nil {
+	// The DIRECT `charly vm destroy k3s-vm` path reaches RemoveVmDeployEntry with the ENTITY (not
+	// the deploy identity the entry was written under). The From-scan bridges the gap.
+	if err := RemoveVmDeployEntry("k3s-vm", save, nil); err != nil {
 		t.Fatalf("RemoveVmDeployEntry: %v", err)
 	}
 
@@ -179,40 +179,44 @@ func TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry(t *testing.T) {
 	}
 }
 
-// TestSaveVmDeployState_SelfHealsStaleDottedTwin is the end-to-end regression test: an overlay
-// carrying a pre-fix poisoned dotted twin gets healed the next time the canonical domain is
-// written, via a real SaveVmDeployState call.
-func TestSaveVmDeployState_SelfHealsStaleDottedTwin(t *testing.T) {
+// TestSaveVmDeployState_NamespacedIdentityKeyRoundTrips pins that a namespaced deploy's vm_state is
+// keyed by its dotted IDENTITY (the same string the tree/config/CLI use) and round-trips — dots are
+// legal in the key, so the former `vm:<dashed>` projection + dotted-twin self-heal are gone.
+func TestSaveVmDeployState_NamespacedIdentityKeyRoundTrips(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
-	// Seed a pre-fix poisoned overlay: a dotted twin alongside (what will become) the canonical entry.
-	if err := save(&DeployConfig{Deploy: map[string]DeployNode{
-		"check-sidecar-pod.check-sidecar-pod-ephvm": {Target: "vm", VmState: &spec.VmDeployState{SSHPort: 45551}},
-	}}); err != nil {
-		t.Fatalf("seeding pre-fix overlay: %v", err)
-	}
-
-	// The canonical write — matches candy/plugin-vm's hostConfigPersist("vm:"+domainID, ...) call shape.
-	if err := SaveVmDeployState("vm:check-sidecar-pod-check-sidecar-pod-ephvm", "eval-vm", &spec.VmDeployState{SSHPort: 33799}, save, nil); err != nil {
-		t.Fatalf("canonical write: %v", err)
+	const identity = "charly.check-k3s-vm"
+	if err := SaveVmDeployState(identity, "k3s-vm", &spec.VmDeployState{SSHPort: 33799}, save, nil); err != nil {
+		t.Fatalf("write: %v", err)
 	}
 
 	dc, err := LoadDeployConfig()
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if _, stillPoisoned := dc.Deploy["check-sidecar-pod.check-sidecar-pod-ephvm"]; stillPoisoned {
-		t.Error("the stale dotted twin survived the canonical write — self-heal did not fire")
+	entry, ok := dc.Deploy[identity]
+	if !ok {
+		t.Fatalf("entry not keyed by the identity %q; keys=%v", identity, keysOfDeploy(dc.Deploy))
 	}
-	entry, ok := dc.Deploy["vm:check-sidecar-pod-check-sidecar-pod-ephvm"]
-	if !ok || entry.VmState == nil || entry.VmState.SSHPort != 33799 {
-		t.Errorf("canonical entry missing or wrong after self-heal: %+v", entry)
+	if entry.VmState == nil || entry.VmState.SSHPort != 33799 {
+		t.Errorf("entry wrong after round-trip: %+v", entry)
 	}
+	if entry.From != "k3s-vm" {
+		t.Errorf("entity cross-ref From = %q, want k3s-vm", entry.From)
+	}
+}
+
+func keysOfDeploy(m map[string]DeployNode) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite is the regression test for the
 // FINAL/K5 unit 6a RCA #7 live-probe-caught bug: registerEphemeralIfMarked (candy/plugin-fleet's
-// ephemeral family) persists .VmState.Ephemeral under the canonical "vm:"+domainID key BEFORE
+// ephemeral family) persists .VmState.Ephemeral under the canonical deploy-IDENTITY key BEFORE
 // `charly vm create`'s own state writes (e.g. the port_auto persist) run — RCA #6's key
 // unification made this the COMMON ordering (the two writers never collided on separate keys
 // before). A naive wholesale `entry.VmState = state` would silently ERASE the just-registered
@@ -220,7 +224,7 @@ func TestSaveVmDeployState_SelfHealsStaleDottedTwin(t *testing.T) {
 func TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
-	const key = "vm:check-sidecar-pod-check-sidecar-pod-ephvm"
+	const key = "check-sidecar-pod.check-sidecar-pod-ephvm"
 
 	// Step 1: the ephemeral registration write (mirrors persistEphemeralRuntime — seeds
 	// Target/From + an Ephemeral block, the FIRST write to a fresh overlay).
@@ -272,7 +276,7 @@ func TestSaveVmDeployState_PreservesEphemeralOnSubsequentWrite(t *testing.T) {
 func TestSaveVmDeployState_ReverseOrderingRoundTrips(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
-	const key = "vm:reverse-order-vm"
+	const key = "reverse-order-vm"
 
 	// vm-create writes FIRST — no ephemeral knowledge yet.
 	if err := SaveVmDeployState(key, "eval-vm", &spec.VmDeployState{SSHPort: 50001}, save, nil); err != nil {

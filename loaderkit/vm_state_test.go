@@ -12,14 +12,21 @@ import (
 // ResolveVmStateViaExecutor is exercised by the plugin callers' stub seams + the live VM beds.
 
 func TestVmStateFromDeployConfig(t *testing.T) {
-	// A present entry yields its VmState.
+	// A present entry (keyed by the deploy IDENTITY) yields its VmState.
 	dc := &spec.DeployConfig{Deploy: map[string]spec.DeployNode{
-		"vm:arch": {VmState: &spec.VmDeployState{SSHPort: 2244}},
+		"arch": {VmState: &spec.VmDeployState{SSHPort: 2244}},
 	}}
 	if got := VmStateFromDeployConfig(dc, "arch"); got == nil || got.SSHPort != 2244 {
 		t.Fatalf("VmStateFromDeployConfig(arch) = %+v, want SSHPort=2244", got)
 	}
-	// A missing entity degrades to nil.
+	// A namespaced identity is looked up verbatim — dots are legal in the key.
+	dcns := &spec.DeployConfig{Deploy: map[string]spec.DeployNode{
+		"charly.check-k3s-vm": {VmState: &spec.VmDeployState{SSHPort: 2255}},
+	}}
+	if got := VmStateFromDeployConfig(dcns, "charly.check-k3s-vm"); got == nil || got.SSHPort != 2255 {
+		t.Fatalf("VmStateFromDeployConfig(charly.check-k3s-vm) = %+v, want SSHPort=2255", got)
+	}
+	// A missing identity degrades to nil.
 	if got := VmStateFromDeployConfig(dc, "missing"); got != nil {
 		t.Fatalf("VmStateFromDeployConfig(missing) = %+v, want nil", got)
 	}
