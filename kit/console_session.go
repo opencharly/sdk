@@ -244,19 +244,25 @@ const (
 	lcgIncrement  = 1442695040888963407
 	// lcgNonceLen is the nonce length and lcgShift selects a high, well-mixed
 	// slice of the LCG state for a near-uniform 0..9 index.
-	lcgNonceLen = 8
+	lcgNonceLen = 12
 	lcgShift    = 33
 )
 
-// markerNonce returns a short DIGIT-ONLY token (8 digits) seeding a 64-bit LCG
-// from the current time. DIGITS ONLY, NOT LETTERS — the nonce must be OCR-READABLE:
-// measured live, tesseract reliably reads digits but CONFUSES similar random
-// letters (a `b` reads as `h`, a `q` as `g`), so a letter nonce makes the marker
-// line never match exactly and the command times out (the RCA behind switching
-// from letters to digits). A time-seeded LCG is ample: the token only needs to
-// differ from a marker left by a PREVIOUS run on the SAME screen, and this avoids
-// adding a crypto/rand dependency for a non-secret value. 10^6 values make a
-// cross-run collision on the same screen negligible.
+// markerNonce returns a DIGIT-ONLY token (lcgNonceLen digits) seeding a 64-bit
+// LCG from the current time. DIGITS ONLY, NOT LETTERS — the nonce must be
+// OCR-READABLE: measured live, tesseract reliably reads digits but CONFUSES
+// similar random letters (a `b` reads as `h`, a `q` as `g`), so a letter nonce
+// makes the marker line never match and the command times out (the RCA behind
+// switching from letters to digits). A time-seeded LCG is ample: the token only
+// needs to differ from a marker left by a PREVIOUS run on the SAME screen, and
+// this avoids adding a crypto/rand dependency for a non-secret value.
+//
+// LENGTH vs THE FUZZY MATCH: consoleHasMarkerLine tolerates up to
+// ConsoleMarkerMaxEditDistance OCR errors, so a stale marker could in principle
+// collide if its nonce differed from this run's in ≤ that many digits. With 12
+// digits the chance a given stale marker is within distance 2 is
+// ≈ (1 + 12·9 + C(12,2)·81)/10^12 ≈ 5.5e-9; even ~50 stale lines on screen keep
+// it below ~3e-7. (The nonce length is the knob that makes this negligible.)
 func markerNonce() string {
 	b := make([]byte, lcgNonceLen)
 	seed := uint64(time.Now().UnixNano())
