@@ -104,9 +104,7 @@ func TestAddCandyDeploymentVia_MergesReverseOps(t *testing.T) {
 // TestMergeReverseOps pins the helper's contract directly (dedup by content; a
 // no-op for an empty incoming set; nil-safe).
 func TestMergeReverseOps(t *testing.T) {
-	op := func(s string) spec.ReverseOp {
-		return spec.ReverseOp{Kind: spec.ReverseOpPluginScript, Extra: map[string]string{"script": s}}
-	}
+	op := func(s string) spec.ReverseOp { return spec.ReverseOp{Kind: spec.ReverseOpPluginScript, Extra: map[string]string{"script": s}} }
 
 	if got := MergeReverseOps(nil, nil); got != nil {
 		t.Fatalf("nil+nil must stay nil, got %+v", got)
