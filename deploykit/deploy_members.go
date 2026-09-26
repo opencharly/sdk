@@ -113,8 +113,21 @@ func BringUpMembers(ctx context.Context, node *spec.DeployNode, imageTag string)
 			}
 			specexec.WaitForContainerReady(memberKey)
 		default:
-			// kind:local member — applies candies in place during deploy add.
-			if err := proc.RunCharlySubcommandCtx(ctx, withMemberTag([]string{"deploy", "add", memberKey}, imageTag)...); err != nil {
+			// The external/in-place arm: kind:local members (applies candies in
+			// place) AND template-based external substrates that are neither a
+			// host-libvirt vm (IsVmVenue) nor a container venue — notably
+			// `kubevirt:`, whose venue is "kubevirt" (spec#168) and whose CR apply
+			// is owned by the substrate's own PrepareVenue. A template-based member
+			// must be brought up by `deploy add <member> <template-ref>` (its
+			// `from:`), exactly as the VM arm passes the vm-entity ref — a BARE
+			// `deploy add <member>` resolves the name box-first and fails for a
+			// non-image-bearing target. The template ref is passed only when the
+			// member declares one, so a plain kind:local member is unchanged.
+			addArgs := []string{"deploy", "add", memberKey}
+			if memberNode.From != "" {
+				addArgs = append(addArgs, memberNode.From)
+			}
+			if err := proc.RunCharlySubcommandCtx(ctx, withMemberTag(addArgs, imageTag)...); err != nil {
 				return fmt.Errorf("peer %q (deploy add): %w", memberKey, err)
 			}
 		}
