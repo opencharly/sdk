@@ -190,14 +190,14 @@ type ConsoleFlowResult struct {
 // every transition and Next names a real node, and bounds are positive. It is
 // PURE, so a malformed flow fails before any device session.
 func (f *ConsoleFlow) Validate() error {
+	if len(f.Nodes) == 0 {
+		return fmt.Errorf("console flow: at least one node is required")
+	}
 	if f.Start == "" {
 		return fmt.Errorf("console flow: start node is required")
 	}
 	if _, ok := f.Nodes[f.Start]; !ok {
 		return fmt.Errorf("console flow: start node %q is not defined", f.Start)
-	}
-	if len(f.Nodes) == 0 {
-		return fmt.Errorf("console flow: at least one node is required")
 	}
 	for id, n := range f.Nodes {
 		if c := consoleFlowActionCount(n.Action); c > 1 {

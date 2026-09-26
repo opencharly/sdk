@@ -249,10 +249,13 @@ func TestConsoleFlow_Validate(t *testing.T) {
 		f    *ConsoleFlow
 		want string
 	}{
+		{"no nodes", &ConsoleFlow{}, "at least one node"},
 		{"no start", &ConsoleFlow{Nodes: map[string]ConsoleFlowNode{"a": {}}}, "start node"},
 		{"undefined start", &ConsoleFlow{Start: "z", Nodes: map[string]ConsoleFlowNode{"a": {}}}, "not defined"},
 		{"bad transition", &ConsoleFlow{Start: "a", Nodes: map[string]ConsoleFlowNode{"a": {Transitions: map[string]string{"o": "missing"}}}}, "undefined node"},
 		{"empty match", &ConsoleFlow{Start: "a", Nodes: map[string]ConsoleFlowNode{"a": {Wait: []ConsoleFlowOutcome{{Name: "o"}}}}}, "neither an OCR match nor a reference"},
+		{"two actions", &ConsoleFlow{Start: "a", Nodes: map[string]ConsoleFlowNode{"a": {Action: ConsoleFlowAction{Key: "Return", Text: "hi"}}}}, "action fields"},
+		{"two actions combo+text", &ConsoleFlow{Start: "a", Nodes: map[string]ConsoleFlowNode{"a": {Action: ConsoleFlowAction{Combo: "ctrl+c", Text: "hi"}}}}, "action fields"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
