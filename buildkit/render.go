@@ -53,6 +53,40 @@ func (m CacheMount) String() string {
 	return spec.FormatCacheMount(m.Dst, m.Sharing, m.UID, m.GID)
 }
 
+// PkgName strips a version specifier from a package string, leaving the bare
+// package NAME. A candy pins an exact version in `distro: <d>. package:` so a
+// rebuilt upstream package invalidates the install layer (the RUN text
+// changes) — `name=version` on pac/apt/apk, `name-<version>-<rel>` on rpm.
+// The SAME `.Packages` list feeds the UNINSTALL template, where every package
+// manager wants the bare name (`pacman -Rs name=version` fails with "target
+// not found"; `apk del name=version` likewise). An uninstall_template renders
+// `{{pkgName .}}` so an install-side pin never breaks teardown. Only a suffix
+// that begins with a DIGIT is stripped, so a genuinely hyphenated name
+// (e.g. `foo-bar`) is left intact.
+//
+// Exported so non-template consumers share the ONE canonical strip
+// implementation (R3): deploykit's distroRepoProvidesPackage matches the bare
+// packaging.name against a pinned `distro: <d>. package:` entry, and the
+// `pkgName` template func points at this same function.
+func PkgName(s string) string {
+	if i := strings.IndexByte(s, '='); i >= 0 {
+		return s[:i]
+	}
+	// rpm form: name-<version>-<rel>. Only strip when the candidate suffix is
+	// VERSION-LIKE — starts with a digit and contains a dot — so a genuinely
+	// hyphenated name (e.g. `libfoo-2`, `gtk-3`) is left intact while
+	// `charly-2026.267.2134-1` is reduced to `charly`.
+	for i := 0; i < len(s); i++ {
+		if s[i] != '-' || i+1 >= len(s) || s[i+1] < '0' || s[i+1] > '9' {
+			continue
+		}
+		if strings.ContainsRune(s[i+1:], '.') {
+			return s[:i]
+		}
+	}
+	return s
+}
+
 // TemplateFuncs provides helper functions for format/builder templates. The cache-mount
 // funcs delegate to spec.RenderCacheMounts/RenderCacheMountsAuto (relocated to spec/spec,
 // #55 coneK3tasks) — buildkit imports spec, so the shared spec primitives are the single
@@ -129,33 +163,10 @@ var TemplateFuncs = template.FuncMap{
 	"hasPrefix": strings.HasPrefix,
 
 	// pkgName strips a version specifier from a package string, leaving the bare
-	// package NAME. A candy pins an exact version in `distro: <d>. package:` so a
-	// rebuilt upstream package invalidates the install layer (the RUN text
-	// changes) — `name=version` on pac/apt/apk, `name-<version>-<rel>` on rpm.
-	// The SAME `.Packages` list feeds the UNINSTALL template, where every package
-	// manager wants the bare name (`pacman -Rs name=version` fails with "target
-	// not found"; `apk del name=version` likewise). An uninstall_template renders
-	// `{{pkgName .}}` so an install-side pin never breaks teardown. Only a suffix
-	// that begins with a DIGIT is stripped, so a genuinely hyphenated name
-	// (e.g. `foo-bar`) is left intact.
-	"pkgName": func(s string) string {
-		if i := strings.IndexByte(s, '='); i >= 0 {
-			return s[:i]
-		}
-		// rpm form: name-<version>-<rel>. Only strip when the candidate suffix is
-		// VERSION-LIKE — starts with a digit and contains a dot — so a genuinely
-		// hyphenated name (e.g. `libfoo-2`, `gtk-3`) is left intact while
-		// `charly-2026.267.2134-1` is reduced to `charly`.
-		for i := 0; i < len(s); i++ {
-			if s[i] != '-' || i+1 >= len(s) || s[i+1] < '0' || s[i+1] > '9' {
-				continue
-			}
-			if strings.ContainsRune(s[i+1:], '.') {
-				return s[:i]
-			}
-		}
-		return s
-	},
+	// package NAME. Delegates to the exported PkgName — the single canonical
+	// strip implementation (R3) shared with non-template consumers such as
+	// deploykit.distroRepoProvidesPackage.
+	"pkgName": PkgName,
 
 	// anyRepoHasURL reports whether any repo entry declares a `url` key
 	// (i.e. needs `dnf5 config-manager addrepo`). Lets install_template
