@@ -72,8 +72,9 @@ func TestReplaceOrAppendManagedBlock(t *testing.T) {
 
 // TestRenderDownloadScript_EmptyToNoInstallD pins the fix for RCA 2026-09-26: an
 // `extract: sh` download (a self-installing script, e.g. helm's get-helm-3) carries no
-// `to:`, and the host renderer emitted `install -d -m0755 ''` — failing with
-// `install: cannot create directory ''`. A declared `to:` must still create its dir.
+// `to:`, and the host renderer emitted `install -d -m0755` with an EMPTY path — failing
+// with `install: cannot create directory` on that empty path. A declared `to:` must still
+// create its dir.
 func TestRenderDownloadScript_EmptyToNoInstallD(t *testing.T) {
 	sh := RenderDownloadScript(&spec.Op{Download: "https://example/get-tool.sh", Extract: "sh"}, nil)
 	if strings.Contains(sh, "install -d") {
