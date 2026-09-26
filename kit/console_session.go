@@ -126,23 +126,101 @@ func BuildCommandLine(command string, sudo bool, marker string) string {
 	return fmt.Sprintf("%s; echo %s", line, marker)
 }
 
-// consoleHasMarkerLine reports whether ANY line of the OCR text equals the marker
-// after trimming.
+// normalizeOCRForMarker removes every whitespace AND underscore character from s,
+// so a marker comparison survives OCR's separator noise. MEASURED (RCA):
+// tesseract both INSERTS spaces (`CHARLY DONE_798525_1_END`) and reads a SPACE
+// FOR an underscore (`CHARLY DONE` where the marker has `CHARLY_DONE`), so
+// removing only whitespace is not enough — the `_` separators must normalize
+// away on BOTH sides too. The result is still an EQUALITY test (see the echo
+// trap below), just on a canonicalized form.
+func normalizeOCRForMarker(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\r', '\n', '_':
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// ConsoleMarkerMaxEditDistance is how many OCR character errors a marker line may
+// differ from the marker and still count as a match. MEASURED (RCA): tesseract
+// misreads individual marker characters (`2`->`Z`, `b`->`h`, `q`->`g`), so an
+// exact comparison never matches a marker that IS on screen and the wait times
+// out non-deterministically on the same code. A small edit distance tolerates
+// those substitutions.
+const ConsoleMarkerMaxEditDistance = 2
+
+// consoleHasMarkerLine reports whether ANY line of the OCR text is (near-)EQUAL
+// to the marker — normalized for whitespace/underscore noise and within
+// ConsoleMarkerMaxEditDistance OCR-character errors.
 //
-// WHY AN EXACT-LINE MATCH, NOT A SUBSTRING (RCA, the echo trap): the terminal
-// ECHOES the typed line, which literally contains `echo <marker>` and therefore
-// the marker substring — so a substring test would pass the instant the command
-// was submitted, before it ran, certifying completion that never happened. The
-// echoed input line is the full command, so its trimmed text does NOT equal the
-// marker; only the shell's OWN output of `echo <marker>` produces a line whose
-// trimmed text IS exactly the marker. That is the real completion condition.
+// WHY A FUZZY-EQUALITY MATCH, NOT A SUBSTRING (RCA, the echo trap): the terminal
+// ECHOES the typed line, which contains `echo <marker>` plus the whole command —
+// so a substring test would pass the instant the command was submitted, before
+// it ran, certifying completion that never happened. The echoed line's normalized
+// text is far LONGER than the marker, so its edit distance from the marker is
+// large and it does NOT match; only the shell's OWN output of `echo <marker>`
+// yields a short line within the edit distance. A STALE marker from a previous
+// run differs by the whole nonce (well beyond the edit distance), so it does not
+// match either — the two properties together are the real completion condition.
 func consoleHasMarkerLine(text, marker string) bool {
+	want := normalizeOCRForMarker(marker)
 	for _, line := range strings.Split(text, "\n") {
-		if strings.TrimSpace(line) == marker {
+		got := normalizeOCRForMarker(line)
+		// Cheap length pre-filter: the echoed command line is far longer.
+		if d := len(got) - len(want); d > ConsoleMarkerMaxEditDistance || d < -ConsoleMarkerMaxEditDistance {
+			continue
+		}
+		if editDistanceAtMost(got, want, ConsoleMarkerMaxEditDistance) {
 			return true
 		}
 	}
 	return false
+}
+
+// editDistanceAtMost reports whether the Levenshtein distance between a and b is
+// at most max. It is a bounded, early-exit variant (band of width max around the
+// diagonal) sufficient for short marker strings.
+func editDistanceAtMost(a, b string, max int) bool {
+	la, lb := len(a), len(b)
+	if la-lb > max || lb-la > max {
+		return false
+	}
+	prev := make([]int, lb+1)
+	cur := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		cur[0] = i
+		rowMin := cur[0]
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min3(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+			if cur[j] < rowMin {
+				rowMin = cur[j]
+			}
+		}
+		if rowMin > max {
+			return false
+		}
+		prev, cur = cur, prev
+	}
+	return prev[lb] <= max
+}
+
+func min3(a, b, c int) int {
+	if b < a {
+		a = b
+	}
+	if c < a {
+		a = c
+	}
+	return a
 }
 
 // NextMarker returns the next completion marker for this session. It carries a
@@ -165,23 +243,26 @@ const (
 	lcgMultiplier = 6364136223846793005
 	lcgIncrement  = 1442695040888963407
 	// lcgNonceLen is the nonce length and lcgShift selects a high, well-mixed
-	// slice of the LCG state for a near-uniform 0..25 index.
+	// slice of the LCG state for a near-uniform 0..9 index.
 	lcgNonceLen = 8
 	lcgShift    = 33
 )
 
-// markerNonce returns a short OCR-safe token (8 lowercase letters) seeding a
-// 64-bit LCG from the current time. A time-seeded LCG is ample here: the token
-// only needs to differ from a marker left by a PREVIOUS run on the SAME screen,
-// and this avoids adding a crypto/rand dependency to the SDK for a non-secret
-// value. Collisions within one screen are effectively impossible (26^8).
+// markerNonce returns a short DIGIT-ONLY token (6 digits) seeding a 64-bit LCG
+// from the current time. DIGITS ONLY, NOT LETTERS — the nonce must be OCR-READABLE:
+// measured live, tesseract reliably reads digits but CONFUSES similar random
+// letters (a `b` reads as `h`, a `q` as `g`), so a letter nonce makes the marker
+// line never match exactly and the command times out (the RCA behind switching
+// from letters to digits). A time-seeded LCG is ample: the token only needs to
+// differ from a marker left by a PREVIOUS run on the SAME screen, and this avoids
+// adding a crypto/rand dependency for a non-secret value. 10^6 values make a
+// cross-run collision on the same screen negligible.
 func markerNonce() string {
-	const alphabet = "abcdefghijklmnopqrstuvwxyz"
 	b := make([]byte, lcgNonceLen)
 	seed := uint64(time.Now().UnixNano())
 	for i := range b {
 		seed = seed*lcgMultiplier + lcgIncrement
-		b[i] = alphabet[(seed>>lcgShift)%26]
+		b[i] = byte('0' + (seed>>lcgShift)%10)
 	}
 	return string(b)
 }
@@ -295,13 +376,18 @@ func (s *ConsoleSession) RunCommand(ctx context.Context, c ConsoleCommand) (Cons
 // embedded in the echoed input. No marker-bearing line survives into Output; a
 // line without the marker (real output) is kept.
 func stripCommandEcho(text, marker string) string {
+	want := normalizeOCRForMarker(marker)
 	lines := strings.Split(text, "\n")
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if strings.Contains(line, marker) {
+		// Normalize whitespace before the containment test, so an OCR-inserted
+		// space (`CHARLY DONE_...`) still matches the marker and the echo line is
+		// stripped (otherwise the echoed command text survives into Output and can
+		// satisfy a caller's Expect — the echo trap in its Expect form).
+		if strings.Contains(normalizeOCRForMarker(line), want) {
 			continue
 		}
 		out = append(out, line)
