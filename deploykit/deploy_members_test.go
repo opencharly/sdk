@@ -24,21 +24,25 @@ import (
 func vmNode(from string) *spec.DeployNode {
 	// A host-libvirt vm: the ssh venue AND the ExclusiveVenue host-lease trait (the
 	// traits table declares both for vm). A kubevirt node shares the ssh venue but
-	// omits ExclusiveVenue and is deliberately NOT a libvirt member.
-	return &spec.DeployNode{From: from, Descent: &spec.DescentDescriptor{Venue: "ssh", ExclusiveVenue: true}}
+	// omits ExclusiveVenue and is deliberately NOT a libvirt member. Stamped through the
+	// REAL derivation (spec.DescentFromTraits) so the descriptor carries the DERIVED
+	// Transport the venue predicates read (SshVenue reads transport, not the venue token),
+	// exactly as the loader's StampDescent produces it — a hand-built DescentDescriptor
+	// carrying only Venue would omit Transport and misclassify the node.
+	return &spec.DeployNode{From: from, Descent: spec.DescentFromTraits(&spec.DeployTraits{Venue: "ssh", MachineVenue: true, ExclusiveVenue: true, BedTarget: true})}
 }
 
 // kubevirtNode models the OTHER ssh-venue substrate: kubevirt (no ExclusiveVenue).
 func kubevirtNode() *spec.DeployNode {
-	return &spec.DeployNode{Descent: &spec.DescentDescriptor{Venue: "ssh"}}
+	return &spec.DeployNode{Descent: spec.DescentFromTraits(&spec.DeployTraits{Venue: "kubevirt", ImageBacked: true, BedTarget: true})}
 }
 
 func podNode() *spec.DeployNode {
-	return &spec.DeployNode{Descent: &spec.DescentDescriptor{Venue: "container"}}
+	return &spec.DeployNode{Descent: spec.DescentFromTraits(&spec.DeployTraits{Venue: "container"})}
 }
 
 func localNode() *spec.DeployNode {
-	return &spec.DeployNode{Descent: &spec.DescentDescriptor{Venue: "shell", HostRooted: true}}
+	return &spec.DeployNode{Descent: spec.DescentFromTraits(&spec.DeployTraits{Venue: "shell"})}
 }
 
 // TestIsVmVenue_IsContainerVenue covers the routing predicates BringUpMembers/TearDownMembers
@@ -54,7 +58,7 @@ func TestIsVmVenue_IsContainerVenue(t *testing.T) {
 		t.Errorf("an ssh-venue node WITH the ExclusiveVenue trait should be a vm member")
 	}
 	if deploy.IsVmVenue(kubevirtNode()) {
-		t.Errorf("a kubevirt node (ssh venue, NO ExclusiveVenue) must NOT be a vm member")
+		t.Errorf("a kubevirt node (its own kubevirt venue, NO ExclusiveVenue) must NOT be a vm member")
 	}
 	if deploy.IsVmVenue(podNode()) || deploy.IsVmVenue(localNode()) {
 		t.Errorf("container/local venue nodes should NOT be vm members")

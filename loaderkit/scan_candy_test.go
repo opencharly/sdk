@@ -31,6 +31,44 @@ func TestScanInlineCandy_AgentProvideAndTerminalProfiles(t *testing.T) {
 	}
 }
 
+// TestScanInlineCandy_PluginRequires proves populateFromYAML carries the authored
+// `plugin.requires:` list onto CandyView, the SAME way it carries the plugin's source +
+// providers. Without the projection the field is inert: the resolved view (the surface the
+// host's requires gate reads) would expose a plugin's providers but never its declared
+// inter-plugin dependencies. The wrap-time half is
+// TestSpecCandyAdapter_GetPluginRequires in sdk/deploykit.
+func TestScanInlineCandy_PluginRequires(t *testing.T) {
+	ly := &spec.CandyYAML{
+		Name: "req-candy",
+		Plugin: &spec.Plugin{
+			Source:    "github.com/opencharly/plugin-example/candy/plugin-example",
+			Providers: []spec.PluginCapability{"verb:example"},
+			Requires: []spec.PluginRequirement{
+				{Capability: "command:generate:box", Source: "github.com/opencharly/plugin-build/candy/plugin-build"},
+				{Capability: "verb:enc", Optional: true},
+			},
+		},
+	}
+
+	_, v, _ := ScanInlineCandy("req-candy", t.TempDir(), ly)
+
+	if !v.IsPlugin {
+		t.Fatal("CandyView.IsPlugin = false for a candy with a plugin: block, want true")
+	}
+	if len(v.PluginProviders) != 1 || v.PluginProviders[0] != "verb:example" {
+		t.Errorf("CandyView.PluginProviders = %v, want [verb:example]", v.PluginProviders)
+	}
+	if len(v.PluginRequires) != 2 {
+		t.Fatalf("CandyView.PluginRequires = %v, want 2 entries (the missing projection leaves it empty)", v.PluginRequires)
+	}
+	if got := v.PluginRequires[0]; got.Capability != "command:generate:box" || got.Source != "github.com/opencharly/plugin-build/candy/plugin-build" {
+		t.Errorf("PluginRequires[0] = %+v, want {Capability: command:generate:box, Source: github.com/opencharly/plugin-build/candy/plugin-build}", got)
+	}
+	if got := v.PluginRequires[1]; got.Capability != "verb:enc" || !got.Optional {
+		t.Errorf("PluginRequires[1] = %+v, want {Capability: verb:enc, Optional: true}", got)
+	}
+}
+
 // TestPopulateCandyApk (relocated from charly/apk_format_test.go, #55 K3 Cone 4) verifies the
 // candy manifest `apk:` field flows through the scan pipeline onto the resulting
 // spec.CandyReader.

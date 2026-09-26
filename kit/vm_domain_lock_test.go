@@ -16,10 +16,13 @@ import (
 // domain. Moved from charly/bed_vm_domain_test.go (CHECK-wave bed-session spike) — this package's
 // BedVmDomains reads node.Descent directly (no registry fallback for a synthetic node), so every
 // fixture here stamps Descent explicitly, exactly as the loader's StampDescent would for the real
-// compiled-in substrate kinds (vm: Venue "ssh"; pod/group: no ssh venue).
+// compiled-in substrate kinds (vm: the ssh venue + ExclusiveVenue; pod/group: no ssh venue).
 func TestBedVmDomains(t *testing.T) {
-	vmDescent := &spec.DescentDescriptor{Venue: "ssh", ExclusiveVenue: true}
-	podDescent := &spec.DescentDescriptor{Venue: "container"}
+	// Stamped through the REAL derivation (spec.DescentFromTraits), so each descriptor carries
+	// the DERIVED Transport the venue predicates read (SshVenue reads transport, not the venue
+	// token) — exactly as the loader's StampDescent produces it.
+	vmDescent := spec.DescentFromTraits(&spec.DeployTraits{Venue: "ssh", MachineVenue: true, ExclusiveVenue: true, BedTarget: true})
+	podDescent := spec.DescentFromTraits(&spec.DeployTraits{Venue: "container"})
 
 	// Direct vm bed: the domain is charly-<bed-name>, NOT charly-<entity>.
 	if got := BedVmDomains("check-k3s-vm", spec.DeployNode{Target: "vm", From: "k3s-vm", Descent: vmDescent}); !reflect.DeepEqual(got, []string{"charly-check-k3s-vm"}) {
