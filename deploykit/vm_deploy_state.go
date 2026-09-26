@@ -99,6 +99,19 @@ func saveVmStateInto(dc *DeployConfig, deployName, vmEntity string, state *spec.
 		entry.VmState.Ephemeral = priorEphemeral
 	}
 	dc.Deploy[deployName] = entry
+
+	// Legacy overylay-data cutover (one-touch, the pattern the retired
+	// PruneStaleVmDottedTwin used): a pre-cutover overlay keyed THIS deploy's
+	// per-host state under the dashed "vm:"+VmDomainIdentity(identity) canonical key.
+	// Nothing writes that key now, and the identity-keyed lookups
+	// (VmStateFromDeployConfig/ResolveVmSshPort) can never read it, so it would sit
+	// orphaned — a stale duplicate carrying the old ssh_port/instance-id. Drop it on
+	// the next write for this identity: the identity entry above is now canonical. The
+	// old WRITE was also the one that left raw dotted twins; those already share the
+	// NEW identity key's shape, so re-writing at the identity key overwrites them.
+	if legacy := "vm:" + spec.VmDomainIdentity(deployName); legacy != deployName {
+		delete(dc.Deploy, legacy)
+	}
 }
 
 // RemoveVmDeployEntry strips deploy.<deployName> from charly.yml. save is the SAME injected

@@ -207,6 +207,43 @@ func TestSaveVmDeployState_NamespacedIdentityKeyRoundTrips(t *testing.T) {
 	}
 }
 
+// TestSaveVmDeployState_PrunesLegacyDashedCanonicalKey pins the legacy-DATA cutover: a
+// pre-cutover overlay keyed the same deploy's per-host state under the DASHED
+// "vm:"+VmDomainIdentity(identity) canonical key. The identity-keyed write must drop that
+// orphan on the next write (it can never be read again) without touching unrelated entries.
+func TestSaveVmDeployState_PrunesLegacyDashedCanonicalKey(t *testing.T) {
+	save := newFakeVmDeployStateHost(t)
+
+	const identity = "charly.check-k3s-vm"
+	const legacy = "vm:charly-check-k3s-vm" // "vm:" + VmDomainIdentity("charly.check-k3s-vm")
+	if identity == legacy || spec.VmDomainIdentity(identity) != "charly-check-k3s-vm" {
+		t.Fatalf("test assumption broken: legacy key derivation for %q", identity)
+	}
+	// Seed a pre-cutover overlay: the old canonical (dashed) key + an unrelated deploy.
+	if err := save(&DeployConfig{Deploy: map[string]DeployNode{
+		legacy:         {Target: "vm", From: "k3s-vm", VmState: &spec.VmDeployState{SSHPort: 33799}},
+		"other-deploy": {Image: "x"},
+	}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := SaveVmDeployState(identity, "k3s-vm", &spec.VmDeployState{SSHPort: 33799}, save, nil); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	dc, err := LoadDeployConfig()
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if _, ok := dc.Deploy[legacy]; ok {
+		t.Errorf("legacy dashed key %q survived the identity write; keys=%v", legacy, keysOfDeploy(dc.Deploy))
+	}
+	if _, ok := dc.Deploy[identity]; !ok {
+		t.Errorf("identity %q missing after write; keys=%v", identity, keysOfDeploy(dc.Deploy))
+	}
+	if _, ok := dc.Deploy["other-deploy"]; !ok {
+		t.Errorf("unrelated deploy was pruned; keys=%v", keysOfDeploy(dc.Deploy))
+	}
+}
+
 func keysOfDeploy(m map[string]DeployNode) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
