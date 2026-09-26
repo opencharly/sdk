@@ -75,13 +75,10 @@ func saveVmStateInto(dc *DeployConfig, deployName, vmEntity string, state *spec.
 	// AND so teardown can resolve a deploy-keyed entry back to its VM entity. The
 	// explicit vmEntity is the canonical mapping the caller resolved
 	// (e.g. check-k3s-vm → k3s-vm); the legacy `vm:<entity>` key derivation is
-	// RETIRED (a key is an identity, never an entity carrier). PRESERVE the existing
-	// entry.From when the caller passes neither (never clobber a known cross-ref).
-	switch {
-	case vmEntity != "":
+	// RETIRED (a key is an identity, never an entity carrier). An empty vmEntity
+	// leaves the existing entry.From untouched (never clobber a known cross-ref).
+	if vmEntity != "" {
 		entry.From = vmEntity
-	case entry.From != "":
-		// keep the known cross-ref
 	}
 	// Ephemeral-registration ordering contract (RCA #7, FINAL/K5 unit 6a, live-probe-caught):
 	// registerEphemeralIfMarked persists .VmState.Ephemeral under THIS SAME canonical key BEFORE

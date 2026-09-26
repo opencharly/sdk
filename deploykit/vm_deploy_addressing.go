@@ -1,6 +1,8 @@
 package deploykit
 
 import (
+	"strings"
+
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
@@ -66,12 +68,16 @@ func VmDeployEntryKeys(dc *DeployConfig, deployName string) []string {
 		}
 	}
 	add(deployName)
-	// Direct `charly vm destroy <entity>`: the argument is a VM ENTITY, not a deploy
-	// identity, so scan for every entry whose `vm:` cross-ref names it. A deploy-identity
-	// teardown passes the identity and takes the literal-key path only.
-	for key, entry := range dc.Deploy {
-		if entry.From == deployName {
-			add(key)
+	// The From-scan applies ONLY to the direct `charly vm destroy` path, whose argument is the
+	// `vm:<entity>` ADDRESSING form (plugin-vm builds "vm:"+domainID). A deploy-identity teardown
+	// passes a plain identity (no `vm:` prefix) and takes the literal-key path ONLY, so an
+	// identity that happens to equal another entry's `vm:` cross-ref can never over-match and
+	// delete that sibling's entry. Gating on the prefix makes this comment true of the code.
+	if entity, ok := strings.CutPrefix(deployName, "vm:"); ok {
+		for key, entry := range dc.Deploy {
+			if entry.From == entity {
+				add(key)
+			}
 		}
 	}
 	return keys

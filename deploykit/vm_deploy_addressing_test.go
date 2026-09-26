@@ -54,17 +54,31 @@ func TestVmDeployEntryKeys(t *testing.T) {
 		"check-other-vm": {Target: "vm", From: "other-vm"},
 	}}
 
-	t.Run("entity argument resolves the deploy-keyed entry via the From cross-ref", func(t *testing.T) {
-		keys := VmDeployEntryKeys(dc, "k3s-vm")
+	t.Run("vm:-addressed entity resolves the deploy-keyed entry via the From cross-ref", func(t *testing.T) {
+		keys := VmDeployEntryKeys(dc, "vm:k3s-vm")
 		if len(keys) != 1 || keys[0] != "check-k3s-vm" {
-			t.Errorf("VmDeployEntryKeys(k3s-vm) = %v, want [check-k3s-vm]", keys)
+			t.Errorf("VmDeployEntryKeys(vm:k3s-vm) = %v, want [check-k3s-vm]", keys)
 		}
 	})
 
-	t.Run("deploy identity takes the literal-key path", func(t *testing.T) {
+	t.Run("deploy identity takes the literal-key path only (never the From-scan)", func(t *testing.T) {
 		keys := VmDeployEntryKeys(dc, "check-k3s-vm")
 		if len(keys) != 1 || keys[0] != "check-k3s-vm" {
 			t.Errorf("VmDeployEntryKeys(check-k3s-vm) = %v, want [check-k3s-vm]", keys)
+		}
+	})
+
+	t.Run("a deploy identity equal to ANOTHER entry's cross-ref does not over-match", func(t *testing.T) {
+		// The over-match defect: a deploy whose IDENTITY happens to equal a sibling's `vm:`
+		// cross-ref must NOT delete that sibling. The scan is gated on the `vm:` addressing
+		// prefix, so a plain identity takes the literal-key path only.
+		ov := &DeployConfig{Deploy: map[string]DeployNode{
+			"k3s-vm":         {Target: "vm", From: "k3s-vm"}, // a deploy literally named k3s-vm
+			"check-other-vm": {Target: "vm", From: "k3s-vm"}, // sibling whose vm: names k3s-vm
+		}}
+		keys := VmDeployEntryKeys(ov, "k3s-vm")
+		if len(keys) != 1 || keys[0] != "k3s-vm" {
+			t.Errorf("VmDeployEntryKeys(k3s-vm) = %v, want [k3s-vm] — must not over-match the sibling", keys)
 		}
 	})
 

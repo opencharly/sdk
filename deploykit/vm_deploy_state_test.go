@@ -158,9 +158,10 @@ func TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry(t *testing.T) {
 		t.Fatalf("seed entry missing vm: cross-ref (teardown linkage): got %q", seeded.From)
 	}
 
-	// The DIRECT `charly vm destroy k3s-vm` path reaches RemoveVmDeployEntry with the ENTITY (not
-	// the deploy identity the entry was written under). The From-scan bridges the gap.
-	if err := RemoveVmDeployEntry("k3s-vm", save, nil); err != nil {
+	// The DIRECT `charly vm destroy` path reaches RemoveVmDeployEntry with the `vm:<entity>`
+	// ADDRESSING form — NOT the deploy identity the entry was written under. The From-scan
+	// bridges the gap only for that prefixed form.
+	if err := RemoveVmDeployEntry("vm:k3s-vm", save, nil); err != nil {
 		t.Fatalf("RemoveVmDeployEntry: %v", err)
 	}
 
