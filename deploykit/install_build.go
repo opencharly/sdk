@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk"
+	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -245,10 +246,28 @@ func distroRepoProvidesPackage(layer CandyModel, img *ResolvedBox, pkgName strin
 		if cfg == nil {
 			continue
 		}
-		if !slices.Contains(cfg.Package, pkgName) {
+		if !packageListProvides(cfg.Package, pkgName) {
 			continue
 		}
 		if len(toMapSlice(cfg.Raw["repo"])) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// packageListProvides reports whether any entry in a `distro: <d>. package:`
+// list names the BARE package pkgName, tolerating an exact-version pin. The
+// list may carry `name=version` (pac/apt/apk) or `name-<version>-<rel>` (rpm)
+// to invalidate the install layer on an upstream rebuild; a plain
+// slices.Contains against the bare name would then miss and defeat the
+// localpkg skip (double-install, the second unpinned). Both sides are reduced
+// through buildkit.PkgName — the ONE canonical strip (R3), the same helper the
+// `{{pkgName .}}` render func uses.
+func packageListProvides(packages []string, pkgName string) bool {
+	bare := buildkit.PkgName(pkgName)
+	for _, p := range packages {
+		if buildkit.PkgName(p) == bare {
 			return true
 		}
 	}
