@@ -388,3 +388,102 @@ func TestConsoleSession_EchoStrippedFromOutput(t *testing.T) {
 		t.Fatalf("the real output must be retained: %q", res.Output)
 	}
 }
+
+// TestConsoleSession_StaleMarkerDoesNotComplete is the RCA regression: a marker
+// from a PREVIOUS run left in the scrollback must NOT satisfy this run's wait —
+// otherwise the wait completes on the stale echo before the command runs. It
+// DRIVES RunCommand over a transport whose screen always shows a stale marker
+// line, and asserts the run does NOT complete on it (it times out instead).
+func TestConsoleSession_StaleMarkerDoesNotComplete(t *testing.T) {
+	// A transport that always shows a stale marker line from an OLD run, plus the
+	// echo of the just-typed command (which also carries the CURRENT marker).
+	tr := &staleMarkerTransport{fakeTransport: &fakeTransport{}, stale: "CHARLY_DONE_1_END"}
+	s := &ConsoleSession{
+		Transport:    tr,
+		OCR:          func(png []byte) (string, error) { return string(png), nil },
+		PollInterval: time.Millisecond,
+	}
+	_, err := s.RunCommand(context.Background(), ConsoleCommand{Command: "id", TimeoutSec: 1})
+	if err == nil {
+		t.Fatal("a command must NOT complete on a stale marker line from a previous run")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("want a timeout (the stale marker is not this run's completion), got %v", err)
+	}
+}
+
+// TestConsoleSession_MarkerUniquenessAcrossSessions pins the mechanism: two
+// sessions' markers differ, markers within one session differ, and a marker is
+// OCR-safe.
+func TestConsoleSession_MarkerUniquenessAcrossSessions(t *testing.T) {
+	a := &ConsoleSession{}
+	b := &ConsoleSession{}
+	if a.NextMarker() == b.NextMarker() {
+		t.Fatalf("markers from two sessions must differ (stale-echo guard): %q", a.NextMarker())
+	}
+	if a.NextMarker() == a.NextMarker() {
+		t.Fatal("markers within a session must differ")
+	}
+	for _, r := range a.NextMarker() {
+		ok := r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !ok {
+			t.Fatalf("marker has a non-OCR-safe char %q", r)
+		}
+	}
+	// The per-session NONCE must be DIGITS ONLY — tesseract confuses similar
+	// random letters (b->h, q->g), which would make the marker line never match
+	// exactly (the live RCA). The marker shape is CHARLY_DONE_<digits>_<n>_END.
+	parts := strings.Split(a.NextMarker(), "_")
+	if len(parts) < 4 || parts[2] == "" {
+		t.Fatalf("marker shape unexpected: %q", a.NextMarker())
+	}
+	for _, r := range parts[2] {
+		if r < '0' || r > '9' {
+			t.Fatalf("the nonce must be digits-only for OCR robustness, got %q in %q", r, parts[2])
+		}
+	}
+}
+
+// staleMarkerTransport always shows a fixed stale marker line (an old run's
+// leftover) and echoes the typed line, so a wait keyed on the marker alone would
+// complete on the stale line. The current marker (carrying a fresh nonce) never
+// appears as an exact line, so the wait must time out.
+type staleMarkerTransport struct {
+	*fakeTransport
+	stale string
+}
+
+func (t *staleMarkerTransport) Capture(context.Context) ([]byte, error) {
+	line := ""
+	if len(t.types) > 0 {
+		line = t.types[len(t.types)-1] // the echoed (typed) line
+	}
+	return []byte("user@host ~ $ " + line + "\nold output\n" + t.stale + "\n"), nil
+}
+
+var _ ConsoleTransport = (*staleMarkerTransport)(nil)
+
+// TestConsoleHasMarkerLine_WhitespaceNoise is the live RCA regression: tesseract
+// inserts whitespace inside a token (`CHARLY DONE_798525_1_END`, `CHARLY_DONE_
+// xpghugbf _1_END`), so a pixel-exact comparison never matches a marker that IS
+// on screen. The comparison must normalize whitespace — while STILL being an
+// equality test (an echoed command line, which contains the marker plus more,
+// must NOT match).
+func TestConsoleHasMarkerLine_WhitespaceNoise(t *testing.T) {
+	marker := "CHARLY_DONE_79852531_1_END"
+	for _, noisy := range []string{
+		"CHARLY_DONE_79852531_1_END",
+		"CHARLY DONE_79852531_1_END",   // space for underscore
+		"CHARLY_DONE_ 79852531_1_END",  // stray space
+		"CHARLY_DONE_79852531 _1_END",  // space before the counter
+		" CHARLY_DONE_79852531_1_END ", // surrounding whitespace
+	} {
+		if !consoleHasMarkerLine(noisy, marker) {
+			t.Errorf("marker with OCR whitespace noise must match: %q", noisy)
+		}
+	}
+	// The echoed command line contains the marker but is NOT equal to it.
+	if consoleHasMarkerLine("user@host ~ $ id; echo CHARLY_DONE_79852531_1_END", marker) {
+		t.Fatal("the echoed command line must NOT match (the echo trap)")
+	}
+}
