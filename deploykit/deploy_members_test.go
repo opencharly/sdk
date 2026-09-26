@@ -157,6 +157,38 @@ func TestBringUpMembers_NoMembersNoop(t *testing.T) {
 	}
 }
 
+// TestBringUpMembers_DefaultArmPassesFromRef: a template-based external member
+// (kubevirt: venue, From set) must be brought up with its template ref
+// (`deploy add <member> <from>`), while a plain kind:local member (no From) stays
+// bare. The old bare-only form resolved the name box-first and FAILED for a
+// non-image-bearing target ("not found as a box or candy"). This is the coverage
+// that fails without the fix.
+func TestBringUpMembers_DefaultArmPassesFromRef(t *testing.T) {
+	orig := proc.RunCharlySubcommandCtx
+	defer func() { proc.RunCharlySubcommandCtx = orig }()
+	var calls [][]string
+	proc.RunCharlySubcommandCtx = func(_ context.Context, args ...string) error {
+		calls = append(calls, args)
+		return nil
+	}
+	kv := kubevirtNode()
+	kv.From = "check-kubevirt-vm-vmi"
+	node := &spec.DeployNode{Member: []spec.Member{
+		{Name: "guest", Position: spec.PositionDeployLevel, Node: kv},
+		{Name: "plain-local", Position: spec.PositionDeployLevel, Node: localNode()},
+	}}
+	if err := BringUpMembers(context.Background(), node, ""); err != nil {
+		t.Fatalf("BringUpMembers: %v", err)
+	}
+	want := [][]string{
+		{"deploy", "add", "guest", "check-kubevirt-vm-vmi"}, // template ref passed
+		{"deploy", "add", "plain-local"},                    // no From → bare
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("BringUpMembers calls = %v, want %v", calls, want)
+	}
+}
+
 // TestWithMemberTag covers the --tag appender BringUpMembers threads through every step.
 func TestWithMemberTag(t *testing.T) {
 	if got := withMemberTag([]string{"config", "x"}, ""); !reflect.DeepEqual(got, []string{"config", "x"}) {
