@@ -2,10 +2,7 @@ package deploykit
 
 import (
 	"context"
-	"fmt"
-	"os"
 
-	"github.com/opencharly/sdk/vmshared"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -64,23 +61,27 @@ func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, s
 // shape MutateDeployConfig requires and the reason the lock never has to span a caller's
 // orchestration.
 func saveVmStateInto(dc *DeployConfig, deployName, vmEntity string, state *spec.VmDeployState) {
+	// The per-host entry is keyed by the deploy IDENTITY (the same string the
+	// tree/config/CLI use) — no `vm:` prefix, no dot sanitization. The VM ENTITY
+	// the deploy targets is carried SEPARATELY in the entry's `vm:` cross-ref
+	// (entry.From), so teardown resolves the entity from the entry, never from a
+	// lossy key transform.
 	entry, exists := dc.Deploy[deployName]
 	if !exists {
 		entry = DeployNode{}
 	}
 	entry.Target = "vm"
-	// Persist the `vm:` cross-ref so the per-host entry is a well-formed deploy
-	// node AND so teardown can resolve a deploy-keyed entry back to its VM entity.
-	// Precedence: the explicit vmEntity (the canonical mapping the caller resolved,
-	// e.g. check-k3s-vm → k3s-vm) → a legacy "vm:<entity>" deployName prefix →
-	// PRESERVE the existing entry.From (never clobber a known cross-ref with "").
+	// Persist the `vm:` cross-ref so the per-host entry is a well-formed deploy node
+	// AND so teardown can resolve a deploy-keyed entry back to its VM entity. The
+	// explicit vmEntity is the canonical mapping the caller resolved
+	// (e.g. check-k3s-vm → k3s-vm); the legacy `vm:<entity>` key derivation is
+	// RETIRED (a key is an identity, never an entity carrier). PRESERVE the existing
+	// entry.From when the caller passes neither (never clobber a known cross-ref).
 	switch {
 	case vmEntity != "":
 		entry.From = vmEntity
-	default:
-		if vmName, perr := vmshared.VmNameFromDeployName(deployName); perr == nil {
-			entry.From = vmName
-		}
+	case entry.From != "":
+		// keep the known cross-ref
 	}
 	// Ephemeral-registration ordering contract (RCA #7, FINAL/K5 unit 6a, live-probe-caught):
 	// registerEphemeralIfMarked persists .VmState.Ephemeral under THIS SAME canonical key BEFORE
@@ -101,16 +102,6 @@ func saveVmStateInto(dc *DeployConfig, deployName, vmEntity string, state *spec.
 		entry.VmState.Ephemeral = priorEphemeral
 	}
 	dc.Deploy[deployName] = entry
-
-	// Self-healing prune (RCA #6, FINAL/K5 unit 6a): remove a stale dotted-key twin the
-	// now-eliminated dual-writer path left behind for THIS SAME domain in an existing overlay —
-	// nothing writes one anymore, but pre-fix overlays (real users', every bed record until now)
-	// still carry it, and it poisons every subsequent load (spec.ValidateDeploymentName's
-	// dot-rejection). One-touch cleanup on the next write for this domain — no new migration
-	// machinery.
-	if pruned := PruneStaleVmDottedTwin(dc, deployName); pruned != "" {
-		fmt.Fprintf(os.Stderr, "note: pruned a stale per-host overlay entry %q for domain %q — left by a prior version's now-eliminated dotted-key vm-state write (canonical entry: %q)\n", pruned, vmshared.VmDomainIdentity(deployName), deployName)
-	}
 }
 
 // RemoveVmDeployEntry strips deploy.<deployName> from charly.yml. save is the SAME injected

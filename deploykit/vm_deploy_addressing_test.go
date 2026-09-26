@@ -43,63 +43,10 @@ func TestResolveVmSshPort(t *testing.T) {
 // of charly/vm_deploy_state.go by FLOOR-SLIM Unit 3 (a pure *DeployConfig-shaped mechanism, not
 // LoadUnified-coupled).
 
-// TestPruneStaleVmDottedTwin is the regression test for a nested (dotted) deploy's per-host
-// vm_state that used to get written TWICE — once correctly under "vm:"+VmDomainIdentity(name),
-// once under the RAW dotted name — poisoning the overlay on every subsequent load.
-// PruneStaleVmDottedTwin is the pure self-healing scan the charly-side write path runs on every
-// write.
-func TestPruneStaleVmDottedTwin(t *testing.T) {
-	t.Run("removes a matching dotted twin", func(t *testing.T) {
-		dc := &DeployConfig{Deploy: map[string]DeployNode{
-			"check-sidecar-pod.check-sidecar-pod-ephvm":    {Target: "vm", VmState: &spec.VmDeployState{SSHPort: 45551}},
-			"vm:check-sidecar-pod-check-sidecar-pod-ephvm": {Target: "vm", VmState: &spec.VmDeployState{SSHPort: 33799}},
-		}}
-		got := PruneStaleVmDottedTwin(dc, "vm:check-sidecar-pod-check-sidecar-pod-ephvm")
-		if got != "check-sidecar-pod.check-sidecar-pod-ephvm" {
-			t.Errorf("PruneStaleVmDottedTwin() = %q, want the dotted twin's key", got)
-		}
-		if _, stillThere := dc.Deploy["check-sidecar-pod.check-sidecar-pod-ephvm"]; stillThere {
-			t.Error("dotted twin was not removed from dc.Deploy")
-		}
-		if _, canonical := dc.Deploy["vm:check-sidecar-pod-check-sidecar-pod-ephvm"]; !canonical {
-			t.Error("the canonical entry itself was wrongly removed")
-		}
-	})
-	t.Run("no twin present is a no-op", func(t *testing.T) {
-		dc := &DeployConfig{Deploy: map[string]DeployNode{
-			"vm:myapp": {Target: "vm"},
-		}}
-		if got := PruneStaleVmDottedTwin(dc, "vm:myapp"); got != "" {
-			t.Errorf("PruneStaleVmDottedTwin() = %q, want \"\" (nothing to prune)", got)
-		}
-	})
-	t.Run("does not over-match an unrelated dotted entry", func(t *testing.T) {
-		dc := &DeployConfig{Deploy: map[string]DeployNode{
-			"vm:myapp":                 {Target: "vm"},
-			"other-stack.other-member": {Target: "vm"}, // a DIFFERENT domain's dotted entry
-		}}
-		if got := PruneStaleVmDottedTwin(dc, "vm:myapp"); got != "" {
-			t.Errorf("PruneStaleVmDottedTwin() = %q, want \"\" (unrelated domain must survive)", got)
-		}
-		if _, survived := dc.Deploy["other-stack.other-member"]; !survived {
-			t.Error("unrelated dotted entry was wrongly pruned (over-match)")
-		}
-	})
-	t.Run("the canonical key itself is never pruned even though it is its own domain match", func(t *testing.T) {
-		dc := &DeployConfig{Deploy: map[string]DeployNode{
-			"vm:myapp": {Target: "vm"},
-		}}
-		PruneStaleVmDottedTwin(dc, "vm:myapp")
-		if _, ok := dc.Deploy["vm:myapp"]; !ok {
-			t.Error("the canonical entry was wrongly self-pruned")
-		}
-	})
-}
-
-// TestVmDeployEntryKeys exercises the `vm:`-form From-scan: a kind:check VM bed (e.g.
-// check-k3s-vm) writes its vm_state under the DEPLOY key (check-k3s-vm) cross-referencing the VM
-// ENTITY (k3s-vm). The scan lets the DIRECT `charly vm destroy k3s-vm` path (which builds
-// "vm:k3s-vm") still resolve the deploy-keyed entry via that cross-ref. The scan must not
+// TestVmDeployEntryKeys exercises the entity From-scan: a kind:check VM bed (e.g. check-k3s-vm)
+// writes its vm_state under the DEPLOY IDENTITY (check-k3s-vm) cross-referencing the VM ENTITY
+// (k3s-vm). The scan lets the DIRECT `charly vm destroy k3s-vm` path (which passes the ENTITY, not
+// a deploy identity) still resolve the deploy-keyed entry via that cross-ref. The scan must not
 // over-match an UNRELATED deploy.
 func TestVmDeployEntryKeys(t *testing.T) {
 	dc := &DeployConfig{Deploy: map[string]DeployNode{
@@ -107,23 +54,33 @@ func TestVmDeployEntryKeys(t *testing.T) {
 		"check-other-vm": {Target: "vm", From: "other-vm"},
 	}}
 
-	t.Run("vm:-prefixed entity resolves the deploy-keyed entry via the From cross-ref", func(t *testing.T) {
-		keys := VmDeployEntryKeys(dc, "vm:k3s-vm")
+	t.Run("entity argument resolves the deploy-keyed entry via the From cross-ref", func(t *testing.T) {
+		keys := VmDeployEntryKeys(dc, "k3s-vm")
 		if len(keys) != 1 || keys[0] != "check-k3s-vm" {
-			t.Errorf("VmDeployEntryKeys(vm:k3s-vm) = %v, want [check-k3s-vm]", keys)
+			t.Errorf("VmDeployEntryKeys(k3s-vm) = %v, want [check-k3s-vm]", keys)
 		}
 	})
 
-	t.Run("plain deploy name takes only the literal-key path (no scan, no over-match)", func(t *testing.T) {
+	t.Run("deploy identity takes the literal-key path", func(t *testing.T) {
 		keys := VmDeployEntryKeys(dc, "check-k3s-vm")
 		if len(keys) != 1 || keys[0] != "check-k3s-vm" {
 			t.Errorf("VmDeployEntryKeys(check-k3s-vm) = %v, want [check-k3s-vm]", keys)
 		}
 	})
 
+	t.Run("a namespaced identity key is literal", func(t *testing.T) {
+		nsdc := &DeployConfig{Deploy: map[string]DeployNode{
+			"charly.check-k3s-vm": {Target: "vm", From: "k3s-vm"},
+		}}
+		keys := VmDeployEntryKeys(nsdc, "charly.check-k3s-vm")
+		if len(keys) != 1 || keys[0] != "charly.check-k3s-vm" {
+			t.Errorf("VmDeployEntryKeys(charly.check-k3s-vm) = %v, want [charly.check-k3s-vm]", keys)
+		}
+	})
+
 	t.Run("unknown key resolves to nothing", func(t *testing.T) {
-		if keys := VmDeployEntryKeys(dc, "vm:nonexistent"); len(keys) != 0 {
-			t.Errorf("VmDeployEntryKeys(vm:nonexistent) = %v, want empty", keys)
+		if keys := VmDeployEntryKeys(dc, "nonexistent"); len(keys) != 0 {
+			t.Errorf("VmDeployEntryKeys(nonexistent) = %v, want empty", keys)
 		}
 	})
 }

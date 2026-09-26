@@ -1,10 +1,7 @@
 package deploykit
 
 import (
-	"strings"
-
 	"github.com/opencharly/sdk/kit"
-	"github.com/opencharly/sdk/vmshared"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -21,7 +18,8 @@ import (
 // ResolveVmSshPort picks the host-side SSH port forward, reusing the persisted vm_state.ssh_port
 // (idempotent across rebuilds) when ssh.port_auto is set. The project-config READ is the one
 // deploykit-coupled bit (LoadDeployConfigForRead over the per-host overlay); the
-// resolution/allocation decision itself is the shared kit.ResolveVmSshPort.
+// resolution/allocation decision itself is the shared kit.ResolveVmSshPort. The overlay entry is
+// keyed by the deploy IDENTITY (vmName), the same string the tree/config/CLI use.
 func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
 	if sp == nil {
 		// NIL-SPEC guard (the live-check panic RCA 2026-09-06): the check-live spec
@@ -41,7 +39,7 @@ func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
 		// plugin-process contract the deploy-vm's resolvePriorVmState already uses.
 		cfg := LoadDeployConfigForRead("charly vm ssh-port")
 		if cfg != nil {
-			if entry, ok := cfg.LookupKey("vm:" + vmName); ok && entry.VmState != nil && entry.VmState.SSHPort > 0 {
+			if entry, ok := cfg.LookupKey(vmName); ok && entry.VmState != nil && entry.VmState.SSHPort > 0 {
 				persisted = entry.VmState.SSHPort
 			}
 		}
@@ -49,35 +47,12 @@ func ResolveVmSshPort(sp *spec.ResolvedVm, vmName string) (int, error) {
 	return kit.ResolveVmSshPort(sp, vmName, persisted)
 }
 
-// PruneStaleVmDottedTwin removes and returns any OTHER dc.Deploy key that is a dotted deploy name
-// whose VmDomainIdentity sanitizes to the SAME domain identity as canonicalKey (also
-// VmDomainIdentity-sanitized) — the "stale twin" a prior version's now-eliminated dotted-key
-// vm-state write could leave behind: a nested (dotted) deploy's per-host state used to ALSO get
-// written under its raw, unsanitized name, racing the canonical "vm:"+VmDomainIdentity(name)-keyed
-// write, and poisoning the whole overlay on every subsequent load since a dotted key fails the
-// loader's deployment-name validation. Pulled out as its own pure function purely for
-// testability. Returns "" when no twin is found.
-func PruneStaleVmDottedTwin(dc *DeployConfig, canonicalKey string) string {
-	domainID := vmshared.VmDomainIdentity(canonicalKey)
-	for k := range dc.Deploy {
-		if k == canonicalKey || !strings.Contains(k, ".") {
-			continue
-		}
-		if vmshared.VmDomainIdentity(k) == domainID {
-			delete(dc.Deploy, k)
-			return k
-		}
-	}
-	return ""
-}
-
 // VmDeployEntryKeys resolves the per-host charly.yml deploy key(s) a VM teardown for deployName
-// targets. It handles the case where a deploy's name differs from its `vm:<X>` runtime-state key:
-// the literal-key delete + the `vm:`-form From-scan below remain for the DIRECT
-// `charly vm destroy <entity>` path and any legacy `vm:<name>` teardown key: they target the
-// literal deployName key AND — when deployName is "vm:<X>" — every deploy whose `vm:` cross-ref
-// names <X>. Because domain identities are unique and never equal an entity a sibling shares, the
-// From-scan can no longer over-match sibling beds during a deploy teardown.
+// targets: the deploy IDENTITY key (a VM deploy is keyed by its identity like every other
+// substrate), plus — for the DIRECT `charly vm destroy <entity>` path, whose argument is the VM
+// ENTITY not a deploy identity — every deploy whose `vm:` cross-ref names that entity. Domain
+// identities are unique and never equal an entity a sibling shares, so the From-scan cannot
+// over-match sibling beds during a deploy teardown.
 func VmDeployEntryKeys(dc *DeployConfig, deployName string) []string {
 	var keys []string
 	seen := map[string]bool{}
@@ -91,14 +66,12 @@ func VmDeployEntryKeys(dc *DeployConfig, deployName string) []string {
 		}
 	}
 	add(deployName)
-	// VmNameFromDeployName succeeds only for the prefixed "vm:<entity>" form; a
-	// plain-name deployName therefore takes the literal-key path only (no scan,
-	// so a non-prefixed name can never over-match unrelated bundles).
-	if entity, perr := vmshared.VmNameFromDeployName(deployName); perr == nil {
-		for key, entry := range dc.Deploy {
-			if entry.From == entity {
-				add(key)
-			}
+	// Direct `charly vm destroy <entity>`: the argument is a VM ENTITY, not a deploy
+	// identity, so scan for every entry whose `vm:` cross-ref names it. A deploy-identity
+	// teardown passes the identity and takes the literal-key path only.
+	for key, entry := range dc.Deploy {
+		if entry.From == deployName {
+			add(key)
 		}
 	}
 	return keys
