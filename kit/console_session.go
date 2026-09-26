@@ -248,7 +248,7 @@ const (
 	lcgShift    = 33
 )
 
-// markerNonce returns a short DIGIT-ONLY token (6 digits) seeding a 64-bit LCG
+// markerNonce returns a short DIGIT-ONLY token (8 digits) seeding a 64-bit LCG
 // from the current time. DIGITS ONLY, NOT LETTERS — the nonce must be OCR-READABLE:
 // measured live, tesseract reliably reads digits but CONFUSES similar random
 // letters (a `b` reads as `h`, a `q` as `g`), so a letter nonce makes the marker
