@@ -134,4 +134,5 @@ type CheckVerbProvider = spec.CheckVerbProvider
 // ResolvePackageName — lives in the spec contract module (spec/checkstep/checkstep.go,
 // #55 CHECK-ENGINE cone Option A) and is re-exported from
 // sdk/kit/check_step_descriptors.go so charly core's in-proc kitVerbAdapter references it
-// importing only spec while every candy call site compiles UNCHANGED. See that file.
+// importing only spec. A candy that NAMES the roles compiles against the same identifier;
+// the C7 re-signature is a hard cutover whose implementers follow producer-first. See that file.
