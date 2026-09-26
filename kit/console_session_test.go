@@ -487,3 +487,64 @@ func TestConsoleHasMarkerLine_WhitespaceNoise(t *testing.T) {
 		t.Fatal("the echoed command line must NOT match (the echo trap)")
 	}
 }
+
+// TestConsoleSession_SecondCommandIgnoresFirstMarker is the within-session
+// regression (from review): the FIRST command's marker is still on screen when
+// the SECOND runs. With a counter-only difference and a 2-error tolerance, the
+// second wait would match the first marker (`..._1_END` vs `..._2_END` = 1 edit)
+// and complete before the second command ran. A FRESH per-command nonce makes
+// consecutive markers differ by the whole 12 digits, so this must NOT happen.
+func TestConsoleSession_SecondCommandIgnoresFirstMarker(t *testing.T) {
+	tr := &twoMarkerTransport{fakeTransport: &fakeTransport{}}
+	s := &ConsoleSession{
+		Transport:    tr,
+		OCR:          func(png []byte) (string, error) { return string(png), nil },
+		PollInterval: time.Millisecond,
+	}
+	// First command completes normally.
+	if _, err := s.RunCommand(context.Background(), ConsoleCommand{Command: "echo one", TimeoutSec: 3}); err != nil {
+		t.Fatalf("first command: %v", err)
+	}
+	// Second command: the screen STILL shows the first command's marker line and
+	// never shows the second's (the transport stops echoing). It must TIMEOUT, not
+	// complete on the first marker.
+	tr.freeze = true
+	_, err := s.RunCommand(context.Background(), ConsoleCommand{Command: "echo two", TimeoutSec: 1})
+	if err == nil {
+		t.Fatal("the second command must NOT complete on the FIRST command's marker")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("want a timeout, got %v", err)
+	}
+}
+
+// twoMarkerTransport echoes the first command's marker forever; after freeze it
+// keeps showing that first marker and stops emitting new ones.
+type twoMarkerTransport struct {
+	*fakeTransport
+	freeze      bool
+	firstMarker string
+}
+
+func (t *twoMarkerTransport) Capture(context.Context) ([]byte, error) {
+	if t.freeze {
+		// Only the FIRST command's REAL marker (captured from its typed line)
+		// remains on screen — with a CACHED per-session nonce this is the marker
+		// the second wait would collide with.
+		return []byte("user@host ~ $ echo one\n" + t.firstMarker + "\n"), nil
+	}
+	typed := ""
+	if len(t.types) > 0 {
+		typed = t.types[len(t.types)-1]
+	}
+	marker := ""
+	if i := strings.LastIndex(typed, "echo "); i >= 0 {
+		marker = strings.TrimSpace(typed[i+len("echo "):])
+		if marker != "" {
+			t.firstMarker = marker
+		}
+	}
+	return []byte("user@host ~ $ " + typed + "\n" + marker + "\n"), nil
+}
+
+var _ ConsoleTransport = (*twoMarkerTransport)(nil)

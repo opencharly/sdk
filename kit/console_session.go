@@ -224,16 +224,23 @@ func min3(a, b, c int) int {
 }
 
 // NextMarker returns the next completion marker for this session. It carries a
-// per-session NONCE (a short random token) so a marker from a previous run left
-// in the scrollback cannot satisfy this run's wait — the stale-echo RCA. The
-// token is letters+digits only (OCR-safe); the counter disambiguates commands
-// within one session.
+// FRESH per-command nonce (a 12-digit token from a time-seeded LCG, DIGIT-ONLY
+// because tesseract misreads similar letters) so neither a marker from a previous
+// RUN nor an EARLIER COMMAND's marker (still on screen) can satisfy this command's
+// wait — the stale-echo RCAs. The counter is carried for evidence.
 func (s *ConsoleSession) NextMarker() string {
 	s.markerCounter++
-	if s.nonce == "" {
-		s.nonce = markerNonce()
-	}
-	return fmt.Sprintf("%s%s_%d_END", ConsoleMarkerPrefix, s.nonce, s.markerCounter)
+	// A FRESH nonce per command, NOT a cached per-session one. With the fuzzy
+	// matcher tolerating ConsoleMarkerMaxEditDistance errors, two markers that
+	// differ ONLY by their counter (`..._1_END` vs `..._2_END` = 1 edit) would
+	// collide: the wait for command N+1 would match command N's marker, still on
+	// screen — a within-session stale echo and the exact bug this marker scheme
+	// exists to prevent. A per-command nonce makes consecutive markers differ by
+	// the WHOLE nonce (12 digits), far beyond the tolerance, so an earlier
+	// command's marker can never satisfy a later command's wait. (Measured: the
+	// exact-match version did not have this hole; the fuzzy bound introduced it —
+	// RCA.)
+	return fmt.Sprintf("%s%s_%d_END", ConsoleMarkerPrefix, markerNonce(), s.markerCounter)
 }
 
 // The Linear Congruential Generator constants used by markerNonce. NAMED, not
@@ -389,11 +396,17 @@ func stripCommandEcho(text, marker string) string {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		// Normalize whitespace before the containment test, so an OCR-inserted
-		// space (`CHARLY DONE_...`) still matches the marker and the echo line is
-		// stripped (otherwise the echoed command text survives into Output and can
-		// satisfy a caller's Expect — the echo trap in its Expect form).
-		if strings.Contains(normalizeOCRForMarker(line), want) {
+		got := normalizeOCRForMarker(line)
+		// Strip the line when it CONTAINS the marker (the echoed command line:
+		// `cmd; echo MARKER`) — the echo trap in its Expect form. Normalized so an
+		// OCR-inserted space (`CHARLY DONE_...`) still matches.
+		if strings.Contains(got, want) {
+			continue
+		}
+		// ALSO strip a line the WAIT would have accepted as the marker line (a
+		// near-equal fuzzy match), so the two sides treat OCR noise identically and
+		// an accepted marker line can never survive into Output to satisfy Expect.
+		if editDistanceAtMost(got, want, ConsoleMarkerMaxEditDistance) {
 			continue
 		}
 		out = append(out, line)
