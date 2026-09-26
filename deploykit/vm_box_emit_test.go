@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,5 +138,43 @@ func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 	}
 	if got := string(out); got != "1\n" {
 		t.Errorf("emitted VM box image has %q layers, want 1 (the disk COPY)", got)
+	}
+}
+
+// TestRenderVmBoxContainerfilePaths pins the in-image path contract both callers depend
+// on: EmitVmBox writes /disk.qcow2 (the charly VM-box reader's path) and EmitVmBoxAt
+// writes whatever the caller names — for a KubeVirt containerDisk / Cua Fleet payload,
+// /disk/disk.img (the directory KubeVirt scans). Pure: no container engine.
+func TestRenderVmBoxContainerfilePaths(t *testing.T) {
+	meta := &spec.VmBoxMetadata{Version: "0.2026269.0"}
+	j, _ := json.Marshal(meta)
+
+	vmBox := renderVmBoxContainerfile("disk.qcow2", VmBoxDiskPath, j, meta)
+	if !strings.Contains(vmBox, "COPY disk.qcow2 /disk.qcow2\n") {
+		t.Errorf("the default VM-box render must COPY to %s; got:\n%s", VmBoxDiskPath, vmBox)
+	}
+	if strings.Contains(vmBox, ContainerDiskPath) {
+		t.Errorf("the default VM-box render must NOT carry the containerDisk path:\n%s", vmBox)
+	}
+
+	cd := renderVmBoxContainerfile("disk.img", ContainerDiskPath, j, meta)
+	if !strings.Contains(cd, "COPY disk.img /disk/disk.img\n") {
+		t.Errorf("the containerDisk render must COPY to %s; got:\n%s", ContainerDiskPath, cd)
+	}
+	if strings.Contains(cd, VmBoxDiskPath) {
+		t.Errorf("the containerDisk render must NOT carry the VM-box path:\n%s", cd)
+	}
+}
+
+// TestEmitVmBoxAtRejectsRelativePath — the in-image path is a container-absolute path; a
+// relative one would land relative to the container root only by buildah accident.
+func TestEmitVmBoxAtRejectsRelativePath(t *testing.T) {
+	meta := &spec.VmBoxMetadata{Version: "0.2026269.0"}
+	disk := filepath.Join(t.TempDir(), "d.qcow2")
+	if err := os.WriteFile(disk, []byte{1}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EmitVmBoxAt("podman", "localhost/x:t", meta, disk, "disk/disk.img"); err == nil {
+		t.Error("EmitVmBoxAt accepted a relative in-image path; it must be absolute")
 	}
 }
