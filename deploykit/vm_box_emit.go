@@ -95,7 +95,7 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 		return fmt.Errorf("EmitVmBox: nil metadata")
 	}
 	if !validInImagePath(inImagePath) {
-		return fmt.Errorf("EmitVmBox: in-image disk path %q must be a container-absolute path of [A-Za-z0-9._/+ -] (no whitespace or control characters)", inImagePath)
+		return fmt.Errorf("EmitVmBox: in-image disk path %q must be a container-absolute path of [A-Za-z0-9._/+-] (no whitespace or control characters)", inImagePath)
 	}
 	absDisk, err := filepath.Abs(diskPath)
 	if err != nil {
