@@ -236,7 +236,15 @@ func RenderDownloadScript(op *spec.Op, candyVars map[string]string) string {
 	}
 
 	fmt.Fprintf(&b, "curl -fL --retry 3 -o \"$ovtmp/archive\" %s\n", quotedURL)
-	fmt.Fprintf(&b, "install -d -m0755 %s\n", ShQuoteArg(to))
+	// Create the destination dir only when a destination is DECLARED. An `extract: sh`
+	// download (a self-installing script, e.g. helm's get-helm-3) carries no `to:` — the
+	// script installs itself. Emitting `install -d -m0755 ''` for that case fails with
+	// `install: cannot create directory ''` (RCA 2026-09-26, host-deploy renderer). The
+	// container emitter (deploykit.EmitDownload) likewise emits no `install -d` for
+	// extract=sh; only the archive branches need a destination dir.
+	if to != "" {
+		fmt.Fprintf(&b, "install -d -m0755 %s\n", ShQuoteArg(to))
+	}
 
 	strip := ""
 	if op.StripComponents > 0 {
