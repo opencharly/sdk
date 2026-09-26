@@ -9,7 +9,7 @@ import (
 // vm_deploy_state.go — the charly.yml persistence half of the former deploy_add_cmd_vm.go,
 // R3-relocated from charly/vm_deploy_state.go (F6 vm-lifecycle move, coneB-vmlifecycle): this is
 // SHARED deploy-state logic every deploy plugin (compiled-in or out-of-process) reaches, the same
-// class as VmDeployEntryKeys/PruneStaleVmDottedTwin/IsAutoVmDeployEntry (FLOOR-SLIM Unit 3), which
+// class as VmDeployEntryKeys/IsAutoVmDeployEntry (FLOOR-SLIM Unit 3), which
 // already live here operating on deploykit's own *DeployConfig.
 //
 // The plugin-primaries-coupled marshal callback (saveDeployConfigNodeForm) is NOT hoistable — the
