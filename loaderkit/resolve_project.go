@@ -161,13 +161,31 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 		seams.FillNamespacedBoxes(uf, initCfg, "", calver, dir, rp, map[*spec.UnifiedFile]bool{})
 	}
 
-	if uf != nil && len(uf.Deploy) > 0 {
-		// DeployNode is a type alias for spec.Deploy, so the folded deploy tree projects into the
+	if uf != nil {
+		// The envelope's deploy tree is every ADDRESSABLE deploy: the root file's own
+		// uf.Deploy PLUS the namespace-folded beds (`ns.name`, `nsA.nsB.name`) uf.Beds()
+		// walks. uf.Deploy alone holds only ROOT-level entries, so at a superproject whose
+		// beds live in imported namespaces (the umbrella root importing `charly/`) rp.Deploy
+		// was EMPTY and every qualified bed's check-live venue classification fell through to
+		// a container lookup (`container charly-charly.check-charly-vm is not running`) while
+		// the root unqualified beds worked. Beds() keys are qualified and never collide with a
+		// bare root key.
+		// DeployNode is a type alias for spec.Deploy, so the folded tree projects into the
 		// envelope's map[string]*Deploy directly (a per-iteration copy, addressed).
-		rp.Deploy = make(map[string]*spec.Deploy, len(uf.Deploy))
+		merged := make(map[string]*spec.Deploy, len(uf.Deploy))
 		for k, v := range uf.Deploy {
 			node := v
-			rp.Deploy[k] = &node
+			merged[k] = &node
+		}
+		for k, v := range uf.Beds() {
+			if _, ok := merged[k]; ok {
+				continue
+			}
+			node := v
+			merged[k] = &node
+		}
+		if len(merged) > 0 {
+			rp.Deploy = merged
 		}
 	}
 

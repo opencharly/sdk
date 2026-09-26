@@ -98,3 +98,49 @@ func TestProjectResolvedProject_InjectsInitDependsCandy(t *testing.T) {
 		t.Errorf("injected candy must lead the projected list, got %v", view.Candy)
 	}
 }
+
+// TestProjectResolvedProject_FoldsNamespacedBedsIntoDeploy pins the envelope's deploy tree to the
+// SAME namespace-folded set uf.Beds() walks. A superproject whose beds live in an IMPORTED
+// namespace (the umbrella root importing `charly/`) has an empty uf.Deploy at the root, so before
+// this fix rp.Deploy was empty and `charly check live <ns.bed>` from the umbrella root could not
+// classify the bed's venue — it fell through to a container lookup
+// (`container charly-charly.check-charly-vm is not running`). This test fails without the fold.
+func TestProjectResolvedProject_FoldsNamespacedBedsIntoDeploy(t *testing.T) {
+	disposable := true
+	uf := &spec.UnifiedFile{
+		Namespaces: map[string]*spec.UnifiedFile{
+			"charly": {
+				Deploy: map[string]spec.DeployNode{
+					"check-x-vm": {Target: "vm", Disposable: &disposable},
+				},
+			},
+		},
+	}
+	if len(uf.Deploy) != 0 {
+		t.Fatal("test assumption broken: root uf.Deploy must be empty (the fold is what populates rp.Deploy)")
+	}
+	dir := t.TempDir()
+	seams := ResolveProjectSeams{
+		ResolveBox: func(c *spec.Config, name, calver, d string) (*buildkit.ResolvedBox, error) {
+			return buildkit.ResolveBox(c, name, calver, d, buildkit.ResolveOpts{DistroCfg: &buildkit.DistroConfig{}, BuilderCfg: &buildkit.BuilderConfig{}})
+		},
+		FillNamespacedBoxes: func(*spec.UnifiedFile, *buildkit.InitConfig, string, string, string, *spec.ResolvedProject, map[*spec.UnifiedFile]bool) {
+		},
+		ResolveResources:      func(*spec.UnifiedFile) map[string]*spec.ResolvedResource { return nil },
+		ShouldIncludeDisabled: func(string) bool { return false },
+		ComputeIntermediates: func(boxes map[string]*buildkit.ResolvedBox, _ map[string]spec.CandyReader, _ *spec.Config, _ string) (map[string]*buildkit.ResolvedBox, error) {
+			return boxes, nil
+		},
+	}
+	rp, err := ProjectResolvedProject(&spec.Config{}, map[string]spec.CandyReader{}, uf, &buildkit.DistroConfig{}, &buildkit.BuilderConfig{}, &buildkit.InitConfig{}, dir, "2026.1.1", "2026.1.1", seams, nil, nil)
+	if err != nil {
+		t.Fatalf("ProjectResolvedProject: %v", err)
+	}
+	if _, ok := rp.Deploy["charly.check-x-vm"]; !ok {
+		keys := make([]string, 0, len(rp.Deploy))
+		for k := range rp.Deploy {
+			keys = append(keys, k)
+		}
+		t.Fatalf("namespaced bed absent from rp.Deploy; got keys %v", keys)
+	}
+}
