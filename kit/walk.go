@@ -209,14 +209,15 @@ func walkOp(ctx context.Context, exec DeployExecutor, step spec.InstallStepView)
 	// `download:` step guarded by `unless_exists:` ran unconditionally on a host where
 	// the tool was already installed (RCA 2026-09-26: layer-kubernetes' helm step, guarded
 	// on /usr/bin/helm, re-ran and failed on Arch where the package already provides it).
-	// The `run:` verb is the multi-line/heredoc shape → the Block form; every other verb
-	// renders one line → the inline form.
+	//
+	// The host venue runs the rendered command as a SCRIPT (RunSystem/RunUser), not a
+	// Containerfile RUN line, so the Block form (newline-terminated `{ list; }`) is always
+	// correct here — and is REQUIRED for the multi-line payloads (a `download:` script, a
+	// `write:` heredoc, a multi-line `run:` command). The inline `;` form is only safe for a
+	// complete single simple command and would corrupt a payload with a trailing newline
+	// (`…{ : ; <script>\n; }; fi` → `syntax error near unexpected token ';'`).
 	if guard := strings.TrimSpace(op.UnlessExists); guard != "" {
-		if op.Command != "" || op.Plugin == "command" {
-			cmd = WrapUnlessExistsBlock(cmd, guard, "run")
-		} else {
-			cmd = WrapUnlessExists(cmd, guard, "step")
-		}
+		cmd = WrapUnlessExistsBlock(cmd, guard, "step")
 	}
 	if err := runByScope(ctx, exec, step.Scope, cmd); err != nil {
 		return nil, err
