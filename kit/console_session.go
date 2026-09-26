@@ -82,9 +82,6 @@ type ConsoleSession struct {
 	Logger func(format string, args ...any)
 	// markerCounter disambiguates completion markers within a session.
 	markerCounter int
-	// nonce makes this session's markers unique against a stale marker left in
-	// the scrollback by a previous run (the stale-echo RCA).
-	nonce string
 }
 
 // ConsoleSessionDefaultTimeoutSec bounds one command's wait for its marker.
@@ -105,11 +102,12 @@ const ConsoleSudoPrompt = "password"
 // ConsoleMarkerPrefix identifies a completion marker on screen. It is chosen to
 // be OCR-distinguishable (letters + underscores, no symbols OCR confuses).
 //
-// The full marker carries a per-SESSION nonce after the prefix (see NextMarker).
-// WITHOUT the nonce, a marker from a PREVIOUS run left in the terminal scrollback
-// is a line equal to the current marker, so the wait completes on the STALE echo
-// before the command runs — the RCA behind a flow matching an old `CHARLY_DONE_1`
-// line still on screen. A unique token makes a stale marker unmatchable.
+// The full marker carries a FRESH PER-COMMAND nonce after the prefix (see
+// NextMarker). WITHOUT the nonce, a marker from a PREVIOUS run (or an earlier
+// command) left in the terminal scrollback is a line equal to the current marker,
+// so the wait completes on the STALE echo before the command runs — the RCA
+// behind a flow matching an old `CHARLY_DONE_1` line still on screen. A fresh
+// token makes both a stale and an earlier-command marker unmatchable.
 const ConsoleMarkerPrefix = "CHARLY_DONE_"
 
 // BuildCommandLine composes the line typed for a command: the command (prefixed
