@@ -516,6 +516,11 @@ func applyDeployState(dc *DeployConfig, boxName, instance string, input SaveDepl
 	if input.VmCrossRef != "" && entry.From == "" {
 		entry.From = input.VmCrossRef
 	}
+	// KubeVirt runtime state: write whenever non-nil (the kubevirt analogue of VmState;
+	// plugin-kubevirt's PrepareVenue ships it as the generic State patch).
+	if input.KubeVirtState != nil {
+		entry.KubeVirtState = input.KubeVirtState
+	}
 	if input.Volume != nil {
 		entry.Volume = input.Volume
 	}
