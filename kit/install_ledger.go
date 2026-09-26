@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"time"
 
@@ -472,6 +473,13 @@ func DeleteCandyRecord(paths *LedgerPaths, layer string) error {
 
 // AddCandyDeployment adds deployID to candy.DeployedBy and writes the record.
 // Used at install time.
+//
+// A candy record is SHARED by every deploy that uses it (refcounted by DeployedBy),
+// so its reverse_ops must be the UNION of the ops each deploy contributed — a
+// replacement would lose an earlier deploy's teardown and leak its resource. The
+// callback's `rec.ReverseOps = …` is therefore treated as DECLARING THIS deploy's ops
+// and merged (content-dedup) over the ops already recorded, rather than replacing
+// them; see MergeReverseOps and charly#687.
 func AddCandyDeployment(paths *LedgerPaths, candyName, deployID string, update func(*CandyRecord)) error {
 	rec, err := ReadCandyRecord(paths, candyName)
 	if err != nil {
@@ -486,9 +494,11 @@ func AddCandyDeployment(paths *LedgerPaths, candyName, deployID string, update f
 	if !containsString(rec.DeployedBy, deployID) {
 		rec.DeployedBy = append(rec.DeployedBy, deployID)
 	}
+	priorOps := append([]spec.ReverseOp(nil), rec.ReverseOps...)
 	if update != nil {
 		update(rec)
 	}
+	rec.ReverseOps = MergeReverseOps(priorOps, rec.ReverseOps)
 	return WriteCandyRecord(paths, rec)
 }
 
@@ -519,6 +529,39 @@ func RemoveCandyDeployment(paths *LedgerPaths, candyName, deployID string) (*Can
 
 func containsString(s []string, v string) bool {
 	return slices.Contains(s, v)
+}
+
+// MergeReverseOps returns existing plus every op in incoming not already present.
+// Dedup is by CONTENT (reflect.DeepEqual: ReverseOp carries an Extra map, so `==`
+// cannot compare it). A shared candy record's reverse_ops are the UNION of every
+// deploy's ops, because teardown replays the whole list only when the refcount
+// empties — so an overwrite silently drops an earlier deploy's teardown.
+//
+// charly#687: two `deploy:kindcluster` deploys (a root + its member) each record
+// `kind delete cluster --name <that deploy's cluster>` against the SHARED
+// `plugin-kube` provider candy. The second write overwrote the first, so teardown
+// deleted only the member's cluster and left the root's running. Merging keeps both,
+// and dedup makes a re-run (same deploy, same op) idempotent.
+func MergeReverseOps(existing, incoming []spec.ReverseOp) []spec.ReverseOp {
+	if len(incoming) == 0 {
+		return existing
+	}
+	out := append([]spec.ReverseOp(nil), existing...)
+	for _, op := range incoming {
+		if !containsReverseOp(out, op) {
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
+func containsReverseOp(ops []spec.ReverseOp, want spec.ReverseOp) bool {
+	for _, op := range ops {
+		if reflect.DeepEqual(op, want) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -564,9 +607,11 @@ func AddCandyDeploymentVia(exec spec.DeployExecutor, paths *LedgerPaths, candyNa
 		if !containsString(rec.DeployedBy, deployID) {
 			rec.DeployedBy = append(rec.DeployedBy, deployID)
 		}
+		priorOps := append([]spec.ReverseOp(nil), rec.ReverseOps...)
 		if update != nil {
 			update(&rec)
 		}
+		rec.ReverseOps = MergeReverseOps(priorOps, rec.ReverseOps)
 		rec.SchemaVersion = ledgerSchemaVersion
 		if err := spec.ValidateRecord("candy_record", remoteFile, &rec); err != nil {
 			return nil, nil, err
