@@ -128,3 +128,21 @@ func TestLoadScreenSignature(t *testing.T) {
 		t.Fatal("a missing reference must be an error")
 	}
 }
+
+// TestScreenMatches_ZeroValueUsesDefault pins the validator finding: an OMITTED
+// max_distance (Go zero value 0) must use ScreenDefaultMaxDistance, not mean an
+// exact match — otherwise a reference fails on a clock tick the doc promises to
+// tolerate.
+func TestScreenMatches_ZeroValueUsesDefault(t *testing.T) {
+	// Two signatures 3 bits apart: within the default tolerance (5), NOT an
+	// exact match.
+	a := ScreenSignature{Hash: 0b000, Width: 100, Height: 80}
+	b := ScreenSignature{Hash: 0b111, Width: 100, Height: 80}
+	if !ScreenMatches(a, b, 0) {
+		t.Fatalf("an omitted max_distance (0) must use the default tolerance (%d), not exact match", ScreenDefaultMaxDistance)
+	}
+	// The default is what the doc promises.
+	if ScreenDefaultMaxDistance < 3 {
+		t.Fatalf("the default tolerance (%d) is smaller than the test gap (3)", ScreenDefaultMaxDistance)
+	}
+}

@@ -104,16 +104,18 @@ func HammingDistance(a, b ScreenSignature) int {
 }
 
 // ScreenMatches reports whether the current frame's signature is within maxDistance
-// of the reference (0..64). A maxDistance of 0 means identical fingerprints; a
-// small value (e.g. 5) tolerates a clock tick, a cursor blink, or minor rendering
-// noise. A negative maxDistance uses ScreenDefaultMaxDistance.
+// of the reference (1..64). A maxDistance <= 0 (the Go zero value of an omitted
+// optional field) uses ScreenDefaultMaxDistance — the documented tolerance of a
+// clock tick, a cursor blink, or minor rendering noise. A caller wanting an
+// (almost) exact match authors maxDistance 1; 0 is not meaningful because an
+// omitted field and a literal 0 are indistinguishable in the decoded struct.
 //
 // GEOMETRY GUARD: when both signatures carry dimensions and they differ by more
 // than a factor of 2, the frames are almost certainly different screens (a
 // resolution change / a different display) — reported as no-match regardless of
 // the hash, rather than a coincidental near-hash.
 func ScreenMatches(current, reference ScreenSignature, maxDistance int) bool {
-	if maxDistance < 0 {
+	if maxDistance <= 0 {
 		maxDistance = ScreenDefaultMaxDistance
 	}
 	if current.Width > 0 && reference.Width > 0 {
