@@ -131,3 +131,29 @@ func TestDeployTargetEntity_QualifiedFromHop(t *testing.T) {
 		t.Fatalf("DeployTargetEntity(check-omarchy-eval-edge-inst) = (%q, %v), want (omarchy.omarchy-vm, true) — the qualified template after the hop", target, ok)
 	}
 }
+
+// TestResolveKindEntityBody_NestedNamespace gates the NESTED-namespace fix: the
+// umbrella root imports charly/, which imports omarchy/ — a two-level qualified ref
+// (`charly.omarchy.omarchy-vm`) must resolve. The former single-level descent missed
+// it, failing `charly vm build charly.omarchy.omarchy-vm`.
+func TestResolveKindEntityBody_NestedNamespace(t *testing.T) {
+	vmBody := json.RawMessage(`{"vm":{"source":{"kind":"iso"}}}`)
+	omarchy := &spec.UnifiedFile{PluginKinds: map[string]map[string]json.RawMessage{
+		"vm": {"omarchy-vm": vmBody},
+	}}
+	charly := &spec.UnifiedFile{
+		PluginKinds: map[string]map[string]json.RawMessage{"vm": {"charly-vm": vmBody}},
+		Namespaces:  map[string]*spec.UnifiedFile{"omarchy": omarchy},
+	}
+	root := &spec.UnifiedFile{Namespaces: map[string]*spec.UnifiedFile{"charly": charly}}
+
+	if body, ok := ResolveKindEntityBody(root, "vm", "charly.omarchy.omarchy-vm"); !ok || len(body) == 0 {
+		t.Fatal("nested-namespace vm body did not resolve (charly.omarchy.omarchy-vm)")
+	}
+	if body, ok := ResolveKindEntityBody(root, "vm", "charly.charly-vm"); !ok || len(body) == 0 {
+		t.Fatal("one-level qualified vm body did not resolve (charly.charly-vm)")
+	}
+	if _, ok := ResolveKindEntityBody(root, "vm", "omarchy.omarchy-vm"); ok {
+		t.Fatal("nested namespace leaked to root scope")
+	}
+}
