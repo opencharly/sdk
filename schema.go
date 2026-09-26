@@ -53,6 +53,13 @@ type Requirement struct {
 	Word     string // the peer's reserved word, e.g. "enc"
 	Source   string // optional canonical candy ref for a peer outside the project closure
 	Optional bool   // an absent peer is recorded and skipped rather than failing the load
+	// CommandParent is set ONLY when the peer is a NESTED class=="command"
+	// capability: its parent command word (e.g. "box") — the peer's registry
+	// identity is `<command>:<Word>:<CommandParent>`, distinct from the top-level
+	// `<command>:<Word>`. "" for every non-nested peer. Mirrors the same field on
+	// ProvidedCapability and the three-segment `command:<word>:<parent>` manifest
+	// form.
+	CommandParent string
 }
 
 // BuildCapabilities is the serve-side half of the "every plugin ships its own CUE
@@ -105,7 +112,10 @@ func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability,
 	}
 	out := make([]*pb.ProvidedCapability, 0, len(provided))
 	for _, c := range provided {
-		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary, Interactive: c.Interactive}
+		if c.CommandParent != "" && c.Class != "command" {
+			return nil, fmt.Errorf("plugin capability %s:%s declares a command parent %q outside class=command", c.Class, c.Word, c.CommandParent)
+		}
+		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary, Interactive: c.Interactive, CommandParent: c.CommandParent}
 		if c.CommandModel != nil {
 			if c.Class != "command" {
 				return nil, fmt.Errorf("plugin capability %s:%s declares a command model outside class=command", c.Class, c.Word)
@@ -143,11 +153,15 @@ func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability,
 	}
 	reqs := make([]*pb.PluginRequirement, 0, len(requires))
 	for _, r := range requires {
+		if r.CommandParent != "" && r.Class != "command" {
+			return nil, fmt.Errorf("plugin requirement %s:%s declares a command parent %q outside class=command", r.Class, r.Word, r.CommandParent)
+		}
 		reqs = append(reqs, &pb.PluginRequirement{
-			Class:    r.Class,
-			Word:     r.Word,
-			Source:   r.Source,
-			Optional: r.Optional,
+			Class:         r.Class,
+			Word:          r.Word,
+			Source:        r.Source,
+			Optional:      r.Optional,
+			CommandParent: r.CommandParent,
 		})
 	}
 	return &pb.Capabilities{
