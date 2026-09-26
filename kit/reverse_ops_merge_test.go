@@ -2,6 +2,7 @@ package kit
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -68,6 +69,35 @@ func TestAddCandyDeployment_MergesReverseOps(t *testing.T) {
 	}
 	if len(rec.DeployedBy) != 2 {
 		t.Fatalf("DeployedBy must stay {a,b}, got %v", rec.DeployedBy)
+	}
+}
+
+// TestAddCandyDeploymentVia_MergesReverseOps drives the EXECUTOR-ROUTED writer
+// (the nested-deploy path) and fails if ITS merge is reverted — the twin of the
+// operator-side test above, so both changed writers are covered (B12: a change
+// whose new behavior has no test that would fail without it blocks).
+func TestAddCandyDeploymentVia_MergesReverseOps(t *testing.T) {
+	exec := &fakeRemoteExec{}
+	paths := &LedgerPaths{ConfigFile: "/tmp/fake/charly.yml", LockFile: "/tmp/fake/charly.yml.lock"}
+	op := func(name string) spec.ReverseOp {
+		return spec.ReverseOp{Kind: spec.ReverseOpPluginScript, Extra: map[string]string{"script": "kind delete cluster --name " + name}}
+	}
+	if err := AddCandyDeploymentVia(exec, paths, "plugin-kube", "deploy-a", func(rec *CandyRecord) {
+		rec.ReverseOps = []spec.ReverseOp{op("a")}
+	}); err != nil {
+		t.Fatalf("AddCandyDeploymentVia A: %v", err)
+	}
+	// The substrate file now holds A's record; feed it back so B reads it.
+	exec.existing = exec.written
+	if err := AddCandyDeploymentVia(exec, paths, "plugin-kube", "deploy-b", func(rec *CandyRecord) {
+		rec.ReverseOps = []spec.ReverseOp{op("b")}
+	}); err != nil {
+		t.Fatalf("AddCandyDeploymentVia B: %v", err)
+	}
+	for _, want := range []string{"cluster --name a", "cluster --name b"} {
+		if !strings.Contains(exec.written, want) {
+			t.Fatalf("executor-routed writer must retain BOTH deploys' ops; missing %q:\n%s", want, exec.written)
+		}
 	}
 }
 
