@@ -69,3 +69,22 @@ func TestReplaceOrAppendManagedBlock(t *testing.T) {
 		t.Fatalf("replace: duplicated fence: %s", out2)
 	}
 }
+
+// TestRenderDownloadScript_EmptyToNoInstallD pins the fix for RCA 2026-09-26: an
+// `extract: sh` download (a self-installing script, e.g. helm's get-helm-3) carries no
+// `to:`, and the host renderer emitted `install -d -m0755 ''` — failing with
+// `install: cannot create directory ''`. A declared `to:` must still create its dir.
+func TestRenderDownloadScript_EmptyToNoInstallD(t *testing.T) {
+	sh := RenderDownloadScript(&spec.Op{Download: "https://example/get-tool.sh", Extract: "sh"}, nil)
+	if strings.Contains(sh, "install -d") {
+		t.Fatalf("extract=sh with empty to must not emit install -d; got:\n%s", sh)
+	}
+	if !strings.Contains(sh, `"$ovtmp/archive"`) {
+		t.Fatalf("extract=sh must run the staged script; got:\n%s", sh)
+	}
+
+	withTo := RenderDownloadScript(&spec.Op{Download: "https://example/t.tgz", To: "/opt/x", Extract: "tar.gz"}, nil)
+	if !strings.Contains(withTo, "install -d -m0755 /opt/x") {
+		t.Fatalf("a declared to must still create its dir; got:\n%s", withTo)
+	}
+}
