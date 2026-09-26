@@ -90,3 +90,78 @@ func TestNewMetaDescribeHasNoRequires(t *testing.T) {
 		t.Fatalf("Describe requires = %v, want empty", got)
 	}
 }
+
+// A command capability's command_parent is part of its IDENTITY and must travel on
+// the wire ProvidedCapability, so an out-of-process plugin nests exactly like a
+// compiled-in one. This fails without the field (the pre-change ProvidedCapability had
+// no command_parent and BuildCapabilities dropped it).
+func TestBuildCapabilitiesCommandParentRoundTrip(t *testing.T) {
+	caps, err := BuildCapabilities("2026.176.0001",
+		[]ProvidedCapability{
+			{Class: "command", Word: "generate", CommandParent: "box"},
+			{Class: "command", Word: "feature"},
+		}, nil, "schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := proto.Marshal(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got pb.Capabilities
+	if err := proto.Unmarshal(wire, &got); err != nil {
+		t.Fatal(err)
+	}
+	provided := got.GetProvided()
+	if len(provided) != 2 {
+		t.Fatalf("provided length = %d, want 2", len(provided))
+	}
+	if provided[0].GetCommandParent() != "box" {
+		t.Errorf("provided[0].CommandParent = %q, want %q", provided[0].GetCommandParent(), "box")
+	}
+	if provided[1].GetCommandParent() != "" {
+		t.Errorf("provided[1].CommandParent = %q, want empty (top-level)", provided[1].GetCommandParent())
+	}
+}
+
+// A command_parent outside class=command is a declaration error, caught at serve time
+// so the host never sees an off-grammar identity (only commands nest).
+func TestBuildCapabilitiesRejectsCommandParentOffCommand(t *testing.T) {
+	_, err := BuildCapabilities("2026.176.0001",
+		[]ProvidedCapability{{Class: "verb", Word: "x", CommandParent: "box"}}, nil, "schema")
+	if err == nil {
+		t.Fatal("BuildCapabilities accepted a command parent on a non-command capability")
+	}
+}
+
+// A requirement may name a NESTED command peer distinctly from its top-level twin; the
+// parent rides the wire PluginRequirement.command_parent field.
+func TestBuildCapabilitiesRequirementCommandParentRoundTrip(t *testing.T) {
+	caps, err := BuildCapabilitiesWithRequires("2026.176.0001",
+		[]ProvidedCapability{{Class: "verb", Word: "x"}},
+		[]Requirement{
+			{Class: "command", Word: "feature"},
+			{Class: "command", Word: "feature", CommandParent: "box"},
+		}, nil, "schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := proto.Marshal(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got pb.Capabilities
+	if err := proto.Unmarshal(wire, &got); err != nil {
+		t.Fatal(err)
+	}
+	reqs := got.GetRequires()
+	if len(reqs) != 2 {
+		t.Fatalf("requires length = %d, want 2", len(reqs))
+	}
+	if reqs[0].GetCommandParent() != "" {
+		t.Errorf("requires[0].CommandParent = %q, want empty (top-level)", reqs[0].GetCommandParent())
+	}
+	if reqs[1].GetCommandParent() != "box" {
+		t.Errorf("requires[1].CommandParent = %q, want %q", reqs[1].GetCommandParent(), "box")
+	}
+}
