@@ -204,7 +204,7 @@ func (s *ConsoleSession) RunCommand(ctx context.Context, c ConsoleCommand) (Cons
 		}
 		last = got
 		if consoleHasMarkerLine(got, marker) {
-			output := stripCommandEcho(got, cmd)
+			output := stripCommandEcho(got, marker)
 			res := ConsoleCommandResult{Command: cmd, Output: output, Sudo: c.Sudo}
 			if c.Expect != "" && !strings.Contains(strings.ToLower(output), strings.ToLower(c.Expect)) {
 				return res, fmt.Errorf("console session: %q: the output does not contain expected %q (read: %q)",
@@ -237,21 +237,27 @@ func (s *ConsoleSession) RunCommand(ctx context.Context, c ConsoleCommand) (Cons
 }
 
 // stripCommandEcho removes the line the terminal echoed for the submitted command
-// (which contains the marker and would otherwise pollute the result) from the OCR
-// text, so Output is the command's real output. A line is dropped when its
-// trimmed text starts with the typed command or equals the bare `echo marker`
-// tail. Matching is tolerant (OCR may drop leading spaces) — an unmatched echo
-// line is left in rather than risk deleting real output.
-func stripCommandEcho(text, command string) string {
-	cmd := strings.TrimSpace(command)
+// from the OCR text, so Output is the command's real output — NOT the echoed input,
+// which contains the command text and would otherwise satisfy a caller's `Expect`
+// even when the real output never did (the echo trap, in its `Expect` form).
+//
+// KEYED ON THE MARKER, NOT THE COMMAND (RCA): a real shell echoes the command
+// BEHIND its prompt (`root@archiso ~ # cat /etc/os-release | grep ID=; echo
+// CHARLY_DONE_1_END`), and OCR mangles the prompt/middle (`setc/…`), so a
+// prefix-on-command test misses the echo. The echoed line ALWAYS ends with the
+// `echo <marker>` tail — and the marker (an opaque `CHARLY_DONE_N_END` token) is
+// also the ONLY line the shell's own output produces for the marker — so we drop
+// every line CONTAINING the marker token, including the `echo <marker>` tail
+// embedded in the echoed input. No marker-bearing line survives into Output; a
+// line without the marker (real output) is kept.
+func stripCommandEcho(text, marker string) string {
 	lines := strings.Split(text, "\n")
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
-		t := strings.TrimSpace(line)
-		if t == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if strings.HasPrefix(t, cmd) || strings.HasPrefix(t, "sudo "+cmd) {
+		if strings.Contains(line, marker) {
 			continue
 		}
 		out = append(out, line)

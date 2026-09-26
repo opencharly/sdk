@@ -269,8 +269,10 @@ func (m *markerTransport) Capture(context.Context) ([]byte, error) {
 		marker := markerFromLine(m.types[0])
 		return []byte("uid=0(root) gid=0(root)\n" + marker + "\n"), nil
 	}
-	// Echo the command line, then output + the shell's own marker line.
-	return []byte(typed + "\n" + m.markerOn + "\n" + markerFromLine(typed) + "\n"), nil
+	// Echo the command BEHIND A PROMPT (as a real shell does), then its output
+	// and the shell's own marker line. The prompt prefix is what the old
+	// command-prefix stripper missed (the echo trap in its Expect form).
+	return []byte("user@host ~ $ " + typed + "\n" + m.markerOn + "\n" + markerFromLine(typed) + "\n"), nil
 }
 
 // markerFromLine extracts the marker token from a typed `cmd; echo <marker>` line.
@@ -355,5 +357,34 @@ func TestConsoleSession_PromptPreflightProceedsInShell(t *testing.T) {
 	}
 	if !strings.Contains(res.Output, "PROMPT_OK") {
 		t.Fatalf("output not read: %q", res.Output)
+	}
+}
+
+// TestConsoleSession_EchoStrippedFromOutput is the validator's RCA regression: a
+// real shell echoes the command BEHIND a prompt, and OCR mangles it, so the echo
+// must be stripped by its MARKER-bearing line — otherwise the echoed command text
+// survives into Output and satisfies a caller's `Expect` even when the real output
+// never did (the echo trap in its Expect form: e.g. `Expect: "sshd"` for
+// `systemctl status sshd`).
+func TestConsoleSession_EchoStrippedFromOutput(t *testing.T) {
+	ft := &fakeTransport{}
+	s := &ConsoleSession{
+		Transport: &markerTransport{fakeTransport: ft, markerOn: "inactive"},
+		OCR:       func(png []byte) (string, error) { return string(png), nil },
+	}
+	res, err := s.RunCommand(context.Background(), ConsoleCommand{Command: "systemctl status sshd"})
+	if err != nil {
+		t.Fatalf("RunCommand: %v", err)
+	}
+	// The echoed command (containing "sshd") must NOT be in Output — only the
+	// real result. Otherwise an `Expect: "sshd"` would pass vacuously.
+	if strings.Contains(res.Output, "systemctl status sshd") {
+		t.Fatalf("the echoed command must be stripped from Output: %q", res.Output)
+	}
+	if strings.Contains(res.Output, "CHARLY_DONE") {
+		t.Fatalf("the marker must not survive into Output: %q", res.Output)
+	}
+	if !strings.Contains(res.Output, "inactive") {
+		t.Fatalf("the real output must be retained: %q", res.Output)
 	}
 }
