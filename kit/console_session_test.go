@@ -391,19 +391,39 @@ func TestConsoleSession_EchoStrippedFromOutput(t *testing.T) {
 
 // TestConsoleSession_StaleMarkerDoesNotComplete is the RCA regression: a marker
 // from a PREVIOUS run left in the scrollback must NOT satisfy this run's wait —
-// otherwise the flow completes on the stale echo before the command runs. The
-// per-session nonce makes the current marker unmatchable by a stale line.
+// otherwise the wait completes on the stale echo before the command runs. It
+// DRIVES RunCommand over a transport whose screen always shows a stale marker
+// line, and asserts the run does NOT complete on it (it times out instead).
 func TestConsoleSession_StaleMarkerDoesNotComplete(t *testing.T) {
+	// A transport that always shows a stale marker line from an OLD run, plus the
+	// echo of the just-typed command (which also carries the CURRENT marker).
+	tr := &staleMarkerTransport{fakeTransport: &fakeTransport{}, stale: "CHARLY_DONE_1_END"}
+	s := &ConsoleSession{
+		Transport:    tr,
+		OCR:          func(png []byte) (string, error) { return string(png), nil },
+		PollInterval: time.Millisecond,
+	}
+	_, err := s.RunCommand(context.Background(), ConsoleCommand{Command: "id", TimeoutSec: 1})
+	if err == nil {
+		t.Fatal("a command must NOT complete on a stale marker line from a previous run")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("want a timeout (the stale marker is not this run's completion), got %v", err)
+	}
+}
+
+// TestConsoleSession_MarkerUniquenessAcrossSessions pins the mechanism: two
+// sessions' markers differ, markers within one session differ, and a marker is
+// OCR-safe.
+func TestConsoleSession_MarkerUniquenessAcrossSessions(t *testing.T) {
 	a := &ConsoleSession{}
 	b := &ConsoleSession{}
 	if a.NextMarker() == b.NextMarker() {
 		t.Fatalf("markers from two sessions must differ (stale-echo guard): %q", a.NextMarker())
 	}
-	// Two markers within ONE session also differ (per-command counter).
 	if a.NextMarker() == a.NextMarker() {
 		t.Fatal("markers within a session must differ")
 	}
-	// The marker carries only OCR-safe characters (letters, digits, underscore).
 	for _, r := range a.NextMarker() {
 		ok := r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 		if !ok {
@@ -411,3 +431,22 @@ func TestConsoleSession_StaleMarkerDoesNotComplete(t *testing.T) {
 		}
 	}
 }
+
+// staleMarkerTransport always shows a fixed stale marker line (an old run's
+// leftover) and echoes the typed line, so a wait keyed on the marker alone would
+// complete on the stale line. The current marker (carrying a fresh nonce) never
+// appears as an exact line, so the wait must time out.
+type staleMarkerTransport struct {
+	*fakeTransport
+	stale string
+}
+
+func (t *staleMarkerTransport) Capture(context.Context) ([]byte, error) {
+	line := ""
+	if len(t.types) > 0 {
+		line = t.types[len(t.types)-1] // the echoed (typed) line
+	}
+	return []byte("user@host ~ $ " + line + "\nold output\n" + t.stale + "\n"), nil
+}
+
+var _ ConsoleTransport = (*staleMarkerTransport)(nil)

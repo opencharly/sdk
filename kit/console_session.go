@@ -158,17 +158,30 @@ func (s *ConsoleSession) NextMarker() string {
 	return fmt.Sprintf("%s%s_%d_END", ConsoleMarkerPrefix, s.nonce, s.markerCounter)
 }
 
-// markerNonce returns a short OCR-safe random token (8 lowercase letters). It
-// uses math/rand seeded by time + the process, which is ample here: the token
-// only needs to not collide with another marker on the SAME screen, and a
-// crypto-grade source would force the SDK to depend on one.
+// The Linear Congruential Generator constants used by markerNonce. NAMED, not
+// inlined, so the mechanism is self-documenting (R4). These are the classic
+// Numerical Recipes 64-bit LCG values.
+const (
+	lcgMultiplier = 6364136223846793005
+	lcgIncrement  = 1442695040888963407
+	// lcgNonceLen is the nonce length and lcgShift selects a high, well-mixed
+	// slice of the LCG state for a near-uniform 0..25 index.
+	lcgNonceLen = 8
+	lcgShift    = 33
+)
+
+// markerNonce returns a short OCR-safe token (8 lowercase letters) seeding a
+// 64-bit LCG from the current time. A time-seeded LCG is ample here: the token
+// only needs to differ from a marker left by a PREVIOUS run on the SAME screen,
+// and this avoids adding a crypto/rand dependency to the SDK for a non-secret
+// value. Collisions within one screen are effectively impossible (26^8).
 func markerNonce() string {
 	const alphabet = "abcdefghijklmnopqrstuvwxyz"
-	b := make([]byte, 8)
+	b := make([]byte, lcgNonceLen)
 	seed := uint64(time.Now().UnixNano())
 	for i := range b {
-		seed = seed*6364136223846793005 + 1442695040888963407 // LCG
-		b[i] = alphabet[(seed>>33)%26]
+		seed = seed*lcgMultiplier + lcgIncrement
+		b[i] = alphabet[(seed>>lcgShift)%26]
 	}
 	return string(b)
 }
