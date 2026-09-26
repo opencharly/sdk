@@ -18,7 +18,7 @@ import (
 // fixture here stamps Descent explicitly, exactly as the loader's StampDescent would for the real
 // compiled-in substrate kinds (vm: Venue "ssh"; pod/group: no ssh venue).
 func TestBedVmDomains(t *testing.T) {
-	vmDescent := &spec.DescentDescriptor{Venue: "ssh"}
+	vmDescent := &spec.DescentDescriptor{Venue: "ssh", ExclusiveVenue: true}
 	podDescent := &spec.DescentDescriptor{Venue: "container"}
 
 	// Direct vm bed: the domain is charly-<bed-name>, NOT charly-<entity>.

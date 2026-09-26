@@ -22,7 +22,15 @@ import (
 )
 
 func vmNode(from string) *spec.DeployNode {
-	return &spec.DeployNode{From: from, Descent: &spec.DescentDescriptor{Venue: "ssh"}}
+	// A host-libvirt vm: the ssh venue AND the ExclusiveVenue host-lease trait (the
+	// traits table declares both for vm). A kubevirt node shares the ssh venue but
+	// omits ExclusiveVenue and is deliberately NOT a libvirt member.
+	return &spec.DeployNode{From: from, Descent: &spec.DescentDescriptor{Venue: "ssh", ExclusiveVenue: true}}
+}
+
+// kubevirtNode models the OTHER ssh-venue substrate: kubevirt (no ExclusiveVenue).
+func kubevirtNode() *spec.DeployNode {
+	return &spec.DeployNode{Descent: &spec.DescentDescriptor{Venue: "ssh"}}
 }
 
 func podNode() *spec.DeployNode {
@@ -43,7 +51,10 @@ func TestIsVmVenue_IsContainerVenue(t *testing.T) {
 		t.Errorf("vm/local venue nodes should NOT be container members")
 	}
 	if !deploy.IsVmVenue(vmNode("x")) {
-		t.Errorf("an ssh-venue node should be a vm member")
+		t.Errorf("an ssh-venue node WITH the ExclusiveVenue trait should be a vm member")
+	}
+	if deploy.IsVmVenue(kubevirtNode()) {
+		t.Errorf("a kubevirt node (ssh venue, NO ExclusiveVenue) must NOT be a vm member")
 	}
 	if deploy.IsVmVenue(podNode()) || deploy.IsVmVenue(localNode()) {
 		t.Errorf("container/local venue nodes should NOT be vm members")
