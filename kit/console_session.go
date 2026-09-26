@@ -82,6 +82,9 @@ type ConsoleSession struct {
 	Logger func(format string, args ...any)
 	// markerCounter disambiguates completion markers within a session.
 	markerCounter int
+	// nonce makes this session's markers unique against a stale marker left in
+	// the scrollback by a previous run (the stale-echo RCA).
+	nonce string
 }
 
 // ConsoleSessionDefaultTimeoutSec bounds one command's wait for its marker.
@@ -101,6 +104,12 @@ const ConsoleSudoPrompt = "password"
 
 // ConsoleMarkerPrefix identifies a completion marker on screen. It is chosen to
 // be OCR-distinguishable (letters + underscores, no symbols OCR confuses).
+//
+// The full marker carries a per-SESSION nonce after the prefix (see NextMarker).
+// WITHOUT the nonce, a marker from a PREVIOUS run left in the terminal scrollback
+// is a line equal to the current marker, so the wait completes on the STALE echo
+// before the command runs — the RCA behind a flow matching an old `CHARLY_DONE_1`
+// line still on screen. A unique token makes a stale marker unmatchable.
 const ConsoleMarkerPrefix = "CHARLY_DONE_"
 
 // BuildCommandLine composes the line typed for a command: the command (prefixed
@@ -136,10 +145,32 @@ func consoleHasMarkerLine(text, marker string) bool {
 	return false
 }
 
-// NextMarker returns the next unique completion marker for this session.
+// NextMarker returns the next completion marker for this session. It carries a
+// per-session NONCE (a short random token) so a marker from a previous run left
+// in the scrollback cannot satisfy this run's wait — the stale-echo RCA. The
+// token is letters+digits only (OCR-safe); the counter disambiguates commands
+// within one session.
 func (s *ConsoleSession) NextMarker() string {
 	s.markerCounter++
-	return fmt.Sprintf("%s%d_END", ConsoleMarkerPrefix, s.markerCounter)
+	if s.nonce == "" {
+		s.nonce = markerNonce()
+	}
+	return fmt.Sprintf("%s%s_%d_END", ConsoleMarkerPrefix, s.nonce, s.markerCounter)
+}
+
+// markerNonce returns a short OCR-safe random token (8 lowercase letters). It
+// uses math/rand seeded by time + the process, which is ample here: the token
+// only needs to not collide with another marker on the SAME screen, and a
+// crypto-grade source would force the SDK to depend on one.
+func markerNonce() string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz"
+	b := make([]byte, 8)
+	seed := uint64(time.Now().UnixNano())
+	for i := range b {
+		seed = seed*6364136223846793005 + 1442695040888963407 // LCG
+		b[i] = alphabet[(seed>>33)%26]
+	}
+	return string(b)
 }
 
 // RunCommand types one command, submits it, waits for its completion marker

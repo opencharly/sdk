@@ -388,3 +388,26 @@ func TestConsoleSession_EchoStrippedFromOutput(t *testing.T) {
 		t.Fatalf("the real output must be retained: %q", res.Output)
 	}
 }
+
+// TestConsoleSession_StaleMarkerDoesNotComplete is the RCA regression: a marker
+// from a PREVIOUS run left in the scrollback must NOT satisfy this run's wait —
+// otherwise the flow completes on the stale echo before the command runs. The
+// per-session nonce makes the current marker unmatchable by a stale line.
+func TestConsoleSession_StaleMarkerDoesNotComplete(t *testing.T) {
+	a := &ConsoleSession{}
+	b := &ConsoleSession{}
+	if a.NextMarker() == b.NextMarker() {
+		t.Fatalf("markers from two sessions must differ (stale-echo guard): %q", a.NextMarker())
+	}
+	// Two markers within ONE session also differ (per-command counter).
+	if a.NextMarker() == a.NextMarker() {
+		t.Fatal("markers within a session must differ")
+	}
+	// The marker carries only OCR-safe characters (letters, digits, underscore).
+	for _, r := range a.NextMarker() {
+		ok := r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !ok {
+			t.Fatalf("marker has a non-OCR-safe char %q", r)
+		}
+	}
+}
