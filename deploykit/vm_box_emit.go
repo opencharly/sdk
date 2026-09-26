@@ -54,7 +54,7 @@ const (
 //
 // For a KubeVirt/containerDisk payload — the Cua Fleet shape, where the disk must live
 // at /disk/disk.img (the directory KubeVirt scans) — use EmitVmBoxAt with
-// spec.ContainerDiskPath (or any explicit in-image path).
+// ContainerDiskPath (or any explicit in-image path).
 //
 // The build context is the disk's own parent directory and the Containerfile is staged
 // in a temp dir (passed via -f): the disk is never copied, buildah streams the file
@@ -63,17 +63,39 @@ func EmitVmBox(engine, ref string, meta *spec.VmBoxMetadata, diskPath string) er
 	return EmitVmBoxAt(engine, ref, meta, diskPath, VmBoxDiskPath)
 }
 
+// validInImagePath reports whether p is a safe container-absolute path for the generated
+// Containerfile's COPY destination. The destination is interpolated UNQUOTED into the
+// build file (the Dockerfile parser strips matching quotes, and a container path with
+// whitespace is pathological), so it must be validated rather than quoted: a whitespace
+// or control character would either inject a second build instruction (`/disk/x\nRUN …`)
+// or corrupt the COPY (a space reads as an extra source token). The rule is
+// deliberately tight — a leading `/`, then only path-safe characters.
+func validInImagePath(p string) bool {
+	if !strings.HasPrefix(p, "/") || p == "/" {
+		return false
+	}
+	for _, r := range p {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '/' || r == '.' || r == '-' || r == '_' || r == '+':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // EmitVmBoxAt is EmitVmBox with an explicit IN-IMAGE disk path. The VM-box path
 // (/disk.qcow2) and the KubeVirt containerDisk path (/disk/disk.img) are the two
-// shipped callers; any other layout is the author's choice. The path must be absolute
-// — a relative one would land relative to the container root only by accident of
-// buildah's behaviour and is rejected here rather than emitted silently.
+// shipped callers; any other layout is the author's choice. The path must be a safe
+// container-absolute path (see validInImagePath) — it is written UNQUOTED into the
+// Containerfile, so an unvalidated value is a build-instruction injection surface.
 func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImagePath string) error {
 	if meta == nil {
 		return fmt.Errorf("EmitVmBox: nil metadata")
 	}
-	if !strings.HasPrefix(inImagePath, "/") {
-		return fmt.Errorf("EmitVmBox: in-image disk path %q must be absolute", inImagePath)
+	if !validInImagePath(inImagePath) {
+		return fmt.Errorf("EmitVmBox: in-image disk path %q must be a container-absolute path of [A-Za-z0-9._/+ -] (no whitespace or control characters)", inImagePath)
 	}
 	absDisk, err := filepath.Abs(diskPath)
 	if err != nil {
