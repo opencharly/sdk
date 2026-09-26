@@ -79,9 +79,17 @@ type ConsoleFlowAction struct {
 	CloseTerminal bool
 }
 
-// consoleFlowActionIsSet reports whether a is a no-op.
-func consoleFlowActionIsSet(a ConsoleFlowAction) bool {
-	return a.Key != "" || a.Combo != "" || a.Text != "" || a.Command != "" || a.CloseTerminal
+// consoleFlowActionCount returns how many mutually-exclusive action fields are
+// set. Used by Validate to reject a node that sets more than one (e.g. both
+// `combo` and `text`), which would otherwise silently pick one.
+func consoleFlowActionCount(a ConsoleFlowAction) int {
+	n := 0
+	for _, set := range []bool{a.Key != "", a.Combo != "", a.Text != "", a.Command != "", a.CloseTerminal} {
+		if set {
+			n++
+		}
+	}
+	return n
 }
 
 // ConsoleFlowNode is ONE state of the flow.
@@ -192,8 +200,8 @@ func (f *ConsoleFlow) Validate() error {
 		return fmt.Errorf("console flow: at least one node is required")
 	}
 	for id, n := range f.Nodes {
-		if n.Action.Command != "" && n.Action.Key != "" {
-			return fmt.Errorf("console flow: node %q sets both command and key (one action per node)", id)
+		if c := consoleFlowActionCount(n.Action); c > 1 {
+			return fmt.Errorf("console flow: node %q sets %d action fields (key/combo/text/command/close_terminal are mutually exclusive; pick one)", id, c)
 		}
 		for _, o := range n.Wait {
 			if strings.TrimSpace(o.Match) == "" && strings.TrimSpace(o.Reference) == "" {
@@ -549,10 +557,8 @@ func (f *ConsoleFlow) apply(ctx context.Context, node ConsoleFlowNode) (string, 
 	case a.Text != "":
 		return "", f.Transport.Type(ctx, a.Text)
 	case a.CloseTerminal:
-		if err := f.Transport.Type(ctx, "exit"); err != nil {
-			return "", err
-		}
-		return "", f.Transport.PressKey(ctx, "Return")
+		_, err := CloseTerminal(ctx, f.Transport)
+		return "", err
 	}
 	return "", nil
 }

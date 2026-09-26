@@ -82,11 +82,8 @@ func RunCommands(ctx context.Context, tr ConsoleTransport, cmds []ConsoleCommand
 		fmt.Fprintf(&b, "%s %q ->\n%s\n", label, r.Command, r.Output)
 	}
 	if closeTerminal {
-		if err := tr.Type(ctx, "exit"); err != nil {
+		if _, err := CloseTerminal(ctx, tr); err != nil {
 			return b.String(), fmt.Errorf("run-command: closing terminal: %w", err)
-		}
-		if err := tr.PressKey(ctx, "Return"); err != nil {
-			return b.String(), fmt.Errorf("run-command: submitting exit: %w", err)
 		}
 	}
 	if runErr != nil {

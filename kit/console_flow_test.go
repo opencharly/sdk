@@ -363,6 +363,8 @@ func TestConsoleFlow_DetectStart_ResumesAtMatchingNode(t *testing.T) {
 	n.Wait = []ConsoleFlowOutcome{{Name: "c", Reference: p}}
 	f.Nodes["step3"] = n
 	f.ResumeFromScreen = true
+	// Inject a fake OCR (never tesseract) so the test is hermetic and fast.
+	f.OCR = func([]byte) (string, error) { return "no anchor matches", nil }
 
 	detected, reason, err := f.DetectStart(context.Background())
 	if err != nil {
