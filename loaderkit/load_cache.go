@@ -119,6 +119,12 @@ func loadedProjectCacheKey(lp *spec.LoadedProject) (string, map[string]string, e
 // code the schema/loader logic lives in re-keys the cache. Fallback (no build info, e.g. go test):
 // "bare" so tests in one binary share one namespace.
 func moduleIdentity(path string) string {
+	return moduleIdentityFn(path)
+}
+
+// moduleIdentityFn is a package var (not a func literal inline) so tests inject DIFFERENT
+// module versions and prove loadedProjectCacheKey re-keys on a schema/loader change.
+var moduleIdentityFn = func(path string) string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info == nil {
 		return "bare"

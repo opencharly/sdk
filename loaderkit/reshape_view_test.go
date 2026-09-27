@@ -101,3 +101,49 @@ func TestDeriveRepoView_BuildsOnceReusesAndLeavesPristine(t *testing.T) {
 		t.Fatal("marker must NOT be written into the pristine cache")
 	}
 }
+
+// TestDeriveRepoView_ReentryGuardReturnsPristine — the reshape re-enters LoadUnified, which
+// re-enters DeriveRepoView for the SAME view (a self/mutual import cycle such as
+// main <-> cachyos). The re-entrant call must NOT rebuild or block: the guard returns the
+// pristine cache (no view is published yet). Fails if the re-entry guard is dropped (the
+// inner call would re-acquire the view flock and deadlock, or rebuild).
+func TestDeriveRepoView_ReentryGuardReturnsPristine(t *testing.T) {
+	orig := reshapeViewIdentityFn
+	defer func() { reshapeViewIdentityFn = orig }()
+	reshapeViewIdentityFn = func() string { return "00000000000000bb" }
+
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "repo@v1")
+	if err := os.MkdirAll(cache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cache, "charly.yml"), []byte("name: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var reentered string
+	var migrate func(string) error
+	migrate = func(p string) error {
+		// Re-enter mid-reshape (the cycle). Must return the pristine cache, not block/rebuild.
+		v, err := DeriveRepoView(cache, migrate)
+		if err != nil {
+			return err
+		}
+		reentered = v
+		return nil
+	}
+
+	v, err := DeriveRepoView(cache, migrate)
+	if err != nil {
+		t.Fatalf("DeriveRepoView: %v", err)
+	}
+	if reentered != cache {
+		t.Fatalf("re-entrant DeriveRepoView returned %q, want the pristine cache %q (the guard must short-circuit)", reentered, cache)
+	}
+	if v == cache {
+		t.Fatalf("outer DeriveRepoView returned the pristine path; it must publish a view")
+	}
+	if _, err := os.Stat(filepath.Join(v, reshapeViewMarker)); err != nil {
+		t.Fatalf("outer view not published (marker missing): %v", err)
+	}
+}
