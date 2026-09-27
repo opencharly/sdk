@@ -147,12 +147,10 @@ func renderVmBoxContainerfile(diskBase, inImagePath string, metaJSON []byte, met
 	// The disk COPY is the artifact layer. Double-quote the source only when the
 	// basename needs it (Dockerfile COPY strips matching double quotes).
 	fmt.Fprintf(&cf, "COPY %s %s\n", copyQuote(diskBase), inImagePath)
-	// The labels are the contract. ai.opencharly.vm.box always; version and
-	// description are conditional (omitted when empty), mirroring WriteLabels.
+	// The labels are the contract. ai.opencharly.vm.box always; description is
+	// conditional (omitted when empty), mirroring WriteLabels. The
+	// ai.opencharly.version label is DROPPED (schema-versioning removal cutover).
 	fmt.Fprintf(&cf, "LABEL %s=%s\n", spec.LabelVmBox, shellquote.ShellQuote(string(metaJSON)))
-	if meta.Version != "" {
-		fmt.Fprintf(&cf, "LABEL %s=%s\n", spec.LabelVersion, shellquote.ShellQuote(meta.Version))
-	}
 	if meta.Description != "" {
 		descJSON, _ := json.Marshal(meta.Description)
 		fmt.Fprintf(&cf, "LABEL %s=%s\n", spec.LabelDescription, shellquote.ShellQuote(string(descJSON)))
