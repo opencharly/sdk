@@ -9,13 +9,17 @@ import (
 
 // ComputeEffectiveVersions assigns ResolvedBox.EffectiveVersion for every image in
 // the build graph. EffectiveVersion is the content-derived identity emitted as the
-// ai.opencharly.version OCI label. Relocated from charly core (P8); byte-identical.
+// ai.opencharly.version OCI label. Relocated from charly core (P8); reworked by the
+// schema-versioning removal cutover: the authored box/candy `version:` source is GONE,
+// so the one REAL source is the candy chain's git tags (the resolved candy version IS
+// the CalVer git tag it was fetched at).
 //
-//  1. the image's dedicated `version:` (img.Version) if set; else
-//  2. the highest candy `version:` across its full candy set (CollectAllBoxCandies
+//  1. the highest source candy git tag across its full candy set (CollectAllBoxCandies
 //     spans the entire base chain); else
-//  3. the internal base image's EffectiveVersion (recurse); else
-//  4. a HARD ERROR — there is NO build-timestamp fallback.
+//  2. the internal base image's EffectiveVersion (recurse); else
+//  3. EMPTY — no fabricated version. An image composed only of local (in-tree) candies
+//     has no source git tag to derive from; it carries an empty label rather than a
+//     build-timestamp version (the "no fabricated version" cutover rule).
 //
 // Run AFTER ComputeIntermediates + GlobalCandyOrder so the base chain and the
 // auto-intermediate images are fully materialized in boxes.
@@ -38,13 +42,7 @@ func ComputeEffectiveVersions(boxes map[string]*buildkit.ResolvedBox, candies ma
 		visiting[name] = true
 		defer delete(visiting, name)
 
-		// 1. A dedicated version: wins.
-		if img.Version != "" {
-			memo[name] = img.Version
-			return img.Version, nil
-		}
-
-		// 2. Highest candy version across the full candy set (own + base chain).
+		// 1. Highest source candy git tag across the full candy set (own + base chain).
 		best := ""
 		for _, ln := range CollectAllBoxCandies(name, boxes, candies) {
 			l, ok := candies[ln]
@@ -64,7 +62,7 @@ func ComputeEffectiveVersions(boxes map[string]*buildkit.ResolvedBox, candies ma
 			return best, nil
 		}
 
-		// 3. Candy-free internal-base image inherits the base's effective version.
+		// 2. Candy-free / local-only internal-base image inherits the base's effective version.
 		if !img.IsExternalBase && img.Base != "" {
 			bv, err := compute(img.Base)
 			if err != nil {
@@ -74,8 +72,9 @@ func ComputeEffectiveVersions(boxes map[string]*buildkit.ResolvedBox, candies ma
 			return bv, nil
 		}
 
-		// 4. Nothing derivable — hard cutover: no build-timestamp fallback.
-		return "", fmt.Errorf("image %q resolves no version: a candy-free image on an external base needs a dedicated `version:` field", name)
+		// 3. Nothing derivable — empty (no fabricated version).
+		memo[name] = ""
+		return "", nil
 	}
 
 	for name, img := range boxes {

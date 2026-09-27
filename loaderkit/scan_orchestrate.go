@@ -121,12 +121,8 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 				done[ref] = true
 			}
 			for ref, sc := range remoteCandies {
-				if sc.Model.Version == "" {
-					return nil, fmt.Errorf("remote candy %q (from %s@%s) declares no version:; its producer repo must declare one", ref, dl.RepoPath, dl.Version)
-				}
 				candidates[ref] = append(candidates[ref], spec.CandyCandidate{
 					Scanned: sc,
-					Version: sc.Model.Version,
 					GitTag:  dl.Version,
 					Source:  dl.RepoPath + "@" + dl.Version,
 				})
@@ -176,13 +172,18 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		}
 	}
 
-	// 4. Arbitrate each bare ref by per-entity version; materialize the winner.
+	// 4. Arbitrate each bare ref by source git tag; materialize the winner.
 	combined := make(map[string]spec.ScannedCandy, len(localScanned)+len(candidates))
 	for name, sc := range localScanned {
 		combined[name] = sc
 	}
 	for ref, cands := range candidates {
 		winner := PickCandyVersion(ref, cands, seams.Warn)
+		// The winner's version IS its source git tag (the authored per-entity `version:`
+		// is gone), so stamp it onto the resolved model/view before it enters `combined`.
+		ws := winner.Scanned
+		ws.Model.Version = winner.GitTag
+		ws.View.Version = winner.GitTag
 		// SHADOWING IS EFFECTIVE, NOT ADVISORY. A local candy of the same name wins, so BOTH
 		// keys under which that one logical candy is reachable — its bare name and this full
 		// remote ref — must resolve to the LOCAL materialization. Keeping the remote body here
@@ -195,18 +196,18 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		// surfaced as an intermittent "incompatible API version" warning. Resolving both
 		// keys to the local body makes the choice deterministic at the source instead of
 		// per consumer.
-		if local, ok := localScanned[winner.Scanned.Model.Name]; ok {
+		if local, ok := localScanned[ws.Model.Name]; ok {
 			// Same reasoning as the skew advisory: route it through the seam so a caller can
 			// collect it as data. nil keeps today's stderr behaviour.
 			if w := seams.Warn; w != nil {
-				w("Note: local candy %q shadows remote candy %q", winner.Scanned.Model.Name, ref)
+				w("Note: local candy %q shadows remote candy %q", ws.Model.Name, ref)
 			} else {
-				fmt.Fprintf(os.Stderr, "Note: local candy %q shadows remote candy %q\n", winner.Scanned.Model.Name, ref)
+				fmt.Fprintf(os.Stderr, "Note: local candy %q shadows remote candy %q\n", ws.Model.Name, ref)
 			}
 			combined[ref] = local
 			continue
 		}
-		combined[ref] = winner.Scanned
+		combined[ref] = ws
 		// ALSO key the remote candy by its bare NAME, so a bare-name ref (a transitive
 		// plain-name dep in a pinned tag, e.g. `versatiles-style` inside
 		// pod-versatiles-frontend's list) resolves to this remote candy. The refs list
@@ -215,8 +216,8 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		// with "unknown candy" for every transitive bare-name dep. Guarded: a name
 		// already taken (a local candy, or a same-named remote from another repo — the
 		// plugin-mcp conflict class) is NOT overwritten; the conflict check surfaces it.
-		if _, exists := combined[winner.Scanned.Model.Name]; !exists {
-			combined[winner.Scanned.Model.Name] = winner.Scanned
+		if _, exists := combined[ws.Model.Name]; !exists {
+			combined[ws.Model.Name] = ws
 		}
 	}
 

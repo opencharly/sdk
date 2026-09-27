@@ -51,7 +51,7 @@ func BuildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Inf
 	// systemd-capable formats (deb/rpm/archlinux). apk (Alpine → OpenRC), ipk
 	// (OpenWrt → procd), and msix (Windows) have no systemd — skipped.
 	if systemdFormats[format] {
-		extra, err := systemdAndConfigContents(pkg)
+		extra, err := systemdContents(pkg)
 		if err != nil {
 			return nil, err
 		}
@@ -125,19 +125,13 @@ func BuildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Inf
 // system-wide config. apk/ipk/msix have no systemd — excluded.
 var systemdFormats = map[string]bool{"deb": true, "rpm": true, "archlinux": true}
 
-// systemdAndConfigContents renders the packaging section's systemd units +
-// preset files + the system-wide config into nfpm contents (nil when the
-// packaging section declares neither).
-func systemdAndConfigContents(pkg *spec.Packaging) (files.Contents, error) {
-	units, err := systemdUnitContents(pkg)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := configContents(pkg)
-	if err != nil {
-		return nil, err
-	}
-	return append(units, cfg...), nil
+// systemdContents renders the packaging section's systemd units + preset files
+// into nfpm contents (nil when the packaging section declares none). The
+// former system-wide config emission (`/etc/charly/charly.yml`) is DROPPED:
+// the package no longer ships that file, though the loader still checks
+// /etc/charly/charly.yml as a system config location.
+func systemdContents(pkg *spec.Packaging) (files.Contents, error) {
+	return systemdUnitContents(pkg)
 }
 
 // buildContents assembles the package contents for the SHARED-HOST plugin

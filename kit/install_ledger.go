@@ -140,16 +140,6 @@ type (
 // I/O — the `ledger:` section of the per-host charly.yml
 // ---------------------------------------------------------------------------
 
-// ledgerSchemaVersion is the install-ledger record format version (the
-// ledger-candy-keys cutover's CalVer). It is INDEPENDENT of the project schema
-// CalVer (LatestSchemaVersion) — a non-ledger schema cutover that bumps the
-// project HEAD must NOT invalidate the ledger gate. Every record written
-// carries it; the read path rejects a record without it (a pre-cutover record
-// whose json:"layer" key would silently unmarshal to an empty Candy).
-// The value lives in kit (the importable host-engine shared with out-of-tree
-// plugin candies); this is the in-core alias.
-const ledgerSchemaVersion = LedgerSchemaVersion
-
 // ledgerDoc is the minimal per-host charly.yml shape this package reads: the
 // `ledger:` section. Everything else is preserved as-is on write.
 type ledgerDoc struct {
@@ -217,15 +207,6 @@ func writeLedger(paths *LedgerPaths, deploys map[string]DeployRecord, candies ma
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
 		return fmt.Errorf("ledger: %s is not a mapping", paths.ConfigFile)
-	}
-
-	// Ensure the HEAD schema version stamp is present (the per-host file is
-	// loaded through the unified loader, which requires it).
-	if !hasMappingKey(root, "version") {
-		root.Content = append(root.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "version"},
-			&yaml.Node{Kind: yaml.ScalarNode, Value: spec.SchemaVersion},
-		)
 	}
 
 	// Build the ledger: {deploys, candies} value.
@@ -305,7 +286,6 @@ func WriteDeployRecord(paths *LedgerPaths, rec *DeployRecord) error {
 	if err := paths.Ensure(); err != nil {
 		return err
 	}
-	rec.SchemaVersion = ledgerSchemaVersion
 	if err := spec.ValidateRecord("deploy_record", paths.ConfigFile, rec); err != nil {
 		return err
 	}
@@ -320,9 +300,6 @@ func ReadDeployRecord(paths *LedgerPaths, id string) (*DeployRecord, error) {
 	rec, ok := deploys[id]
 	if !ok {
 		return nil, nil
-	}
-	if rec.SchemaVersion == "" {
-		return nil, fmt.Errorf("ReadDeployRecord: %s is a pre-cutover install-ledger record (legacy json:\"layer\" keys, no schema_version) — remove the stale record (it regenerates on the next deploy)", id)
 	}
 	return &rec, nil
 }
@@ -424,7 +401,6 @@ func WriteCandyRecord(paths *LedgerPaths, rec *CandyRecord) error {
 	if err := paths.Ensure(); err != nil {
 		return err
 	}
-	rec.SchemaVersion = ledgerSchemaVersion
 	if err := spec.ValidateRecord("candy_record", paths.ConfigFile, rec); err != nil {
 		return err
 	}
@@ -439,9 +415,6 @@ func ReadCandyRecord(paths *LedgerPaths, layer string) (*CandyRecord, error) {
 	rec, ok := candies[layer]
 	if !ok {
 		return nil, nil
-	}
-	if rec.SchemaVersion == "" {
-		return nil, fmt.Errorf("ReadCandyRecord: %s is a pre-cutover install-ledger record (legacy json:\"layer\" keys, no schema_version) — remove the stale record (it regenerates on the next deploy)", layer)
 	}
 	return &rec, nil
 }
@@ -612,7 +585,6 @@ func AddCandyDeploymentVia(exec spec.DeployExecutor, paths *LedgerPaths, candyNa
 			update(&rec)
 		}
 		rec.ReverseOps = MergeReverseOps(priorOps, rec.ReverseOps)
-		rec.SchemaVersion = ledgerSchemaVersion
 		if err := spec.ValidateRecord("candy_record", remoteFile, &rec); err != nil {
 			return nil, nil, err
 		}
@@ -641,7 +613,6 @@ func WriteDeployRecordVia(exec spec.DeployExecutor, paths *LedgerPaths, rec *Dep
 	}
 	ctx := context.Background()
 	const remoteFile = "~/.config/charly/charly.yml"
-	rec.SchemaVersion = ledgerSchemaVersion
 	if err := spec.ValidateRecord("deploy_record", remoteFile, rec); err != nil {
 		return err
 	}
@@ -676,12 +647,6 @@ func mutateRemoteLedger(data []byte, mutate func(map[string]DeployRecord, map[st
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("ledger: substrate charly.yml is not a mapping")
-	}
-	if !hasMappingKey(root, "version") {
-		root.Content = append(root.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "version"},
-			&yaml.Node{Kind: yaml.ScalarNode, Value: spec.SchemaVersion},
-		)
 	}
 	// Decode the current ledger section (if any).
 	deploys := map[string]DeployRecord{}

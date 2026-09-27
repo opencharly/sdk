@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
@@ -17,13 +16,13 @@ import (
 // constants DefaultCandyDir/DefaultBoxDir. The functions do the filesystem work and return; the
 // CALLER owns user-facing output (so kit stays presentation-free).
 //
-// Wall-clock stays out of kit: ScaffoldCandy takes the candy's `version:` CalVer as a param (the
-// caller passes charly's ComputeCalVer()), mirroring how the migrate helpers avoid reading the clock.
+// Wall-clock stays out of kit: ScaffoldCandy writes no version stamp (the candy `version:` field is
+// gone with the schema-versioning removal cutover), mirroring how the migrate helpers avoid reading
+// the clock.
 
 // scaffoldCharlyYAML is the seed charly.yml written into a fresh project. The project is immediately
 // usable — the default distro/builder/init/resource build vocabulary AND sidecar templates are embedded
-// in the charly binary, so there is no build vocabulary to copy or wire. The caller substitutes
-// __SCHEMA_VERSION__ via ScaffoldProject (LatestSchemaVersion()).
+// in the charly binary, so there is no build vocabulary to copy or wire.
 const scaffoldCharlyYAML = `# charly.yml — unified project root: the single file a project needs.
 # See https://github.com/opencharly/charly for documentation.
 #
@@ -37,8 +36,6 @@ const scaffoldCharlyYAML = `# charly.yml — unified project root: the single fi
 # Cross-kind name reuse is permitted — a single name (e.g. my-app) MAY exist
 # simultaneously as a candy, a box, a pod, a vm, a kubernetes, a local, AND a deploy
 # entry. charly verbs disambiguate by command context.
-
-version: __SCHEMA_VERSION__
 
 discover:
   - path: box
@@ -66,9 +63,9 @@ const scaffoldGitignore = `# Build artefacts
 
 // ScaffoldCandy creates a new candy directory at dir/<DefaultCandyDir>/<name> with a placeholder
 // manifest in the compact name-first node form. ADE mandates a description + at least one deterministic
-// check: step, so the scaffold ships a minimal passing pair the author replaces. calver stamps the
-// candy's mandatory version:. Errors if the candy already exists. The caller prints the created path.
-func ScaffoldCandy(dir, name, calver string) error {
+// check: step, so the scaffold ships a minimal passing pair the author replaces. Errors if the candy
+// already exists. The caller prints the created path.
+func ScaffoldCandy(dir, name string) error {
 	candyDir := filepath.Join(dir, DefaultCandyDir, name)
 
 	if _, err := os.Stat(candyDir); err == nil {
@@ -83,7 +80,6 @@ func ScaffoldCandy(dir, name, calver string) error {
 	candyContent := fmt.Sprintf(`# %s candy config
 %s:
     candy:
-        version: %s
         description: |
             TODO: one-line purpose of the %s candy
         # Add packages:  charly candy add-rpm %s <pkg>   (also add-deb / add-pac / add-aur / add-apk)
@@ -126,7 +122,7 @@ func ScaffoldCandy(dir, name, calver string) error {
 #           content: |
 #               #!/usr/bin/env bash
 #               …script…
-`, name, name, calver, name, name, name, name, name, name)
+`, name, name, name, name, name, name, name, name)
 	if err := os.WriteFile(candyYml, []byte(candyContent), 0644); err != nil {
 		return fmt.Errorf("creating %s: %w", spec.UnifiedFileName, err)
 	}
@@ -135,7 +131,6 @@ func ScaffoldCandy(dir, name, calver string) error {
 
 // ScaffoldProject creates an empty charly project at dir. Idempotency: errors out if dir already
 // contains an charly.yml so we never silently clobber an existing project. The dir itself may exist.
-// The seed's schema version is stamped to the current HEAD (LatestSchemaVersion).
 func ScaffoldProject(dir string) error {
 	if dir == "" {
 		return fmt.Errorf("project directory must be specified")
@@ -147,7 +142,7 @@ func ScaffoldProject(dir string) error {
 	if _, err := os.Stat(charlyPath); err == nil {
 		return fmt.Errorf("charly.yml already exists at %s; refusing to overwrite", charlyPath)
 	}
-	seed := strings.ReplaceAll(scaffoldCharlyYAML, "__SCHEMA_VERSION__", LatestSchemaVersion().String())
+	seed := scaffoldCharlyYAML
 	if err := os.WriteFile(charlyPath, []byte(seed), 0o644); err != nil {
 		return fmt.Errorf("writing charly.yml: %w", err)
 	}

@@ -23,36 +23,30 @@ import (
 // loader-result family; PickCandyVersion — the ARBITER — stays here because it needs kit's
 // semver/CalVer comparison (a mechanism).
 
-// PickCandyVersion arbitrates the candidates of ONE bare ref by per-entity
-// version. Same per-entity version across different git tags => NO warning, the
-// newest git tag wins (freshness). Different per-entity versions => warn once
-// (naming the winner + a loser) and the newest per-entity version wins. This is
-// the sole candy-version arbiter — direct and transitive refs both flow through
-// it. cands is non-empty.
-// warn receives the skew advisory. It USED to be a bare `fmt.Fprintf(os.Stderr, ...)` inside
-// this function, which made the advisory unstructured and therefore UNCOUNTABLE: `charly box
-// validate` could not report how many warnings a run produced because they never reached its
-// diagnostics, so its summary could only omit the number or state a false one — an early draft
-// printed "0 warnings" on a run that had just emitted two.
+// PickCandyVersion arbitrates the candidates of ONE bare ref by their source git tag
+// (the ONLY version — the authored per-entity `version:` is GONE with the
+// schema-versioning removal cutover). The newest CalVer git tag wins; a candidate whose
+// tag does not parse as CalVer sorts lowest (CompareCalVer falls back lexically). This is
+// the sole candy-version arbiter — direct and transitive refs both flow through it.
+// cands is non-empty.
 //
-// The sink is a REQUIRED parameter, not an optional shim. Every caller states where its
+// warn receives the skew advisory (when the candidates resolve to DIFFERENT git tags).
+// It is a REQUIRED parameter, not an optional shim. Every caller states where its
 // advisories go; passing nil selects stderr explicitly rather than by omission.
 func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, warn func(string, ...any)) spec.CandyCandidate {
 	best := cands[0]
 	for _, c := range cands[1:] {
-		if kit.CompareCalVer(c.Version, best.Version) > 0 {
-			best = c // newer per-entity version
-		} else if c.Version == best.Version && kit.CompareSemver(c.GitTag, best.GitTag) > 0 {
-			best = c // same per-entity version: prefer the newest git tag
+		if kit.CompareCalVer(c.GitTag, best.GitTag) > 0 {
+			best = c // newer source git tag
 		}
 	}
 	for _, c := range cands {
-		if c.Version != best.Version {
+		if c.GitTag != best.GitTag {
 			if warn == nil {
 				warn = func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) }
 			}
-			warn("Warning: candy %s resolved to multiple versions; using newest %s (from %s), ignoring %s (from %s)",
-				bareRef, best.Version, best.Source, c.Version, c.Source)
+			warn("Warning: candy %s resolved to multiple git tags; using newest %s (from %s), ignoring %s (from %s)",
+				bareRef, best.GitTag, best.Source, c.GitTag, c.Source)
 			break
 		}
 	}

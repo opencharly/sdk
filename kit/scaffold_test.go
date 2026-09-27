@@ -11,7 +11,7 @@ import (
 func TestScaffoldCandy(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	if err := ScaffoldCandy(tmpDir, "test-layer", "2026.001.0000"); err != nil {
+	if err := ScaffoldCandy(tmpDir, "test-layer"); err != nil {
 		t.Fatalf("ScaffoldCandy() error = %v", err)
 	}
 
@@ -34,7 +34,7 @@ func TestScaffoldCandyAlreadyExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ScaffoldCandy(tmpDir, "existing", "2026.001.0000"); err == nil {
+	if err := ScaffoldCandy(tmpDir, "existing"); err == nil {
 		t.Error("expected error for existing candy")
 	}
 }

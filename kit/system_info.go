@@ -130,12 +130,6 @@ func writeSystemInfo(path string, info spec.SystemInfo) error {
 	if root.Kind != yaml.MappingNode {
 		return nil
 	}
-	if !hasMappingKey(root, "version") {
-		root.Content = append(root.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "version"},
-			&yaml.Node{Kind: yaml.ScalarNode, Value: spec.SchemaVersion},
-		)
-	}
 	body, err := yaml.Marshal(info)
 	if err != nil {
 		return err

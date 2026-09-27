@@ -33,11 +33,15 @@ package loaderkit
 // root config, directive import:/repo: pins, flat imports, discovered manifests and every mounted
 // namespace, i.e. the CONTENT of every ref the walk resolved (fetched pinned repos are walked into
 // the envelope, CanonicalRef → EnsureRepoDownloaded → parsed docs/manifests); (2) the compiled
-// schema CalVer (kit.LatestSchemaVersion); (3) the compiled LOADER logic identity (the sdk module
-// version — loaderkit's parse/fold changes ship in a new sdk version). Any config change, ref
-// re-pin, branch advance, fetched-content change, schema bump, or loader-logic change re-keys. The
-// entry RECORDS the components too, so the read refuses an entry whose components differ from the
-// current ones (self-detection). There is NO time validity (the Docker cache rule): an old entry
+// SCHEMA identity — the spec module version that owns schema/*.cue (the former schema CalVer
+// component is GONE with the schema-versioning removal cutover; the CUE schema now lives wholly in
+// the spec module, so a schema change ships in a new spec version); (3) the compiled LOADER logic
+// identity (the sdk module version — loaderkit's parse/fold changes ship in a new sdk version). Any
+// config change, ref re-pin, branch advance, fetched-content change, schema change, or loader-logic
+// change re-keys.
+//
+// The entry RECORDS the components too, so the read refuses an entry whose components differ from
+// the current ones (self-detection). There is NO time validity (the Docker cache rule): an old entry
 // whose components match is served; reclamation of stale-input orphans is the Store prune's
 // storage-only job.
 //
@@ -52,7 +56,6 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/cache"
 	"github.com/opencharly/spec/spec"
 )
@@ -106,35 +109,23 @@ func loadedProjectCacheKey(lp *spec.LoadedProject) (string, map[string]string, e
 	}
 	comps := map[string]string{
 		"config_hash":     cache.HashHex(string(env)),
-		"schema_calver":   kit.LatestSchemaVersion().String(),
-		"loader_identity": loaderIdentity(),
+		"schema_identity": moduleIdentity(specModulePath),
+		"loader_identity": moduleIdentity(sdkModulePath),
 	}
 	return cache.KeyDigest(comps), comps, nil
 }
 
-// loaderIdentity names the COMPILED loader logic in the cache key (RCA 2026-09-06: the Phase 3
-// from: name:tag split landed in loaderkit WITHOUT a schema-CalVer bump, so the key (envelope +
-// schema CalVer) did not change and the cache served the PRE-SPLIT tree for up to the same-key
-// interval — the exact gap the RCA measured). The identity is the sdk module version from the
-// build info: loaderkit's parse/fold logic lives in the sdk module, so a loader-logic change
-// necessarily ships in a NEW sdk version → a new identity → a new cache key. A new binary never
-// inherits an older logic's tree. Fallback (no build info, e.g. go test): "bare" so tests in one
-// binary share one namespace. loaderIdentityFn is a package var (not a const) so tests inject a
-// DIFFERENT identity and prove both the key and the read-time drift detection respond to it.
-var loaderIdentityFn = func() string {
-	return loaderIdentityImpl()
-}
-
-func loaderIdentity() string { return loaderIdentityFn() }
-
-func loaderIdentityImpl() string {
+// moduleIdentity names a dependency module's compiled version from the build info, so a change to
+// code the schema/loader logic lives in re-keys the cache. Fallback (no build info, e.g. go test):
+// "bare" so tests in one binary share one namespace.
+func moduleIdentity(path string) string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info == nil {
 		return "bare"
 	}
 	for _, m := range info.Deps {
-		if m.Path == sdkModulePath {
-			return "sdk@" + m.Version
+		if m.Path == path {
+			return path + "@" + m.Version
 		}
 	}
 	return "bare"
@@ -143,6 +134,11 @@ func loaderIdentityImpl() string {
 // sdkModulePath is loaderkit's own module path — the identity key is the module that OWNS this
 // file's logic (any rename here must rename this constant with it).
 const sdkModulePath = "github.com/opencharly/sdk"
+
+// specModulePath is the module that owns schema/*.cue (the former schema-CalVer cache component):
+// the CUE schema lives wholly in the spec contract module, so a schema change ships as a new spec
+// version.
+const specModulePath = "github.com/opencharly/spec"
 
 // MaterializeLoadedProjectCached wraps the registry-coupled materialize leg with the host-side
 // materialized-tree cache: same-state loads reuse the stored merged tree instead of re-running the

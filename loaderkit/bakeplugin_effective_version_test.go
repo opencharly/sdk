@@ -52,7 +52,6 @@ func countCandyRequire(l spec.CandyReader, bare string) int {
 func TestBakePluginImpliesRequire_FeedsEffectiveVersion(t *testing.T) {
 	// The consumer candy declares ONLY bake_plugin (no explicit require:).
 	consumer := candyFromYAML(t, "consumer-candy", &spec.CandyYAML{
-		Version:    "2026.100.0000", // lower than the baked plugin below
 		BakePlugin: []string{"plugin-baked"},
 	})
 
@@ -93,7 +92,6 @@ func TestBakePluginImpliesRequire_FeedsEffectiveVersion(t *testing.T) {
 	// Declaring BOTH bake_plugin and an explicit require of the same ref does not
 	// double-add (the redundant case the cutover removes from candy/charly-mcp).
 	both := candyFromYAML(t, "both", &spec.CandyYAML{
-		Version:    "2026.100.0000",
 		Require:    []string{"plugin-baked"},
 		BakePlugin: []string{"plugin-baked"},
 	})

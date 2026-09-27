@@ -58,7 +58,7 @@ web:
 
 func TestParseDoc_DirectivesSkipped(t *testing.T) {
 	dirs, pp, err := ParseDoc(docFrom(t, `
-version: 2026.192.0000
+repo: github.com/opencharly/charly
 web:
   pod:
     from: img
@@ -66,11 +66,13 @@ web:
 	if err != nil {
 		t.Fatalf("ParseDoc: %v", err)
 	}
-	// version is a doc directive — skipped from the entity nodes.
+	// repo is a doc directive — skipped from the entity nodes.
 	if len(pp.Nodes) != 1 || pp.Nodes[0].Name != "web" {
 		t.Fatalf("nodes = %+v, want just web", pp.Nodes)
 	}
-	_ = dirs
+	if len(dirs) != 1 || dirs["repo"] == nil {
+		t.Fatalf("directives = %v, want the repo directive collected", dirs)
+	}
 }
 
 func TestParseDoc_DesugarsSugarVerb(t *testing.T) {

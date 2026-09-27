@@ -68,7 +68,7 @@ type ResolveProjectSeams struct {
 //
 //nolint:gocyclo // envelope assembler — the box loop (pre-resolved vs fresh vs intermediate) + the candy/deploy/vocab projections; one branch per projection arm.
 func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader, uf *spec.UnifiedFile, distroCfg *buildkit.DistroConfig, builderCfg *buildkit.BuilderConfig, initCfg *buildkit.InitConfig, dir, version, calver string, seams ResolveProjectSeams, diags *spec.Diagnostics, preResolvedBoxes map[string]*buildkit.ResolvedBox) (*spec.ResolvedProject, error) {
-	rp := &spec.ResolvedProject{Version: version}
+	rp := &spec.ResolvedProject{}
 
 	resolvedBoxes := map[string]*buildkit.ResolvedBox{}
 	// The init `depends_candy:` injection, on the AUTHORED config, BEFORE anything is resolved or

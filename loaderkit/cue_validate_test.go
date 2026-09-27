@@ -11,7 +11,7 @@ import (
 // SAME ValidateEntityClosedCUE gate the load path runs (the gate's exact usage).
 func TestCueDocFromJSON_IngestAndGate(t *testing.T) {
 	// A valid canonical body ingests cleanly and passes the closedness gate.
-	v, err := CueDocFromJSON("node n", []byte(`{"version":"2026.150.0000","description":"x"}`))
+	v, err := CueDocFromJSON("node n", []byte(`{"description":"x"}`))
 	if err != nil {
 		t.Fatalf("CueDocFromJSON valid body: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestCueDocFromJSON_IngestAndGate(t *testing.T) {
 	}
 
 	// A closedness-violating body (an unknown field) fails the gate and the error names the field.
-	bad, err := CueDocFromJSON("node n", []byte(`{"version":"2026.150.0000","description":"x","zz_unknown_field":1}`))
+	bad, err := CueDocFromJSON("node n", []byte(`{"description":"x","zz_unknown_field":1}`))
 	if err != nil {
 		t.Fatalf("CueDocFromJSON closedness-violating body: %v", err)
 	}
