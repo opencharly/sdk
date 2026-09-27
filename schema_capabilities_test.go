@@ -44,7 +44,8 @@ func TestCommandModelWireFieldAllocationAndRoundTrip(t *testing.T) {
 // it, and once the pin adopts the field-removed spec the wire walk is what
 // remains. Either way the emitted message carries no field 2.
 func TestBuildCapabilitiesDropsProtocolVersion(t *testing.T) {
-	caps, err := BuildCapabilities("2026.261.1747", nil, nil, "")
+	caps, err := BuildCapabilities("2026.261.1747",
+		[]ProvidedCapability{{Class: "verb", Word: "x", InputDef: "#Input"}}, testSchemaFS(), "schema")
 	if err != nil {
 		t.Fatalf("BuildCapabilities: %v", err)
 	}
@@ -73,9 +74,9 @@ func TestBuildCapabilitiesDropsProtocolVersion(t *testing.T) {
 // present, but the sdk mapping is what this test exercises).
 func TestBuildCapabilitiesCarriesInteractive(t *testing.T) {
 	caps, err := BuildCapabilities("2026.261.1747", []ProvidedCapability{
-		{Class: "command", Word: "shell", Interactive: true},
-		{Class: "command", Word: "check", Interactive: false},
-	}, nil, "")
+		{Class: "command", Word: "shell", Interactive: true, InputDef: "#Input"},
+		{Class: "command", Word: "check", Interactive: false, InputDef: "#Input"},
+	}, testSchemaFS(), "schema")
 	if err != nil {
 		t.Fatalf("BuildCapabilities: %v", err)
 	}
