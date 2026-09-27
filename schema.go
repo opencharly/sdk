@@ -84,30 +84,26 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 // placement). A plugin with no dependencies calls BuildCapabilities, which forwards a
 // nil requires — byte-identical to before.
 func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability, requires []Requirement, schemaFS fs.FS, dir string) (*pb.Capabilities, error) {
-	// Stub-gate relaxation (schema-compaction cutover): an INPUT-LESS plugin (no
-	// capability declares an InputDef) may ship no schema at all — pass a nil
-	// schemaFS. A plugin that declares an input def must serve the schema
-	// defining it (the host cross-checks def + primary at registration).
-	var body string
-	if schemaFS != nil {
-		var err error
-		body, _, err = schemaconcat.ConcatSchema(schemaFS, dir, nil)
-		if err != nil {
-			return nil, fmt.Errorf("plugin schema: %w", err)
-		}
+	// NO SCHEMA-LESS PLUGINS (the former "stub-gate relaxation" is DELETED). Every
+	// plugin MUST serve a non-empty, self-contained CUE schema — its single source
+	// for typed params, charly.yml/env configuration, runtime validation, and Go
+	// code generation. There is no input-less exemption: a plugin whose capability
+	// declares no structured input (a pass-through command, a substrate kind, a
+	// deploy target) still ships its schema — the "doc schema" — so EVERY plugin
+	// presents the same CUE-validated, code-generated surface with no exceptions.
+	// The host gate (registerPluginUnitSchema, the charly leg of this cutover)
+	// enforces the same rule, so a plugin cannot reach the wire without one.
+	if schemaFS == nil {
+		return nil, fmt.Errorf("plugin ships NO CUE schema: every plugin MUST serve a non-empty schema (there is no schema-less plugin)")
 	}
-	hasInputDef := false
-	for _, c := range provided {
-		if c.InputDef != "" {
-			hasInputDef = true
-		}
+	body, _, err := schemaconcat.ConcatSchema(schemaFS, dir, nil)
+	if err != nil {
+		return nil, fmt.Errorf("plugin schema: %w", err)
 	}
 	if strings.TrimSpace(body) == "" {
-		if hasInputDef {
-			return nil, fmt.Errorf("plugin declares an input def but ships no CUE schema")
-		}
-		body = ""
-	} else if v := cuecontext.New().CompileString(body); v.Err() != nil {
+		return nil, fmt.Errorf("plugin ships an EMPTY CUE schema: every plugin MUST serve a non-empty schema")
+	}
+	if v := cuecontext.New().CompileString(body); v.Err() != nil {
 		return nil, fmt.Errorf("plugin schema does not compile: %w", v.Err())
 	}
 	out := make([]*pb.ProvidedCapability, 0, len(provided))
