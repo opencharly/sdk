@@ -209,9 +209,6 @@ func FindVmDeployNode(deploys map[string]DeployNode, name, vmName string) (Deplo
 		if e, ok := deploys[name]; ok && (e.Target == "vm" || e.From != "") {
 			return e, true, nil
 		}
-		if e, ok := deploys["vm:"+name]; ok {
-			return e, true, nil
-		}
 	}
 	var match DeployNode
 	var matchKey string
