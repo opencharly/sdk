@@ -372,10 +372,12 @@ func TestFindVmDeployNode_AmbiguousFallbackErrors(t *testing.T) {
 	deploys := map[string]DeployNode{
 		// Two independent top-level vm deploys sharing one base entity —
 		// the check-substrate / check-builder-vm shape (both real top-level
-		// vm deploys, both `from: eval-vm`).
-		"check-substrate":  {Target: "vm", From: "eval-vm", Plan: []spec.Step{{Check: "substrate step"}}},
-		"check-builder-vm": {Target: "vm", From: "eval-vm", Plan: []spec.Step{{Check: "builder step"}}},
-		"unrelated-vm":     {Target: "vm", From: "other-base"},
+		// vm deploys, both `from: eval-vm`). The vm-ness is read off the
+		// loader-STAMPED descent (the persisted node-form drops `target:`), so
+		// these fixtures carry the trait, not the word.
+		"check-substrate":  {Descent: vmDescent(), From: "eval-vm", Plan: []spec.Step{{Check: "substrate step"}}},
+		"check-builder-vm": {Descent: vmDescent(), From: "eval-vm", Plan: []spec.Step{{Check: "builder step"}}},
+		"unrelated-vm":     {Descent: vmDescent(), From: "other-base"},
 		"unrelated-non-vm": {Target: "pod"},
 	}
 
@@ -425,6 +427,44 @@ func TestFindVmDeployNode_AmbiguousFallbackErrors(t *testing.T) {
 			t.Errorf("FindVmDeployNode(nil) = (ok=%v, err=%v), want (false, nil)", ok, err)
 		}
 	})
+}
+
+// vmDescent is the loader-STAMPED host-libvirt vm descent — the substrate
+// plugin's declared #DeployTraits (ssh venue + exclusive host-resource lease)
+// projected by spec.DescentFromTraits. Every node a LoadUnified'd project or a
+// per-host overlay read produces carries this shape (loaderkit.StampDeployDescents),
+// so it is the realistic fixture for a persisted vm deploy node.
+func vmDescent() *spec.DescentDescriptor {
+	return spec.DescentFromTraits(&spec.DeployTraits{Venue: "ssh", MachineVenue: true, ExclusiveVenue: true})
+}
+
+// TestFindVmDeployNode_ReadsStampedDescentNotTargetWord is the C6 close: the
+// lookup identifies a host-libvirt vm by its loader-STAMPED descent trait, never
+// by a `.Target == "vm"` comparison against the substrate kind word. A persisted
+// vm node carries no `target:` (the node-form discriminator supplies it at load)
+// but DOES carry the stamped descent — the exact shape the former word-sniff
+// could not resolve. Fails without the change (the word-sniff returns not-found
+// for a Target-less node).
+func TestFindVmDeployNode_ReadsStampedDescentNotTargetWord(t *testing.T) {
+	// Target deliberately ABSENT; From set (the `vm:` cross-ref a persisted vm
+	// deploy always carries) so both the name-key and the entity-scan arms resolve.
+	deploys := map[string]DeployNode{
+		"check-vm": {Descent: vmDescent(), From: "eval-vm"},
+	}
+	if node, ok, err := FindVmDeployNode(deploys, "check-vm", "eval-vm"); err != nil || !ok || node.From != "eval-vm" {
+		t.Fatalf("name-keyed lookup of a descent-stamped, Target-less vm node = (%+v, %v, %v); want the entry, true, nil", node, ok, err)
+	}
+	if _, ok, err := FindVmDeployNode(deploys, "caller-knows-only-the-entity", "eval-vm"); err != nil || !ok {
+		t.Fatalf("entity scan of a descent-stamped, Target-less vm node: ok=%v err=%v; want true, nil", ok, err)
+	}
+
+	// The complement: an ssh-venue node WITHOUT the exclusive lease (the kubevirt
+	// substrate) is NOT a host-libvirt vm — IsVmVenue excludes it exactly as the
+	// former `.Target == "vm"` (kubevirt's Target is its own word) did.
+	kubevirt := DeployNode{Descent: spec.DescentFromTraits(&spec.DeployTraits{Venue: "ssh"}), From: "eval-vm"}
+	if _, ok, _ := FindVmDeployNode(map[string]DeployNode{"kv": kubevirt}, "caller", "eval-vm"); ok {
+		t.Fatal("a kubevirt node (ssh venue, no exclusive lease) must NOT resolve as a host-libvirt vm")
+	}
 }
 
 // TestPathLeaf pins the leaf-extraction semantics — including the tolerant

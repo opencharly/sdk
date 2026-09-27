@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/deploy"
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
@@ -172,14 +173,24 @@ func RejectImageRefAsDeployName(box string) error {
 	return nil
 }
 
-// FindVmDeployNode finds the DeployNode for a vm-target deploy. It is
+// FindVmDeployNode finds the DeployNode for a host-libvirt VM deploy. It is
 // THE shared "which deploy entry backs this VM" lookup used by both
 // `charly deploy add` (artifact-env collection) and `charly check live` (tests
 // overlay), so the two never diverge. Resolution order:
 //  1. by deploy NAME (the entry key) — the precise match;
 //  2. by the legacy "vm:<name>" key form;
-//  3. by scanning for any target:vm entry whose `vm:` field == vmName (or
+//  3. by scanning for any host-libvirt vm entry whose `vm:` field == vmName (or
 //     == name) — the fallback when the caller only knows the vm entity.
+//
+// "Is this a host-libvirt VM" is read off the node's loader-STAMPED descent
+// (deploy.IsVmVenue — the ssh venue + the exclusive host-resource lease) — never
+// a comparison against the substrate kind WORD. The stamp is present on every
+// node a LoadUnified'd project OR a per-host overlay read produces
+// (loaderkit.StampDeployDescents re-derives it from the substrate plugin's
+// declared #DeployTraits on every load), and IsVmVenue deliberately excludes the
+// ssh-venue kubevirt substrate (no exclusive lease) — exactly the set the former
+// `.Target == "vm"` sniff selected. Boundary law: consult the trait, not the
+// word. This closes C6 — the residual `.Target` word-read is DELETED.
 //
 // Keying by the deploy NAME first is load-bearing: a bed whose key differs
 // from its vm entity (e.g. check-k3s-vm -> vm: k3s-vm) is found by its key,
@@ -206,7 +217,7 @@ func FindVmDeployNode(deploys map[string]DeployNode, name, vmName string) (Deplo
 		return DeployNode{}, false, nil
 	}
 	if name != "" {
-		if e, ok := deploys[name]; ok && (e.Target == "vm" || e.From != "") {
+		if e, ok := deploys[name]; ok && (deploy.IsVmVenue(&e) || e.From != "") {
 			return e, true, nil
 		}
 	}
@@ -214,7 +225,7 @@ func FindVmDeployNode(deploys map[string]DeployNode, name, vmName string) (Deplo
 	var matchKey string
 	found := false
 	for k, e := range deploys {
-		if e.Target == "vm" && e.From != "" && (e.From == vmName || e.From == name) {
+		if deploy.IsVmVenue(&e) && e.From != "" && (e.From == vmName || e.From == name) {
 			if found {
 				return DeployNode{}, false, fmt.Errorf("ambiguous vm deploy lookup for %q (vm %q): both %q and %q declare from %q — the caller must resolve the exact deploy node instead of scanning by entity", name, vmName, matchKey, k, e.From)
 			}
