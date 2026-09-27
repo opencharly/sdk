@@ -12,7 +12,7 @@ import (
 // the wire Capabilities.requires field stays empty, so a plugin with no dependencies
 // is unaffected (the 145 sdk.NewMeta( call sites across the corpus are unchanged).
 func TestBuildCapabilitiesNoRequiresIsEmpty(t *testing.T) {
-	caps, err := BuildCapabilities("2026.176.0001", []ProvidedCapability{{Class: "verb", Word: "x"}}, nil, "schema")
+	caps, err := BuildCapabilities("2026.176.0001", []ProvidedCapability{{Class: "verb", Word: "x", InputDef: "#Input"}}, testSchemaFS(), "schema")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,11 +27,11 @@ func TestBuildCapabilitiesNoRequiresIsEmpty(t *testing.T) {
 // in-memory.
 func TestBuildCapabilitiesRequiresRoundTrip(t *testing.T) {
 	caps, err := BuildCapabilitiesWithRequires("2026.176.0001",
-		[]ProvidedCapability{{Class: "verb", Word: "x"}},
+		[]ProvidedCapability{{Class: "verb", Word: "x", InputDef: "#Input"}},
 		[]Requirement{
 			{Class: "verb", Word: "enc"},
 			{Class: "kind", Word: "sidecar", Source: "github.com/opencharly/plugin-sidecar/candy/plugin-sidecar", Optional: true},
-		}, nil, "schema")
+		}, testSchemaFS(), "schema")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,9 +62,9 @@ func TestBuildCapabilitiesRequiresRoundTrip(t *testing.T) {
 // tests above would still pass, so this exercises the branch they do not).
 func TestNewMetaWithRequiresDescribeCarriesRequires(t *testing.T) {
 	srv := NewMetaWithRequires("2026.176.0001",
-		[]ProvidedCapability{{Class: "verb", Word: "x"}},
+		[]ProvidedCapability{{Class: "verb", Word: "x", InputDef: "#Input"}},
 		[]Requirement{{Class: "verb", Word: "enc"}},
-		nil)
+		testSchemaFS())
 	caps, err := srv.Describe(context.Background(), &pb.Empty{})
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestNewMetaWithRequiresDescribeCarriesRequires(t *testing.T) {
 // NewMeta (no requires) must Describe with an empty requires — the unchanged path the
 // existing 145 sdk.NewMeta( call sites rely on.
 func TestNewMetaDescribeHasNoRequires(t *testing.T) {
-	srv := NewMeta("2026.176.0001", []ProvidedCapability{{Class: "verb", Word: "x"}}, nil)
+	srv := NewMeta("2026.176.0001", []ProvidedCapability{{Class: "verb", Word: "x", InputDef: "#Input"}}, testSchemaFS())
 	caps, err := srv.Describe(context.Background(), &pb.Empty{})
 	if err != nil {
 		t.Fatal(err)
@@ -98,9 +98,9 @@ func TestNewMetaDescribeHasNoRequires(t *testing.T) {
 func TestBuildCapabilitiesCommandParentRoundTrip(t *testing.T) {
 	caps, err := BuildCapabilities("2026.176.0001",
 		[]ProvidedCapability{
-			{Class: "command", Word: "generate", CommandParent: "box"},
-			{Class: "command", Word: "feature"},
-		}, nil, "schema")
+			{Class: "command", Word: "generate", CommandParent: "box", InputDef: "#Input"},
+			{Class: "command", Word: "feature", InputDef: "#Input"},
+		}, testSchemaFS(), "schema")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestBuildCapabilitiesCommandParentRoundTrip(t *testing.T) {
 // so the host never sees an off-grammar identity (only commands nest).
 func TestBuildCapabilitiesRejectsCommandParentOffCommand(t *testing.T) {
 	_, err := BuildCapabilities("2026.176.0001",
-		[]ProvidedCapability{{Class: "verb", Word: "x", CommandParent: "box"}}, nil, "schema")
+		[]ProvidedCapability{{Class: "verb", Word: "x", CommandParent: "box", InputDef: "#Input"}}, testSchemaFS(), "schema")
 	if err == nil {
 		t.Fatal("BuildCapabilities accepted a command parent on a non-command capability")
 	}
@@ -138,11 +138,11 @@ func TestBuildCapabilitiesRejectsCommandParentOffCommand(t *testing.T) {
 // parent rides the wire PluginRequirement.command_parent field.
 func TestBuildCapabilitiesRequirementCommandParentRoundTrip(t *testing.T) {
 	caps, err := BuildCapabilitiesWithRequires("2026.176.0001",
-		[]ProvidedCapability{{Class: "verb", Word: "x"}},
+		[]ProvidedCapability{{Class: "verb", Word: "x", InputDef: "#Input"}},
 		[]Requirement{
 			{Class: "command", Word: "feature"},
 			{Class: "command", Word: "feature", CommandParent: "box"},
-		}, nil, "schema")
+		}, testSchemaFS(), "schema")
 	if err != nil {
 		t.Fatal(err)
 	}

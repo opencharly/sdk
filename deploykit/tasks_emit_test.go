@@ -315,8 +315,8 @@ func TestEmitDownload_TarGz(t *testing.T) {
 	}
 	// The file must actually be CACHED: content-addressed path under the mount,
 	// fetched only when absent, atomically renamed from .part on success.
-	if !strings.Contains(out, "/tmp/downloads/$(printf %s") || !strings.Contains(out, "sha256sum") {
-		t.Errorf("download must be content-addressed in /tmp/downloads:\n%s", out)
+	if !strings.Contains(out, "/var/cache/charly/downloads/$(printf %s") || !strings.Contains(out, "sha256sum") {
+		t.Errorf("download must be content-addressed in /var/cache/charly/downloads:\n%s", out)
 	}
 	if !strings.Contains(out, `[ -s "$__c" ] ||`) {
 		t.Errorf("download must skip re-fetch when the cached file already exists:\n%s", out)
@@ -327,7 +327,7 @@ func TestEmitDownload_TarGz(t *testing.T) {
 	// testResolvedBox() is a non-root (UID 1000) stage with no explicit RunAs,
 	// so the downloads cache follows the stage user (taskRunsAsRoot) and gets
 	// the uid/gid-owned mount, not the shared root-only form.
-	if !strings.Contains(out, "--mount=type=cache,id=charly-tmp-downloads-uid1000,dst=/tmp/downloads,uid=1000,gid=1000") {
+	if !strings.Contains(out, "--mount=type=cache,id=charly-var-cache-charly-downloads-uid1000,dst=/var/cache/charly/downloads,uid=1000,gid=1000") {
 		t.Errorf("non-root stage should declare an uid/gid-owned downloads cache mount:\n%s", out)
 	}
 }
@@ -353,7 +353,7 @@ func TestEmitDownload_Sh(t *testing.T) {
 	if !strings.Contains(out, `sh "$__c"`) {
 		t.Errorf("should run the cached install script:\n%s", out)
 	}
-	if !strings.Contains(out, "sha256sum") || !strings.Contains(out, "/tmp/downloads") {
+	if !strings.Contains(out, "sha256sum") || !strings.Contains(out, "/var/cache/charly/downloads") {
 		t.Errorf("install script should also be content-addressed in the cache:\n%s", out)
 	}
 	idxSh := strings.LastIndex(out, `sh "$__c"`)
@@ -394,7 +394,7 @@ func TestEmitDownload_DownloadsCacheOwnership(t *testing.T) {
 	if err := EmitDownload(&nonRoot, op, img); err != nil {
 		t.Fatalf("EmitDownload: %v", err)
 	}
-	if out := nonRoot.String(); !strings.Contains(out, "--mount=type=cache,id=charly-tmp-downloads-uid1000,dst=/tmp/downloads,uid=1000,gid=1000") {
+	if out := nonRoot.String(); !strings.Contains(out, "--mount=type=cache,id=charly-var-cache-charly-downloads-uid1000,dst=/var/cache/charly/downloads,uid=1000,gid=1000") {
 		t.Errorf("non-root stage must get an uid/gid-owned downloads cache mount:\n%s", out)
 	}
 
@@ -406,10 +406,10 @@ func TestEmitDownload_DownloadsCacheOwnership(t *testing.T) {
 		t.Fatalf("EmitDownload: %v", err)
 	}
 	out := root.String()
-	if !strings.Contains(out, "--mount=type=cache,id=charly-tmp-downloads,dst=/tmp/downloads,sharing=locked") {
+	if !strings.Contains(out, "--mount=type=cache,id=charly-var-cache-charly-downloads,dst=/var/cache/charly/downloads,sharing=locked") {
 		t.Errorf("root stage must keep the shared downloads cache mount:\n%s", out)
 	}
-	if strings.Contains(out, "charly-tmp-downloads-uid") {
+	if strings.Contains(out, "charly-var-cache-charly-downloads-uid") {
 		t.Errorf("root stage must not get a uid-scoped cache id:\n%s", out)
 	}
 }
@@ -489,7 +489,7 @@ func TestEmitCmd_UserNpmCache(t *testing.T) {
 	if strings.Contains(out, "libdnf5") {
 		t.Errorf("non-root cmd should NOT include distro cache:\n%s", out)
 	}
-	if !strings.Contains(out, "/tmp/npm-cache") {
+	if !strings.Contains(out, "/var/cache/charly/npm-cache") {
 		t.Errorf("non-root cmd should include npm cache:\n%s", out)
 	}
 	if !strings.Contains(out, "uid=1000,gid=1000") {
