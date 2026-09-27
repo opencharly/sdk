@@ -27,18 +27,43 @@ func LoadPackaging(path string) (*spec.Packaging, error) {
 // ParsePackaging parses the `packaging:` section from charly.yml bytes. A candy
 // charly.yml is `candy-name: {candy: {…}}` — the candy name is dynamic, so the
 // parser walks the top-level keys and returns the first `candy.packaging` block.
+//
+// The document is decoded into a yaml.Node rather than a map[string]struct{…}
+// because a REAL candy charly.yml carries a top-level `version: <calver>` SCALAR
+// alongside the `candy:` map. Unmarshalling the whole document into a typed map
+// fails on that scalar before ever reaching the candy body, so `charly
+// generate-packages` errored on every real candy. Walking the node lets a
+// top-level scalar be tolerated while the `candy:` map is decoded into the
+// CUE-generated spec.Packaging type.
 func ParsePackaging(data []byte) (*spec.Packaging, error) {
-	var root map[string]struct {
-		Candy struct {
-			Packaging *spec.Packaging `yaml:"packaging"`
-		} `yaml:"candy"`
-	}
-	if err := yaml.Unmarshal(data, &root); err != nil {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("parse charly.yml: %w", err)
 	}
-	for _, c := range root {
-		if c.Candy.Packaging != nil {
-			return c.Candy.Packaging, nil
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return nil, fmt.Errorf("no packaging: section in charly.yml")
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("no packaging: section in charly.yml")
+	}
+	// Walk top-level keys; a top-level scalar (e.g. `version:`) is skipped, and
+	// a mapping keyed by a candy name is decoded for its `candy.packaging` block.
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		val := root.Content[i+1]
+		if val.Kind != yaml.MappingNode {
+			continue
+		}
+		var body struct {
+			Candy struct {
+				Packaging *spec.Packaging `yaml:"packaging"`
+			} `yaml:"candy"`
+		}
+		if err := val.Decode(&body); err != nil {
+			return nil, fmt.Errorf("parse charly.yml: %w", err)
+		}
+		if body.Candy.Packaging != nil {
+			return body.Candy.Packaging, nil
 		}
 	}
 	return nil, fmt.Errorf("no packaging: section in charly.yml")
