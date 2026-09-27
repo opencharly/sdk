@@ -5,27 +5,25 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
-
-	"github.com/opencharly/spec/spec"
 )
 
 // testSchemaFS is the minimal NON-EMPTY CUE schema every plugin MUST now ship.
 // The former "stub-gate relaxation" (an input-less plugin could pass a nil
-// schemaFS) is DELETED: there is no plugin without a CUE schema, and no
-// input-less plugin. These tests exercise the real contract instead of waiving it.
+// schemaFS) is DELETED: there is no plugin without a CUE schema. These tests
+// exercise the real contract instead of waiving it.
 func testSchemaFS() fs.FS {
 	return fstest.MapFS{"schema/plugin.cue": &fstest.MapFile{
 		Data: []byte("#Input: {\n\tword: string\n}\n"),
 	}}
 }
 
-// inputlessSchemaFS is a schema FS that concatenates to an EMPTY body (no .cue
+// emptySchemaFS is a schema FS that concatenates to an EMPTY body (no .cue
 // files) — the empty-schema rejection path.
 func emptySchemaFS() fs.FS {
 	return fstest.MapFS{"schema/README.md": &fstest.MapFile{Data: []byte("not a schema\n")}}
 }
 
-// A nil schemaFS is now a hard serve-time error — the input-less waiver is gone.
+// A nil schemaFS is now a hard serve-time error — the schema waiver is gone.
 func TestBuildCapabilitiesRejectsNilSchema(t *testing.T) {
 	_, err := BuildCapabilities("2026.176.0001",
 		[]ProvidedCapability{{Class: "verb", Word: "x", InputDef: "#Input"}}, nil, "schema")
@@ -50,33 +48,21 @@ func TestBuildCapabilitiesRejectsEmptySchema(t *testing.T) {
 	}
 }
 
-// A capability that declares NEITHER an input_def NOR a command model is
-// INPUT-LESS and rejected — there is no such thing as an input-less capability,
-// command included.
-func TestBuildCapabilitiesRejectsInputLessPlugin(t *testing.T) {
-	_, err := BuildCapabilities("2026.176.0001",
-		[]ProvidedCapability{{Class: "verb", Word: "x"}}, testSchemaFS(), "schema")
-	if err == nil {
-		t.Fatal("BuildCapabilities accepted an input-less capability (no input_def and no command model)")
-	}
-	if !strings.Contains(err.Error(), "INPUT-LESS") {
-		t.Fatalf("error = %v, want an INPUT-LESS rejection", err)
-	}
-}
-
-// A class:command capability is NOT input-less when it carries a command model
-// (`#CLIModel`) — the uniform typed-input surface for a command. This is the
-// shape a trivial command (e.g. `charly version`) ships: a minimal model, never
-// nothing.
-func TestBuildCapabilitiesAcceptsCommandModelAsTypedInput(t *testing.T) {
+// A capability that declares no structured input (a pass-through command, a
+// substrate kind, a deploy target) is NOT a schema exemption: the plugin still
+// ships its "doc schema" and serves fine. This pins the uniform rule — the
+// schema is required for EVERY plugin, while a per-capability InputDef is not.
+func TestBuildCapabilitiesAcceptsDocSchemaWithoutInputDef(t *testing.T) {
 	caps, err := BuildCapabilities("2026.176.0001",
-		[]ProvidedCapability{{Class: "command", Word: "version", CommandModel: &spec.CLIModel{Name: "version"}}},
-		testSchemaFS(), "schema")
+		[]ProvidedCapability{
+			{Class: "command", Word: "review"},
+			{Class: "kind", Word: "candy"},
+			{Class: "deploy", Word: "local"},
+		}, testSchemaFS(), "schema")
 	if err != nil {
-		t.Fatalf("BuildCapabilities rejected a command with a command model: %v", err)
+		t.Fatalf("BuildCapabilities rejected a plugin that ships a doc schema: %v", err)
 	}
-	provided := caps.GetProvided()
-	if len(provided) != 1 || len(provided[0].GetCommandModelJson()) == 0 {
-		t.Fatalf("command model was not carried onto the wire: %+v", provided)
+	if got := len(caps.GetProvided()); got != 3 {
+		t.Fatalf("provided length = %d, want 3", got)
 	}
 }

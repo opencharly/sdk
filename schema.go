@@ -84,16 +84,15 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 // placement). A plugin with no dependencies calls BuildCapabilities, which forwards a
 // nil requires — byte-identical to before.
 func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability, requires []Requirement, schemaFS fs.FS, dir string) (*pb.Capabilities, error) {
-	// NO INPUT-LESS PLUGINS, NO SCHEMA-LESS PLUGINS (the former "stub-gate
-	// relaxation" is DELETED). Every plugin MUST serve a non-empty, self-contained
-	// CUE schema, and EVERY capability it provides MUST declare a TYPED input: an
-	// input_def the schema defines (verb/kind/deploy/step/builder/build) or a
-	// command model (`#CLIModel`, Kong-reflected) for a command. Both are the SAME
-	// uniform surface — CUE-schema-validated and Go-code-generated — so a trivial
-	// command (e.g. `charly version`) still ships a minimal schema + model; it just
-	// does not have to be a RICH one. The host gate (registerPluginUnitSchema, the
-	// charly leg of this cutover) enforces the same rule, so a plugin cannot reach
-	// the wire without one.
+	// NO SCHEMA-LESS PLUGINS (the former "stub-gate relaxation" is DELETED). Every
+	// plugin MUST serve a non-empty, self-contained CUE schema — its single source
+	// for typed params, charly.yml/env configuration, runtime validation, and Go
+	// code generation. There is no input-less exemption: a plugin whose capability
+	// declares no structured input (a pass-through command, a substrate kind, a
+	// deploy target) still ships its schema — the "doc schema" — so EVERY plugin
+	// presents the same CUE-validated, code-generated surface with no exceptions.
+	// The host gate (registerPluginUnitSchema, the charly leg of this cutover)
+	// enforces the same rule, so a plugin cannot reach the wire without one.
 	if schemaFS == nil {
 		return nil, fmt.Errorf("plugin ships NO CUE schema: every plugin MUST serve a non-empty schema (there is no schema-less plugin)")
 	}
@@ -109,9 +108,6 @@ func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability,
 	}
 	out := make([]*pb.ProvidedCapability, 0, len(provided))
 	for _, c := range provided {
-		if c.InputDef == "" && c.CommandModel == nil {
-			return nil, fmt.Errorf("plugin capability %s:%s is INPUT-LESS (declares no input_def and no command model): every capability MUST declare a typed input", c.Class, c.Word)
-		}
 		if c.CommandParent != "" && c.Class != "command" {
 			return nil, fmt.Errorf("plugin capability %s:%s declares a command parent %q outside class=command", c.Class, c.Word, c.CommandParent)
 		}
