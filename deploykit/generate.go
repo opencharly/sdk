@@ -211,11 +211,11 @@ func (g *Generator) generateDataImageContainerfile(boxName string, img *buildkit
 	// Data staging COPY instructions
 	g.WriteDataStaging(&b, candyOrder, img)
 
-	// Minimal labels (no init, no services, no ports). Content-derived
-	// EffectiveVersion (not the per-build tag), and the box's LEAF name — the identifier the
-	// image ref is built from, never the namespace-qualified map key (see buildBakedMetadata).
+	// Minimal labels (no init, no services, no ports). The box's LEAF name — the identifier
+	// the image ref is built from, never the namespace-qualified map key (see
+	// buildBakedMetadata). The ai.opencharly.version label is DROPPED (the schema-versioning
+	// removal cutover deleted the authored version; the image is identified by ai.opencharly.box).
 	b.WriteString("# Image metadata\n")
-	fmt.Fprintf(&b, "LABEL %s=%q\n", spec.LabelVersion, img.EffectiveVersion)
 	fmt.Fprintf(&b, "LABEL %s=%q\n", spec.LabelBox, spec.LeafName(boxName))
 	if img.Registry != "" {
 		fmt.Fprintf(&b, "LABEL %s=%q\n", spec.LabelRegistry, img.Registry)

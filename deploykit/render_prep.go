@@ -98,8 +98,8 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 	img := g.Boxes[boxName]
 	meta := &spec.BakedLabelSet{}
 
-	// Always-present scalars (the formatter emits them unconditionally).
-	meta.Version = img.EffectiveVersion
+	// Always-present scalars (the formatter emits them unconditionally). The
+	// ai.opencharly.version label is dropped (schema-versioning removal cutover).
 	// ai.opencharly.box carries the box's LEAF name — the same identifier the image ref is built
 	// from (buildkit.ResolveBox descends into the namespace and names FullTag `<registry>/<leaf>`),
 	// NOT this map key, which for an imported box is namespace-qualified (`fedora.fedora-nonfree`).

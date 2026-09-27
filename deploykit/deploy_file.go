@@ -24,9 +24,9 @@ import (
 //
 // ONE of these bodies reaches a core Mechanism the SDK cannot import — the unified LOADER
 // (LoadUnified → uf.ProjectDeployConfig), reached through the DeployStateHost seam below
-// (filled by charly at init). The process-shared deploy-config FLOCK + the runtime VERSION
-// stamp are kind-blind kit primitives (kit.AcquireFileLock / kit.LatestSchemaVersion) called
-// directly; the deploy-kind-specific marshal (the struct-body → compact node-form transform)
+// (filled by charly at init). The process-shared deploy-config FLOCK is a kind-blind kit
+// primitive (kit.AcquireFileLock) called directly; the deploy-kind-specific marshal (the
+// struct-body → compact node-form transform)
 // is the caller's responsibility, supplied as a callback to the kind-blind SaveDeployConfig
 // shell. ExportAllBox is the #67 keystone: it takes the spec.ResolvedProject envelope the
 // "resolved-project" HostBuild seam produces (K5-Unit-0) and projects the box-authored
@@ -123,7 +123,7 @@ func LoadDeployConfig(ctxs ...context.Context) (*DeployConfig, error) {
 }
 
 // SaveDeployConfig writes a DeployConfig to the standard charly.yml path. The kind-blind file
-// shell: the HEAD version stamp (kit.LatestSchemaVersion), the provides directive, the
+// shell: the provides directive, the
 // caller-supplied per-entry node-form bodies, and the atomic tempfile+os.Rename write with a
 // fail-safe re-check. The deploy-kind-specific marshal (the struct-body → compact node-form
 // transform) is the caller's responsibility — supplied via marshalNode, which returns the
@@ -190,8 +190,8 @@ func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *Depl
 			root = doc.Content[0]
 		}
 	}
-	// Update the version stamp (set or replace).
-	kit.SetMappingKey(root, "version", kit.ScalarNode(kit.LatestSchemaVersion().String()))
+	// Update the `version:` key is GONE (the schema-versioning removal cutover): the
+	// deploy file carries no schema stamp, only the authored/provides/deploy keys.
 	if dc.Provides != nil {
 		pb, perr := yaml.Marshal(dc.Provides)
 		if perr != nil {
@@ -467,9 +467,8 @@ func MergeDeployOntoMetadata(meta *spec.BoxMetadata, dc *DeployConfig, deployNam
 // spec.ResolvedProject envelope the "resolved-project" HostBuild seam (K5-Unit-0) produces, so
 // the deploy state model is built from the SAME envelope inspect/list/validate consume — no
 // core *Config dep. The box-authored deploy-overlay surfaces (description / env / env_file /
-// security / network) ride #ResolvedBoxView (grown in this cutover); version is the box's
-// EffectiveVersion (the stable content-derived CalVer), matching the prior behaviour's
-// `img.Version`.
+// security / network) ride #ResolvedBoxView (grown in this cutover). The former per-deploy
+// `version:` is GONE (the schema-versioning removal cutover): the box overlay carries no version.
 func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 	dc := &DeployConfig{Deploy: make(map[string]DeployNode)}
 	if rp == nil {
@@ -487,7 +486,6 @@ func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 		// Schema v4: Tunnel / DNS / AcmeEmail / Engine no longer sourced from BoxConfig
 		// (they're deploy-only).
 		entry := DeployNode{
-			Version:     view.Version,
 			Description: view.Description,
 			Env:         view.Env,
 			EnvFile:     view.EnvFile,
@@ -496,7 +494,7 @@ func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 		}
 		// Only include if at least one field is set. Ports are no longer a box field — they're
 		// inherited from candies and auto-allocated at deploy.
-		if entry.Version != "" || entry.Description != "" ||
+		if entry.Description != "" ||
 			entry.Env != nil ||
 			entry.EnvFile != "" || entry.Security != nil || entry.Network != "" {
 			dc.Deploy[name] = entry

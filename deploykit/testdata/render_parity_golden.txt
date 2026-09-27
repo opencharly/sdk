@@ -17,7 +17,6 @@ WORKDIR /home/user
 
 USER 1000
 # Image metadata
-LABEL ai.opencharly.version="2026.001.0001"
 LABEL ai.opencharly.box="demo"
 LABEL ai.opencharly.uid="1000"
 LABEL ai.opencharly.gid="1000"

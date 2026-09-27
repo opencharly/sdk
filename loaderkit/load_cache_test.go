@@ -8,10 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/cache"
 	"github.com/opencharly/spec/spec"
 )
+
+// testSchemaVersion is an opaque, non-empty document version used as cached
+// state. The schema-version gate it once satisfied is gone (the schema-versioning
+// removal cutover); the field is still carried as plain document data.
+const testSchemaVersion = "2026.240.1943"
 
 // load_cache_test.go — the materialized-tree cache contract (load_cache.go): a same-state
 // materialization is computed ONCE and reused; the second load performs NO unify (the
@@ -59,9 +63,9 @@ func testMaterializedState() (spec.LoadedProject, spec.UnifiedFile) {
 		Docs: []spec.LoadedDoc{{
 			SrcLabel:   "test/charly.yml:doc0",
 			SrcDir:     "/proj",
-			Directives: []byte("version: " + kit.LatestSchemaVersion().String() + "\n"),
+			Directives: []byte("version: " + testSchemaVersion + "\n"),
 			Project: spec.ParsedProject{
-				Version: kit.LatestSchemaVersion().String(),
+				Version: testSchemaVersion,
 				Nodes: []spec.ParsedNode{{
 					Name: "app", Disc: "deploy",
 					Body: json.RawMessage(`{"box":"fedora","vm":{"ram_gb":4}}`),
@@ -70,13 +74,13 @@ func testMaterializedState() (spec.LoadedProject, spec.UnifiedFile) {
 		}},
 	}
 	res := spec.UnifiedFile{
-		Version: kit.LatestSchemaVersion().String(),
+		Version: testSchemaVersion,
 		RootDir: "/proj",
 		PluginKinds: map[string]map[string]json.RawMessage{
 			"local": {"tpl": json.RawMessage(`{"from":"base"}`)},
 		},
 		Namespaces: map[string]*spec.UnifiedFile{
-			"ns": {RootDir: "/proj/ns", Version: kit.LatestSchemaVersion().String()},
+			"ns": {RootDir: "/proj/ns", Version: testSchemaVersion},
 		},
 	}
 	return lp, res
@@ -352,12 +356,11 @@ func TestMaterializedCache_CorruptEntryDegradesAndSelfHeals(t *testing.T) {
 // TestMaterializedCache_LoadUnifiedEndToEnd drives the FULL LoadUnified orchestration twice over
 // the same project state: bootstrap + walk (stubbed) + materialize + the whole validation chain,
 // on BOTH loads — the second load runs every step EXCEPT the materialize unify. Proves the cache
-// is not just seam-deep: a cached tree passes GateSchemaVersion + all validators identically.
+// is not just seam-deep: a cached tree passes all validators identically.
 func TestMaterializedCache_LoadUnifiedEndToEnd(t *testing.T) {
 	isolateCacheRoot(t)
 	dir := t.TempDir()
-	latest := kit.LatestSchemaVersion().String()
-	if err := os.WriteFile(filepath.Join(dir, spec.UnifiedFileName), []byte("version: "+latest+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, spec.UnifiedFileName), []byte("{}\n"), 0o644); err != nil {
 		t.Fatalf("write root config: %v", err)
 	}
 	lp, res := testMaterializedState()

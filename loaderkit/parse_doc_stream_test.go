@@ -35,7 +35,7 @@ func streamSeams(t *testing.T) (spec.WalkSeams, *[]string) {
 // order, gates each node-form doc, and skips the empty one.
 func TestParseDocStream_MultiDocStream(t *testing.T) {
 	seams, gated := streamSeams(t)
-	data := []byte("redis:\n  candy:\n    version: \"2026.150.0000\"\n---\n---\nweb:\n  pod:\n    from: img\n")
+	data := []byte("redis:\n  candy:\n    status: working\n---\n---\nweb:\n  pod:\n    from: img\n")
 	docs, imports, specs, err := ParseDocStream(data, "stream-test", "srcdir", seams)
 	if err != nil {
 		t.Fatalf("ParseDocStream: %v", err)
@@ -54,12 +54,12 @@ func TestParseDocStream_MultiDocStream(t *testing.T) {
 	}
 }
 
-// TestParseDocStream_DirectivesCollected: a doc carrying version/discover/import directives —
+// TestParseDocStream_DirectivesCollected: a doc carrying repo/discover/import directives —
 // the composer serializes the directives deterministically (sorted keys) into the LoadedDoc and
 // collects the flat import queue + anchored discover scan-specs for the walk.
 func TestParseDocStream_DirectivesCollected(t *testing.T) {
 	seams, _ := streamSeams(t)
-	data := []byte("version: \"2026.150.0000\"\nimport:\n  - base.yml\ndiscover:\n  - path: candy\n    recursive: true\nfoo:\n  pod:\n    image: x\n")
+	data := []byte("repo: github.com/opencharly/charly\nimport:\n  - base.yml\ndiscover:\n  - path: candy\n    recursive: true\nfoo:\n  pod:\n    image: x\n")
 	docs, imports, specs, err := ParseDocStream(data, "dir-test", "/proj", seams)
 	if err != nil {
 		t.Fatalf("ParseDocStream: %v", err)
@@ -68,10 +68,10 @@ func TestParseDocStream_DirectivesCollected(t *testing.T) {
 		t.Fatalf("docs = %d, want 1", len(docs))
 	}
 	d := docs[0]
-	if !strings.Contains(string(d.Directives), "version") || !strings.Contains(string(d.Directives), "discover") {
+	if !strings.Contains(string(d.Directives), "repo") || !strings.Contains(string(d.Directives), "discover") {
 		t.Fatalf("directives body incomplete: %s", d.Directives)
 	}
-	// Sorted-key determinism: version < discover < import alphabetically.
+	// Sorted-key determinism: discover < import < repo alphabetically.
 	if !strings.HasPrefix(string(d.Directives), "discover:") {
 		t.Fatalf("directives body must start with the alphabetically-first key 'discover': %s", d.Directives)
 	}
@@ -91,7 +91,7 @@ func TestParseDocStream_GateFailPropagates(t *testing.T) {
 		Threaded: func() spec.Threaded { return candyThreaded },
 		GateDoc:  func(label string, raw []byte) error { return errors.New("gate rejected the doc") },
 	}
-	_, _, _, err := ParseDocStream([]byte("a:\n  candy: {version: \"2026.150.0000\"}\n"), "gate-test", "", seams)
+	_, _, _, err := ParseDocStream([]byte("a:\n  candy: {}\n"), "gate-test", "", seams)
 	if err == nil {
 		t.Fatal("expected the gate failure to propagate")
 	}

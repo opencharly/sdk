@@ -18,9 +18,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
-	"gopkg.in/yaml.v3"
 )
 
 // LoadSeams bundles every registry-coupled or standing-core-resident step
@@ -70,27 +68,13 @@ type LoadSeams struct {
 	ValidatePreemptible func(uf *spec.UnifiedFile) error
 }
 
-// GateSchemaVersion enforces the load-time schema-version contract: a config
-// NEWER than this binary supports → "update charly"; an OLDER/absent/non-CalVer
-// version → the `charly migrate` hint. Shared by the early pre-parse gate (root's
-// raw version) and the post-merge gate (merged version) so both speak identically.
-// Pure — kit.ParseCalVer/kit.LatestSchemaVersion carry no registry coupling.
-func GateSchemaVersion(root, version string) error {
-	fileVer, verOK := kit.ParseCalVer(version)
-	switch {
-	case verOK && kit.LatestSchemaVersion().Less(fileVer):
-		return fmt.Errorf(
-			"%s: config schema %s is newer than this charly supports (max %s). Update charly (reinstall the latest opencharly package, or run 'task build:binary' from a fresh checkout and use ./bin/charly)",
-			root, version, kit.LatestSchemaVersion(),
-		)
-	case !verOK || fileVer.Less(kit.LatestSchemaVersion()):
-		return fmt.Errorf(
-			"%s: schema %s is required (found %q). Run: charly migrate",
-			root, kit.LatestSchemaVersion(), version,
-		)
-	}
-	return nil
-}
+// GateSchemaVersion was the load-time schema-version equality gate: a config NEWER
+// than this binary supported → "update charly"; an OLDER/absent/non-CalVer version →
+// the `charly migrate` hint. It is DELETED (the schema-versioning removal cutover). A
+// denormalised CalVer in every authored file only ever disagreed with the real shape
+// contract — the CLOSED CUE schema, which rejects an unknown/removed field with a hard
+// `field not allowed` error — so a leftover `version:` is now exactly that error and
+// `charly migrate` strips the key. Compatibility has ONE mechanism: CUE unification.
 
 // LoadUnified reads <dir>/charly.yml and returns the fully loaded, validated
 // *spec.UnifiedFile — the kind-blind orchestration ported verbatim from charly's
@@ -122,20 +106,6 @@ func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 		return nil, true, fmt.Errorf("bootstrap phase: %w", berr)
 	}
 	rootData = bootstrapped
-	// EARLY schema-version gate: a below-HEAD (or absent) merged `version:` is
-	// rejected with the `charly migrate` hint BEFORE any shape parsing — so an
-	// out-of-date config never reaches node-form CUE validation. The merged
-	// version is the LATER layer's (project > user > system).
-	var vdoc yaml.Node
-	if yaml.Unmarshal(rootData, &vdoc) == nil {
-		ver := ""
-		if vn := kit.MapValue(kit.MappingRoot(&vdoc), "version"); vn != nil {
-			ver = vn.Value
-		}
-		if err := GateSchemaVersion(root, ver); err != nil {
-			return nil, true, err
-		}
-	}
 	// THE KIND-BLIND WALK: import queue + discover + namespaced-import mounts +
 	// per-document parse → a generic spec.LoadedProject. No materialize, no
 	// merge — those are the registry-coupled host half below (boundary law).
@@ -147,9 +117,6 @@ func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 	// *spec.UnifiedFile, exactly as the former inline loadUnifiedInto did.
 	merged := &spec.UnifiedFile{}
 	if err := seams.MaterializeLoadedProject(&lp, merged, map[int64]*spec.UnifiedFile{}); err != nil {
-		return nil, true, err
-	}
-	if err := GateSchemaVersion(root, merged.Version); err != nil {
 		return nil, true, err
 	}
 	// Stamp each plan step's execution VENUE from its deploy-tree position and

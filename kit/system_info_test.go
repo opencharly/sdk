@@ -11,8 +11,7 @@ import (
 
 // system_info_test.go — the `system:` section populator for the per-host
 // charly.yml. The populator must (1) write the host identity into the `system:`
-// section, (2) preserve every other key (deploy:, provides:, cache:, ledger:),
-// and (3) stamp the HEAD schema version on a fresh file.
+// section and (2) preserve every other key (deploy:, provides:, cache:, ledger:).
 
 func TestWriteSystemInfoPreservesOtherKeys(t *testing.T) {
 	dir := t.TempDir()
@@ -74,34 +73,6 @@ func TestWriteSystemInfoPreservesOtherKeys(t *testing.T) {
 		t.Fatal("cache entry lost")
 	}
 	if doc.System == nil || doc.System.Hostname != "testhost" || doc.System.DistroID != "fedora" {
-		t.Fatalf("system section wrong: %+v", doc.System)
-	}
-}
-
-func TestWriteSystemInfoFreshFileGetsVersionStamp(t *testing.T) {
-	dir := t.TempDir()
-	cfg := filepath.Join(dir, "charly.yml")
-	info := spec.SystemInfo{Hostname: "testhost", UpdatedAt: "2026-08-29T10:00:00Z"}
-	if err := writeSystemInfo(cfg, info); err != nil {
-		t.Fatalf("writeSystemInfo: %v", err)
-	}
-	data, err := os.ReadFile(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc struct {
-		Version string `yaml:"version"`
-		System  *struct {
-			Hostname string `yaml:"hostname"`
-		} `yaml:"system"`
-	}
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		t.Fatalf("not valid YAML: %v", err)
-	}
-	if doc.Version != spec.SchemaVersion {
-		t.Fatalf("fresh file version = %q, want %q", doc.Version, spec.SchemaVersion)
-	}
-	if doc.System == nil || doc.System.Hostname != "testhost" {
 		t.Fatalf("system section wrong: %+v", doc.System)
 	}
 }

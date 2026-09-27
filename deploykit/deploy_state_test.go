@@ -11,8 +11,8 @@ package deploykit
 //   - ExportAllBox against a constructed *spec.ResolvedProject (the #67 keystone).
 //   - SaveDeployConfig round-trip through a stub DeployStateHost (the 1-op
 //     LoadUnifiedDeployConfig seam) + CHARLY_DEPLOY_CONFIG tempdir redirect + a stub
-//     marshalNode callback (exercises LoadDeployConfig's fail-safe, the kit.LatestSchemaVersion
-//     version stamp, the atomic tempfile+rename write). The deploy-kind-specific marshal
+//     marshalNode callback (exercises LoadDeployConfig's fail-safe, and the atomic
+//     tempfile+rename write). The deploy-kind-specific marshal
 //     itself is tested charly-side (it lives in charly/deploy_nodeform.go).
 //   - RegisterDeployStateHost seam (the charly init hook, 1-op).
 //   - The pure helpers DescriptionInfo / IsSameBaseBox / RemoveBySource / RemoveByExactSource.
@@ -32,16 +32,16 @@ import (
 // --- ExportAllBox — the #67 keystone (#ResolvedProject envelope → DeployConfig) ---
 
 // TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject pins the #67 keystone:
-// ExportAllBox reads the box-authored deploy-overlay surfaces (version / description /
+// ExportAllBox reads the box-authored deploy-overlay surfaces (description /
 // env / env_file / security / network) off the spec.ResolvedProject envelope — NOT the
 // live *Config graph (the former shape). A box with at least one set field is emitted; a
-// fully-zero box is skipped (the "only include if at least one field is set" guard).
+// fully-zero box is skipped (the "only include if at least one field is set" guard). The
+// former per-deploy `version:` is GONE (the schema-versioning removal cutover).
 func TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject(t *testing.T) {
 	sec := &spec.Security{Privileged: true, CapAdd: []string{"NET_ADMIN"}}
 	rp := &spec.ResolvedProject{
 		Boxes: map[string]spec.ResolvedBoxView{
 			"web": {
-				Version:     "2026.196.0000",
 				Description: "web service",
 				Env:         map[string]string{"LOG_LEVEL": "debug"},
 				EnvFile:     "/etc/web.env",
@@ -62,9 +62,6 @@ func TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject(t *testing.T
 	entry, ok := dc.Deploy["web"]
 	if !ok {
 		t.Fatal("ExportAllBox missing the 'web' entry")
-	}
-	if entry.Version != "2026.196.0000" {
-		t.Errorf("entry.Version = %q; want 2026.196.0000", entry.Version)
 	}
 	if entry.Description != "web service" {
 		t.Errorf("entry.Description = %q; want %q", entry.Description, "web service")
@@ -109,7 +106,7 @@ func TestExportAllBox_NilSafe(t *testing.T) {
 
 // TestSaveDeployConfig_RoundTrip exercises the full SaveDeployConfig write path: the
 // fail-safe LoadDeployConfig re-check (through the 1-op LoadUnifiedDeployConfig seam), the
-// kit.LatestSchemaVersion version stamp, the caller-supplied marshalNode callback per entry,
+// caller-supplied marshalNode callback per entry,
 // and the atomic tempfile+os.Rename write. CHARLY_DEPLOY_CONFIG redirects the write to a
 // tempdir so the test never touches the operator's real per-host overlay. The marshalNode
 // stub emits a simple node-form body (the deploy-kind-specific marshal lives in
@@ -120,8 +117,7 @@ func TestSaveDeployConfig_RoundTrip(t *testing.T) {
 	t.Setenv(kit.DeployConfigEnv, dest)
 
 	// Stub the ONE host Mechanism SaveDeployConfig reaches through DeployStateHost (the
-	// LoadUnified hop for the fail-safe re-check). The version stamp is kit.LatestSchemaVersion
-	// (a direct kit call, not a seam op); the marshal is the caller's callback.
+	// LoadUnified hop for the fail-safe re-check). The marshal is the caller's callback.
 	stub := &StateHostMechanisms{
 		LoadUnifiedDeployConfig: func(configDir string) (*DeployConfig, error) {
 			return nil, nil // absent file → LoadDeployConfig returns (empty, nil) → fail-safe passes
@@ -173,9 +169,7 @@ func TestSaveDeployConfig_RoundTrip(t *testing.T) {
 		t.Fatalf("reading written overlay %s: %v", dest, err)
 	}
 	got := string(data)
-	// The version stamp is the real kit.LatestSchemaVersion() CalVer (non-empty).
-	wantVersion := kit.LatestSchemaVersion().String()
-	for _, want := range []string{"version:", wantVersion, "web:", "pod:", "image: web", "LOG_LEVEL"} {
+	for _, want := range []string{"web:", "pod:", "image: web", "LOG_LEVEL"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("written overlay missing %q:\n%s", want, got)
 		}

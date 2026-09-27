@@ -28,7 +28,6 @@ func NewSpecResolvedBox(v spec.ResolvedBoxView, distro map[string]*spec.Resolved
 	box := &buildkit.ResolvedBox{
 		ResolvedBox: spec.ResolvedBox{
 			Name:                  v.Name,
-			Version:               v.Version,
 			EffectiveVersion:      v.EffectiveVersion,
 			Status:                v.Status,
 			Info:                  v.Info,
