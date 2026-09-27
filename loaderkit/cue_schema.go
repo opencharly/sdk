@@ -39,7 +39,8 @@ import (
 
 // cueKindDefs maps a kind name to its entity definition path within the compiled schema.
 // Clause-D DATA (see the file comment): the nine entries are the former per-file
-// charly/cue_kind_<name>.go registrations, moved here unchanged.
+// charly/cue_kind_<name>.go registrations, moved here unchanged; kubevirt (the 6th deploy
+// substrate) was added with its kind.
 //
 // `box` is an INTERNAL validation key, not a YAML kind keyword — `box:` merged into `candy:` in the
 // EDGE-INHERIT cutover, but #Box remains the IMAGE def (the image arm of #CandyValue) and a candy:
@@ -52,6 +53,7 @@ var cueKindDefs = map[string]string{
 	"check":      "#Check",
 	"deploy":     "#Deploy",
 	"kubernetes": "#Kubernetes",
+	"kubevirt":   "#KubeVirt",
 	"local":      "#Local",
 	"pod":        "#Pod",
 	"vm":         "#Vm",

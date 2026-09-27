@@ -30,6 +30,7 @@ package deploykit
 // too).
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -61,7 +62,12 @@ func withMemberTag(args []string, imageTag string) []string {
 // kind:local member is registered via `charly deploy add <member>`. The SAME helper serves the
 // kind:check bed runner and the operator deploy path (R3). Idempotent on an already-running
 // member.
-func BringUpMembers(node *spec.DeployNode, imageTag string) error {
+//
+// ctx carries the invocation's per-call RunEnv (a bed's CHARLY_DEPLOY_CONFIG/CHARLY_REPO_OVERRIDE/
+// CHARLY_PREEMPT_LEASE): each forked member child receives it as explicit data, so a bed member
+// writes the bed's OWN overlay, never the operator's real one. An operator deploy passes a ctx
+// with no RunEnv, so the child inherits the parent env unchanged.
+func BringUpMembers(ctx context.Context, node *spec.DeployNode, imageTag string) error {
 	// The DEPLOY-LEVEL members only: alongside bring-up on the shared network. An
 	// in-substrate member deploys INTO its parent's venue (the dotted-path dispatch /
 	// the substrate plugin's PostApply), never beside it.
@@ -84,31 +90,31 @@ func BringUpMembers(node *spec.DeployNode, imageTag string) error {
 			// get distinct, collision-free domains + per-domain disk overlays + ports (P33). The
 			// entity is the disk/spec source (the `deploy add` ref); --domain names this member's domain.
 			memberDomain := spec.VmDomainIdentity(memberKey)
-			_ = proc.RunCharlySubcommand("vm", "destroy", memberNode.From, "--domain", memberDomain, "--if-exists")
-			if err := proc.RunCharlySubcommand("vm", "create", memberNode.From, "--domain", memberDomain); err != nil {
+			_ = proc.RunCharlySubcommandCtx(ctx, "vm", "destroy", memberNode.From, "--domain", memberDomain, "--if-exists")
+			if err := proc.RunCharlySubcommandCtx(ctx, "vm", "create", memberNode.From, "--domain", memberDomain); err != nil {
 				return fmt.Errorf("peer %q (vm create %s): %w", memberKey, memberNode.From, err)
 			}
 			specexec.WaitForVmSshReady(memberDomain)
-			if err := proc.RunCharlySubcommand(withMemberTag([]string{"deploy", "add", memberKey, memberNode.From}, imageTag)...); err != nil {
+			if err := proc.RunCharlySubcommandCtx(ctx, withMemberTag([]string{"deploy", "add", memberKey, memberNode.From}, imageTag)...); err != nil {
 				return fmt.Errorf("peer %q (vm deploy add): %w", memberKey, err)
 			}
 			// Same nested-local-child gap the isVM bed root closes: plugin-deploy-vm's
 			// PostApply skips target:local children, so deploy them into the guest here.
 			if err := deploy.DeployNestedLocalChildren(memberKey, memberNode, func(childKey, dotted string) error {
-				return proc.RunCharlySubcommand("deploy", "add", dotted)
+				return proc.RunCharlySubcommandCtx(ctx, "deploy", "add", dotted)
 			}); err != nil {
 				return fmt.Errorf("peer %q: %w", memberKey, err)
 			}
 		case deploy.IsContainerVenue(memberNode):
 			for _, step := range [][]string{{"config", memberKey}, {"start", memberKey}} {
-				if err := proc.RunCharlySubcommand(withMemberTag(step, imageTag)...); err != nil {
+				if err := proc.RunCharlySubcommandCtx(ctx, withMemberTag(step, imageTag)...); err != nil {
 					return fmt.Errorf("peer %q (%v): %w", memberKey, step, err)
 				}
 			}
 			specexec.WaitForContainerReady(memberKey)
 		default:
 			// kind:local member — applies candies in place during deploy add.
-			if err := proc.RunCharlySubcommand(withMemberTag([]string{"deploy", "add", memberKey}, imageTag)...); err != nil {
+			if err := proc.RunCharlySubcommandCtx(ctx, withMemberTag([]string{"deploy", "add", memberKey}, imageTag)...); err != nil {
 				return fmt.Errorf("peer %q (deploy add): %w", memberKey, err)
 			}
 		}
@@ -121,8 +127,9 @@ func BringUpMembers(node *spec.DeployNode, imageTag string) error {
 
 // TearDownMembers tears down every member of `node` in deterministic order — the companion to
 // BringUpMembers. It attempts every member and returns their joined errors so callers can finish
-// the full cleanup while still failing the owning operation.
-func TearDownMembers(node *spec.DeployNode) error {
+// the full cleanup while still failing the owning operation. ctx carries the invocation's RunEnv
+// to each forked child (see BringUpMembers).
+func TearDownMembers(ctx context.Context, node *spec.DeployNode) error {
 	if node == nil || len(node.DeployLevelMembers()) == 0 {
 		return nil
 	}
@@ -136,13 +143,13 @@ func TearDownMembers(node *spec.DeployNode) error {
 			// entity — P33), but bring-up ALSO registered the member in the deploy ledger via
 			// `deploy add`. Reverse that too, or a ledger record survives every teardown and they
 			// accumulate run over run.
-			destroyErr := proc.RunCharlySubcommand("vm", "destroy", memberNode.From, "--domain", spec.VmDomainIdentity(memberKey), "--if-exists")
-			delErr := proc.RunCharlySubcommand(spec.DeployDelArgv(memberKey)...)
+			destroyErr := proc.RunCharlySubcommandCtx(ctx, "vm", "destroy", memberNode.From, "--domain", spec.VmDomainIdentity(memberKey), "--if-exists")
+			delErr := proc.RunCharlySubcommandCtx(ctx, spec.DeployDelArgv(memberKey)...)
 			err = errors.Join(destroyErr, delErr)
 		case deploy.IsContainerVenue(memberNode):
-			err = proc.RunCharlySubcommand("remove", memberKey, "--purge")
+			err = proc.RunCharlySubcommandCtx(ctx, "remove", memberKey, "--purge")
 		default:
-			err = proc.RunCharlySubcommand(spec.DeployDelArgv(memberKey)...)
+			err = proc.RunCharlySubcommandCtx(ctx, spec.DeployDelArgv(memberKey)...)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("peer %q teardown: %w", memberKey, err))

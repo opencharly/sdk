@@ -22,11 +22,12 @@ type fixedMeta struct {
 	pb.UnimplementedPluginMetaServer
 	calver   string
 	caps     []ProvidedCapability
+	requires []Requirement
 	schemaFS fs.FS
 }
 
 func (m *fixedMeta) Describe(context.Context, *pb.Empty) (*pb.Capabilities, error) {
-	return BuildCapabilities(m.calver, m.caps, m.schemaFS, "schema")
+	return BuildCapabilitiesWithRequires(m.calver, m.caps, m.requires, m.schemaFS, "schema")
 }
 
 // NewMeta returns the shared PluginMetaServer for a plugin: its Describe reply carries
@@ -34,5 +35,13 @@ func (m *fixedMeta) Describe(context.Context, *pb.Empty) (*pb.Capabilities, erro
 // hand-rolled meta types + Describe bodies (R3) — a plugin's NewMeta() is now just
 // `return sdk.NewMeta(calver, caps, schemaFS)`.
 func NewMeta(calver string, caps []ProvidedCapability, schemaFS fs.FS) pb.PluginMetaServer {
-	return &fixedMeta{calver: calver, caps: caps, schemaFS: schemaFS}
+	return NewMetaWithRequires(calver, caps, nil, schemaFS)
+}
+
+// NewMetaWithRequires is NewMeta plus the plugin's declared inter-plugin dependencies
+// (the wire Capabilities.requires field), so a plugin that depends on peers advertises
+// them over Describe for the host to resolve + connect declaratively. A plugin with no
+// dependencies calls NewMeta, which forwards nil — byte-identical to before.
+func NewMetaWithRequires(calver string, caps []ProvidedCapability, requires []Requirement, schemaFS fs.FS) pb.PluginMetaServer {
+	return &fixedMeta{calver: calver, caps: caps, requires: requires, schemaFS: schemaFS}
 }

@@ -19,13 +19,20 @@ import (
 // `box:` requirement). Runs at LOAD time so EVERY command that resolves a bed (charly check run,
 // charly deploy add, charly config, charly box validate, …) sees the same friendly error.
 func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
-	for name, node := range uf.CheckBeds() {
+	for name, node := range uf.Beds() {
+		// A bed's `from:`/`box:` cross-ref resolves WITHIN its owning scope, so a
+		// namespaced bed's bare reference is validated against its own namespace,
+		// not the merged root. scope is the owning UnifiedFile (uf for a local bed).
+		scope, _ := uf.BedScope(name)
+		if scope == nil {
+			scope = uf
+		}
 		// An iterate: bed is a benchmark (the former kind:score), NOT a deterministic R10 bed: it
 		// drives the AI loop scoring its plan's check:/agent-check: steps against an
 		// operator-provisioned sandbox, so the target/disposable/cross-ref requirements do not apply.
 		// Validate the iterate block instead.
 		if node.Iterate != nil {
-			if err := ValidateIterateBed(uf, name, &node); err != nil {
+			if err := validateIterateBedScoped(scope, name, &node); err != nil {
 				return err
 			}
 			continue
@@ -83,8 +90,23 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 				// OR a clone-base deploy-hop (a kind:check bed, local or
 				// namespace-qualified). The former local-only PluginKinds lookup is
 				// retired — a git-linked (namespace-qualified) from: is legal here,
-				// matching the runtime resolver's scope.
-				if !ResolveEntityRef(uf, node.Target, node.From) {
+				// matching the runtime resolver's scope. `scope` is the bed's OWNING
+				// namespace, so a bare from: resolves as that namespace sees it.
+				//
+				// DECLARED-but-UNCONNECTED structural-kind exemption (the local-data form): a
+				// cross-ref to a template kind whose provider did not fold ANY template in THIS
+				// process cannot be judged here. The concrete case: a read-only PLUGIN-side load
+				// (e.g. candy/plugin-deploy-vm resolving a vm: entity via LoadUnifiedViaExecutor)
+				// has no connect pass and does not compile in every structural-kind provider, so a
+				// project that declares a bed whose from: names such a kind's template (e.g. a
+				// `kindcluster:` bed, its template folded by plugin-kube — absent from the plugin
+				// process) false-failed EVERY vm bed, aborting the whole project's validation in
+				// that process. The signal must be LOCAL to this uf (whether the kind folded any
+				// template HERE), NOT the host-computed StructuralDeclaredFields snapshot — a
+				// plugin process receives the host's "connected" snapshot while its OWN
+				// PluginKinds[target] is empty. A kind that folded SOME templates (but not this
+				// ref) is a real typo and stays rejected.
+				if !ResolveEntityRef(scope, node.Target, node.From) && !kindTemplatesAbsentHere(scope, t, node.Target) {
 					return fmt.Errorf("kind:check bed %q references %s entity %q which is not defined", name, node.Target, node.From)
 				}
 			}
@@ -173,14 +195,42 @@ func declaredStructuralKindUnconnected(t spec.Threaded) bool {
 	return false
 }
 
+// kindTemplatesAbsentHere reports whether the scope folded NO template of the kind word — i.e.
+// the word's serving provider did not fold any entity in THIS process. The concrete case: a
+// read-only PLUGIN-side load (e.g. candy/plugin-deploy-vm resolving a vm: entity via
+// LoadUnifiedViaExecutor) has no connect pass and does not compile in every structural-kind
+// provider, so a project that declares a bed whose `from:` names such a kind's template (e.g. a
+// `kindcluster:` bed, its template folded by plugin-kube — absent from the plugin process) leaves
+// PluginKinds[word] EMPTY here even though the same file validated where the provider IS
+// connected. A kind that folded AT LEAST ONE template (but not this ref) is a real authoring
+// typo and must stay rejected — hence the "no templates at all" test, not "this ref missing".
+//
+// Scoped to DECLARED STRUCTURAL kinds (t.StructuralKinds): a built-in resource kind's provider is
+// always connected, so an empty template map there is a genuine authoring error, never a
+// process-capability gap.
+func kindTemplatesAbsentHere(scope *spec.UnifiedFile, t spec.Threaded, word string) bool {
+	if word == "" || !t.StructuralKinds[word] {
+		return false
+	}
+	return len(scope.ProjectTemplates().ByKind(word)) == 0
+}
+
 // ValidateIterateBed enforces the iterate: benchmark invariants (replaces the former
 // validateScoreNode/validateHarnessSemantics). An iterate bed is exempt from the deterministic R10 bed
 // rules (target/disposable/cross-ref); instead: every iterate.agent[] references an entry in the
 // `agent:` catalog; iterate.sandbox names a deployment (non-empty); and the bed's plan: carries at
 // least one direct `check:` step. Pure — reads uf.PluginKinds["agent"] + node.Iterate + node.Plan.
 func ValidateIterateBed(uf *spec.UnifiedFile, name string, node *spec.DeployNode) error {
+	return validateIterateBedScoped(uf, name, node)
+}
+
+// validateIterateBedScoped is ValidateIterateBed against the bed's OWNING scope: a
+// namespaced iterate bed's `agent:` catalog is read from the namespace that owns it,
+// not the merged root (a root-only read false-failed "agent claude is not defined"
+// for a namespaced iterate bed whose agent: catalog lives in its own namespace).
+func validateIterateBedScoped(scope *spec.UnifiedFile, name string, node *spec.DeployNode) error {
 	it := node.Iterate
-	agents := uf.PluginKinds["agent"] // agent is a plugin kind; opaque name-keyed catalog
+	agents := scope.PluginKinds["agent"] // agent is a plugin kind; opaque name-keyed catalog
 	for _, a := range it.Agent {
 		if _, ok := agents[a]; !ok {
 			return fmt.Errorf("iterate bed %q: agent %q is not defined in the agent: catalog", name, a)

@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,14 +73,23 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 // the file doesn't exist. Relocated from charly/deploy.go (K5-Unit-1); the LoadUnified hop
 // reaches core through DeployStateHost.LoadUnifiedDeployConfig.
 //
+// ctx is OPTIONAL (trailing variadic) in THIS leg so the many out-of-tree plugin consumers
+// (plugin-pod, plugin-deploy-pod, plugin-fleet, plugin-vm, plugin-substrate, plugin-check)
+// compile unchanged while the roster cutover lands. The follow-on batch
+// "plugin-consumers: make deploy-config ctx required" flips this to a REQUIRED ctx in the same
+// change that migrates those ~32 call sites, removing the fail-open default (R5). Until then a
+// caller that omits ctx reads the process env (the legacy host behavior) — correct for the
+// operator path, and all BED paths thread ctx (the roster is the only concurrent in-process
+// caller).
+//
 // Every transform the old bespoke parser did — the `images:` legacy-key reject, the
 // deployment-tree / required-box: / preemptible / ephemeral-naming validation, and the
 // ephemeral→disposable auto-promotion — runs INSIDE LoadUnified (its version gate + the
 // deploy-validation block subsume the legacy check; the ephemeral/naming validators +
 // promotion were consolidated there so a PROJECT charly.yml's inline deploy: entries get them
 // too — R3, one path).
-func LoadDeployConfig() (*DeployConfig, error) {
-	path, err := kit.DefaultDeployConfigPath()
+func LoadDeployConfig(ctxs ...context.Context) (*DeployConfig, error) {
+	path, err := kit.DefaultDeployConfigPath(ctxs...)
 	if err != nil {
 		return nil, nil
 	}
@@ -134,8 +144,8 @@ func LoadDeployConfig() (*DeployConfig, error) {
 // (enc_probe / status_flat / vm state, RemoveVmDeployEntry), NOT a transitional shim — the
 // migrated caller (command:deploy) already never passes nil. The nil path dies when the LAST of
 // those host callers migrates plugin-side in its own deferred cone (enc floor / check-cone).
-func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error)) error {
-	path, err := kit.DefaultDeployConfigPath()
+func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctxs ...context.Context) error {
+	path, err := kit.DefaultDeployConfigPath(ctxs...)
 	if err != nil {
 		return fmt.Errorf("determining deploy config path: %w", err)
 	}
@@ -147,7 +157,7 @@ func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *Depl
 	// disk for the migration to recover.
 	recheck := failsafeRead
 	if recheck == nil {
-		recheck = LoadDeployConfig
+		recheck = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
 	}
 	if _, lerr := recheck(); lerr != nil {
 		return fmt.Errorf("refusing to overwrite %s — the existing per-host config fails to load (%w); fix it (or remove it to regenerate) first", path, lerr)
@@ -274,8 +284,8 @@ func removeDeployKeys(m *yaml.Node) {
 //
 // context is a short human-readable label included in the warning message so the operator can
 // trace which code path noticed the problem (e.g. "charly status", "config injectEnvProvides").
-func LoadDeployConfigForRead(context string) *DeployConfig {
-	dc, err := LoadDeployConfig()
+func LoadDeployConfigForRead(context string, ctxs ...context.Context) *DeployConfig {
+	dc, err := LoadDeployConfig(ctxs...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %s: charly.yml unavailable for read: %v\n", context, err)
 	}
@@ -300,8 +310,8 @@ func LoadDeployConfigForRead(context string) *DeployConfig {
 // context is a short human-readable label included in the error message (e.g. "saveDeployState").
 // Returns (nil, error) when the file exists but failed parse/validation; (fresh empty config,
 // nil) when the file doesn't exist; (parsed config, nil) on clean load.
-func LoadDeployConfigForWrite(context string) (*DeployConfig, error) {
-	dc, err := LoadDeployConfig()
+func LoadDeployConfigForWrite(context string, ctxs ...context.Context) (*DeployConfig, error) {
+	dc, err := LoadDeployConfig(ctxs...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: refusing to write — charly.yml load failed: %w", context, err)
 	}

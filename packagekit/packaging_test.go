@@ -72,3 +72,47 @@ func TestParsePackagingMissing(t *testing.T) {
 		t.Errorf("error = %v, want 'no packaging'", err)
 	}
 }
+
+// fixtureRealCandyCharlyYAML mirrors a REAL candy charly.yml: a top-level
+// `version: <calver>` SCALAR appears FIRST, before the `charly:` candy key.
+// This is the shape that broke ParsePackaging — the old implementation
+// unmarshalled the whole document into map[string]struct{…} and failed on the
+// scalar before reaching the candy body, so `charly generate-packages` errored
+// on every real candy (reproduced against layer-charly and plugin-check). The
+// earlier fixture hid the bug by indenting `version:` INSIDE `candy:`.
+const fixtureRealCandyCharlyYAML = `version: 2026.261.1747
+charly:
+    candy:
+        version: 2026.243.0100
+        description: The full charly toolchain on a deployment.
+        packaging:
+            name: charly
+            description: The charly CLI + toolchain
+            maintainer: OpenCharly <dev@opencharly.ai>
+            variants:
+                default:
+                    description: The default charly plugin set
+                    plugins: [plugin-secrets, plugin-udev]
+                minimal:
+                    description: A minimal charly plugin set
+                    plugins: [plugin-doctor]
+`
+
+func TestParsePackaging_TopLevelScalarVersion(t *testing.T) {
+	pkg, err := ParsePackaging([]byte(fixtureRealCandyCharlyYAML))
+	if err != nil {
+		t.Fatalf("ParsePackaging with top-level version scalar: %v", err)
+	}
+	if pkg.Name != "charly" {
+		t.Errorf("Name = %q, want charly", pkg.Name)
+	}
+	if pkg.Maintainer != "OpenCharly <dev@opencharly.ai>" {
+		t.Errorf("Maintainer = %q", pkg.Maintainer)
+	}
+	if len(pkg.Variants) != 2 {
+		t.Errorf("Variants = %d entries, want 2", len(pkg.Variants))
+	}
+	if len(pkg.Variants["default"].Plugins) != 2 {
+		t.Errorf("default variant plugins = %d, want 2", len(pkg.Variants["default"].Plugins))
+	}
+}

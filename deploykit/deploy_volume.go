@@ -60,6 +60,57 @@ func DeployStorageDir(deployKey, instance string) string {
 	return deployKey + "-" + instance
 }
 
+// SiblingVolumePrefixes returns the volume prefixes of every deploy in dc OTHER
+// than (deployKey, instance).
+//
+// A base deploy's prefix (charly-<base>-) is itself a prefix of its sibling
+// instances' volume names (charly-<base>-<instance>-<vol>), so any teardown or
+// listing that scopes by prefix ALONE would touch a live sibling instance's
+// volumes — e.g. `charly remove --purge githubrunner` deleting the state of
+// githubrunner/no-1..4. Callers pass the result to VolumeNameBelongsTo so the
+// operation stays confined to the deploy's OWN volumes. Returns nil for a nil
+// or empty config (the genuinely-orphaned case, where no siblings are known).
+func SiblingVolumePrefixes(dc *DeployConfig, deployKey, instance string) []string {
+	if dc == nil {
+		return nil
+	}
+	self := DeployVolumePrefix(deployKey, instance)
+	var out []string
+	for key := range dc.Deploy {
+		b, i := ParseDeployKey(key)
+		if p := DeployVolumePrefix(b, i); p != self {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// VolumeNameBelongsTo reports whether name is a named volume (or per-deploy
+// encrypted-volume directory) OWNED by (deployKey, instance): it carries this
+// deploy's volume prefix AND no sibling deploy claims it MORE SPECIFICALLY.
+//
+// A shorter prefix matches a longer name, so mere sibling exclusion is wrong:
+// for instance no-2, the base deploy's prefix (charly-<base>-) also matches
+// charly-<base>-no-2-state. The rule is therefore LONGEST PREFIX WINS — name
+// belongs to this deploy iff its prefix matches and no sibling prefix matches
+// with a strictly greater length. That confining rule is what keeps a base
+// deploy from claiming its instances' volumes while an instance still owns its
+// own; the trailing dash in DeployVolumePrefix prevents a no-1 vs no-10
+// near-miss. Pure — the single owner of the "is this mine?" decision shared by
+// podman-volume teardown, encrypted-dir teardown, and volume listing (R3).
+func VolumeNameBelongsTo(name, deployKey, instance string, siblingPrefixes []string) bool {
+	self := DeployVolumePrefix(deployKey, instance)
+	if !strings.HasPrefix(name, self) {
+		return false
+	}
+	for _, sp := range siblingPrefixes {
+		if sp != "" && len(sp) > len(self) && strings.HasPrefix(name, sp) {
+			return false
+		}
+	}
+	return true
+}
+
 // EncryptedVolumeName returns the directory name for an encrypted volume:
 // charly-<box>-<name>.
 func EncryptedVolumeName(boxName, name string) string {

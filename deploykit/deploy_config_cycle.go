@@ -1,7 +1,9 @@
 package deploykit
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/opencharly/sdk/kit"
 )
@@ -60,8 +62,12 @@ type DeployConfigMutator func(dc *DeployConfig) (changed bool, err error)
 // deploy-kind-specific marshal and the placement-specific read are the caller's responsibility,
 // and this shell stays kind-blind.
 //
-// The lock is BLOCKING: a config write is brief, so a concurrent writer waits rather than failing.
-func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *DeployConfig) error, mutate DeployConfigMutator) (*DeployConfig, error) {
+// The lock is BLOCKING, with a SHORT bound: a config read-modify-write hold is milliseconds, so a
+// concurrent writer normally QUEUES and proceeds; but the wait is bounded (deployConfigLockWait) so
+// a holder that outlives it — a cross-bed overlay collision or a stuck writer — fails FAST with the
+// holder named rather than reading as a legitimate slow build for the 30-minute image-build bound
+// (RCA issue 2).
+func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *DeployConfig) error, mutate DeployConfigMutator, ctxs ...context.Context) (*DeployConfig, error) {
 	if read == nil {
 		return nil, fmt.Errorf("MutateDeployConfig: read callback is nil")
 	}
@@ -71,7 +77,7 @@ func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *Deploy
 	if mutate == nil {
 		return nil, fmt.Errorf("MutateDeployConfig: mutate callback is nil")
 	}
-	unlock, err := AcquireDeployConfigLock()
+	unlock, err := AcquireDeployConfigLock(ctxs...)
 	if err != nil {
 		return nil, err
 	}
@@ -100,13 +106,26 @@ func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *Deploy
 // around a cycle MutateDeployConfig cannot express — a write path that also removes the file
 // (CleanDeployEntry, `charly deploy reset`) and must decide save-vs-remove under the same hold.
 // Every ordinary writer uses MutateDeployConfig instead.
-func AcquireDeployConfigLock() (func() error, error) {
-	path, err := kit.DefaultDeployConfigPath()
+func AcquireDeployConfigLock(ctxs ...context.Context) (func() error, error) {
+	path, err := kit.DefaultDeployConfigPath(ctxs...)
 	if err != nil {
 		return nil, fmt.Errorf("determining deploy config path for lock: %w", err)
 	}
-	return kit.AcquireFileLock(path+".lock", true)
+	// A config read-modify-write hold is milliseconds, so bound the wait SHORT: a contended
+	// overlay write (the cross-bed collision of plan RCA issue #2) fails FAST with a clear
+	// message naming the holder, rather than waiting the 30-minute image-build bound and
+	// reading as a legitimate slow build. flock is per-open-file-description, so a same-process
+	// (in-roster) contention is detected identically.
+	return kit.AcquireFileLockWithin(path+".lock", true, deployConfigLockWait)
 }
+
+// deployConfigLockWait bounds a contended deploy-config write. A whole overlay write is
+// milliseconds, so a legitimate same-overlay queue clears well inside this; a hold that outlives
+// it is a cross-bed collision or a stuck writer, and both deserve a fast, named error. The value
+// is a deliberate FIXED constant, NOT config-sourced: it is a SAFETY bound on an internal lock,
+// and a config knob would let a misconfiguration re-introduce the unbounded hang this closes. It
+// is hundreds of times a measured legitimate hold yet far below the 30-minute image-build bound.
+const deployConfigLockWait = 10 * time.Second
 
 // ensureDeployConfig self-heals a nil config / nil Deploy map into a usable empty overlay — the
 // state a first-ever `charly config` on a fresh XDG-isolated bed sees. Every write path repeated

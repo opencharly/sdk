@@ -132,13 +132,19 @@ func ProjectBoxAggregates(cfg *spec.Config, layers map[string]spec.CandyReader, 
 // name (`fedora.jupyter`). It mirrors the former in-core `include: box:<name>` arm EXACTLY: the
 // SAME CollectDescriptions base-chain walk (candy-chain bakeable steps + the box-level bakeable
 // plan) flattened over the three sections, so the relocated plugin box arm reads a byte-equivalent
-// plan without the resolve engine. Only boxes with a non-empty plan are recorded. The visited set
-// guards the pointer-keyed namespace cache against a self-referential cycle.
-func FillBoxPlans(cfg *spec.Config, layers map[string]spec.CandyReader, prefix string, out map[string][]spec.Step, visited map[*spec.Config]bool) {
-	if cfg == nil || visited[cfg] {
+// plan without the resolve engine. Only boxes with a non-empty plan are recorded.
+//
+// The guard is PATH-SCOPED (an ancestor stack), NOT a global pointer-visited set: the SAME
+// namespace config can be reached at MULTIPLE alias paths (a diamond import, or one repo mounted
+// at `arch` + `cachyos.arch`), and a global guard records only the FIRST path (map-order
+// dependent), dropping every later alias's box plans. An ancestor stack records EVERY path while
+// still terminating a genuine self-referential cycle.
+func FillBoxPlans(cfg *spec.Config, layers map[string]spec.CandyReader, prefix string, out map[string][]spec.Step, ancestors map[*spec.Config]bool) {
+	if cfg == nil || ancestors[cfg] {
 		return
 	}
-	visited[cfg] = true
+	ancestors[cfg] = true
+	defer delete(ancestors, cfg)
 	for _, name := range cfg.AllBoxNames() {
 		qualified := name
 		if prefix != "" {
@@ -163,6 +169,6 @@ func FillBoxPlans(cfg *spec.Config, layers map[string]spec.CandyReader, prefix s
 		if prefix != "" {
 			child = prefix + "." + ns
 		}
-		FillBoxPlans(sub, layers, child, out, visited)
+		FillBoxPlans(sub, layers, child, out, ancestors)
 	}
 }

@@ -369,3 +369,51 @@ RUN {{cacheMounts .CacheMounts}} \
 		t.Error("should install with pacman -U")
 	}
 }
+
+// A pinned package version (`name=VERSION` on pac/apt/apk, `name-VERSION-<rel>`
+// on rpm) must reach the INSTALL template verbatim — that is what makes the
+// emitted Containerfile line change on a version bump and so invalidates exactly
+// the install layer (RCA 2026-09-25) — while the UNINSTALL template strips it
+// back to the bare name, because `pacman -Rs name=VERSION` fails with
+// "target not found" and the uninstall shares the same `.Packages` list.
+func TestPinnedInstallRendersPinAndBareUninstall(t *testing.T) {
+	installTpl := "pacman -Syu --noconfirm --needed{{range .Packages}} {{.}}{{end}}"
+	uninstallTpl := "pacman -Rs --noconfirm{{range .Packages}} {{pkgName .}}{{end}}"
+	ctx := &spec.InstallContext{Packages: []string{"charly=2026.267.2134"}}
+
+	install, err := RenderTemplate("pac-install-pin", installTpl, ctx)
+	if err != nil {
+		t.Fatalf("render install: %v", err)
+	}
+	if want := "pacman -Syu --noconfirm --needed charly=2026.267.2134"; install != want {
+		t.Errorf("install = %q, want %q", install, want)
+	}
+
+	uninstall, err := RenderTemplate("pac-uninstall-pin", uninstallTpl, ctx)
+	if err != nil {
+		t.Fatalf("render uninstall: %v", err)
+	}
+	if want := "pacman -Rs --noconfirm charly"; uninstall != want {
+		t.Errorf("uninstall = %q, want %q", uninstall, want)
+	}
+}
+
+// pkgName strips a version specifier but leaves a genuinely hyphenated package
+// name intact.
+func TestPkgNameStripsVersionNotName(t *testing.T) {
+	f := TemplateFuncs["pkgName"].(func(string) string)
+	for in, want := range map[string]string{
+		"charly":                 "charly",
+		"charly=2026.267.2134":   "charly",
+		"charly-2026.267.2134":   "charly",
+		"charly-2026.267.2134-1": "charly",
+		"tailscale":              "tailscale",
+		"libfoo-2":               "libfoo-2",
+		"gtk-3":                  "gtk-3",
+		"foo-1.2":                "foo",
+	} {
+		if got := f(in); got != want {
+			t.Errorf("pkgName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

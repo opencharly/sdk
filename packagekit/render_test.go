@@ -38,7 +38,7 @@ func testPackagingWithSystemd() *spec.Packaging {
 	}
 	pkg.Config = &spec.PackagingConfig{
 		Path:        "/etc/charly/charly.yml",
-		Version:     "2026.250.0001",
+		Version:     spec.SchemaVersion,
 		Description: "System-wide charly MCP server project (started via systemd)",
 		Plugins:     []string{"@github.com/opencharly/plugin-mcp/candy/plugin-mcp:v1"},
 	}
@@ -115,7 +115,7 @@ func TestRenderSystemdUnit_NonAutostarting(t *testing.T) {
 func TestRenderConfig_ValidProject(t *testing.T) {
 	cfg := &spec.PackagingConfig{
 		Path:        "/etc/charly/charly.yml",
-		Version:     "2026.250.0001",
+		Version:     spec.SchemaVersion,
 		Description: "System-wide charly MCP server project",
 		Plugins:     []string{"@github.com/opencharly/plugin-mcp/candy/plugin-mcp:v1"},
 	}
@@ -128,7 +128,7 @@ func TestRenderConfig_ValidProject(t *testing.T) {
 	// validate test). The plugins/description are packaging metadata, not
 	// rendered file content.
 	s := string(body)
-	if !strings.Contains(s, "version: 2026.250.0001") {
+	if !strings.Contains(s, "version: "+spec.SchemaVersion) {
 		t.Errorf("rendered config lacks the version: %s", s)
 	}
 	if strings.Contains(s, "charly-mcp:") {

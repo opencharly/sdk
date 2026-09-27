@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -28,8 +27,11 @@ func TestRenderConfig_ValidatesWithCharly(t *testing.T) {
 		}
 	}
 	cfg := &spec.PackagingConfig{
-		Path:        "/etc/charly/charly.yml",
-		Version:     kit.LatestSchemaVersion().String(),
+		Path: "/etc/charly/charly.yml",
+		// Source the schema stamp from the canonical constant instead of a
+		// hardcoded CalVer: a literal rots the moment the schema HEAD advances
+		// and then fails the gate with "schema <HEAD> is required (found …)".
+		Version:     spec.SchemaVersion,
 		Description: "System-wide charly MCP server project (started via systemd)",
 		Plugins:     []string{"@github.com/opencharly/plugin-mcp/candy/plugin-mcp:v2026.250.0635"},
 	}

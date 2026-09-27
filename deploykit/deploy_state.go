@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/deploy"
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
@@ -171,14 +173,24 @@ func RejectImageRefAsDeployName(box string) error {
 	return nil
 }
 
-// FindVmDeployNode finds the DeployNode for a vm-target deploy. It is
+// FindVmDeployNode finds the DeployNode for a host-libvirt VM deploy. It is
 // THE shared "which deploy entry backs this VM" lookup used by both
 // `charly deploy add` (artifact-env collection) and `charly check live` (tests
 // overlay), so the two never diverge. Resolution order:
 //  1. by deploy NAME (the entry key) — the precise match;
 //  2. by the legacy "vm:<name>" key form;
-//  3. by scanning for any target:vm entry whose `vm:` field == vmName (or
+//  3. by scanning for any host-libvirt vm entry whose `vm:` field == vmName (or
 //     == name) — the fallback when the caller only knows the vm entity.
+//
+// "Is this a host-libvirt VM" is read off the node's loader-STAMPED descent
+// (deploy.IsVmVenue — the ssh venue + the exclusive host-resource lease) — never
+// a comparison against the substrate kind WORD. The stamp is present on every
+// node a LoadUnified'd project OR a per-host overlay read produces
+// (loaderkit.StampDeployDescents re-derives it from the substrate plugin's
+// declared #DeployTraits on every load), and IsVmVenue deliberately excludes the
+// ssh-venue kubevirt substrate (no exclusive lease) — exactly the set the former
+// substrate-word sniff selected. Boundary law: consult the trait, not the
+// word. This closes C6 — the residual `.Target` word-read is DELETED.
 //
 // Keying by the deploy NAME first is load-bearing: a bed whose key differs
 // from its vm entity (e.g. check-k3s-vm -> vm: k3s-vm) is found by its key,
@@ -205,10 +217,7 @@ func FindVmDeployNode(deploys map[string]DeployNode, name, vmName string) (Deplo
 		return DeployNode{}, false, nil
 	}
 	if name != "" {
-		if e, ok := deploys[name]; ok && (e.Target == "vm" || e.From != "") {
-			return e, true, nil
-		}
-		if e, ok := deploys["vm:"+name]; ok {
+		if e, ok := deploys[name]; ok && (deploy.IsVmVenue(&e) || e.From != "") {
 			return e, true, nil
 		}
 	}
@@ -216,7 +225,7 @@ func FindVmDeployNode(deploys map[string]DeployNode, name, vmName string) (Deplo
 	var matchKey string
 	found := false
 	for k, e := range deploys {
-		if e.Target == "vm" && e.From != "" && (e.From == vmName || e.From == name) {
+		if deploy.IsVmVenue(&e) && e.From != "" && (e.From == vmName || e.From == name) {
 			if found {
 				return DeployNode{}, false, fmt.Errorf("ambiguous vm deploy lookup for %q (vm %q): both %q and %q declare from %q — the caller must resolve the exact deploy node instead of scanning by entity", name, vmName, matchKey, k, e.From)
 			}
@@ -457,7 +466,7 @@ func ScopeVolumesToDeployKey(meta *spec.BoxMetadata, deployName, instance string
 // caller supplies (the callback SaveDeployConfig invokes per entry).
 //
 //nolint:gocyclo // field-by-field conditional persist; every branch is a peer (write-when-set)
-func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error)) {
+func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error), ctxs ...context.Context) {
 	// read is the current-state re-read this load-mutate-save performs. A nil read falls back to
 	// LoadDeployConfigForWrite — the DeployStateHost-backed host read — so an IN-PROCESS host
 	// caller passes nil and behaves exactly as before, INCLUDING the "can't read → don't write"
@@ -473,7 +482,7 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 		if DeployStateHost == nil {
 			return
 		}
-		loadBase = func() (*DeployConfig, error) { return LoadDeployConfigForWrite("saveDeployState") }
+		loadBase = func() (*DeployConfig, error) { return LoadDeployConfigForWrite("saveDeployState", ctxs...) }
 	}
 	// The lock hold, the fresh re-read inside it, and the nil-config self-heal are
 	// MutateDeployConfig's (deploy_config_cycle.go) — THE one locked read-modify-write cycle every
@@ -481,10 +490,10 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 	// than propagating, exactly as this body's own inline lock did before.
 	// Thread the same reader into the fail-safe re-check so an out-of-process caller's write
 	// path never falls back to the DeployStateHost-backed LoadDeployConfig (nil → host default).
-	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read) }
+	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read, ctxs...) }
 	if _, err := MutateDeployConfig(loadBase, save, func(dc *DeployConfig) (bool, error) {
 		return applyDeployState(dc, boxName, instance, input), nil
-	}); err != nil {
+	}, ctxs...); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not save to charly.yml: %v\n", err)
 	}
 }
@@ -514,6 +523,11 @@ func applyDeployState(dc *DeployConfig, boxName, instance string, input SaveDepl
 	}
 	if input.VmCrossRef != "" && entry.From == "" {
 		entry.From = input.VmCrossRef
+	}
+	// KubeVirt runtime state: write whenever non-nil (the kubevirt analogue of VmState;
+	// plugin-kubevirt's PrepareVenue ships it as the generic State patch).
+	if input.KubeVirtState != nil {
+		entry.KubeVirtState = input.KubeVirtState
 	}
 	if input.Volume != nil {
 		entry.Volume = input.Volume
@@ -603,16 +617,16 @@ func applyDeployState(dc *DeployConfig, boxName, instance string, input SaveDepl
 // DeployStateHost package var (#55 coneC-dsh — mirrors the SaveDeployConfig/SaveDeployState
 // reader-callback precedent). The reader is ALSO threaded as SaveDeployConfig's failsafeRead so the
 // data-safety re-check uses the same loader-backed read, not the DeployStateHost-backed one.
-func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error)) {
+func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error), ctxs ...context.Context) {
 	loadBase := read
 	if loadBase == nil {
 		if DeployStateHost == nil {
 			return
 		}
-		loadBase = LoadDeployConfig
+		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
 	}
 	key := DeployKey(boxName, instance)
-	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read) }
+	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read, ctxs...) }
 	cleaned := false
 	// The lock hold and the fresh re-read inside it are MutateDeployConfig's — the same locked
 	// cycle every other overlay writer uses. This clean is the one writer whose mutation may end
@@ -624,13 +638,13 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 		}
 		cleaned = true
 		if len(dc.Deploy) == 0 && dc.Provides == nil {
-			if path, pathErr := kit.DefaultDeployConfigPath(); pathErr == nil {
+			if path, pathErr := kit.DefaultDeployConfigPath(ctxs...); pathErr == nil {
 				_ = os.Remove(path)
 			}
 			return false, nil
 		}
 		return true, nil
-	}); err != nil {
+	}, ctxs...); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not clean charly.yml: %v\n", err)
 		return
 	}

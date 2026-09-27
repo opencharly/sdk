@@ -385,9 +385,21 @@ func ConsolePreview(s string, n int) string {
 // finds little in it — the same mode the artifact validator uses.
 const ConsoleOCRPSM = "11"
 
-// OCRBytes runs tesseract over a PNG held in memory and returns its text. It is
-// the ONE OCR implementation in the SDK — the console transports AND the
-// artifact validator (RunArtifactValidators' artifact_contains_text) both call
+// ConsoleOCRScale is the upscale factor the console engines apply before OCR by
+// default. It is 2, MEASURED against a real Omarchy console (R1/RDD): a GUI
+// installer's form labels OCR as `Usernane>` / `Confirn>` / `Hostnane>` at 1x
+// (tesseract confuses the word-final `m>` for `n>`), which desynchronises any
+// recipe anchored on `Username>` / `Confirm>` / `Hostname>`; at 2x they read
+// correctly. A framebuffer TTY also reads better at 2x (`Usernane`→`Username`)
+// while its shell anchors (`~`, `#`, `$`, `login:`) survive — at 4x they do not
+// (`~`→`R`, `#`→`™`), the same reason the artifact validator's separate
+// ocrUpscale is not reused here. 2 is the sweet spot for BOTH console shapes.
+const ConsoleOCRScale = 2
+
+// OCRBytes runs tesseract over a PNG held in memory and returns its text, with
+// the console upscale applied (ConsoleOCRScale). It is the ONE OCR
+// implementation in the SDK — the console transports AND the artifact validator
+// (RunArtifactValidators' artifact_contains_text, via OCRBytesScaled) all call
 // it, so there is exactly one tesseract invocation to keep correct (R3). The
 // bytes are written to a temp file because tesseract reads a path.
 //
@@ -396,7 +408,7 @@ const ConsoleOCRPSM = "11"
 // stdout), returns an error that NAMES the cause — never an empty string a caller
 // would read as "the text is absent".
 func OCRBytes(pngBytes []byte) (string, error) {
-	return OCRBytesScaled(pngBytes, 1)
+	return OCRBytesScaled(pngBytes, ConsoleOCRScale)
 }
 
 // OCRBytesScaled is OCRBytes with an explicit nearest-neighbour upscale factor

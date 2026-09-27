@@ -220,21 +220,56 @@ func EncServiceFilename(boxName string) string {
 // It enumerates the on-disk dirs by the deploy's `charly-<storageDir>-` prefix
 // (the same per-deploy prefix removeVolumes filters podman volumes by) rather than
 // via LoadEncryptedVolume, so it works even when the deploy config is already gone
-// (the orphaned-after-a-crash case is exactly when the dir persists). Each mount
-// is unmounted best-effort before removal; a purge never hard-fails on cleanup.
+// (the orphaned-after-a-crash case is exactly when the dir persists). The prefix
+// match is SIBLING-SAFE: a base deploy's prefix is a prefix of its instances'
+// dirs, so the live deploy config is consulted (when readable) to exclude any
+// sibling's prefix — without this, `charly remove --purge githubrunner` would
+// delete an instance's cipher dir and the instance would fail to remount. Each
+// mount is unmounted best-effort before removal; a purge never hard-fails on cleanup.
 func RemoveEncryptedVolumes(boxName, instance string) {
+	dc, _ := LoadDeployConfig()
+	RemoveEncryptedVolumesWithConfig(boxName, instance, dc)
+}
+
+// RemoveEncryptedVolumesWithConfig is RemoveEncryptedVolumes with the per-host
+// deploy config SUPPLIED rather than read through the bare deploykit.LoadDeployConfig
+// — which is a documented silent no-op out-of-process (it returns nil,nil unless
+// deploykit.DeployStateHost is registered, which only charly-core's own init
+// does). An out-of-process caller (candy/plugin-pod) therefore MUST route its
+// executor-loaded config here, exactly as it already does for resolveSidecarNames
+// and the remove-time engine resolution (see remove_orchestration.go's header).
+// Without this the sibling list would be empty in the live purge and the
+// prefix-only over-match would return.
+func RemoveEncryptedVolumesWithConfig(boxName, instance string, dc *DeployConfig) {
 	rt, err := kit.ResolveRuntime()
 	if err != nil {
 		return
 	}
-	base := rt.EncryptedStoragePath
+	removeEncryptedVolumesUnder(rt.EncryptedStoragePath, boxName, instance, dc)
+}
+
+// removeEncryptedVolumesUnder is the testable core: it purges the deploy's
+// encrypted-volume dirs under an explicit base path with an explicit config, so
+// the sibling-safety of the filter is provable without resolving the host
+// runtime or the reverse channel.
+func removeEncryptedVolumesUnder(base, boxName, instance string, dc *DeployConfig) {
 	prefix := "charly-" + DeployStorageDir(boxName, instance) + "-"
+	// The deploy config may already be gone (an orphaned-after-a-crash dir) — then
+	// no siblings are known and the prefix is the only signal, matching the
+	// pre-existing best-effort contract.
+	var siblings []string
+	if dc != nil {
+		siblings = SiblingVolumePrefixes(dc, boxName, instance)
+	}
 	entries, err := os.ReadDir(base)
 	if err != nil {
 		return // no encrypted storage dir — nothing to purge
 	}
 	for _, e := range entries {
 		if !e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		if !VolumeNameBelongsTo(e.Name(), boxName, instance, siblings) {
 			continue
 		}
 		volName := strings.TrimPrefix(e.Name(), prefix)

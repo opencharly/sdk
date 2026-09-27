@@ -9,7 +9,7 @@ import (
 
 // TestValidateCheckBedsAcceptsDeployHop gates the Phase 3 deploy-hop acceptance: a
 // check bed's from: may name ANOTHER check bed (the clone-base bed - plugin-vm's
-// drive resolves the chain at build time). Removing the uf.CheckBeds() membership
+// drive resolves the chain at build time). Removing the uf.ResolveBed() membership
 // check FAILS this test (the hop bed must not be rejected).
 func TestValidateCheckBedsAcceptsDeployHop(t *testing.T) {
 	threaded := spec.Threaded{

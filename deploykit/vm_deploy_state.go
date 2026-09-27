@@ -1,17 +1,15 @@
 package deploykit
 
 import (
-	"fmt"
-	"os"
+	"context"
 
-	"github.com/opencharly/sdk/vmshared"
 	"github.com/opencharly/spec/spec"
 )
 
 // vm_deploy_state.go — the charly.yml persistence half of the former deploy_add_cmd_vm.go,
 // R3-relocated from charly/vm_deploy_state.go (F6 vm-lifecycle move, coneB-vmlifecycle): this is
 // SHARED deploy-state logic every deploy plugin (compiled-in or out-of-process) reaches, the same
-// class as VmDeployEntryKeys/PruneStaleVmDottedTwin/IsAutoVmDeployEntry (FLOOR-SLIM Unit 3), which
+// class as VmDeployEntryKeys/IsAutoVmDeployEntry (FLOOR-SLIM Unit 3), which
 // already live here operating on deploykit's own *DeployConfig.
 //
 // The plugin-primaries-coupled marshal callback (saveDeployConfigNodeForm) is NOT hoistable — the
@@ -46,15 +44,15 @@ import (
 // loader-backed reader (loaderkit.LoadHostDeployConfigViaExecutor), so SaveVmDeployState no longer
 // requires the DeployStateHost package var (#55 coneC-dsh config-write seam-collapse — mirrors the
 // SaveDeployConfig/SaveDeployState reader-callback precedent).
-func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, save func(*DeployConfig) error, read func() (*DeployConfig, error)) error {
+func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, save func(*DeployConfig) error, read func() (*DeployConfig, error), ctxs ...context.Context) error {
 	loadBase := read
 	if loadBase == nil {
-		loadBase = LoadDeployConfig
+		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
 	}
 	_, err := MutateDeployConfig(loadBase, save, func(dc *DeployConfig) (bool, error) {
 		saveVmStateInto(dc, deployName, vmEntity, state)
 		return true, nil
-	})
+	}, ctxs...)
 	return err
 }
 
@@ -63,23 +61,24 @@ func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, s
 // shape MutateDeployConfig requires and the reason the lock never has to span a caller's
 // orchestration.
 func saveVmStateInto(dc *DeployConfig, deployName, vmEntity string, state *spec.VmDeployState) {
+	// The per-host entry is keyed by the deploy IDENTITY (the same string the
+	// tree/config/CLI use) — no `vm:` prefix, no dot sanitization. The VM ENTITY
+	// the deploy targets is carried SEPARATELY in the entry's `vm:` cross-ref
+	// (entry.From), so teardown resolves the entity from the entry, never from a
+	// lossy key transform.
 	entry, exists := dc.Deploy[deployName]
 	if !exists {
 		entry = DeployNode{}
 	}
 	entry.Target = "vm"
-	// Persist the `vm:` cross-ref so the per-host entry is a well-formed deploy
-	// node AND so teardown can resolve a deploy-keyed entry back to its VM entity.
-	// Precedence: the explicit vmEntity (the canonical mapping the caller resolved,
-	// e.g. check-k3s-vm → k3s-vm) → a legacy "vm:<entity>" deployName prefix →
-	// PRESERVE the existing entry.From (never clobber a known cross-ref with "").
-	switch {
-	case vmEntity != "":
+	// Persist the `vm:` cross-ref so the per-host entry is a well-formed deploy node
+	// AND so teardown can resolve a deploy-keyed entry back to its VM entity. The
+	// explicit vmEntity is the canonical mapping the caller resolved
+	// (e.g. check-k3s-vm → k3s-vm); the legacy `vm:<entity>` key derivation is
+	// RETIRED (a key is an identity, never an entity carrier). An empty vmEntity
+	// leaves the existing entry.From untouched (never clobber a known cross-ref).
+	if vmEntity != "" {
 		entry.From = vmEntity
-	default:
-		if vmName, perr := vmshared.VmNameFromDeployName(deployName); perr == nil {
-			entry.From = vmName
-		}
 	}
 	// Ephemeral-registration ordering contract (RCA #7, FINAL/K5 unit 6a, live-probe-caught):
 	// registerEphemeralIfMarked persists .VmState.Ephemeral under THIS SAME canonical key BEFORE
@@ -101,14 +100,17 @@ func saveVmStateInto(dc *DeployConfig, deployName, vmEntity string, state *spec.
 	}
 	dc.Deploy[deployName] = entry
 
-	// Self-healing prune (RCA #6, FINAL/K5 unit 6a): remove a stale dotted-key twin the
-	// now-eliminated dual-writer path left behind for THIS SAME domain in an existing overlay —
-	// nothing writes one anymore, but pre-fix overlays (real users', every bed record until now)
-	// still carry it, and it poisons every subsequent load (spec.ValidateDeploymentName's
-	// dot-rejection). One-touch cleanup on the next write for this domain — no new migration
-	// machinery.
-	if pruned := PruneStaleVmDottedTwin(dc, deployName); pruned != "" {
-		fmt.Fprintf(os.Stderr, "note: pruned a stale per-host overlay entry %q for domain %q — left by a prior version's now-eliminated dotted-key vm-state write (canonical entry: %q)\n", pruned, vmshared.VmDomainIdentity(deployName), deployName)
+	// Legacy overylay-data cutover (one-touch, the pattern the retired
+	// PruneStaleVmDottedTwin used): a pre-cutover overlay keyed THIS deploy's
+	// per-host state under the dashed "vm:"+VmDomainIdentity(identity) canonical key.
+	// Nothing writes that key now, and the identity-keyed lookups
+	// (VmStateFromDeployConfig/ResolveVmSshPort) can never read it, so it would sit
+	// orphaned — a stale duplicate carrying the old ssh_port/instance-id. Drop it on
+	// the next write for this identity: the identity entry above is now canonical. The
+	// old WRITE was also the one that left raw dotted twins; those already share the
+	// NEW identity key's shape, so re-writing at the identity key overwrites them.
+	if legacy := "vm:" + spec.VmDomainIdentity(deployName); legacy != deployName {
+		delete(dc.Deploy, legacy)
 	}
 }
 
@@ -117,14 +119,14 @@ func saveVmStateInto(dc *DeployConfig, deployName, vmEntity string, state *spec.
 // load→decide→write runs under the SAME MutateDeployConfig lock hold. read is the SAME
 // reader-callback SaveVmDeployState takes (nil → DeployStateHost-backed LoadDeployConfig; a plugin
 // caller injects its own loader-backed reader).
-func RemoveVmDeployEntry(deployName string, save func(*DeployConfig) error, read func() (*DeployConfig, error)) error {
+func RemoveVmDeployEntry(deployName string, save func(*DeployConfig) error, read func() (*DeployConfig, error), ctxs ...context.Context) error {
 	loadBase := read
 	if loadBase == nil {
-		loadBase = LoadDeployConfig
+		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
 	}
 	_, err := MutateDeployConfig(loadBase, save, func(dc *DeployConfig) (bool, error) {
 		return removeVmEntriesFrom(dc, deployName), nil
-	})
+	}, ctxs...)
 	return err
 }
 

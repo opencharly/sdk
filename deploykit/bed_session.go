@@ -1,6 +1,8 @@
 package deploykit
 
 import (
+	"context"
+
 	"github.com/opencharly/spec/deploy"
 	"gopkg.in/yaml.v3"
 )
@@ -60,7 +62,12 @@ import (
 // (loaderkit.LoadHostDeployConfigViaExecutor), so PersistBedDeployOverrides no longer requires the
 // DeployStateHost package var (#55 coneC-dsh — mirrors the SaveDeployConfig/SaveDeployState
 // reader-callback precedent).
-func PersistBedDeployOverrides(name string, node DeployNode, externalInPlace bool, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error)) {
+//
+// ctx carries the invocation's RunEnv (a bed's CHARLY_DEPLOY_CONFIG): SaveDeployState resolves the
+// overlay path from it, so a bed's persist writes the BED's temp overlay, never the operator's real
+// ~/.config/charly/charly.yml. Without it a roster bed's member persist landed in the real overlay
+// (measured live after os.Setenv isolation was retired).
+func PersistBedDeployOverrides(ctx context.Context, name string, node DeployNode, externalInPlace bool, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error)) {
 	// A LOCAL or EXTERNAL in-place bed never runs `charly config` (it applies candies in
 	// place during `charly deploy add`), so the whole reason PersistBedDeployOverrides exists
 	// — seeding port/volume/env overrides BEFORE config — does not apply. Worse, a local bed's
@@ -92,7 +99,7 @@ func PersistBedDeployOverrides(name string, node DeployNode, externalInPlace boo
 		Preemptible:       node.Preemptible,
 		RequiresExclusive: node.RequiresExclusive,
 		RequiresShared:    node.RequiresShared,
-	}, marshalNode, read)
+	}, marshalNode, read, ctx)
 }
 
 // DeployNestedLocalChildren is now deploy.DeployNestedLocalChildren (#55 U4 — a pure dotted-path

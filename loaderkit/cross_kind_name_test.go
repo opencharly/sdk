@@ -29,7 +29,7 @@ import (
 // the empty LoadSeams is never touched.
 func TestCrossKindNameReuse_LoaderRejectsWithinDocument(t *testing.T) {
 	dir := t.TempDir()
-	dupDoc := "version: 2026.250.0731\nredis:\n    candy:\n        base: fedora\nredis:\n    local:\n        candy: [redis]\n"
+	dupDoc := "version: " + spec.SchemaVersion + "\nredis:\n    candy:\n        base: fedora\nredis:\n    local:\n        candy: [redis]\n"
 	if err := os.WriteFile(filepath.Join(dir, spec.UnifiedFileName), []byte(dupDoc), 0o644); err != nil {
 		t.Fatal(err)
 	}
