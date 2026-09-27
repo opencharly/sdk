@@ -189,7 +189,7 @@ func RejectImageRefAsDeployName(box string) error {
 // (loaderkit.StampDeployDescents re-derives it from the substrate plugin's
 // declared #DeployTraits on every load), and IsVmVenue deliberately excludes the
 // ssh-venue kubevirt substrate (no exclusive lease) — exactly the set the former
-// `.Target == "vm"` sniff selected. Boundary law: consult the trait, not the
+// substrate-word sniff selected. Boundary law: consult the trait, not the
 // word. This closes C6 — the residual `.Target` word-read is DELETED.
 //
 // Keying by the deploy NAME first is load-bearing: a bed whose key differs

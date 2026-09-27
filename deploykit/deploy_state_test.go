@@ -440,7 +440,7 @@ func vmDescent() *spec.DescentDescriptor {
 
 // TestFindVmDeployNode_ReadsStampedDescentNotTargetWord is the C6 close: the
 // lookup identifies a host-libvirt vm by its loader-STAMPED descent trait, never
-// by a `.Target == "vm"` comparison against the substrate kind word. A persisted
+// by a comparison against the substrate kind WORD. A persisted
 // vm node carries no `target:` (the node-form discriminator supplies it at load)
 // but DOES carry the stamped descent — the exact shape the former word-sniff
 // could not resolve. Fails without the change (the word-sniff returns not-found
@@ -460,7 +460,7 @@ func TestFindVmDeployNode_ReadsStampedDescentNotTargetWord(t *testing.T) {
 
 	// The complement: an ssh-venue node WITHOUT the exclusive lease (the kubevirt
 	// substrate) is NOT a host-libvirt vm — IsVmVenue excludes it exactly as the
-	// former `.Target == "vm"` (kubevirt's Target is its own word) did.
+	// former substrate-word sniff (kubevirt's Target is its own word) did.
 	kubevirt := DeployNode{Descent: spec.DescentFromTraits(&spec.DeployTraits{Venue: "ssh"}), From: "eval-vm"}
 	if _, ok, _ := FindVmDeployNode(map[string]DeployNode{"kv": kubevirt}, "caller", "eval-vm"); ok {
 		t.Fatal("a kubevirt node (ssh venue, no exclusive lease) must NOT resolve as a host-libvirt vm")
