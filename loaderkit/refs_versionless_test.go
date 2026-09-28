@@ -17,8 +17,8 @@ func TestCollectRemoteRefsOpts_VersionlessRefResolvesDefaultBranch(t *testing.T)
 	cfg := &spec.Config{}
 	layers := map[string]spec.CandyReader{}
 	opts := spec.ResolveOpts{ExtraCandyRefs: []string{"@github.com/opencharly/layer-ripgrep"}}
-	// A stub downloader (the tag resolution happens BEFORE any download) + a stub tag resolver
-	// (no live git ls-remote — the test is offline-safe and deterministic).
+	// A stub downloader (the branch resolution happens BEFORE any download) + a stubbed
+	// default-branch resolver (no live git ls-remote — the test is offline-safe and deterministic).
 	seams := spec.RefsCollectSeams{Downloader: fakeDownloader{}}
 	orig := resolveDefaultBranch
 	resolveDefaultBranch = func(repoURL string) (string, error) {

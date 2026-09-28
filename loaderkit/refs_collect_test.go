@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -175,41 +176,50 @@ func TestVersionlessRefRoutesThroughSeam(t *testing.T) {
 // client), never a raw ls-remote. A local repo + a warmed cache + a FAILING git shim:
 // any raw-git invocation breaks the test, so a pass proves the fallback served the cache.
 func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
-	// LIVE-OR-SKIP (R7a): warms the real default branch over the network (a live-service
-	// boundary); SKIPS visibly when the network/repo is unavailable — never a silent pass.
-	url := "https://github.com/opencharly/plugin-deploy-vm"
-	// Warm the cached DEFAULT BRANCH (the fallback the version-less resolution uses).
-	warm, err := gitClient().DefaultBranch(url)
-	if err != nil {
-		t.Skip("warm failed (network?): " + err.Error())
+	// LIVE-OR-SKIP (R7a): exercises the REAL version-less resolution end-to-end
+	// (network at warm time; SKIPS visibly when the repo is unreachable — never a
+	// silent pass). Shape: (1) run the collector on the real PATH to WARM the cached
+	// default branch and capture the resolved version; (2) install a FAILING git shim;
+	// (3) re-run the collector — a pass proves the changed path served the CACHED
+	// default branch with no raw git, and pins the resolved version to the warm value.
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
+		},
 	}
+	const repoPath = "github.com/opencharly/plugin-deploy-vm"
+	resolve := func(t *testing.T) (string, bool) {
+		t.Helper()
+		downloads, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{})
+		if err != nil {
+			return "", false
+		}
+		for _, d := range downloads {
+			if d.RepoPath == repoPath {
+				return d.Version, true
+			}
+		}
+		return "", false
+	}
+	warm, ok := resolve(t)
+	if !ok {
+		t.Skip("warm failed (network/repo unreachable?) — live-or-skip")
+	}
+	if warm == "" || strings.HasPrefix(warm, "v") {
+		t.Fatalf("version-less ref resolved to %q; want a default BRANCH (non-empty, not a v-tag)", warm)
+	}
+	// The shim: ANY git invocation now fails — the cached path must not invoke git.
 	shimDir := t.TempDir()
 	shim := filepath.Join(shimDir, "git")
 	if err := os.WriteFile(shim, []byte("#!/bin/sh\necho raw-git-invoked >&2\nexit 42\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
-	cfg := &spec.Config{
-		Box: spec.BoxMap{
-			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
-		},
+	got, ok := resolve(t)
+	if !ok {
+		t.Fatalf("second collect with the git shim failed — the cached default branch was NOT served (raw git invoked?)")
 	}
-	// The version-less resolution's DEFAULT resolver is gitClient().DefaultBranch; the
-	// cached branch must serve it WITHOUT invoking git (the shim would fail it).
-	downloads, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{})
-	if err != nil {
-		t.Fatalf("collect with the fallback: %v", err)
-	}
-	found := false
-	for _, d := range downloads {
-		if d.RepoPath == "github.com/opencharly/plugin-deploy-vm" {
-			found = true
-			if d.Version != warm {
-				t.Fatalf("version-less ref resolved to %q; want the warmed default branch %q", d.Version, warm)
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("plugin-deploy-vm download not collected; got %+v", downloads)
+	if got != warm {
+		t.Fatalf("second collect resolved %q; want the warmed default branch %q", got, warm)
 	}
 }
