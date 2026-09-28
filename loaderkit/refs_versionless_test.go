@@ -6,26 +6,28 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// TestCollectRemoteRefsOpts_VersionlessRefResolvesLatestTag pins the Phase-4 behavior: a
-// version-less remote candy ref (e.g. a builder plugin connected by word ref) resolves to the
-// repo's LATEST TAG — immutable — not the mutable default branch (which a freshness-checked
-// fetch would hang on in a network-bound CI/container). The tag resolver is a SEAM
-// (seams.LatestTag), so the test is hermetic — no live git ls-remote at test time.
-func TestCollectRemoteRefsOpts_VersionlessRefResolvesLatestTag(t *testing.T) {
+// TestCollectRemoteRefsOpts_VersionlessRefResolvesDefaultBranch pins the corrected
+// contract: a version-less remote candy ref (`@github.com/owner/repo`, no `:tag`) means
+// "the current tip of that repo", so it resolves to the repo's DEFAULT BRANCH — not a
+// frozen latest tag. The latest-tag behavior silently served a STALE build whenever the
+// repo had newer work on its default branch than on its last tag, and SHADOWED a
+// project's explicit pin for the same word (opencharly/charly#715). The branch resolver
+// is a package seam, so the test is hermetic — no live git ls-remote at test time.
+func TestCollectRemoteRefsOpts_VersionlessRefResolvesDefaultBranch(t *testing.T) {
 	cfg := &spec.Config{}
 	layers := map[string]spec.CandyReader{}
 	opts := spec.ResolveOpts{ExtraCandyRefs: []string{"@github.com/opencharly/layer-ripgrep"}}
-	// A stub downloader (the tag resolution happens BEFORE any download) + a stub tag resolver
-	// (no live git ls-remote — the test is offline-safe and deterministic).
-	seams := spec.RefsCollectSeams{
-		Downloader: fakeDownloader{},
-		LatestTag: func(repoURL string) (string, error) {
-			if repoURL != "https://github.com/opencharly/layer-ripgrep.git" {
-				t.Fatalf("LatestTag called with %q; want the layer-ripgrep repo URL", repoURL)
-			}
-			return "v2026.235.1653", nil
-		},
+	// A stub downloader (the branch resolution happens BEFORE any download) + a stubbed
+	// default-branch resolver (no live git ls-remote — the test is offline-safe and deterministic).
+	seams := spec.RefsCollectSeams{Downloader: fakeDownloader{}}
+	orig := resolveDefaultBranch
+	resolveDefaultBranch = func(repoURL string) (string, error) {
+		if repoURL != "https://github.com/opencharly/layer-ripgrep.git" {
+			t.Fatalf("resolveDefaultBranch called with %q; want the layer-ripgrep repo URL", repoURL)
+		}
+		return "main", nil
 	}
+	t.Cleanup(func() { resolveDefaultBranch = orig })
 	downloads, err := CollectRemoteRefsOpts(cfg, layers, opts, seams)
 	if err != nil {
 		t.Fatalf("CollectRemoteRefsOpts: %v", err)
@@ -34,11 +36,8 @@ func TestCollectRemoteRefsOpts_VersionlessRefResolvesLatestTag(t *testing.T) {
 	for _, d := range downloads {
 		if d.RepoPath == "github.com/opencharly/layer-ripgrep" {
 			found = true
-			if d.Version == "main" {
-				t.Fatalf("version-less ref resolved to mutable main; want a v<calver> tag")
-			}
-			if d.Version != "v2026.235.1653" {
-				t.Fatalf("version-less ref resolved to %q; want the stub latest tag v2026.235.1653", d.Version)
+			if d.Version != "main" {
+				t.Fatalf("version-less ref resolved to %q; want the default branch main", d.Version)
 			}
 			t.Logf("version-less ref resolved to %s", d.Version)
 		}

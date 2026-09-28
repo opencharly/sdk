@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -112,12 +113,12 @@ func TestRepoOverrideDir_OperatorFirstWins(t *testing.T) {
 	}
 }
 
-// TestVersionlessRefUsesCachedTag — the ls-remote fanout regression: the version-less
-// tag resolution must be served by the cached gitClient().LatestTag (the 1h-TTL disk
-// cache), never the raw refs.GitLatestTag. A local repo + a warmed cache + a FAILING
-// git shim on PATH: any raw-git invocation breaks the test, so a pass proves the cache
-// served the tag.
-func TestVersionlessRefUsesCachedTag(t *testing.T) {
+// TestCachedDefaultBranchServesWithoutGit — the ls-remote fanout regression: resolving a
+// repo's default branch must be served by the cached gitClient().DefaultBranch (disk cache),
+// never a raw ls-remote. This exercises the CLIENT cache the resolver uses, not the resolver
+// itself (the resolver is covered by the seam tests). A warmed cache + a FAILING git shim on
+// PATH: any raw-git invocation breaks the test, so a pass proves the cache served.
+func TestCachedDefaultBranchServesWithoutGit(t *testing.T) {
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
 	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
@@ -131,7 +132,8 @@ func TestVersionlessRefUsesCachedTag(t *testing.T) {
 	}
 	url := "file://" + repo
 	// warm the cache through the public API (the raw git runs once, allowed)
-	if _, err := gitClient().LatestTag(url); err != nil {
+	warm, err := gitClient().DefaultBranch(url)
+	if err != nil {
 		t.Skip("warm failed: " + err.Error())
 	}
 	// the shim: ANY git invocation now fails — the cached path must not invoke git
@@ -141,13 +143,13 @@ func TestVersionlessRefUsesCachedTag(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
-	// the cached LatestTag must serve the tag WITHOUT invoking git
-	tag, err := gitClient().LatestTag(url)
+	// the cached DefaultBranch must serve the SAME value WITHOUT invoking git
+	branch, err := gitClient().DefaultBranch(url)
 	if err != nil {
-		t.Fatalf("cached LatestTag failed (raw git invoked?): %v", err)
+		t.Fatalf("cached DefaultBranch failed (raw git invoked?): %v", err)
 	}
-	if tag != "v1.0.0" {
-		t.Fatalf("cached tag = %q, want v1.0.0", tag)
+	if branch != warm {
+		t.Fatalf("cached default branch = %q; want the warmed %q", branch, warm)
 	}
 }
 
@@ -158,51 +160,66 @@ func TestVersionlessRefRoutesThroughSeam(t *testing.T) {
 		},
 	}
 	called := false
-	seams := spec.RefsCollectSeams{
-		LatestTag: func(url string) (string, error) { called = true; return "v1.0.0", nil },
-	}
-	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, seams); err != nil {
+	orig := resolveDefaultBranch
+	resolveDefaultBranch = func(url string) (string, error) { called = true; return "main", nil }
+	t.Cleanup(func() { resolveDefaultBranch = orig })
+	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{}); err != nil {
 		t.Fatalf("collect: %v", err)
 	}
 	if !called {
-		t.Fatal("the version-less resolution did not route through the LatestTag seam")
+		t.Fatal("the version-less resolution did not route through the resolveDefaultBranch seam")
 	}
 }
 
-// TestVersionlessRefFallbackUsesCachedClient — the FALLBACK regression: with the
-// LatestTag seam nil, the version-less resolution must route through
-// gitClient().LatestTag (the cached 1h-TTL client), never the raw refs.GitLatestTag.
-// A local repo + a warmed cache + a FAILING git shim: any raw-git invocation breaks
-// the test, so a pass proves the fallback served the cached tag.
+// TestVersionlessRefFallbackUsesCachedClient — the FALLBACK regression: the version-less
+// resolution's default resolver routes through gitClient().DefaultBranch (the cached
+// client), never a raw ls-remote. A local repo + a warmed cache + a FAILING git shim:
+// any raw-git invocation breaks the test, so a pass proves the fallback served the cache.
 func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
-	dir := t.TempDir()
-	repo := filepath.Join(dir, "repo")
-	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
-		t.Skip("git unavailable: " + err.Error())
+	// LIVE-OR-SKIP (R7a): exercises the REAL version-less resolution end-to-end
+	// (network at warm time; SKIPS visibly when the repo is unreachable — never a
+	// silent pass). Shape: (1) run the collector on the real PATH to WARM the cached
+	// default branch and capture the resolved version; (2) install a FAILING git shim;
+	// (3) re-run the collector — a pass proves the changed path served the CACHED
+	// default branch with no raw git, and pins the resolved version to the warm value.
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
+		},
 	}
-	_ = exec.Command("git", "-C", repo, "config", "user.email", "t@t").Run()
-	_ = exec.Command("git", "-C", repo, "config", "user.name", "t").Run()
-	_ = exec.Command("git", "-C", repo, "commit", "--allow-empty", "-qm", "init").Run()
-	if err := exec.Command("git", "-C", repo, "tag", "v1.0.0").Run(); err != nil {
-		t.Skip("git tag failed: " + err.Error())
+	const repoPath = "github.com/opencharly/plugin-deploy-vm"
+	resolve := func(t *testing.T) (string, bool) {
+		t.Helper()
+		downloads, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{})
+		if err != nil {
+			return "", false
+		}
+		for _, d := range downloads {
+			if d.RepoPath == repoPath {
+				return d.Version, true
+			}
+		}
+		return "", false
 	}
-	url := "https://github.com/opencharly/plugin-deploy-vm"
-	if _, err := gitClient().LatestTag(url); err != nil {
-		t.Skip("warm failed (network?): " + err.Error())
+	warm, ok := resolve(t)
+	if !ok {
+		t.Skip("warm failed (network/repo unreachable?) — live-or-skip")
 	}
+	if warm == "" || strings.HasPrefix(warm, "v") {
+		t.Fatalf("version-less ref resolved to %q; want a default BRANCH (non-empty, not a v-tag)", warm)
+	}
+	// The shim: ANY git invocation now fails — the cached path must not invoke git.
 	shimDir := t.TempDir()
 	shim := filepath.Join(shimDir, "git")
 	if err := os.WriteFile(shim, []byte("#!/bin/sh\necho raw-git-invoked >&2\nexit 42\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
-	cfg := &spec.Config{
-		Box: spec.BoxMap{
-			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
-		},
+	got, ok := resolve(t)
+	if !ok {
+		t.Fatalf("second collect with the git shim failed — the cached default branch was NOT served (raw git invoked?)")
 	}
-	// the seam is NIL — the fallback (gitClient().LatestTag) must serve the cached tag
-	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{}); err != nil {
-		t.Fatalf("collect with the fallback: %v", err)
+	if got != warm {
+		t.Fatalf("second collect resolved %q; want the warmed default branch %q", got, warm)
 	}
 }

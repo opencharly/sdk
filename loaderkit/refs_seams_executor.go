@@ -69,7 +69,6 @@ func RefsSeamsFromExecutor(ctx context.Context, ex *sdk.Executor) spec.RefsColle
 		// STATE — sharing it across a concurrent roster is correct AND faster, and it
 		// never touches the operator's `deploy:` entries (the thing bed isolation
 		// protects). Beds no longer os.Setenv, so this resolves the real per-host path.
-		LatestTag: gitClient().LatestTag,
 	}
 }
 

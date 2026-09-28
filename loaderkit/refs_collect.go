@@ -260,8 +260,8 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 	// is unused now (kept for call-site stability + future diagnostics).
 	type repoVer struct{ repo, ver string }
 	pairs := make(map[repoVer]map[string]bool) // (repo, git-tag) -> set of bare refs
-	// Track resolved latest tags per repo (to avoid duplicate git queries)
-	latestTags := make(map[string]string)
+	// Track resolved default branches per repo (to avoid duplicate git queries)
+	defaultBranches := make(map[string]string)
 
 	addRef := func(ref, source string) error {
 		_ = source
@@ -272,28 +272,26 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 		bareRef := spec.BareCandyRef(ref)
 		version := parsed.Version
 		if version == "" {
-			// No version specified -- resolve to the LATEST TAG (the candy de-submodule cutover,
-			// Phase 4). A version-less remote ref (e.g. a builder plugin connected by word ref,
-			// where the caller knows the repo but not the tag) previously fell back to the
-			// MUTABLE default branch — a freshness-checked ref that hangs in a network-bound
-			// CI/container and can advance under the resolver. The newest tag is immutable and
-			// deterministic; a repo with no tags errors loudly rather than silently pinning a
-			// branch.
-			if tag, ok := latestTags[parsed.RepoPath]; ok {
-				version = tag
+			// No version specified — resolve to the repo's DEFAULT BRANCH, not a tag.
+			// A version-less ref (`@github.com/owner/repo`, no `:tag`) means "the current
+			// tip of that repo", so it must TRACK the default branch. Resolving to the
+			// newest tag silently served a STALE build whenever the repo had newer work on
+			// its default branch than on its last tag, and — worse — the tag's provider
+			// SHADOWED a project's own explicit pin for the same word (opencharly/charly#715).
+			// The default branch is a MUTABLE ref, so it re-resolves per access
+			// (refs.IsMutableRef) and a stale export refreshes; a repo with no resolvable
+			// default branch errors loudly rather than silently pinning something.
+			if branch, ok := defaultBranches[parsed.RepoPath]; ok {
+				version = branch
 			} else {
 				repoURL := refs.RepoGitURL(parsed.RepoPath)
-				resolveTag := seams.LatestTag
-				if resolveTag == nil {
-					resolveTag = gitClient().LatestTag // the CACHED latest-tag (1h TTL, disk-persisted, cross-process) — the raw GitLatestTag was the per-process ls-remote fanout (measured: 90-94 concurrent ls-remote -> throttling)
-				}
-				tag, err := resolveTag(repoURL)
+				branch, err := resolveDefaultBranch(repoURL)
 				if err != nil {
-					return fmt.Errorf("%s: cannot resolve latest tag for %s: %w", source, parsed.RepoPath, err)
+					return fmt.Errorf("%s: cannot resolve default branch for %s: %w", source, parsed.RepoPath, err)
 				}
-				version = tag
-				latestTags[parsed.RepoPath] = tag
-				fmt.Fprintf(os.Stderr, "Resolved @%s -> %s (latest tag)\n", parsed.RepoPath, version)
+				version = branch
+				defaultBranches[parsed.RepoPath] = branch
+				fmt.Fprintf(os.Stderr, "Resolved @%s -> %s (default branch)\n", parsed.RepoPath, version)
 			}
 		}
 		key := repoVer{parsed.RepoPath, version}
@@ -463,4 +461,11 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 		gitClient().WarmUp(repos, os.Stderr)
 	}
 	return result, nil
+}
+
+// resolveDefaultBranch resolves a repo's default branch for a VERSION-LESS remote ref.
+// Package var (test seam) defaulting to the centralized cached git layer, so the
+// versionless-ref resolution is unit-testable offline.
+var resolveDefaultBranch = func(repoURL string) (string, error) {
+	return gitClient().DefaultBranch(repoURL)
 }
