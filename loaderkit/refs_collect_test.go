@@ -112,12 +112,11 @@ func TestRepoOverrideDir_OperatorFirstWins(t *testing.T) {
 	}
 }
 
-// TestVersionlessRefUsesCachedTag — the ls-remote fanout regression: the version-less
-// tag resolution must be served by the cached gitClient().LatestTag (the 1h-TTL disk
-// cache), never the raw refs.GitLatestTag. A local repo + a warmed cache + a FAILING
-// git shim on PATH: any raw-git invocation breaks the test, so a pass proves the cache
-// served the tag.
-func TestVersionlessRefUsesCachedTag(t *testing.T) {
+// TestVersionlessRefUsesCachedDefaultBranch — the ls-remote fanout regression: the
+// version-less branch resolution must be served by the cached gitClient().DefaultBranch
+// (disk cache), never a raw ls-remote. A local repo + a warmed cache + a FAILING git
+// shim on PATH: any raw-git invocation breaks the test, so a pass proves the cache served.
+func TestVersionlessRefUsesCachedDefaultBranch(t *testing.T) {
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
 	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
@@ -131,7 +130,7 @@ func TestVersionlessRefUsesCachedTag(t *testing.T) {
 	}
 	url := "file://" + repo
 	// warm the cache through the public API (the raw git runs once, allowed)
-	if _, err := gitClient().LatestTag(url); err != nil {
+	if _, err := gitClient().DefaultBranch(url); err != nil {
 		t.Skip("warm failed: " + err.Error())
 	}
 	// the shim: ANY git invocation now fails — the cached path must not invoke git
@@ -141,13 +140,13 @@ func TestVersionlessRefUsesCachedTag(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
-	// the cached LatestTag must serve the tag WITHOUT invoking git
-	tag, err := gitClient().LatestTag(url)
+	// the cached DefaultBranch must serve WITHOUT invoking git
+	branch, err := gitClient().DefaultBranch(url)
 	if err != nil {
-		t.Fatalf("cached LatestTag failed (raw git invoked?): %v", err)
+		t.Fatalf("cached DefaultBranch failed (raw git invoked?): %v", err)
 	}
-	if tag != "v1.0.0" {
-		t.Fatalf("cached tag = %q, want v1.0.0", tag)
+	if branch == "" {
+		t.Fatalf("cached default branch empty")
 	}
 }
 
@@ -158,22 +157,21 @@ func TestVersionlessRefRoutesThroughSeam(t *testing.T) {
 		},
 	}
 	called := false
-	seams := spec.RefsCollectSeams{
-		LatestTag: func(url string) (string, error) { called = true; return "v1.0.0", nil },
-	}
-	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, seams); err != nil {
+	orig := resolveDefaultBranch
+	resolveDefaultBranch = func(url string) (string, error) { called = true; return "main", nil }
+	t.Cleanup(func() { resolveDefaultBranch = orig })
+	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{}); err != nil {
 		t.Fatalf("collect: %v", err)
 	}
 	if !called {
-		t.Fatal("the version-less resolution did not route through the LatestTag seam")
+		t.Fatal("the version-less resolution did not route through the resolveDefaultBranch seam")
 	}
 }
 
-// TestVersionlessRefFallbackUsesCachedClient — the FALLBACK regression: with the
-// LatestTag seam nil, the version-less resolution must route through
-// gitClient().LatestTag (the cached 1h-TTL client), never the raw refs.GitLatestTag.
-// A local repo + a warmed cache + a FAILING git shim: any raw-git invocation breaks
-// the test, so a pass proves the fallback served the cached tag.
+// TestVersionlessRefFallbackUsesCachedClient — the FALLBACK regression: the version-less
+// resolution's default resolver routes through gitClient().DefaultBranch (the cached
+// client), never a raw ls-remote. A local repo + a warmed cache + a FAILING git shim:
+// any raw-git invocation breaks the test, so a pass proves the fallback served the cache.
 func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
