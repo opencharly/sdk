@@ -73,14 +73,11 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 // the file doesn't exist. Relocated from charly/deploy.go (K5-Unit-1); the LoadUnified hop
 // reaches core through DeployStateHost.LoadUnifiedDeployConfig.
 //
-// ctx is OPTIONAL (trailing variadic) in THIS leg so the many out-of-tree plugin consumers
-// (plugin-pod, plugin-deploy-pod, plugin-fleet, plugin-vm, plugin-substrate, plugin-check)
-// compile unchanged while the roster cutover lands. The follow-on batch
-// "plugin-consumers: make deploy-config ctx required" flips this to a REQUIRED ctx in the same
-// change that migrates those ~32 call sites, removing the fail-open default (R5). Until then a
-// caller that omits ctx reads the process env (the legacy host behavior) — correct for the
-// operator path, and all BED paths thread ctx (the roster is the only concurrent in-process
-// caller).
+// ctx is REQUIRED: it carries the invocation's RunEnv (spec.WithRunEnv) so a concurrent
+// in-process bed roster reads its OWN overlay rather than the operator's process env. The
+// former trailing-variadic form silently fell back to the process env when omitted — the
+// fail-open default; it is removed (R5), so every caller (in-tree and any out-of-tree plugin
+// consumer) that omits ctx now fails to compile.
 //
 // Every transform the old bespoke parser did — the `images:` legacy-key reject, the
 // deployment-tree / required-box: / preemptible / ephemeral-naming validation, and the
@@ -88,8 +85,8 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 // deploy-validation block subsume the legacy check; the ephemeral/naming validators +
 // promotion were consolidated there so a PROJECT charly.yml's inline deploy: entries get them
 // too — R3, one path).
-func LoadDeployConfig(ctxs ...context.Context) (*DeployConfig, error) {
-	path, err := kit.DefaultDeployConfigPath(ctxs...)
+func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
+	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
 		return nil, nil
 	}
@@ -144,8 +141,8 @@ func LoadDeployConfig(ctxs ...context.Context) (*DeployConfig, error) {
 // (enc_probe / status_flat / vm state, RemoveVmDeployEntry), NOT a transitional shim — the
 // migrated caller (command:deploy) already never passes nil. The nil path dies when the LAST of
 // those host callers migrates plugin-side in its own deferred cone (enc floor / check-cone).
-func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctxs ...context.Context) error {
-	path, err := kit.DefaultDeployConfigPath(ctxs...)
+func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctx context.Context) error {
+	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
 		return fmt.Errorf("determining deploy config path: %w", err)
 	}
@@ -157,7 +154,7 @@ func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *Depl
 	// disk for the migration to recover.
 	recheck := failsafeRead
 	if recheck == nil {
-		recheck = func() (*DeployConfig, error) { return LoadDeployConfig(ctxs...) }
+		recheck = func() (*DeployConfig, error) { return LoadDeployConfig(ctx) }
 	}
 	if _, lerr := recheck(); lerr != nil {
 		return fmt.Errorf("refusing to overwrite %s — the existing per-host config fails to load (%w); fix it (or remove it to regenerate) first", path, lerr)
@@ -282,12 +279,13 @@ func removeDeployKeys(m *yaml.Node) {
 // giving the operator visibility into why a command behaved as if charly.yml were absent.
 // Relocated from charly/deploy.go (K5-Unit-1).
 //
-// context is a short human-readable label included in the warning message so the operator can
+// label is a short human-readable diagnostic included in the warning message so the operator can
 // trace which code path noticed the problem (e.g. "charly status", "config injectEnvProvides").
-func LoadDeployConfigForRead(context string, ctxs ...context.Context) *DeployConfig {
-	dc, err := LoadDeployConfig(ctxs...)
+// ctx carries the invocation's RunEnv (a bed's deploy-config path).
+func LoadDeployConfigForRead(label string, ctx context.Context) *DeployConfig {
+	dc, err := LoadDeployConfig(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %s: charly.yml unavailable for read: %v\n", context, err)
+		fmt.Fprintf(os.Stderr, "Warning: %s: charly.yml unavailable for read: %v\n", label, err)
 	}
 	// NEVER return nil — a caller dereferences `dc.Deploy[...]` directly (and some assign into
 	// it), so an absent config (LoadDeployConfig → (nil, nil)) or a load error both degrade to
@@ -307,13 +305,14 @@ func LoadDeployConfigForRead(context string, ctxs ...context.Context) *DeployCon
 // an empty config → SaveDeployConfig truncates the file), this helper PROPAGATES the load error
 // so writers can ABORT instead of destroying data. Relocated from charly/deploy.go (K5-Unit-1).
 //
-// context is a short human-readable label included in the error message (e.g. "saveDeployState").
-// Returns (nil, error) when the file exists but failed parse/validation; (fresh empty config,
-// nil) when the file doesn't exist; (parsed config, nil) on clean load.
-func LoadDeployConfigForWrite(context string, ctxs ...context.Context) (*DeployConfig, error) {
-	dc, err := LoadDeployConfig(ctxs...)
+// label is a short human-readable diagnostic included in the error message (e.g.
+// "saveDeployState"). ctx carries the invocation's RunEnv. Returns (nil, error) when the file
+// exists but failed parse/validation; (fresh empty config, nil) when the file doesn't exist;
+// (parsed config, nil) on clean load.
+func LoadDeployConfigForWrite(label string, ctx context.Context) (*DeployConfig, error) {
+	dc, err := LoadDeployConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: refusing to write — charly.yml load failed: %w", context, err)
+		return nil, fmt.Errorf("%s: refusing to write — charly.yml load failed: %w", label, err)
 	}
 	if dc == nil {
 		dc = &DeployConfig{Deploy: make(map[string]DeployNode)}

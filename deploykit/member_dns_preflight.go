@@ -26,6 +26,7 @@ package deploykit
 // bed's. That is a policy decision of its own, so this reports and stops.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -60,8 +61,8 @@ var resolveNameFromMember = func(memberKey, name string) error {
 // resolveContainerForPreflight maps a member name to its container name, confirming en route that
 // the member is actually running. A package var for the same stubbing reason as above —
 // ResolveContainer consults the live container engine.
-var resolveContainerForPreflight = func(name, instance string) (string, error) {
-	_, container, err := ResolveContainer(name, instance)
+var resolveContainerForPreflight = func(ctx context.Context, name, instance string) (string, error) {
+	_, container, err := ResolveContainer(ctx, name, instance)
 	return container, err
 }
 
@@ -132,7 +133,7 @@ func memberDNSRefs(node *spec.DeployNode) map[string][]string {
 // preflightMemberDNS verifies that every cross-member container-DNS name a member's plan
 // references actually resolves from that member's venue, BEFORE any probe spends its retry budget
 // discovering otherwise.
-func preflightMemberDNS(node *spec.DeployNode) error {
+func preflightMemberDNS(ctx context.Context, node *spec.DeployNode) error {
 	refs := memberDNSRefs(node)
 	if len(refs) == 0 {
 		return nil
@@ -145,7 +146,7 @@ func preflightMemberDNS(node *spec.DeployNode) error {
 
 	for _, memberKey := range memberKeys {
 		for _, sibling := range refs[memberKey] {
-			container, err := resolveContainerForPreflight(sibling, "")
+			container, err := resolveContainerForPreflight(ctx, sibling, "")
 			if err != nil {
 				return fmt.Errorf("cross-member DNS preflight: member %q addresses ${HOST:%s}, but that member is not resolvable: %w", memberKey, sibling, err)
 			}
