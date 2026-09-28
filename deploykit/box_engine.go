@@ -1,6 +1,10 @@
 package deploykit
 
-import "github.com/opencharly/spec/spec"
+import (
+	"context"
+
+	"github.com/opencharly/spec/spec"
+)
 
 // box_engine.go — the two per-deploy engine-resolution functions with NO project-loader
 // dependency (K4: relocated from the DELETED charly/engine.go). Homed here (not kit) because
@@ -15,8 +19,8 @@ import "github.com/opencharly/spec/spec"
 
 // ResolveBoxEngineForDeploy resolves the run engine from the per-host deploy config,
 // falling back to globalEngine. No charly.yml (project) dependency.
-func ResolveBoxEngineForDeploy(boxName, instance, globalEngine string) string {
-	if entry, ok := LoadDeployConfigForRead("ResolveBoxEngineForDeploy").Lookup(boxName, instance); ok && entry.Engine != "" {
+func ResolveBoxEngineForDeploy(ctx context.Context, boxName, instance, globalEngine string) string {
+	if entry, ok := LoadDeployConfigForRead("ResolveBoxEngineForDeploy", ctx).Lookup(boxName, instance); ok && entry.Engine != "" {
 		return string(entry.Engine)
 	}
 	return globalEngine
