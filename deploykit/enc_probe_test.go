@@ -252,7 +252,7 @@ func TestCipherPopulatedPlainEmpty(t *testing.T) {
 // --- LoadEncryptedVolumeFromConfig / EncPlanForConfig / EncStatusFromConfig ---
 //
 // These are the SEAM-ROUTABLE siblings of LoadEncryptedVolume/EncPlanFor/EncStatus: instead
-// of reaching the package-level LoadDeployConfig() themselves, they take an ALREADY-LOADED
+// of reaching the package-level LoadDeployConfig themselves, they take an ALREADY-LOADED
 // *DeployConfig. Every fixture below sets an explicit Host: on its encrypted volume so the
 // derived CipherDir/PlainDir/ScopeUnit are fully deterministic — independent of whatever
 // engine.encrypted_storage_path a live ~/.config/charly/charly.yml on the test host might

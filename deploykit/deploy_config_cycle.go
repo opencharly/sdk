@@ -67,7 +67,7 @@ type DeployConfigMutator func(dc *DeployConfig) (changed bool, err error)
 // a holder that outlives it — a cross-bed overlay collision or a stuck writer — fails FAST with the
 // holder named rather than reading as a legitimate slow build for the 30-minute image-build bound
 // (RCA issue 2).
-func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *DeployConfig) error, mutate DeployConfigMutator, ctxs ...context.Context) (*DeployConfig, error) {
+func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *DeployConfig) error, mutate DeployConfigMutator, ctx context.Context) (*DeployConfig, error) {
 	if read == nil {
 		return nil, fmt.Errorf("MutateDeployConfig: read callback is nil")
 	}
@@ -77,7 +77,7 @@ func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *Deploy
 	if mutate == nil {
 		return nil, fmt.Errorf("MutateDeployConfig: mutate callback is nil")
 	}
-	unlock, err := AcquireDeployConfigLock(ctxs...)
+	unlock, err := AcquireDeployConfigLock(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +106,8 @@ func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *Deploy
 // around a cycle MutateDeployConfig cannot express — a write path that also removes the file
 // (CleanDeployEntry, `charly deploy reset`) and must decide save-vs-remove under the same hold.
 // Every ordinary writer uses MutateDeployConfig instead.
-func AcquireDeployConfigLock(ctxs ...context.Context) (func() error, error) {
-	path, err := kit.DefaultDeployConfigPath(ctxs...)
+func AcquireDeployConfigLock(ctx context.Context) (func() error, error) {
+	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("determining deploy config path for lock: %w", err)
 	}
