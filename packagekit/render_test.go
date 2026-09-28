@@ -36,12 +36,6 @@ func testPackagingWithSystemd() *spec.Packaging {
 			Restart:     "on-failure",
 		},
 	}
-	pkg.Config = &spec.PackagingConfig{
-		Path:        "/etc/charly/charly.yml",
-		Version:     spec.SchemaVersion,
-		Description: "System-wide charly MCP server project (started via systemd)",
-		Plugins:     []string{"@github.com/opencharly/plugin-mcp/candy/plugin-mcp:v1"},
-	}
 	return pkg
 }
 
@@ -63,7 +57,6 @@ func TestBuildInfoSystemdContents(t *testing.T) {
 			"/usr/lib/systemd/user/charly-mcp.service",
 			"/usr/lib/systemd/system-preset/50-charly.preset",
 			"/usr/lib/systemd/user-preset/50-charly.preset",
-			"/etc/charly/charly.yml",
 		} {
 			if !dests[want] {
 				t.Errorf("%s: missing %s (contents: %v)", format, want, keysOf(dests))
@@ -107,32 +100,6 @@ func TestRenderSystemdUnit_NonAutostarting(t *testing.T) {
 	preset := renderPreset([]string{"charly-mcp.service"})
 	if !strings.Contains(preset, "disable charly-mcp.service") {
 		t.Errorf("preset must disable the unit: %s", preset)
-	}
-}
-
-// TestRenderConfig_ValidProject — the rendered config is a minimal valid
-// project (version + charly-mcp candy with the bake refs + a no-op plan).
-func TestRenderConfig_ValidProject(t *testing.T) {
-	cfg := &spec.PackagingConfig{
-		Path:        "/etc/charly/charly.yml",
-		Version:     spec.SchemaVersion,
-		Description: "System-wide charly MCP server project",
-		Plugins:     []string{"@github.com/opencharly/plugin-mcp/candy/plugin-mcp:v1"},
-	}
-	body, err := renderConfig(cfg)
-	if err != nil {
-		t.Fatalf("renderConfig: %v", err)
-	}
-	// The rendered config is a BARE minimal project: the version stamp is the
-	// whole file (a candy node would need install content — see the live
-	// validate test). The plugins/description are packaging metadata, not
-	// rendered file content.
-	s := string(body)
-	if !strings.Contains(s, "version: "+spec.SchemaVersion) {
-		t.Errorf("rendered config lacks the version: %s", s)
-	}
-	if strings.Contains(s, "charly-mcp:") {
-		t.Errorf("rendered config carries a candy node (a bare project is what validates): %s", s)
 	}
 }
 

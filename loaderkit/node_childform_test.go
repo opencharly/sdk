@@ -48,7 +48,6 @@ func parseDocNodesErr(t *testing.T, nodeform string) error {
 func TestChildForm_ParseAssemble(t *testing.T) {
 	nodeform := "redis:\n" +
 		"  candy:\n" +
-		"    version: \"2026.150.0000\"\n" +
 		"    status: working\n" +
 		"    candy: [supervisord]\n" +
 		"    package: [redis, redis-cli]\n" +
@@ -68,8 +67,8 @@ func TestChildForm_ParseAssemble(t *testing.T) {
 		t.Fatalf("BuildCandy: %v", err)
 	}
 	c := ic.CandyYAML
-	if c.Version != "2026.150.0000" || c.Status != "working" {
-		t.Errorf("scalars lost: version=%q status=%q", c.Version, c.Status)
+	if c.Status != "working" {
+		t.Errorf("scalar lost: status=%q", c.Status)
 	}
 	if len(c.Package) != 2 {
 		t.Errorf("inline package collection not folded: %v", c.Package)
@@ -98,7 +97,7 @@ func TestChildForm_ParseAssemble(t *testing.T) {
 // pointing at `charly migrate` — collections live INLINE now.
 func TestChildForm_OldShapeDataChildRejected(t *testing.T) {
 	err := parseDocNodesErr(t, "redis:\n"+
-		"  candy: {version: \"2026.150.0000\"}\n"+
+		"  candy: {}\n"+
 		"  redis-package:\n"+
 		"    package: [redis]\n")
 	if err == nil || !strings.Contains(err.Error(), "is not allowed") {
@@ -132,7 +131,7 @@ func TestChildForm_OldShapeStepChildRejected(t *testing.T) {
 // word) is a hard parse error.
 func TestChildForm_TwoKindKeysRejected(t *testing.T) {
 	err := parseDocNodesErr(t, "weird:\n"+
-		"  candy: {version: \"2026.150.0000\"}\n"+
+		"  candy: {}\n"+
 		"  pod: {image: coder}\n")
 	if err == nil || !strings.Contains(err.Error(), "two kind discriminators") {
 		t.Fatalf("expected two-kind-discriminators rejection, got %v", err)
@@ -143,7 +142,7 @@ func TestChildForm_TwoKindKeysRejected(t *testing.T) {
 // sub-entity member (a pod) — only deployable kinds (#ResourceKind) or an
 // external structural plugin kind do (here: the Threaded.StructuralKinds data).
 func TestChildForm_WrongKindChild(t *testing.T) {
-	err := parseDocNodesErr(t, "redis:\n  candy: {version: \"2026.150.0000\"}\n  inner:\n    pod: {image: x}\n")
+	err := parseDocNodesErr(t, "redis:\n  candy: {}\n  inner:\n    pod: {image: x}\n")
 	if err == nil || !strings.Contains(err.Error(), "is not allowed") {
 		t.Fatalf("expected wrong-kind-child rejection, got %v", err)
 	}

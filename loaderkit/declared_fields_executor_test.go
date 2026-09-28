@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -39,9 +38,7 @@ func (e *degradedExecutorMock) WalkProject(dir string, rootData []byte) (spec.Lo
 func (e *degradedExecutorMock) MaterializeLoadedProject(lp *spec.LoadedProject, merged *spec.UnifiedFile, _ map[int64]*spec.UnifiedFile) error {
 	// The minimal registry-free materialize: each top-level parsed node builds into the Deploy
 	// via the SAME pure BuildDeployNode decode production uses (the CUE body decode consults
-	// the embedded contract, never the registry), and the merged Version carries the tree
-	// past the schema gate.
-	merged.Version = kit.LatestSchemaVersion().String()
+	// the embedded contract, never the registry).
 	if merged.Deploy == nil {
 		merged.Deploy = map[string]spec.DeployNode{}
 	}
@@ -67,7 +64,7 @@ func (*degradedExecutorMock) ValidatePreemptible(*spec.UnifiedFile) error    { r
 // through a POPULATED executor snapshot loads to the same Deploy tree.
 func TestLoadUnifiedViaExecutorSeam_DeclaredFieldsFloor(t *testing.T) {
 	dir := t.TempDir()
-	root := "version: \"" + kit.LatestSchemaVersion().String() + "\"\n" + convertedTree
+	root := convertedTree
 	if err := os.WriteFile(filepath.Join(dir, spec.UnifiedFileName), []byte(root), 0o644); err != nil {
 		t.Fatalf("write tree: %v", err)
 	}

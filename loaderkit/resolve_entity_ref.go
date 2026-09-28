@@ -18,7 +18,6 @@ package loaderkit
 
 import (
 	"encoding/json"
-	"strings"
 
 	"github.com/opencharly/spec/spec"
 )
@@ -44,23 +43,21 @@ func ResolveEntityRef(uf *spec.UnifiedFile, kind, ref string) bool {
 
 // ResolveKindEntityBody returns the opaque kind:<word> template body named ref
 // — local or namespace-qualified (the git-linked import form). The runtime
-// counterpart of ResolveEntityRef: a ref that validates must resolve here. The
-// namespace-qualified form (ns.entity) matches the namespace's own unqualified
-// template name; the unqualified form is local-only (the same no-leak contract
-// as ResolveEntityRef).
+// counterpart of ResolveEntityRef: a ref that validates must resolve here.
+//
+// The lookup goes through ProjectTemplates().ByKind, which folds EVERY imported
+// namespace RECURSIVELY into fully-qualified keys (`nsA.nsB.name`). The former
+// single-level descent (`for ns, sub := range uf.Namespaces { HasPrefix(ref, ns+".") }`)
+// missed a NESTED namespace entity such as `charly.omarchy.omarchy-vm` (the umbrella
+// root imports charly/, which imports omarchy/), failing `charly vm build
+// charly.omarchy.omarchy-vm` with "no kind:vm entity in charly.yml".
 func ResolveKindEntityBody(uf *spec.UnifiedFile, kind, ref string) (json.RawMessage, bool) {
 	if uf == nil || ref == "" {
 		return nil, false
 	}
-	if body, ok := uf.PluginKinds[kind][ref]; ok {
-		return body, true
-	}
-	for ns, sub := range uf.Namespaces {
-		if sub == nil || !strings.HasPrefix(ref, ns+".") {
-			continue
-		}
-		if body, ok := sub.PluginKinds[kind][strings.TrimPrefix(ref, ns+".")]; ok {
-			return body, true
+	if t := uf.ProjectTemplates(); t != nil {
+		if body, ok := t.ByKind(kind)[ref]; ok {
+			return json.RawMessage(body), true
 		}
 	}
 	return nil, false

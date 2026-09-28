@@ -83,8 +83,10 @@ func ResolveBox(cfg *spec.Config, name string, calverTag string, dir string, opt
 
 	resolved := &ResolvedBox{
 		ResolvedBox: spec.ResolvedBox{
-			Name:    name,
-			Version: img.Version,
+			Name: name,
+			// The authored box `version:` and the derived ResolvedBox.version are GONE
+			// (the schema-versioning removal cutover); the image's identity is its
+			// effective_version (source candy git tags) + the build CalVer tag.
 			// Box-authored OCI packaging (entrypoint/cmd baked into the image's OCI
 			// config — opt-in, empty by default). Box-authored, NOT inherited from
 			// base, exactly like env/security. Consumed by the Containerfile emitter.

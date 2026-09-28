@@ -34,6 +34,10 @@ func TestDeployDiscForEntity_PodWorkloadNotGroup(t *testing.T) {
 		{"no workload -> group", "disposable: true\n", "group"},
 		{"explicit host target -> local", "target: host\n", "local"},
 		{"explicit pod target -> pod", "target: pod\n", "pod"},
+		// A deploy body carrying a KUBEVIRT cross-ref key (kubevirt:) is a deploy, not a
+		// group — deployCrossRefKeys must include kubevirt, else this misclassifies as group.
+		{"kubevirt cross-ref -> deploy", "kubevirt: base-vm\n", "deploy"},
+		{"vm cross-ref -> deploy", "vm: base-vm\n", "deploy"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -85,14 +85,14 @@ func TestRenderDrive_ByteGolden(t *testing.T) {
 	}
 
 	// RIDER: prove-it-can-fail + non-vacuity. The golden must be SENSITIVE to the render — a
-	// perturbed render (a different EffectiveVersion → a different LABEL ai.opencharly.version
+	// perturbed render (a different status → a different LABEL ai.opencharly.status
 	// line) MUST produce a different Containerfile, so the golden comparison is not vacuously
 	// passing on a constant. If this ever stops failing, the golden (or the render) has gone
-	// vacuous and the guard is broken.
+	// vacuous and the guard is broken. (The ai.opencharly.version label was dropped by the
+	// schema-versioning removal cutover, so the perturbation targets the description now.)
 	t.Run("can_fail", func(t *testing.T) {
 		perturbed := trivialBox()
-		perturbed.EffectiveVersion = "2026.999.9999"
-		perturbed.BakedMetadata.Version = "2026.999.9999"
+		perturbed.BakedMetadata.Status = "perturbed-status"
 		tmp2 := t.TempDir()
 		dg2 := NewRenderGenerator()
 		dg2.Dir = tmp2
@@ -110,8 +110,8 @@ func TestRenderDrive_ByteGolden(t *testing.T) {
 		if dg2.Containerfiles["demo"] == got {
 			t.Fatal("can-fail RIDER: a perturbed render (different version) produced the SAME golden — the golden is vacuous / not sensitive to the render")
 		}
-		if !strings.Contains(dg2.Containerfiles["demo"], `ai.opencharly.version="2026.999.9999"`) {
-			t.Fatal("can-fail RIDER: the perturbed version did not reach the LABEL — the render is not wired as the golden assumes")
+		if !strings.Contains(dg2.Containerfiles["demo"], `ai.opencharly.status="perturbed-status"`) {
+			t.Fatal("can-fail RIDER: the perturbed status did not reach the render — the render is not wired as the golden assumes")
 		}
 	})
 }

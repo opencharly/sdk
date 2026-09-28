@@ -88,25 +88,27 @@ func LoadHostDeployConfigViaExecutor(ctx context.Context, ex *sdk.Executor) (*de
 	return LoadDeployConfigViaExecutor(ctx, ex, dir)
 }
 
-// VmStateFromDeployConfig extracts a domain's persisted VmDeployState (the "vm:"+entity key) from
-// a per-host deploy overlay DeployConfig — the pure lookup ResolveVmStateViaExecutor applies.
-func VmStateFromDeployConfig(dc *deploykit.DeployConfig, entity string) *spec.VmDeployState {
+// VmStateFromDeployConfig extracts a deploy's persisted VmDeployState from a per-host deploy
+// overlay DeployConfig — the pure lookup ResolveVmStateViaExecutor applies. The overlay entry is
+// keyed by the deploy IDENTITY (identity), the same string the tree/config/CLI use; the VM ENTITY
+// lives in the entry's `vm:` cross-ref.
+func VmStateFromDeployConfig(dc *deploykit.DeployConfig, identity string) *spec.VmDeployState {
 	if dc == nil {
 		return nil
 	}
-	if entry, ok := dc.Deploy["vm:"+entity]; ok {
+	if entry, ok := dc.Deploy[identity]; ok {
 		return entry.VmState
 	}
 	return nil
 }
 
-// ResolveVmStateViaExecutor reads a domain's persisted VmDeployState (instance-id, ssh_port, disk
+// ResolveVmStateViaExecutor reads a deploy's persisted VmDeployState (instance-id, ssh_port, disk
 // path) from the per-host deploy overlay PLUGIN-SIDE — the cycle-free replacement for the deleted
 // "config-resolve" HostBuild seam's VmState leg (K-wave 2 cone R2 bank D). Three plugins consume it
 // (candy/plugin-vm's hostConfigResolve, candy/plugin-deploy-vm's resolvePriorVmState,
 // candy/plugin-kube's deployVMForwards), so it lives here once (R3). A miss or an unreadable
 // overlay degrades to nil, matching the former seam's own swallow.
-func ResolveVmStateViaExecutor(ctx context.Context, ex *sdk.Executor, entity string) (*spec.VmDeployState, error) {
+func ResolveVmStateViaExecutor(ctx context.Context, ex *sdk.Executor, identity string) (*spec.VmDeployState, error) {
 	dir := hostDeployConfigDir(ctx)
 	if dir == "" {
 		return nil, nil
@@ -115,7 +117,7 @@ func ResolveVmStateViaExecutor(ctx context.Context, ex *sdk.Executor, entity str
 	if err != nil {
 		return nil, nil
 	}
-	return VmStateFromDeployConfig(dc, entity), nil
+	return VmStateFromDeployConfig(dc, identity), nil
 }
 
 // ResolveLifecycleDeployNodeViaExecutor is the drop-in replacement for the deleted

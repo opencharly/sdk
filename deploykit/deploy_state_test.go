@@ -11,8 +11,8 @@ package deploykit
 //   - ExportAllBox against a constructed *spec.ResolvedProject (the #67 keystone).
 //   - SaveDeployConfig round-trip through a stub DeployStateHost (the 1-op
 //     LoadUnifiedDeployConfig seam) + CHARLY_DEPLOY_CONFIG tempdir redirect + a stub
-//     marshalNode callback (exercises LoadDeployConfig's fail-safe, the kit.LatestSchemaVersion
-//     version stamp, the atomic tempfile+rename write). The deploy-kind-specific marshal
+//     marshalNode callback (exercises LoadDeployConfig's fail-safe, and the atomic
+//     tempfile+rename write). The deploy-kind-specific marshal
 //     itself is tested charly-side (it lives in charly/deploy_nodeform.go).
 //   - RegisterDeployStateHost seam (the charly init hook, 1-op).
 //   - The pure helpers DescriptionInfo / IsSameBaseBox / RemoveBySource / RemoveByExactSource.
@@ -33,16 +33,16 @@ import (
 // --- ExportAllBox — the #67 keystone (#ResolvedProject envelope → DeployConfig) ---
 
 // TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject pins the #67 keystone:
-// ExportAllBox reads the box-authored deploy-overlay surfaces (version / description /
+// ExportAllBox reads the box-authored deploy-overlay surfaces (description /
 // env / env_file / security / network) off the spec.ResolvedProject envelope — NOT the
 // live *Config graph (the former shape). A box with at least one set field is emitted; a
-// fully-zero box is skipped (the "only include if at least one field is set" guard).
+// fully-zero box is skipped (the "only include if at least one field is set" guard). The
+// former per-deploy `version:` is GONE (the schema-versioning removal cutover).
 func TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject(t *testing.T) {
 	sec := &spec.Security{Privileged: true, CapAdd: []string{"NET_ADMIN"}}
 	rp := &spec.ResolvedProject{
 		Boxes: map[string]spec.ResolvedBoxView{
 			"web": {
-				Version:     "2026.196.0000",
 				Description: "web service",
 				Env:         map[string]string{"LOG_LEVEL": "debug"},
 				EnvFile:     "/etc/web.env",
@@ -63,9 +63,6 @@ func TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject(t *testing.T
 	entry, ok := dc.Deploy["web"]
 	if !ok {
 		t.Fatal("ExportAllBox missing the 'web' entry")
-	}
-	if entry.Version != "2026.196.0000" {
-		t.Errorf("entry.Version = %q; want 2026.196.0000", entry.Version)
 	}
 	if entry.Description != "web service" {
 		t.Errorf("entry.Description = %q; want %q", entry.Description, "web service")
@@ -110,7 +107,7 @@ func TestExportAllBox_NilSafe(t *testing.T) {
 
 // TestSaveDeployConfig_RoundTrip exercises the full SaveDeployConfig write path: the
 // fail-safe LoadDeployConfig re-check (through the 1-op LoadUnifiedDeployConfig seam), the
-// kit.LatestSchemaVersion version stamp, the caller-supplied marshalNode callback per entry,
+// caller-supplied marshalNode callback per entry,
 // and the atomic tempfile+os.Rename write. CHARLY_DEPLOY_CONFIG redirects the write to a
 // tempdir so the test never touches the operator's real per-host overlay. The marshalNode
 // stub emits a simple node-form body (the deploy-kind-specific marshal lives in
@@ -121,8 +118,7 @@ func TestSaveDeployConfig_RoundTrip(t *testing.T) {
 	t.Setenv(kit.DeployConfigEnv, dest)
 
 	// Stub the ONE host Mechanism SaveDeployConfig reaches through DeployStateHost (the
-	// LoadUnified hop for the fail-safe re-check). The version stamp is kit.LatestSchemaVersion
-	// (a direct kit call, not a seam op); the marshal is the caller's callback.
+	// LoadUnified hop for the fail-safe re-check). The marshal is the caller's callback.
 	stub := &StateHostMechanisms{
 		LoadUnifiedDeployConfig: func(configDir string) (*DeployConfig, error) {
 			return nil, nil // absent file → LoadDeployConfig returns (empty, nil) → fail-safe passes
@@ -174,9 +170,7 @@ func TestSaveDeployConfig_RoundTrip(t *testing.T) {
 		t.Fatalf("reading written overlay %s: %v", dest, err)
 	}
 	got := string(data)
-	// The version stamp is the real kit.LatestSchemaVersion() CalVer (non-empty).
-	wantVersion := kit.LatestSchemaVersion().String()
-	for _, want := range []string{"version:", wantVersion, "web:", "pod:", "image: web", "LOG_LEVEL"} {
+	for _, want := range []string{"web:", "pod:", "image: web", "LOG_LEVEL"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("written overlay missing %q:\n%s", want, got)
 		}
@@ -373,10 +367,12 @@ func TestFindVmDeployNode_AmbiguousFallbackErrors(t *testing.T) {
 	deploys := map[string]DeployNode{
 		// Two independent top-level vm deploys sharing one base entity —
 		// the check-substrate / check-builder-vm shape (both real top-level
-		// vm deploys, both `from: eval-vm`).
-		"check-substrate":  {Target: "vm", From: "eval-vm", Plan: []spec.Step{{Check: "substrate step"}}},
-		"check-builder-vm": {Target: "vm", From: "eval-vm", Plan: []spec.Step{{Check: "builder step"}}},
-		"unrelated-vm":     {Target: "vm", From: "other-base"},
+		// vm deploys, both `from: eval-vm`). The vm-ness is read off the
+		// loader-STAMPED descent (the persisted node-form drops `target:`), so
+		// these fixtures carry the trait, not the word.
+		"check-substrate":  {Descent: vmDescent(), From: "eval-vm", Plan: []spec.Step{{Check: "substrate step"}}},
+		"check-builder-vm": {Descent: vmDescent(), From: "eval-vm", Plan: []spec.Step{{Check: "builder step"}}},
+		"unrelated-vm":     {Descent: vmDescent(), From: "other-base"},
 		"unrelated-non-vm": {Target: "pod"},
 	}
 
@@ -426,6 +422,44 @@ func TestFindVmDeployNode_AmbiguousFallbackErrors(t *testing.T) {
 			t.Errorf("FindVmDeployNode(nil) = (ok=%v, err=%v), want (false, nil)", ok, err)
 		}
 	})
+}
+
+// vmDescent is the loader-STAMPED host-libvirt vm descent — the substrate
+// plugin's declared #DeployTraits (ssh venue + exclusive host-resource lease)
+// projected by spec.DescentFromTraits. Every node a LoadUnified'd project or a
+// per-host overlay read produces carries this shape (loaderkit.StampDeployDescents),
+// so it is the realistic fixture for a persisted vm deploy node.
+func vmDescent() *spec.DescentDescriptor {
+	return spec.DescentFromTraits(&spec.DeployTraits{Venue: "ssh", MachineVenue: true, ExclusiveVenue: true})
+}
+
+// TestFindVmDeployNode_ReadsStampedDescentNotTargetWord is the C6 close: the
+// lookup identifies a host-libvirt vm by its loader-STAMPED descent trait, never
+// by a comparison against the substrate kind WORD. A persisted
+// vm node carries no `target:` (the node-form discriminator supplies it at load)
+// but DOES carry the stamped descent — the exact shape the former word-sniff
+// could not resolve. Fails without the change (the word-sniff returns not-found
+// for a Target-less node).
+func TestFindVmDeployNode_ReadsStampedDescentNotTargetWord(t *testing.T) {
+	// Target deliberately ABSENT; From set (the `vm:` cross-ref a persisted vm
+	// deploy always carries) so both the name-key and the entity-scan arms resolve.
+	deploys := map[string]DeployNode{
+		"check-vm": {Descent: vmDescent(), From: "eval-vm"},
+	}
+	if node, ok, err := FindVmDeployNode(deploys, "check-vm", "eval-vm"); err != nil || !ok || node.From != "eval-vm" {
+		t.Fatalf("name-keyed lookup of a descent-stamped, Target-less vm node = (%+v, %v, %v); want the entry, true, nil", node, ok, err)
+	}
+	if _, ok, err := FindVmDeployNode(deploys, "caller-knows-only-the-entity", "eval-vm"); err != nil || !ok {
+		t.Fatalf("entity scan of a descent-stamped, Target-less vm node: ok=%v err=%v; want true, nil", ok, err)
+	}
+
+	// The complement: an ssh-venue node WITHOUT the exclusive lease (the kubevirt
+	// substrate) is NOT a host-libvirt vm — IsVmVenue excludes it exactly as the
+	// former substrate-word sniff (kubevirt's Target is its own word) did.
+	kubevirt := DeployNode{Descent: spec.DescentFromTraits(&spec.DeployTraits{Venue: "ssh"}), From: "eval-vm"}
+	if _, ok, _ := FindVmDeployNode(map[string]DeployNode{"kv": kubevirt}, "caller", "eval-vm"); ok {
+		t.Fatal("a kubevirt node (ssh venue, no exclusive lease) must NOT resolve as a host-libvirt vm")
+	}
 }
 
 // TestPathLeaf pins the leaf-extraction semantics — including the tolerant
@@ -512,5 +546,26 @@ func TestSaveDeployState_PluginSideReader(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "web:") {
 		t.Errorf("written overlay missing the deploy entry:\n%s", string(data))
+	}
+}
+
+// TestApplyDeployState_KubeVirtState proves deploykit.SaveDeployState's applyDeployState
+// persists a non-nil KubeVirtState (the kind:kubevirt venue identity) onto the entry —
+// the mirror of the VmState path. Fails without the input.KubeVirtState write.
+func TestApplyDeployState_KubeVirtState(t *testing.T) {
+	dc := &DeployConfig{Deploy: map[string]DeployNode{"kv": {Target: "kubevirt"}}}
+	in := SaveDeployStateInput{
+		Target: "kubevirt",
+		KubeVirtState: &spec.KubeVirtDeployState{
+			Cluster: "prod", KubeContext: "ctx", Namespace: "vms",
+			VMName: "charly-kv", BootKind: "container_disk", SSHPort: 2224, SSHUser: "arch",
+		},
+	}
+	if !applyDeployState(dc, "kv", "", in) {
+		t.Fatal("applyDeployState reported nothing to persist")
+	}
+	got := dc.Deploy["kv"].KubeVirtState
+	if got == nil || got.Cluster != "prod" || got.VMName != "charly-kv" || got.SSHPort != 2224 {
+		t.Fatalf("KubeVirtState not persisted: %+v", got)
 	}
 }

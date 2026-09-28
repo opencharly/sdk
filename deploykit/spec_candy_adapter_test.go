@@ -63,6 +63,36 @@ func TestSpecCandyAdapter_HasInit_PerInitLookup(t *testing.T) {
 	}
 }
 
+// TestSpecCandyAdapter_GetPluginRequires proves the adapter reaches the candy's declared
+// inter-plugin dependencies through the resolved view (CandyView.PluginRequires), beside
+// GetPluginSource/GetPluginProviders — the surface the host's requires gate reads. The
+// scan-time half (that populateFromYAML populates the field) is
+// TestScanInlineCandy_PluginRequires in sdk/loaderkit.
+func TestSpecCandyAdapter_GetPluginRequires(t *testing.T) {
+	empty := NewSpecCandyModel(spec.CandyModel{Name: "plain"}, spec.CandyView{Name: "plain"})
+	if got := empty.GetPluginRequires(); len(got) != 0 {
+		t.Errorf("GetPluginRequires() = %v for a candy with no plugin.requires:, want empty", got)
+	}
+
+	reqs := []spec.PluginRequirement{
+		{Capability: "command:generate:box", Source: "github.com/opencharly/plugin-build/candy/plugin-build"},
+		{Capability: "verb:enc", Optional: true},
+	}
+	v := spec.CandyView{Name: "req-candy", IsPlugin: true, PluginRequires: reqs}
+	adapter := NewSpecCandyModel(spec.CandyModel{Name: "req-candy"}, v)
+
+	got := adapter.GetPluginRequires()
+	if len(got) != 2 {
+		t.Fatalf("GetPluginRequires() = %v, want 2 entries", got)
+	}
+	if got[0].Capability != "command:generate:box" || got[0].Source != "github.com/opencharly/plugin-build/candy/plugin-build" {
+		t.Errorf("GetPluginRequires()[0] = %+v, want {Capability: command:generate:box, Source: github.com/opencharly/plugin-build/candy/plugin-build}", got[0])
+	}
+	if got[1].Capability != "verb:enc" || !got[1].Optional {
+		t.Errorf("GetPluginRequires()[1] = %+v, want {Capability: verb:enc, Optional: true}", got[1])
+	}
+}
+
 // TestSpecCandyAdapter_AgentProvideAndTerminalProfiles proves the federated-control-plane
 // accessors (AgentProvide/HasAgentProvides/TerminalProfiles) read the identity/graph view's
 // AgentProvide/TerminalProfiles fields — the W9 gap surfaced merging origin/main's control-plane

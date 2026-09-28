@@ -24,7 +24,6 @@ import (
 func ProjectResolvedBox(b *buildkit.ResolvedBox) spec.ResolvedBoxView {
 	v := spec.ResolvedBoxView{
 		Name:                  b.Name,
-		Version:               b.Version,
 		EffectiveVersion:      b.EffectiveVersion,
 		Status:                b.Status,
 		Info:                  b.Info,

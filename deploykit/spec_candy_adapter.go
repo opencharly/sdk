@@ -207,6 +207,9 @@ func (a *specCandyAdapter) HasSecretRequires() bool          { return len(a.m.Se
 func (a *specCandyAdapter) IsPluginCandy() bool          { return a.v.IsPlugin }
 func (a *specCandyAdapter) GetPluginSource() string      { return a.v.PluginSource }
 func (a *specCandyAdapter) GetPluginProviders() []string { return a.v.PluginProviders }
+func (a *specCandyAdapter) GetPluginRequires() []spec.PluginRequirement {
+	return a.v.PluginRequires
+}
 
 // Federated-control-plane declarations (W9): the candy's `agent_provide:`/`terminal_profile:`
 // surfaces, read off the identity/graph view.

@@ -908,3 +908,57 @@ func TestCompileLocalPkgStep_SkipsWhenDistroRepoProvidesPackage(t *testing.T) {
 		t.Error("CompileLocalPkgStep with a repo that does not provide the packaged name = nil, want a LocalPkgInstallStep")
 	}
 }
+
+// TestDistroRepoProvidesPackage_MatchesPinnedVersion is the regression guard for
+// the pinned-package double-install. A candy may pin an exact version in
+// `distro: <d>. package:` (`charly=2026.268.1917` on pac/apt/apk, or the rpm
+// form `charly-<version>-<rel>`) so a rebuilt upstream package invalidates the
+// install layer. The skip must match on the BARE name in that case too —
+// otherwise the localpkg fallback fires and emits a SECOND, UNPINNED install
+// (defeating the pin). Both pinned spellings must therefore report the repo as
+// providing the package; without a repo entry the skip must NOT fire.
+func TestDistroRepoProvidesPackage_MatchesPinnedVersion(t *testing.T) {
+	img := &ResolvedBox{ResolvedBox: spec.ResolvedBox{
+		Name: "test-img", Pkg: "pac", Distro: []string{"arch"},
+		EffectiveVersion: "2026.268.1917",
+	}, DistroDef: &spec.ResolvedDistro{}}
+
+	// pac/apt/apk pin form: name=version.
+	eqPin := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+		TagSections: map[string]spec.TagPkgConfig{
+			"arch": {
+				Package: []string{"charly=2026.268.1917"},
+				Raw:     map[string]any{"repo": []map[string]any{{"name": "charly", "server": "https://opencharly.github.io/charly-arch/amd64/"}}},
+			},
+		},
+	}, spec.CandyView{})
+	if !distroRepoProvidesPackage(eqPin, img, "charly") {
+		t.Error("distroRepoProvidesPackage with `charly=2026.268.1917` + repo = false, want true (the pin must still match the bare name)")
+	}
+
+	// rpm pin form: name-version-rel.
+	rpmPin := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+		TagSections: map[string]spec.TagPkgConfig{
+			"arch": {
+				Package: []string{"charly-2026.268.1917-1"},
+				Raw:     map[string]any{"repo": []map[string]any{{"name": "charly", "server": "https://opencharly.github.io/charly-fedora/amd64/"}}},
+			},
+		},
+	}, spec.CandyView{})
+	if !distroRepoProvidesPackage(rpmPin, img, "charly") {
+		t.Error("distroRepoProvidesPackage with `charly-2026.268.1917-1` + repo = false, want true (the rpm pin must still match the bare name)")
+	}
+
+	// No repo declared → the package list alone is not a repo install.
+	pinNoRepo := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+		TagSections: map[string]spec.TagPkgConfig{
+			"arch": {Package: []string{"charly=2026.268.1917"}},
+		},
+	}, spec.CandyView{})
+	if distroRepoProvidesPackage(pinNoRepo, img, "charly") {
+		t.Error("distroRepoProvidesPackage with a pinned package list but no repo = true, want false (no repo install)")
+	}
+}

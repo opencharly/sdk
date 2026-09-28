@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/vmshared"
 	"github.com/opencharly/spec/shellquote"
 	"github.com/opencharly/spec/spec"
@@ -266,72 +267,31 @@ func taskRunsAsRoot(runAs string, img *buildkit.ResolvedBox) bool {
 	return directive == "0"
 }
 
-// WrapUnlessExists and WrapUnlessExistsBlock wrap cmd in the `unless_exists` build-time capability
-// GATE, or return cmd unchanged when the guard is empty. They share the gate's SEMANTICS and differ
-// only in how the guarded list is terminated, because their two call sites sit in genuinely
-// different lexical contexts:
-//
-//   - WrapUnlessExists      `else { cmd; }; fi`   — one line. EmitDownload's payload is a
-//     single-quoted argument on ONE Containerfile RUN line, where a literal newline would end the
-//     instruction, so `;` is the only terminator available.
-//   - WrapUnlessExistsBlock `else {\ncmd\n}; fi` — EmitCmd's payload is a heredoc body, already
-//     multi-line by construction, where a newline costs nothing.
-//
-// One form cannot serve both, and the attempt is what produced two rounds of broken emission.
-// `;` is a COMMAND separator, so appending it is safe only when the preceding text is a complete
-// simple command — and three ordinary authored shapes are not: a trailing `# comment` swallows the
-// `; }; fi` into itself so the brace never closes; a body ending in a heredoc needs its terminator
-// alone on a line, so `EOT; }; fi` never ends the heredoc; and a body already ending in `;` yields
-// `;;`, the case-clause token. No amount of trimming turns any of those into a command position.
-// A NEWLINE is the other terminator `{ list; }` accepts and the one that is unconditionally safe,
-// because it ends whatever lexical construct the last line opened.
-//
-// The gate itself is evaluated IN THE IMAGE at build time, which is what makes it a capability
-// check rather than a distro filter: on a distro that packages the tool, `distro:` package sections
-// compile into the plan at phase 1 and `plan:` steps at phase 3 (BuildDeployPlan), so the path
-// already exists by the time the step runs. A distro that later gains a package is picked up with
-// no edit. A distro-NAME filter is not available for this at all — `exclude_distro:` is read by the
-// check runner (sdk/kit/planrun.go), never by the build emitter.
-//
-// The guard is shell-quoted in BOTH positions. Interpolating it raw into the echo, as the first
-// draft did, meant a path containing a double quote emitted a shell syntax error, and one
-// containing $(…) command-substituted in the message while the [ -e ] test used the literal — so
-// the skip line could name a different path than the one actually tested.
-//
-// verb names the step kind in the skip message ("download", "run"), because a Containerfile that
-// prints "skipping: X already present" for three different reasons is worse than one that says
-// which step declined to run.
-func WrapUnlessExists(cmd, guard, verb string) string {
-	return wrapUnlessExists(cmd, guard, verb, " : ; ", "; ")
-}
+// WrapUnlessExists and WrapUnlessExistsBlock are the `unless_exists` capability GATE,
+// relocated to sdk/kit (kit does NOT import deploykit, so both the container build emitter
+// here AND the host/machine-venue op renderer can share it — R3, one definition). The
+// detailed semantics (the two terminator forms, quoting, the empty-list no-op) live on the
+// kit functions; these aliases keep every existing `deploykit.WrapUnlessExists` call site
+// (the container emitter's download + run paths) byte-identical.
+var (
+	WrapUnlessExists      = kit.WrapUnlessExists
+	WrapUnlessExistsBlock = kit.WrapUnlessExistsBlock
+)
 
-// WrapUnlessExistsBlock is the newline-terminated form, for a payload that is already multi-line.
-func WrapUnlessExistsBlock(cmd, guard, verb string) string {
-	return wrapUnlessExists(strings.TrimRight(cmd, "\n"), guard, verb, "\n:\n", "\n")
-}
-
-func wrapUnlessExists(cmd, guard, verb, prefix, term string) string {
-	g := strings.TrimSpace(guard)
-	if g == "" {
-		return cmd
-	}
-	q := shellquote.ShellQuote(g)
-	head := fmt.Sprintf(`if [ -e %s ]; then echo "skipping %s: %s already present"; else `, q, verb, q)
-	// `{ list; }` requires a NON-EMPTY list — the same rule as the terminator, on its other end.
-	// A `run:` step whose command is empty or comment-only would otherwise emit `{ }` and fail the
-	// build, turning a working no-op step into a syntax error the moment a guard is added to it.
-	// The leading `:` in prefix is the shell no-op: it guarantees at least one command in the list
-	// for every body, and is invisible for every other shape. A body that is nothing BUT
-	// whitespace has no command for the terminator to follow either, so it collapses to the no-op
-	// alone.
-	if strings.TrimSpace(cmd) == "" {
-		return head + "{ :; }; fi"
-	}
-	return head + fmt.Sprintf("{%s%s%s}; fi", prefix, cmd, term)
-}
+// The default build-cache locations. Deliberately under /var/cache, NOT /tmp:
+// a BuildKit cache mount rooted under /tmp combined with a nested container
+// runtime writing under /tmp in the same RUN makes BuildKit materialise /tmp at
+// the process umask (0755) instead of the lower layer's 1777, breaking every
+// uid-1000 writer of /tmp (supervisord's logfile, pod-dbus's socket) — RCA
+// 2026-09-24. /var/cache is the correct home for build caches on every distro.
+const (
+	buildCacheRoot    = "/var/cache/charly"
+	downloadsCacheDir = buildCacheRoot + "/downloads"
+	npmCacheDir       = buildCacheRoot + "/npm-cache"
+)
 
 // EmitDownload emits one RUN per download task: fetch to a content-addressed
-// /tmp/downloads cache, then extract. Honors candy-declared `cache:` mounts.
+// downloads cache, then extract. Honors candy-declared `cache:` mounts.
 func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) error {
 	url := t.Download
 	dest := TaskSubstPath(t.To, img)
@@ -369,7 +329,7 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 		return fmt.Errorf("download %q: extract=none requires `to:` destination", url)
 	}
 
-	fetch := fmt.Sprintf(`%s mkdir -p /tmp/downloads; __u=%q; __c=/tmp/downloads/$(printf %%s "$__u" | sha256sum | cut -c1-64); [ -s "$__c" ] || { curl -fsSL "$__u" -o "$__c.part" && mv -f "$__c.part" "$__c"; }`, envPrefix.String(), url)
+	fetch := fmt.Sprintf(`%s mkdir -p %s; __u=%q; __c=%s/$(printf %%s "$__u" | sha256sum | cut -c1-64); [ -s "$__c" ] || { curl -fsSL "$__u" -o "$__c.part" && mv -f "$__c.part" "$__c"; }`, envPrefix.String(), downloadsCacheDir, url, downloadsCacheDir)
 
 	var extractCmd string
 	switch extract {
@@ -412,9 +372,9 @@ func EmitDownload(b *strings.Builder, t vmshared.Op, img *buildkit.ResolvedBox) 
 	// non-root downloads the moment any root stage has written to it (the
 	// curl-23 build failure).
 	if taskRunsAsRoot(t.RunAs, img) {
-		mounts = append(mounts, buildkit.SharedCacheMount("/tmp/downloads", "").String())
+		mounts = append(mounts, buildkit.SharedCacheMount(downloadsCacheDir, "").String())
 	} else {
-		mounts = append(mounts, buildkit.OwnedCacheMount("/tmp/downloads", img.UID, img.GID).String())
+		mounts = append(mounts, buildkit.OwnedCacheMount(downloadsCacheDir, img.UID, img.GID).String())
 	}
 	mounts = append(mounts, cacheMounts...)
 	fmt.Fprintf(b, "RUN %s %s %s\n", strings.Join(mounts, " "), BuildStepShellDashC(), shellquote.ShellQuote(cmd))
@@ -458,7 +418,7 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 			}
 		}
 	} else {
-		mounts = append(mounts, buildkit.OwnedCacheMount("/tmp/npm-cache", img.UID, img.GID).String())
+		mounts = append(mounts, buildkit.OwnedCacheMount(npmCacheDir, img.UID, img.GID).String())
 	}
 
 	mounts = append(mounts, TaskCacheMounts(t, img)...)

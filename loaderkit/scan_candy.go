@@ -250,8 +250,6 @@ func scanFromParsed(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyModel
 // later qualify-then-finalize step sets .Resolved on a remote candy's plain-name sibling deps
 // BEFORE the final bare-string projection, so bare-stringing at scan time would silently drop it.
 func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML) spec.CandyRefs {
-	m.Version = ly.Version
-	v.Version = ly.Version
 	v.Description = ly.Description
 	v.Status = ly.Status
 	v.Info = deploykit.DescriptionInfo(ly.Description)
@@ -261,6 +259,10 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 		for _, cap := range ly.Plugin.Providers {
 			v.PluginProviders = append(v.PluginProviders, string(cap))
 		}
+		// The declared inter-plugin dependencies, projected the SAME way as source +
+		// providers (clause D: a projection of the plugin repo's own manifest), so the
+		// host's requires gate reaches them through the resolved view.
+		v.PluginRequires = append(v.PluginRequires, ly.Plugin.Requires...)
 	}
 
 	require := spec.ToCandyRefEntries(ly.Require)

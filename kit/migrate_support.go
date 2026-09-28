@@ -19,9 +19,7 @@ const (
 	DefaultCandyDir = spec.DefaultCandyDir // discovered candy/<name>/ directory
 )
 
-// LedgerSchemaVersion is the install-ledger record format version, DECOUPLED from
-// the project schema HEAD so a non-ledger cutover never invalidates a migrated
-// ledger. Read by core's ledger path (ReadDeployRecord/ReadCandyRecord, which
-// hard-reject a record lacking this stamp). Core aliases via `const … = kit.LedgerSchemaVersion`.
-// SPIKE (value-type relocation, #55 cluster 4): relocated to spec.LedgerSchemaVersion.
-const LedgerSchemaVersion = spec.LedgerSchemaVersion
+// The former LedgerSchemaVersion constant is DELETED (the schema-versioning removal
+// cutover): a ledger-record FORMAT version compared against a build constant was the
+// same class of arbitrary check as the project-schema stamp. The ledger is read and
+// written by ONE binary version; there is no cross-version ledger to arbitrate.

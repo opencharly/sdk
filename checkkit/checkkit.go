@@ -140,6 +140,7 @@ func SnapshotCheckEnv(kr *kit.Runner) spec.CheckEnv {
 		Distros:    kr.Distros(),
 		VenueKind:  venueKindOf(kr),
 		MCPProvide: kr.MCPProvide(),
+		CandyDirs:  kr.CandyDirs(),
 	}
 }
 

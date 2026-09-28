@@ -528,7 +528,8 @@ func desugarVerbKey(entity, path string, m *yaml.Node, i int, t spec.Threaded) e
 			valNode,
 		}}
 	default:
-		// a null value is an input-less verb
+		// a null value yields an EMPTY input map: there is no input-less plugin, so
+		// the plugin's own served CUE schema decides whether {} is an acceptable input.
 		input = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	}
 	m.Content[i] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "plugin",

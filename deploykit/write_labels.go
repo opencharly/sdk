@@ -36,10 +36,9 @@ import (
 func (g *Generator) WriteLabels(b *strings.Builder, meta *spec.BakedLabelSet, boxName string) {
 	b.WriteString("# Image metadata\n")
 
-	// Always-present labels. ai.opencharly.version carries the image's content-derived
-	// EffectiveVersion (its dedicated version:, else the highest candy version across the
-	// base chain) — NOT the per-build tag. Stable across builds when no candy changed.
-	fmt.Fprintf(b, "LABEL %s=%q\n", spec.LabelVersion, meta.Version)
+	// Always-present labels. The ai.opencharly.version label is DROPPED (the
+	// schema-versioning removal cutover deleted the authored version); the image is
+	// identified by ai.opencharly.box.
 	fmt.Fprintf(b, "LABEL %s=%q\n", spec.LabelBox, meta.Box)
 	fmt.Fprintf(b, "LABEL %s=%q\n", spec.LabelUID, fmt.Sprintf("%d", meta.UID))
 	fmt.Fprintf(b, "LABEL %s=%q\n", spec.LabelGID, fmt.Sprintf("%d", meta.GID))
