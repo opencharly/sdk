@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -113,11 +112,12 @@ func TestRepoOverrideDir_OperatorFirstWins(t *testing.T) {
 	}
 }
 
-// TestVersionlessRefUsesCachedDefaultBranch — the ls-remote fanout regression: the
-// version-less branch resolution must be served by the cached gitClient().DefaultBranch
-// (disk cache), never a raw ls-remote. A local repo + a warmed cache + a FAILING git
-// shim on PATH: any raw-git invocation breaks the test, so a pass proves the cache served.
-func TestVersionlessRefUsesCachedDefaultBranch(t *testing.T) {
+// TestCachedDefaultBranchServesWithoutGit — the ls-remote fanout regression: resolving a
+// repo's default branch must be served by the cached gitClient().DefaultBranch (disk cache),
+// never a raw ls-remote. This exercises the CLIENT cache the resolver uses, not the resolver
+// itself (the resolver is covered by the seam tests). A warmed cache + a FAILING git shim on
+// PATH: any raw-git invocation breaks the test, so a pass proves the cache served.
+func TestCachedDefaultBranchServesWithoutGit(t *testing.T) {
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
 	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
@@ -175,17 +175,12 @@ func TestVersionlessRefRoutesThroughSeam(t *testing.T) {
 // client), never a raw ls-remote. A local repo + a warmed cache + a FAILING git shim:
 // any raw-git invocation breaks the test, so a pass proves the fallback served the cache.
 func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
-	dir := t.TempDir()
-	repo := filepath.Join(dir, "repo")
-	if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
-		t.Skip("git unavailable: " + err.Error())
-	}
-	_ = exec.Command("git", "-C", repo, "config", "user.email", "t@t").Run()
-	_ = exec.Command("git", "-C", repo, "config", "user.name", "t").Run()
-	_ = exec.Command("git", "-C", repo, "commit", "--allow-empty", "-qm", "init").Run()
+	// LIVE-OR-SKIP (R7a): warms the real default branch over the network (a live-service
+	// boundary); SKIPS visibly when the network/repo is unavailable — never a silent pass.
 	url := "https://github.com/opencharly/plugin-deploy-vm"
 	// Warm the cached DEFAULT BRANCH (the fallback the version-less resolution uses).
-	if _, err := gitClient().DefaultBranch(url); err != nil {
+	warm, err := gitClient().DefaultBranch(url)
+	if err != nil {
 		t.Skip("warm failed (network?): " + err.Error())
 	}
 	shimDir := t.TempDir()
@@ -209,8 +204,8 @@ func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
 	for _, d := range downloads {
 		if d.RepoPath == "github.com/opencharly/plugin-deploy-vm" {
 			found = true
-			if d.Version == "" || strings.HasPrefix(d.Version, "v") {
-				t.Fatalf("version-less ref resolved to %q; want a default BRANCH (non-empty, not a v-tag)", d.Version)
+			if d.Version != warm {
+				t.Fatalf("version-less ref resolved to %q; want the warmed default branch %q", d.Version, warm)
 			}
 		}
 	}
