@@ -73,14 +73,11 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 // the file doesn't exist. Relocated from charly/deploy.go (K5-Unit-1); the LoadUnified hop
 // reaches core through DeployStateHost.LoadUnifiedDeployConfig.
 //
-// ctx is OPTIONAL (trailing variadic) in THIS leg so the many out-of-tree plugin consumers
-// (plugin-pod, plugin-deploy-pod, plugin-fleet, plugin-vm, plugin-substrate, plugin-check)
-// compile unchanged while the roster cutover lands. The follow-on batch
-// "plugin-consumers: make deploy-config ctx required" flips this to a REQUIRED ctx in the same
-// change that migrates those ~32 call sites, removing the fail-open default (R5). Until then a
-// caller that omits ctx reads the process env (the legacy host behavior) — correct for the
-// operator path, and all BED paths thread ctx (the roster is the only concurrent in-process
-// caller).
+// ctx is REQUIRED: it carries the invocation's RunEnv (spec.WithRunEnv) so a concurrent
+// in-process bed roster reads its OWN overlay rather than the operator's process env. The
+// former trailing-variadic form silently fell back to the process env when omitted — the
+// fail-open default; it is removed (R5), so every caller (in-tree and any out-of-tree plugin
+// consumer) that omits ctx now fails to compile.
 //
 // Every transform the old bespoke parser did — the `images:` legacy-key reject, the
 // deployment-tree / required-box: / preemptible / ephemeral-naming validation, and the

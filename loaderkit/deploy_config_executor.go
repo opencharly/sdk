@@ -62,8 +62,9 @@ func LoadDeployConfigViaExecutor(ctx context.Context, ex *sdk.Executor, dir stri
 // (filepath.Dir(kit.DefaultDeployConfigPath)) — the dir LoadDeployConfigViaSeam reached
 // indirectly through the host handler's deploykit.LoadDeployConfig. Empty string when the path
 // can't be resolved (the read then degrades to a non-nil &DeployConfig{}, matching
-// deploykit.LoadDeployConfig's absent/empty contract). An optional ctx carries the invocation's
-// RunEnv (spec.WithRunEnv), so a concurrent in-process bed roster reads its OWN overlay.
+// deploykit.LoadDeployConfig's absent/empty contract). ctx is required and carries the
+// invocation's RunEnv (spec.WithRunEnv), so a concurrent in-process bed roster reads its OWN
+// overlay.
 func hostDeployConfigDir(ctx context.Context) string {
 	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
