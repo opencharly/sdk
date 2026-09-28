@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -130,7 +131,8 @@ func TestVersionlessRefUsesCachedDefaultBranch(t *testing.T) {
 	}
 	url := "file://" + repo
 	// warm the cache through the public API (the raw git runs once, allowed)
-	if _, err := gitClient().DefaultBranch(url); err != nil {
+	warm, err := gitClient().DefaultBranch(url)
+	if err != nil {
 		t.Skip("warm failed: " + err.Error())
 	}
 	// the shim: ANY git invocation now fails — the cached path must not invoke git
@@ -140,13 +142,13 @@ func TestVersionlessRefUsesCachedDefaultBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shimDir+":/usr/bin:/bin")
-	// the cached DefaultBranch must serve WITHOUT invoking git
+	// the cached DefaultBranch must serve the SAME value WITHOUT invoking git
 	branch, err := gitClient().DefaultBranch(url)
 	if err != nil {
 		t.Fatalf("cached DefaultBranch failed (raw git invoked?): %v", err)
 	}
-	if branch == "" {
-		t.Fatalf("cached default branch empty")
+	if branch != warm {
+		t.Fatalf("cached default branch = %q; want the warmed %q", branch, warm)
 	}
 }
 
@@ -181,11 +183,9 @@ func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
 	_ = exec.Command("git", "-C", repo, "config", "user.email", "t@t").Run()
 	_ = exec.Command("git", "-C", repo, "config", "user.name", "t").Run()
 	_ = exec.Command("git", "-C", repo, "commit", "--allow-empty", "-qm", "init").Run()
-	if err := exec.Command("git", "-C", repo, "tag", "v1.0.0").Run(); err != nil {
-		t.Skip("git tag failed: " + err.Error())
-	}
 	url := "https://github.com/opencharly/plugin-deploy-vm"
-	if _, err := gitClient().LatestTag(url); err != nil {
+	// Warm the cached DEFAULT BRANCH (the fallback the version-less resolution uses).
+	if _, err := gitClient().DefaultBranch(url); err != nil {
 		t.Skip("warm failed (network?): " + err.Error())
 	}
 	shimDir := t.TempDir()
@@ -199,8 +199,22 @@ func TestVersionlessRefFallbackUsesCachedClient(t *testing.T) {
 			"test": json.RawMessage(`{"candy": ["@github.com/opencharly/plugin-deploy-vm"]}`),
 		},
 	}
-	// the seam is NIL — the fallback (gitClient().LatestTag) must serve the cached tag
-	if _, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{}); err != nil {
+	// The version-less resolution's DEFAULT resolver is gitClient().DefaultBranch; the
+	// cached branch must serve it WITHOUT invoking git (the shim would fail it).
+	downloads, err := CollectRemoteRefsOpts(cfg, nil, spec.ResolveOpts{}, spec.RefsCollectSeams{})
+	if err != nil {
 		t.Fatalf("collect with the fallback: %v", err)
+	}
+	found := false
+	for _, d := range downloads {
+		if d.RepoPath == "github.com/opencharly/plugin-deploy-vm" {
+			found = true
+			if d.Version == "" || strings.HasPrefix(d.Version, "v") {
+				t.Fatalf("version-less ref resolved to %q; want a default BRANCH (non-empty, not a v-tag)", d.Version)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("plugin-deploy-vm download not collected; got %+v", downloads)
 	}
 }
