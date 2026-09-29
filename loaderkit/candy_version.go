@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
@@ -33,40 +35,106 @@ import (
 // the sole candy-version arbiter — direct and transitive refs both flow through it.
 // cands is non-empty.
 //
-// warn receives the skew advisory (when the candidates resolve to DIFFERENT git tags
-// carrying DIFFERENT candy content). It is a REQUIRED parameter, not an optional shim.
-// Every caller states where its advisories go; passing nil selects stderr explicitly
-// rather than by omission.
-func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, warn func(string, ...any)) spec.CandyCandidate {
+// SCOPE — the arbitration is a within-one-box concern, NOT a global one. A bare ref is
+// composed by MANY independent, immutable boxes across the assembled closure (charly's
+// boxes + every imported `distro-*` namespace), and two such boxes legitimately pin the
+// same candy at different tags. That is NOT a conflict: each box resolves its own
+// composition, no single box ever saw both versions, and the closure is still
+// deterministic. Only when ≥2 referrers INSIDE THE SAME SCOPE (the same box, or the same
+// shared layer) name different tags is there a genuine conflict worth reporting. Scope is
+// carried per-candidate (spec.CandyCandidate.Referrers, seeded from the reachability walk's
+// RemoteDownload.RefReferrers); candidates whose referrers are unknown share no scope and
+// are treated as independent.
+//
+// SEVERITY — a resolvable skew is INFO, never WARNING. The arbiter always has a
+// deterministic winner (the newest referenced tag), so resolution SUCCEEDS and nothing is
+// unresolved; a consumer's zero-warnings gate is for unresolved defects and must not fail
+// on a successful arbitration. Only a genuinely unresolvable set (no candidate at all)
+// emits DiagWarning. diag receives both the level and the message, so one sink — carrying
+// the level as its first argument — covers every scan diagnostic with no second channel.
+//
+// diag is a REQUIRED parameter, not an optional shim. Every caller states where its
+// diagnostics go; passing nil selects stderr explicitly rather than by omission.
+func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, diag func(spec.DiagLevel, string, ...any)) spec.CandyCandidate {
+	if len(cands) == 0 {
+		// Genuinely unresolvable: nothing to arbitrate. The ONLY warning-tier case —
+		// there is no winner, so a consumer cannot proceed.
+		emitDiag(diag, spec.DiagWarning, "candy %s has no candidate materialization to resolve", bareRef)
+		return spec.CandyCandidate{}
+	}
 	best := cands[0]
 	for _, c := range cands[1:] {
 		if kit.CompareCalVer(c.GitTag, best.GitTag) > 0 {
 			best = c // newer source git tag
 		}
 	}
-	// NO ADVISORY FOR A RE-TAG OF IDENTICAL CONTENT. A hub repo re-tags an UNCHANGED
-	// candy far more often than it changes THIS candy: a sibling candy landing in the
-	// same repo mints a new tag, and tag-on-merge re-mints the tag at every merge.
-	// Because the candidate materializations are keyed by (repo, tag) and the whole
-	// closure is re-fetched, one skewing hub turns into hundreds of "using newest X,
-	// ignoring Y" lines that name a difference which does not exist in the bytes. The
-	// winner is still the newest tag — for byte-identical content the choice is moot —
-	// so the line is pure noise and is now emitted ONLY when the candidates' content
-	// genuinely DIFFERS (or cannot be determined). THAT is the case a reader can act
-	// on: a real cross-tag content divergence.
-	if !candyContentsIdentical(cands) {
-		for _, c := range cands {
-			if c.GitTag != best.GitTag {
-				if warn == nil {
-					warn = func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) }
-				}
-				warn("Warning: candy %s resolved to multiple git tags with differing content; using newest %s (from %s), ignoring %s (from %s)",
-					bareRef, best.GitTag, best.Source, c.GitTag, c.Source)
-				break
-			}
-		}
+	// NO ADVISORY unless SOME SCOPE's own references disagree AND their content genuinely
+	// DIFFERS. Two independent filters, both required:
+	//
+	//  1. SCOPE (scopeConflicts): a version difference between references that share no box/layer
+	//     scope is the normal shape of a multi-box closure and is silent by construction. Only a
+	//     scope whose OWN references name >=2 distinct tags is a genuine conflict — and it is
+	//     reported independently of which scope supplied the global winner.
+	//  2. CONTENT (candyContentsIdentical): a hub repo re-tags an UNCHANGED candy far more
+	//     often than it changes THIS candy — a sibling landing in the same repo mints a new tag,
+	//     and tag-on-merge re-mints the tag at every merge. The candidate materializations are
+	//     keyed by (repo, tag) and the whole closure is re-fetched, so one skewing hub turns into
+	//     hundreds of "using newest X, ignoring Y" lines that name a difference which does not
+	//     exist in the bytes. The winner is still the newest tag — for byte-identical content the
+	//     choice is moot — so the line is pure noise and is emitted ONLY when the candidates'
+	//     content genuinely DIFFERS (or cannot be determined). THAT is the case a reader can act
+	//     on: a real, same-scope, cross-tag content divergence.
+	if conflicts := scopeConflicts(cands); len(conflicts) > 0 && !candyContentsIdentical(cands) {
+		emitDiag(diag, spec.DiagInfo,
+			"candy %s resolved to multiple git tags with differing content within one scope (%s); using newest referenced %s (from %s)",
+			bareRef, strings.Join(conflicts, ", "), best.GitTag, best.Source)
 	}
 	return best
+}
+
+// scopeConflicts returns the SCOPE labels whose own references name >=2 DISTINCT git tags — the
+// exact condition the version rule calls a conflict ("multiple layers inside the same box point to
+// different versions"). A scope is a box's candy closure ("box=<qualified-name>"), a kind:local
+// template ("kind:local=<tpl>"), an unattributable layer's own scope ("layer=<name>"), or the
+// deploy overlay; two references that share NO scope are independent compositions and never
+// conflict. Result is sorted for a deterministic message.
+func scopeConflicts(cands []spec.CandyCandidate) []string {
+	byScope := map[string]map[string]bool{} // scope label -> set of git tags referenced within it
+	for i := range cands {
+		for _, scope := range cands[i].Referrers {
+			if scope == "" {
+				continue
+			}
+			if byScope[scope] == nil {
+				byScope[scope] = map[string]bool{}
+			}
+			byScope[scope][cands[i].GitTag] = true
+		}
+	}
+	var out []string
+	for scope, tags := range byScope {
+		if len(tags) > 1 {
+			out = append(out, scope)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// emitDiag routes one diagnostic to the caller's sink at the given level. A nil sink selects
+// stderr EXPLICITLY (the level picks the printed prefix: "Warning:" for a gate-failing warning,
+// "Notice:" for a non-gating info), so the fallback preserves the pre-severity behaviour for
+// every existing caller while the level travels with the message.
+func emitDiag(diag func(spec.DiagLevel, string, ...any), level spec.DiagLevel, format string, args ...any) {
+	if diag == nil {
+		prefix := "Notice:"
+		if level == spec.DiagWarning {
+			prefix = "Warning:"
+		}
+		fmt.Fprintf(os.Stderr, prefix+" "+format+"\n", args...)
+		return
+	}
+	diag(level, format, args...)
 }
 
 // candyContentsIdentical reports whether every candidate materialization carries the
@@ -78,7 +146,7 @@ func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, warn func(str
 //     Model.SourceDir excluded (the cache path embeds the git tag, so it is NOT content).
 //
 // A candidate whose content cannot be determined (no manifest AND a zero scan) makes the
-// whole set "not identical", so an unprovable pair still warns — never a silent
+// whole set "not identical", so an unprovable pair still emits — never a silent
 // suppression. That is the conservative direction: the absence of proof is not proof of
 // sameness.
 func candyContentsIdentical(cands []spec.CandyCandidate) bool {
@@ -113,7 +181,7 @@ func candyContentIdentity(c spec.CandyCandidate) (string, bool) {
 		return "", false
 	}
 	if string(b) == string(zeroScannedJSON) {
-		return "", false // no content signal — cannot prove identity, so warn.
+		return "", false // no content signal — cannot prove identity, so emit.
 	}
 	return digestBytes(b), true
 }

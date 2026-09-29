@@ -31,6 +31,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/opencharly/spec/lock"
@@ -255,16 +257,28 @@ func CollectRemoteRefs(cfg *spec.Config, layers map[string]spec.CandyReader, sea
 //nolint:gocyclo // depth-first graph walker over base/candy/builder edges; nested loops are essential to the traversal
 func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader, opts spec.ResolveOpts, seams spec.RefsCollectSeams) ([]spec.RemoteDownload, error) {
 	// Collect EVERY distinct (repo, git-tag) a ref is referenced at. The git tag is only the FETCH
-	// coordinate — per-entity-version arbitration (and any warning) happens AFTER fetch in
-	// ScanAllCandyWithConfigOpts, so a re-tag of an unchanged candy no longer warns here. `source`
-	// is unused now (kept for call-site stability + future diagnostics).
+	// coordinate — per-entity-version arbitration (and any diagnostic) happens AFTER fetch in
+	// ScanCandyFromLocal, so a re-tag of an unchanged candy no longer reports here.
+	//
+	// SCOPE IS PER BOX (the version rule: a box is an independent, immutable composition). The
+	// same bare ref is composed by MANY boxes across the assembled closure, and two such boxes
+	// legitimately pin it at different tags — that is NOT a conflict. So every ref is collected
+	// with the SCOPE(S) that named it, and the arbiter (loaderkit.PickCandyVersion) reports only
+	// within one scope. `byScope` maps (repo, tag) -> scope label -> set of bare refs, replacing
+	// the former single global `(repo, tag) -> refs` map that keyed candidates by bare ref ALONE
+	// and merged every independent box into one set (charly#735 §9).
 	type repoVer struct{ repo, ver string }
-	pairs := make(map[repoVer]map[string]bool) // (repo, git-tag) -> set of bare refs
+	pairs := make(map[repoVer]map[string]bool)         // (repo, git-tag) -> set of bare refs (the FETCH set)
+	referrers := make(map[repoVer]map[string][]string) // (repo, git-tag) -> bare ref -> SCOPE labels that named it
 	// Track resolved default branches per repo (to avoid duplicate git queries)
 	defaultBranches := make(map[string]string)
 
-	addRef := func(ref, source string) error {
-		_ = source
+	// addRef records that `scope` names `ref`. A ref may be named by MANY scopes (independent
+	// boxes legitimately pin the same candy at different tags), so the scope set travels with
+	// the (repo, git-tag) fetch coordinate and the post-fetch arbiter reports only within ONE
+	// scope. This replaces the former single global `(repo, tag) -> refs` map that keyed
+	// candidates by bare ref ALONE and merged every independent box into one set (charly#735 §9).
+	addRef := func(ref, scope string) error {
 		if !spec.IsRemoteCandyRefString(ref) {
 			return nil
 		}
@@ -287,7 +301,7 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 				repoURL := refs.RepoGitURL(parsed.RepoPath)
 				branch, err := resolveDefaultBranch(repoURL)
 				if err != nil {
-					return fmt.Errorf("%s: cannot resolve default branch for %s: %w", source, parsed.RepoPath, err)
+					return fmt.Errorf("%s: cannot resolve default branch for %s: %w", scope, parsed.RepoPath, err)
 				}
 				version = branch
 				defaultBranches[parsed.RepoPath] = branch
@@ -299,6 +313,10 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 			pairs[key] = make(map[string]bool)
 		}
 		pairs[key][bareRef] = true
+		if referrers[key] == nil {
+			referrers[key] = make(map[string][]string)
+		}
+		referrers[key][bareRef] = appendUnique(referrers[key][bareRef], scope)
 		return nil
 	}
 
@@ -314,26 +332,37 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 	// ecosystem tag, which the one-candy-one-version invariant (tracker) then correctly — but
 	// spuriously — rejected. The per-(Config,name) `collected` set also breaks the main<->cachyos
 	// cycle.
+	//
+	// Each box visits under its FULLY-QUALIFIED name (namespace path, e.g. "cachyos.cachyos") so
+	// two same-leaf boxes in different namespaces are distinct scopes. `boxScopeRefs` records, per
+	// box scope, that box's OWN authored candy refs, so a layer's require:/candy: (walked below)
+	// is attributed to the SCOPE of the box whose composition pulled that layer in — the
+	// authoritative unit ("multiple layers INSIDE one box"). Keying by scope (not by leaf box name)
+	// keeps a namespaced box's closure attributed to its qualified scope.
 	collected := map[*spec.Config]map[string]bool{}
-	var collectBox func(c *spec.Config, name string) error
-	collectBox = func(c *spec.Config, name string) error {
+	boxScopeRefs := map[string][]string{} // box scope label -> its authored candy refs
+	var collectBox func(c *spec.Config, nsPath, name string) error
+	collectBox = func(c *spec.Config, nsPath, name string) error {
+		qualified := joinScopeName(nsPath, name)
+		scope := "box=" + qualified
 		seen := collected[c]
 		if seen == nil {
 			seen = map[string]bool{}
 			collected[c] = seen
 		}
-		if seen[name] {
+		if seen[qualified] {
 			return nil
 		}
-		seen[name] = true
+		seen[qualified] = true
 		img, ok := c.BoxConfig(name)
 		if !ok {
 			return nil // external OCI base or unknown name — no candies to collect
 		}
 		for _, candyRef := range img.Candy {
-			if err := addRef(candyRef, fmt.Sprintf("image %s", name)); err != nil {
+			if err := addRef(candyRef, scope); err != nil {
 				return err
 			}
+			boxScopeRefs[scope] = append(boxScopeRefs[scope], candyRef)
 		}
 		// Follow the base edge, plus builder edges when this image actually builds (a candyless
 		// base needs no builder). A namespaced builder (e.g. charly.fedora-builder) is BUILT as an
@@ -356,7 +385,10 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 		}
 		for _, ref := range edges {
 			if _, tc, ok := c.ResolveBoxRef(ref); ok {
-				if err := collectBox(tc, spec.LeafName(ref)); err != nil {
+				// Preserve the namespace context: a bare base/builder edge stays inside the
+				// visiting namespace (nsPrefix == ""), a qualified one descends from it. The walk
+				// re-enters through `tc` (the resolved sub-Config) carrying only the PATH.
+				if err := collectBox(tc, joinScopeName(nsPath, nsPrefix(ref)), spec.LeafName(ref)); err != nil {
 					return err
 				}
 			}
@@ -369,7 +401,7 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 			if !img.IsEnabled() && !opts.ShouldIncludeDisabled(imgName) {
 				continue
 			}
-			if err := collectBox(cfg, imgName); err != nil {
+			if err := collectBox(cfg, "", imgName); err != nil {
 				return nil, err
 			}
 		}
@@ -386,34 +418,57 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 				continue
 			}
 			if _, tc, ok := cfg.ResolveBoxRef(name); ok {
-				if err := collectBox(tc, spec.LeafName(name)); err != nil {
+				if err := collectBox(tc, nsPrefix(name), spec.LeafName(name)); err != nil {
 					return nil, err
 				}
 			}
 		}
+		// kind:local templates compose remote @-ref candies too; they are a property of the
+		// namespace that declares them (never a base/builder, so unreachable from the box walk),
+		// so attribute them to that namespace's scope label — a distinct composition, not a box.
 		for tplName, body := range cfg.Local {
 			r, rerr := seams.ResolveLocal(body)
 			if rerr != nil || r == nil {
 				continue
 			}
 			for _, candyRef := range r.Candy {
-				if err := addRef(candyRef, fmt.Sprintf("kind:local %s", tplName)); err != nil {
+				if err := addRef(candyRef, "kind:local="+tplName); err != nil {
 					return nil, err
 				}
 			}
 		}
 	}
 
-	// Scan the candy manifest require: and candy: fields
+	// Scan EVERY layer's require:/candy: fields. Each remote ref is attributed to the SCOPE of the
+	// box(es) whose candy closure pulled that layer in — resolved by walking each box's own
+	// include:/require: graph from its authored candy list. `layers` is the FLAT project candy set
+	// (every box's closure merged), so the same layer is ONE entry reached by several boxes; it
+	// therefore carries the UNION of those boxes' scope labels. A ref reachable from a box that
+	// was never collected (a namespace's unreferenced image, or a namespace scan's own local set)
+	// lands in the `unowned` scope, where it stays silent unless another unowned ref disagrees.
+	layerScopes := buildLayerScopeIndex(layers, boxScopeRefs)
 	for candyName, layer := range layers {
+		scopes := layerScopes[candyName]
+		if len(scopes) == 0 {
+			// Ownership unknown (a local candy no collected box composes — e.g. a namespace-local
+			// candy). Its refs form their OWN scope, so they stay SILENT: the version rule scopes
+			// conflicts to a box, and an unknown owner has no box to conflict within. This is the
+			// deliberate non-conservative direction the ruling requires — cross-composition
+			// differences are not a defect.
+			scopes = []string{"layer=" + candyName}
+		}
 		for _, dep := range layer.GetRequire() {
-			if err := addRef(dep.Raw, fmt.Sprintf("layer %s require", candyName)); err != nil {
-				return nil, err
+			for _, scope := range scopes {
+				if err := addRef(dep.Raw, scope); err != nil {
+					return nil, err
+				}
 			}
 		}
 		for _, ref := range layer.GetIncludedCandy() {
-			if err := addRef(ref.Raw, fmt.Sprintf("layer %s layer", candyName)); err != nil {
-				return nil, err
+			for _, scope := range scopes {
+				if err := addRef(ref.Raw, scope); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -425,7 +480,7 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 	// IsRemoteCandyRef; ScanCandy already has it); a remote ref joins the same fetch +
 	// per-entity-version arbitration as any other.
 	for _, ref := range opts.ExtraCandyRefs {
-		if err := addRef(ref, "deploy add_candy"); err != nil {
+		if err := addRef(ref, "deploy=add_candy"); err != nil {
 			return nil, err
 		}
 	}
@@ -440,9 +495,10 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 			refList = append(refList, ref)
 		}
 		result = append(result, spec.RemoteDownload{
-			RepoPath: key.repo,
-			Version:  key.ver,
-			Refs:     refList,
+			RepoPath:     key.repo,
+			Version:      key.ver,
+			Refs:         refList,
+			RefReferrers: referrers[key],
 		})
 	}
 	// FIRST-STARTUP WARM-UP: when the git cache is cold, prefetch the version-less
@@ -468,4 +524,92 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 // versionless-ref resolution is unit-testable offline.
 var resolveDefaultBranch = func(repoURL string) (string, error) {
 	return gitClient().DefaultBranch(repoURL)
+}
+
+// appendUnique appends s to list unless it is already present. The referrer list is a SCOPE
+// SET — one entity naming a ref twice (e.g. both require: and candy:) is still one scope.
+func appendUnique(list []string, s string) []string {
+	for _, existing := range list {
+		if existing == s {
+			return list
+		}
+	}
+	return append(list, s)
+}
+
+// nsPrefix returns the namespace-path portion of a (possibly qualified) ref — everything before
+// the final "." — or "" for a bare ref. "a.b.c" -> "a.b"; "fedora" -> "".
+func nsPrefix(ref string) string {
+	if i := strings.LastIndexByte(ref, '.'); i > 0 {
+		return ref[:i]
+	}
+	return ""
+}
+
+// joinScopeName composes a namespace PATH (possibly empty) with a leaf name, so a box visited
+// through an import keeps its fully-qualified identity: joinScopeName("cachyos", "cachyos") =
+// "cachyos.cachyos", joinScopeName("", "arch") = "arch". Two same-leaf boxes in different
+// namespaces thus get DISTINCT scope labels.
+func joinScopeName(nsPath, leaf string) string {
+	if nsPath == "" || leaf == "" {
+		return nsPath + leaf
+	}
+	return nsPath + "." + leaf
+}
+
+// buildLayerScopeIndex resolves, for every candy in the FLAT project candy set, the set of BOX
+// scopes whose candy closure reaches it. It walks each collected box's own authored candy refs
+// transitively through the layer include:/require: graph — the same closure the build's
+// ResolveCandyOrder computes — so a layer pulled in by exactly one box is attributed to that
+// box, and a layer pulled in by several carries all of them. This is what makes the authoritative
+// unit exact: ">=2 layers INSIDE one box" is a same-scope disagreement, while two independent
+// boxes pinning different tags share no scope and stay silent.
+func buildLayerScopeIndex(layers map[string]spec.CandyReader, boxScopeRefs map[string][]string) map[string][]string {
+	// Reverse index: how many (and which) scopes reach each candy. Bounded by the graph size.
+	members := map[string]map[string]bool{} // candy (bare name/ref) -> set of scope labels
+	// Iterate scopes in sorted order for determinism; the result is a set, but a stable order
+	// keeps a future consumer's output reproducible.
+	scopes := make([]string, 0, len(boxScopeRefs))
+	for scope := range boxScopeRefs {
+		scopes = append(scopes, scope)
+	}
+	sort.Strings(scopes)
+	for _, scope := range scopes {
+		visited := map[string]bool{}
+		var walk func(ref string)
+		walk = func(ref string) {
+			name := spec.BareCandyRef(ref)
+			if name == "" || visited[name] {
+				return
+			}
+			visited[name] = true
+			if members[name] == nil {
+				members[name] = map[string]bool{}
+			}
+			members[name][scope] = true
+			layer, ok := layers[name]
+			if !ok {
+				return
+			}
+			for _, dep := range layer.GetIncludedCandy() {
+				walk(dep.Raw)
+			}
+			for _, dep := range layer.GetRequire() {
+				walk(dep.Raw)
+			}
+		}
+		for _, ref := range boxScopeRefs[scope] {
+			walk(ref)
+		}
+	}
+	out := make(map[string][]string, len(members))
+	for name, set := range members {
+		labels := make([]string, 0, len(set))
+		for s := range set {
+			labels = append(labels, s)
+		}
+		sort.Strings(labels)
+		out[name] = labels
+	}
+	return out
 }
