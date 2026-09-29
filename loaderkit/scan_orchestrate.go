@@ -2,7 +2,6 @@ package loaderkit
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
@@ -62,14 +61,31 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 	// dep carries its own repo/git-tag. Fix-point until no new (repo, git-tag,
 	// ref) surfaces, so cross-repo transitive closures are fully materialized.
 	type repoVer struct{ repo, ver string }
-	candidates := make(map[string][]spec.CandyCandidate) // bare ref -> all fetched materializations
-	scanned := make(map[repoVer]map[string]bool)         // (repo, git-tag) -> refs already scanned
-	defaultBranches := make(map[string]string)           // repo → resolved default branch
+	// materials[key][ref] is the fetched body of one (repo, git-tag, ref); refReferrers[key][ref]
+	// is the UNION of the SCOPE labels (boxes) that referenced that ref anywhere in the closure.
+	// Both accumulate across the fix-point rounds, so a ref reached by several independent boxes
+	// carries ALL their scopes on ONE candidate — which is what lets the arbiter report a conflict
+	// only WITHIN one box (charly#735 §2/§9).
+	materials := map[repoVer]map[string]spec.ScannedCandy{}
+	refReferrers := map[repoVer]map[string][]string{}
+	addReferrers := func(key repoVer, ref string, scopes []string) {
+		if refReferrers[key] == nil {
+			refReferrers[key] = map[string][]string{}
+		}
+		for _, s := range scopes {
+			if s == "" {
+				continue
+			}
+			refReferrers[key][ref] = appendUnique(refReferrers[key][ref], s)
+		}
+	}
+	scanned := make(map[repoVer]map[string]bool) // (repo, git-tag) -> refs already scanned
+	defaultBranches := make(map[string]string)   // repo → resolved default branch
 
 	queue := downloads
 	for len(queue) > 0 {
 		nextByKey := make(map[repoVer]map[string]bool)
-		enqueue := func(repo, ver, bare string) error {
+		enqueue := func(repo, ver, bare string, scopes []string) error {
 			if ver == "" {
 				if b, ok := defaultBranches[repo]; ok {
 					ver = b
@@ -83,8 +99,12 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 				}
 			}
 			key := repoVer{repo, ver}
+			// Union the scopes even when this exact (repo, git-tag, ref) was already scanned in
+			// an earlier round: the materialization is shared, but the box that reached it now is
+			// a new referrer and must appear on the candidate.
+			addReferrers(key, bare, scopes)
 			if scanned[key][bare] {
-				return nil // this exact (repo, git-tag, ref) already scanned
+				return nil // this exact (repo, git-tag, ref) already fetched; scopes unioned above
 			}
 			if nextByKey[key] == nil {
 				nextByKey[key] = make(map[string]bool)
@@ -102,6 +122,9 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 			}
 			wantRefs := make(map[string]bool)
 			for _, ref := range dl.Refs {
+				// Union the download's OWN referrers even for an already-scanned ref, so the
+				// candidate's scope set is complete by the time candidates are built below.
+				addReferrers(key, ref, dl.RefReferrers[ref])
 				if !done[ref] {
 					wantRefs[ref] = true
 				}
@@ -121,19 +144,21 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 				done[ref] = true
 			}
 			for ref, sc := range remoteCandies {
-				candidates[ref] = append(candidates[ref], spec.CandyCandidate{
-					Scanned: sc,
-					GitTag:  dl.Version,
-					Source:  dl.RepoPath + "@" + dl.Version,
-				})
+				if materials[key] == nil {
+					materials[key] = make(map[string]spec.ScannedCandy)
+				}
+				materials[key][ref] = sc
 
+				// A transitive dep inherits the SAME scope(s) as the ref that named it — the dep
+				// is part of that referrer's composition, not a new one.
+				scopes := dl.RefReferrers[ref]
 				// Enqueue this materialization's transitive deps. A plain-name dep
 				// is a same-repo sibling at the SAME git tag; an @-ref dep carries
 				// its own pinned repo/git-tag.
 				enqueueDep := func(dep spec.CandyRefEntry) error {
 					if dep.IsRemote() {
 						p := spec.ParseRemoteRef(dep.Raw)
-						return enqueue(p.RepoPath, p.Version, dep.Bare())
+						return enqueue(p.RepoPath, p.Version, dep.Bare(), scopes)
 					}
 					// A ROOT-LEVEL remote candy (the candy de-submodule cutover — a
 					// standalone candy repo whose manifest lives at the repo root,
@@ -147,7 +172,7 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 					if sc.View.SubPathPrefix == "" {
 						return nil
 					}
-					return enqueue(dl.RepoPath, dl.Version, dl.RepoPath+"/"+sc.View.SubPathPrefix+dep.Raw)
+					return enqueue(dl.RepoPath, dl.Version, dl.RepoPath+"/"+sc.View.SubPathPrefix+dep.Raw, scopes)
 				}
 				for _, dep := range sc.Refs.Require {
 					if err := enqueueDep(dep); err != nil {
@@ -168,7 +193,27 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 			for r := range refs {
 				refList = append(refList, r)
 			}
-			queue = append(queue, RemoteDownload{RepoPath: key.repo, Version: key.ver, Refs: refList})
+			queue = append(queue, RemoteDownload{
+				RepoPath:     key.repo,
+				Version:      key.ver,
+				Refs:         refList,
+				RefReferrers: refReferrers[key],
+			})
+		}
+	}
+
+	// Build one candidate per fetched (repo, git-tag, ref), carrying the UNION of the scopes that
+	// referenced it. Building AFTER the fix-point (not inline) is what makes the union complete:
+	// a ref reached again in a later round contributes its box's scope to the same candidate.
+	candidates := make(map[string][]spec.CandyCandidate, len(materials))
+	for key, byRef := range materials {
+		for ref, sc := range byRef {
+			candidates[ref] = append(candidates[ref], spec.CandyCandidate{
+				Scanned:   sc,
+				GitTag:    key.ver,
+				Source:    key.repo + "@" + key.ver,
+				Referrers: refReferrers[key][ref],
+			})
 		}
 	}
 
@@ -178,7 +223,7 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		combined[name] = sc
 	}
 	for ref, cands := range candidates {
-		winner := PickCandyVersion(ref, cands, seams.Warn)
+		winner := PickCandyVersion(ref, cands, seams.Diag)
 		// The winner's version IS its source git tag (the authored per-entity `version:`
 		// is gone), so stamp it onto the resolved model/view before it enters `combined`.
 		ws := winner.Scanned
@@ -198,12 +243,9 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		// per consumer.
 		if local, ok := localScanned[ws.Model.Name]; ok {
 			// Same reasoning as the skew advisory: route it through the seam so a caller can
-			// collect it as data. nil keeps today's stderr behaviour.
-			if w := seams.Warn; w != nil {
-				w("Note: local candy %q shadows remote candy %q", ws.Model.Name, ref)
-			} else {
-				fmt.Fprintf(os.Stderr, "Note: local candy %q shadows remote candy %q\n", ws.Model.Name, ref)
-			}
+			// collect it as data. It is INFO — the shadow is deliberate and effective, so it
+			// must not gate. A nil sink falls back to stderr via the shared emitDiag helper.
+			emitDiag(seams.Diag, spec.DiagInfo, "local candy %q shadows remote candy %q", ws.Model.Name, ref)
 			combined[ref] = local
 			continue
 		}
