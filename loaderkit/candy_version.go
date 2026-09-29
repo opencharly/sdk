@@ -33,7 +33,9 @@ import (
 // schema-versioning removal cutover). The newest CalVer git tag wins; a candidate whose
 // tag does not parse as CalVer sorts lowest (CompareCalVer falls back lexically). This is
 // the sole candy-version arbiter — direct and transitive refs both flow through it.
-// cands is non-empty.
+// cands may be EMPTY: an unresolvable ref (no candidate materialization at all) emits
+// DiagWarning and returns the zero candidate; a resolvable set emits at most a DiagInfo
+// scope-conflict notice.
 //
 // SCOPE — the arbitration is a within-one-box concern, NOT a global one. A bare ref is
 // composed by MANY independent, immutable boxes across the assembled closure (charly's
