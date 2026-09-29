@@ -1003,7 +1003,7 @@ func StringSliceFromYAML(v any) ([]string, bool) {
 // **Init-system polymorphism filter (2026-05).** When a candy declares
 // the same service `name:` twice — once with `use_packaged:` and once
 // with custom `exec:` (the mixed-entry polymorphism pattern documented
-// in CLAUDE.md "Init-system polymorphism via mixed `service:` entries"
+// in AGENTS.md "Init-system polymorphism via mixed `service:` entries"
 // and `/charly-build:layer` "Service Declaration") — the compiler picks ONE
 // based on the target's init system:
 //
@@ -1053,7 +1053,7 @@ func ServiceRenderDistros(img *ResolvedBox, hostCtx HostContext) []string {
 // analogue of a check step's exclude_distros: — the mechanism that lets ONE
 // candy carry per-distro-divergent packaged units (modular virtqemud.socket on
 // Fedora/Arch vs monolithic libvirtd.socket on Debian/Ubuntu) without a
-// <name>-host sibling candy (CLAUDE.md R3).
+// <name>-host sibling candy (AGENTS.md R3).
 func ServiceEntryAppliesToDistro(entry *ServiceEntry, distros []string) bool {
 	if len(entry.Distro) == 0 {
 		return true

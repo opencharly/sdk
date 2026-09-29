@@ -395,7 +395,7 @@ func TestCompileServiceSteps_CustomWithoutPackagedSibling(t *testing.T) {
 }
 
 // TestCompileServiceSteps_MixedPairPackagedWinsOnSystemd proves the mixed-entry polymorphism
-// (CLAUDE.md "Init-system polymorphism"): when the SAME name carries both a use_packaged: form
+// (AGENTS.md "Init-system polymorphism"): when the SAME name carries both a use_packaged: form
 // and an exec: form, the packaged form wins on a systemd machine venue — the custom entry is
 // skipped entirely, never emitted alongside it.
 func TestCompileServiceSteps_MixedPairPackagedWinsOnSystemd(t *testing.T) {

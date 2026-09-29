@@ -9,7 +9,7 @@ import (
 
 // capabilities_test.go — coverage for the candy capabilities aggregator relocated to
 // sdk/buildkit. Uses fakeCandyReader (candy_reader_fake_test.go) as the
-// spec.CandyReader test double CLAUDE.md calls for; each case would fail if the
+// spec.CandyReader test double AGENTS.md calls for; each case would fail if the
 // aggregation, conflict-detection, or missing-capability logic regressed.
 
 func TestAggregateCandyCapabilities(t *testing.T) {
