@@ -42,8 +42,9 @@ import (
 // boxes + every imported `distro-*` namespace), and two such boxes legitimately pin the
 // same candy at different tags. That is NOT a conflict: each box resolves its own
 // composition, no single box ever saw both versions, and the closure is still
-// deterministic. Only when ≥2 referrers INSIDE THE SAME SCOPE (the same box, or the same
-// shared layer) name different tags is there a genuine conflict worth reporting. Scope is
+// deterministic. Only when ≥2 referrers INSIDE THE SAME BOX name different tags is there a
+// genuine conflict worth reporting (spec.ScopeIsBox; a shared layer or kind:local template is
+// NOT a box, so its own difference is informational). Scope is
 // carried per-candidate (spec.CandyCandidate.Referrers, seeded from the reachability walk's
 // RemoteDownload.RefReferrers); candidates whose referrers are unknown share no scope and
 // are treated as independent.
@@ -73,10 +74,12 @@ func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, diag func(spe
 	// NO ADVISORY unless SOME SCOPE's own references disagree AND their content genuinely
 	// DIFFERS. Two independent filters, both required:
 	//
-	//  1. SCOPE (scopeConflicts): a version difference between references that share no box/layer
+	//  1. SCOPE (scopeConflicts): a version difference between references that share no BOX
 	//     scope is the normal shape of a multi-box closure and is silent by construction. Only a
-	//     scope whose OWN references name >=2 distinct tags is a genuine conflict — and it is
-	//     reported independently of which scope supplied the global winner.
+	//     box scope whose OWN references name >=2 distinct tags is a genuine conflict — and it is
+	//     reported independently of which scope supplied the global winner. A non-box scope (a
+	//     layer's own require: list, a kind:local template) is an independent composition, not a
+	//     conflict unit.
 	//  2. CONTENT (candyContentsIdentical): a hub repo re-tags an UNCHANGED candy far more
 	//     often than it changes THIS candy — a sibling landing in the same repo mints a new tag,
 	//     and tag-on-merge re-mints the tag at every merge. The candidate materializations are
@@ -94,17 +97,20 @@ func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, diag func(spe
 	return best
 }
 
-// scopeConflicts returns the SCOPE labels whose own references name >=2 DISTINCT git tags — the
-// exact condition the version rule calls a conflict ("multiple layers inside the same box point to
-// different versions"). A scope is a box's candy closure ("box=<qualified-name>"), a kind:local
-// template ("kind:local=<tpl>"), an unattributable layer's own scope ("layer=<name>"), or the
-// deploy overlay; two references that share NO scope are independent compositions and never
+// scopeConflicts returns the BOX scopes whose own references name >=2 DISTINCT git tags — the
+// exact condition the version rule calls a conflict ("multiple layers inside the same box point
+// to different versions"). A scope is conflict-ELIGIBLE only when it names a BOX
+// (spec.ScopeIsBox): a box's candy closure ("box=<qualified-name>") is the ONE composition unit
+// two candy references genuinely share and can therefore disagree within. Every other scope — an
+// unattributable layer ("layer=<name>"), a kind:local template, a bare capability-connect scan
+// (the empty scope) — is an INDEPENDENT composition with no box to conflict within, so it is
+// SILENT by construction. Two references that share NO scope are likewise independent and never
 // conflict. Result is sorted for a deterministic message.
 func scopeConflicts(cands []spec.CandyCandidate) []string {
-	byScope := map[string]map[string]bool{} // scope label -> set of git tags referenced within it
+	byScope := map[string]map[string]bool{} // box scope label -> set of git tags referenced within it
 	for i := range cands {
 		for _, scope := range cands[i].Referrers {
-			if scope == "" {
+			if !spec.ScopeIsBox(scope) {
 				continue
 			}
 			if byScope[scope] == nil {

@@ -90,16 +90,22 @@ func TestPickCandyVersionSameBoxConflictIsInfo(t *testing.T) {
 	}
 }
 
-// A shared LAYER (not a box) is a scope too: a layer's own require: list is one composition.
-func TestPickCandyVersionSharedLayerIsAScope(t *testing.T) {
+// A shared LAYER is NOT conflict-eligible. The version rule is scoped to a BOX ("multiple
+// layers inside the same box"); a layer's own require: list is an independent composition with
+// no box to conflict within, so a cross-tag difference attributed only to its own layer scope
+// stays SILENT (R2/#739 — no reclassification of an independent composition into a conflict).
+func TestPickCandyVersionSharedLayerIsNotAConflict(t *testing.T) {
 	d := &diagCollector{}
 	cands := []spec.CandyCandidate{
 		{GitTag: "v2026.235.2115", Source: "hub@old", Referrers: []string{"layer=layer-x"}},
 		{GitTag: "v2026.243.1831", Source: "hub@new", Referrers: []string{"layer=layer-x", "box=unrelated"}},
 	}
-	PickCandyVersion("github.com/opencharly/thing", cands, d.sink())
-	if len(d.levels) != 1 {
-		t.Fatalf("a shared layer must constitute a scope, got %d diagnostics", len(d.levels))
+	best := PickCandyVersion("github.com/opencharly/thing", cands, d.sink())
+	if len(d.levels) != 0 {
+		t.Fatalf("a layer-only scope is not a box and must be silent, got %d: %q", len(d.levels), d.msgs)
+	}
+	if best.GitTag != "v2026.243.1831" {
+		t.Errorf("the newest REFERENCED tag must still win, got %q", best.GitTag)
 	}
 }
 

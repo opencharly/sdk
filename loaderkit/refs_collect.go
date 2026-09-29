@@ -350,7 +350,7 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 	var collectBox func(c *spec.Config, nsPath, name string) error
 	collectBox = func(c *spec.Config, nsPath, name string) error {
 		qualified := joinScopeName(nsPath, name)
-		scope := "box=" + qualified
+		scope := spec.BoxScope(qualified)
 		seen := collected[c]
 		if seen == nil {
 			seen = map[string]bool{}
@@ -438,7 +438,7 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 				continue
 			}
 			for _, candyRef := range r.Candy {
-				if err := addRef(candyRef, "kind:local="+tplName); err != nil {
+				if err := addRef(candyRef, spec.KindLocalScope(tplName)); err != nil {
 					return nil, err
 				}
 			}
@@ -461,7 +461,7 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 			// conflicts to a box, and an unknown owner has no box to conflict within. This is the
 			// deliberate non-conservative direction the ruling requires — cross-composition
 			// differences are not a defect.
-			scopes = []string{"layer=" + candyName}
+			scopes = []string{spec.LayerScope(candyName)}
 		}
 		for _, dep := range layer.GetRequire() {
 			for _, scope := range scopes {
@@ -485,8 +485,13 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 	// loadProjectPlugins can't build it. A local ref is a no-op (addRef gates on
 	// IsRemoteCandyRef; ScanCandy already has it); a remote ref joins the same fetch +
 	// per-entity-version arbitration as any other.
-	for _, ref := range opts.ExtraCandyRefs {
-		if err := addRef(ref, "deploy=add_candy"); err != nil {
+	//
+	// The SCOPE travels WITH each ref (ExtraCandyRef.Scope), so the per-entity-version arbiter
+	// reports only a WITHIN-scope disagreement. The former flat []string lost the origin and a
+	// CONSTANT label ("deploy=add_candy") collapsed EVERY deploy into one scope — ~724 false
+	// conflicts across the project (opencharly/charly#739). Never reintroduce a constant here.
+	for _, ec := range opts.ExtraCandyRefs {
+		if err := addRef(ec.Ref, ec.Scope); err != nil {
 			return nil, err
 		}
 	}
