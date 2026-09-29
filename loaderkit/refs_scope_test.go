@@ -75,8 +75,6 @@ func TestCollectScopesTwoBoxesAtDifferentTagsStayIndependent(t *testing.T) {
 // SAME-scope skew. This is the authoritative case #2, and it is exactly what the layer->owning-box
 // attribution exists for.
 func TestCollectScopesTwoLayersInOneBoxShareTheBoxScope(t *testing.T) {
-	const oldRef = "github.com/opencharly/pod-dbus"
-	const newRef = "github.com/opencharly/other-hub"
 	// The box composes layer-a and layer-b directly; each layer pins pod-dbus at a different tag.
 	layers := map[string]spec.CandyReader{
 		"layer-a": newLoaderTestCandy("layer-a", spec.CandyModel{}, spec.CandyView{
@@ -93,8 +91,6 @@ func TestCollectScopesTwoLayersInOneBoxShareTheBoxScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = oldRef
-	_ = newRef
 	old := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.239.1555", "github.com/opencharly/pod-dbus")
 	if len(old) != 1 || old[0] != "box=one-box" {
 		t.Fatalf("layer-a ref scope = %v, want [box=one-box] (the box that pulled the layer in)", old)

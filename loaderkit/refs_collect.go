@@ -268,11 +268,11 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 	//
 	// `pairs` (the FETCH coordinate set) is deliberately still project-wide: it is keyed
 	// (repo, git-tag) with no box key because the FETCH must be deduped globally — the same
-	// (repo, tag) is one clone shared by every box that names it. What the defect needed gone
-	// is not this map but the CANDIDATE build downstream, which keyed by bare ref ALONE and so
-	// merged every independent box into one arbitration set (charly#735 §9). That merge is
-	// removed by `referrers`: it carries the SCOPE labels alongside the fetch coordinate, and
-	// the post-fetch arbiter reads them to arbitrate within a scope only.
+	// (repo, tag) is one clone shared by every box that names it. The CANDIDATE build downstream
+	// likewise keyed by bare ref (one candidate list per ref); that list is RETAINED and is no
+	// longer the whole story — `referrers` annotates each candidate with the SCOPE labels that
+	// named it, and the post-fetch arbiter (`scopeConflicts`) treats only references SHARING a
+	// scope as a conflict, so two independent boxes never merge into one advisory (charly#735 §9).
 	type repoVer struct{ repo, ver string }
 	pairs := make(map[repoVer]map[string]bool)         // (repo, git-tag) -> set of bare refs (the GLOBAL fetch set — deduped across every box)
 	referrers := make(map[repoVer]map[string][]string) // (repo, git-tag) -> bare ref -> SCOPE labels that named it (what makes arbitration per-box)

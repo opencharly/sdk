@@ -2,7 +2,6 @@ package loaderkit
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
@@ -245,12 +244,8 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		if local, ok := localScanned[ws.Model.Name]; ok {
 			// Same reasoning as the skew advisory: route it through the seam so a caller can
 			// collect it as data. It is INFO — the shadow is deliberate and effective, so it
-			// must not gate. nil keeps today's stderr behaviour.
-			if w := seams.Diag; w != nil {
-				w(spec.DiagInfo, "local candy %q shadows remote candy %q", ws.Model.Name, ref)
-			} else {
-				fmt.Fprintf(os.Stderr, "Notice: local candy %q shadows remote candy %q\n", ws.Model.Name, ref)
-			}
+			// must not gate. A nil sink falls back to stderr via the shared emitDiag helper.
+			emitDiag(seams.Diag, spec.DiagInfo, "local candy %q shadows remote candy %q", ws.Model.Name, ref)
 			combined[ref] = local
 			continue
 		}
