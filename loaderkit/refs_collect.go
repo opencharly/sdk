@@ -264,20 +264,26 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 	// same bare ref is composed by MANY boxes across the assembled closure, and two such boxes
 	// legitimately pin it at different tags — that is NOT a conflict. So every ref is collected
 	// with the SCOPE(S) that named it, and the arbiter (loaderkit.PickCandyVersion) reports only
-	// within one scope. `byScope` maps (repo, tag) -> scope label -> set of bare refs, replacing
-	// the former single global `(repo, tag) -> refs` map that keyed candidates by bare ref ALONE
-	// and merged every independent box into one set (charly#735 §9).
+	// within one scope.
+	//
+	// `pairs` (the FETCH coordinate set) is deliberately still project-wide: it is keyed
+	// (repo, git-tag) with no box key because the FETCH must be deduped globally — the same
+	// (repo, tag) is one clone shared by every box that names it. What the defect needed gone
+	// is not this map but the CANDIDATE build downstream, which keyed by bare ref ALONE and so
+	// merged every independent box into one arbitration set (charly#735 §9). That merge is
+	// removed by `referrers`: it carries the SCOPE labels alongside the fetch coordinate, and
+	// the post-fetch arbiter reads them to arbitrate within a scope only.
 	type repoVer struct{ repo, ver string }
-	pairs := make(map[repoVer]map[string]bool)         // (repo, git-tag) -> set of bare refs (the FETCH set)
-	referrers := make(map[repoVer]map[string][]string) // (repo, git-tag) -> bare ref -> SCOPE labels that named it
+	pairs := make(map[repoVer]map[string]bool)         // (repo, git-tag) -> set of bare refs (the GLOBAL fetch set — deduped across every box)
+	referrers := make(map[repoVer]map[string][]string) // (repo, git-tag) -> bare ref -> SCOPE labels that named it (what makes arbitration per-box)
 	// Track resolved default branches per repo (to avoid duplicate git queries)
 	defaultBranches := make(map[string]string)
 
 	// addRef records that `scope` names `ref`. A ref may be named by MANY scopes (independent
 	// boxes legitimately pin the same candy at different tags), so the scope set travels with
 	// the (repo, git-tag) fetch coordinate and the post-fetch arbiter reports only within ONE
-	// scope. This replaces the former single global `(repo, tag) -> refs` map that keyed
-	// candidates by bare ref ALONE and merged every independent box into one set (charly#735 §9).
+	// scope. The fetch set stays global (one clone per (repo, tag)); the SCOPE travels on
+	// `referrers` so the downstream arbitration can be per-box (charly#735 §9).
 	addRef := func(ref, scope string) error {
 		if !spec.IsRemoteCandyRefString(ref) {
 			return nil
