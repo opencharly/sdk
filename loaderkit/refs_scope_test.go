@@ -123,6 +123,43 @@ func TestCollectScopesLayerSharedByTwoBoxesCarriesBoth(t *testing.T) {
 	}
 }
 
+// THE #739 REGRESSION GUARD — a deploy's add_candy: refs (opts.ExtraCandyRefs) must carry THEIR
+// OWN composition scope, never a constant. Two deploys naming the SAME candy at DIFFERENT tags are
+// two independent boxes and MUST stay independent at the arbiter; the former flat []string plus the
+// literal "deploy=add_candy" collapsed them into ONE scope and produced ~724 false conflicts
+// (opencharly/charly#739).
+func TestCollectScopesDeployAddCandyCarriesItsBoxNeverAConstant(t *testing.T) {
+	const oldRef = "@github.com/opencharly/pod-dbus:v2026.239.1555"
+	const newRef = "@github.com/opencharly/pod-dbus:v2026.243.1831"
+	// No boxes at all: the ONLY refs are deploy add_candy extras — the exact bed shape.
+	opts := spec.ResolveOpts{ExtraCandyRefs: []spec.ExtraCandyRef{
+		{Ref: oldRef, Scope: "box=deploy-a"},
+		{Ref: newRef, Scope: "box=deploy-b"},
+	}}
+	downloads, err := CollectRemoteRefsOpts(&spec.Config{}, nil, opts, spec.RefsCollectSeams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.239.1555", "github.com/opencharly/pod-dbus")
+	if len(old) != 1 || old[0] != "box=deploy-a" {
+		t.Fatalf("deploy-a add_candy scope = %v, want [box=deploy-a] (never a constant)", old)
+	}
+	fresh := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.243.1831", "github.com/opencharly/pod-dbus")
+	if len(fresh) != 1 || fresh[0] != "box=deploy-b" {
+		t.Fatalf("deploy-b add_candy scope = %v, want [box=deploy-b]", fresh)
+	}
+	// And the arbiter is SILENT across the two independent deploy scopes (the 724-false-positive
+	// class is gone at its source).
+	d := &diagCollector{}
+	PickCandyVersion("github.com/opencharly/pod-dbus", []spec.CandyCandidate{
+		{GitTag: "v2026.239.1555", Source: "hub@old", Referrers: old},
+		{GitTag: "v2026.243.1831", Source: "hub@new", Referrers: fresh},
+	}, d.sink())
+	if len(d.levels) != 0 {
+		t.Fatalf("two independent deploy add_candy scopes must be silent, got %d: %q", len(d.levels), d.msgs)
+	}
+}
+
 // A namespaced box is scoped by its QUALIFIED name, so two same-leaf boxes in different namespaces
 // are distinct scopes (they are independent compositions). Proven via a base edge: the root box's
 // base is the namespace's box, so the namespace box IS walked and its candy ref is scoped
