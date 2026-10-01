@@ -26,8 +26,6 @@ package loaderkit
 // entirely.
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +33,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/opencharly/spec/cache"
 	"github.com/opencharly/spec/lock"
 	"github.com/opencharly/spec/proc"
 	"github.com/opencharly/spec/refs"
@@ -88,8 +87,11 @@ func reshapeViewIdentity() string {
 // reshapeViewIdentityFn is a package var (not a const) so tests inject a DIFFERENT
 // identity and prove the view path re-keys on a schema/loader change.
 var reshapeViewIdentityFn = func() string {
-	sum := sha256.Sum256([]byte(moduleIdentity(specModulePath) + "\x00" + moduleIdentity(sdkModulePath)))
-	return hex.EncodeToString(sum[:8])
+	// Derive the view identity from the SAME (schema, loader) components the
+	// materialized-tree cache key uses (schemaLoaderComponents → cache.KeyDigest), so the
+	// two cache layers re-key on exactly the same schema/loader change (R3 — one identity
+	// computation, not two). 16 hex chars keeps the path suffix short.
+	return cache.KeyDigest(schemaLoaderComponents())[:16]
 }
 
 // reshapeViewPath is the content-addressed derived-view directory for a pristine cache

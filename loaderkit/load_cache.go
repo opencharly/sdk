@@ -107,12 +107,21 @@ func loadedProjectCacheKey(lp *spec.LoadedProject) (string, map[string]string, e
 	if err != nil {
 		return "", nil, fmt.Errorf("materialized-tree cache key: encode walk envelope: %w", err)
 	}
-	comps := map[string]string{
-		"config_hash":     cache.HashHex(string(env)),
+	comps := schemaLoaderComponents()
+	comps["config_hash"] = cache.HashHex(string(env))
+	return cache.KeyDigest(comps), comps, nil
+}
+
+// schemaLoaderComponents is the ONE computation of the (schema, loader) identity pair
+// (R3): the compiled spec module version keys the CUE schema, the sdk module version
+// keys the loader/reshape logic. Both the materialized-tree Store key
+// (loadedProjectCacheKey) and the derived-view path (reshapeViewIdentityFn) derive from
+// THIS map, so the two cache layers can never disagree on what a schema/loader change is.
+func schemaLoaderComponents() map[string]string {
+	return map[string]string{
 		"schema_identity": moduleIdentity(specModulePath),
 		"loader_identity": moduleIdentity(sdkModulePath),
 	}
-	return cache.KeyDigest(comps), comps, nil
 }
 
 // moduleIdentity names a dependency module's compiled version from the build info, so a change to
