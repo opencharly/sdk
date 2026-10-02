@@ -102,7 +102,51 @@ func reshapeViewPath(cachePath string) string {
 // reshapeViewMarker marks a fully-built derived view. Its presence (after the atomic
 // rename of the completed copy) is the completeness proof: a half-built view has no
 // marker and is rebuilt, so a crash mid-reshape never publishes a torn view.
+//
+// Its CONTENT is the pristine export's resolved COMMIT (repoViewMarkerContent), so a view
+// of a MUTABLE ref (a branch / the default branch) is re-derived the moment upstream
+// advances — an untagged reference is ALWAYS checked against upstream before its view is
+// reused (charly#327). A view whose marker still carries the legacy identity string (a
+// pre-fix view) never equals a commit, so it is re-derived exactly once: the same
+// self-healing migration refs.repoCacheFresh uses for provenance-less exports.
 const reshapeViewMarker = ".charly-view-ok"
+
+// repoViewResolvedCommit returns the pristine export's resolved commit, or "" when it is
+// unknown/invalid (a mutable ref with no v2 provenance). An empty result means DeriveRepoView
+// cannot prove freshness against upstream and falls back to the identity-stamped check —
+// the pre-fix behaviour — rather than re-deriving on every call.
+func repoViewResolvedCommit(cachePath string) string {
+	if p, ok := refs.ReadRepoCacheProvenance(cachePath); ok {
+		return p.Commit
+	}
+	return ""
+}
+
+// repoViewMarkerContent is what a fresh view's marker is stamped with: the resolved commit
+// when it is known, else the schema/loader identity (the legacy content).
+func repoViewMarkerContent(cachePath string) string {
+	if commit := repoViewResolvedCommit(cachePath); commit != "" {
+		return commit + "\n"
+	}
+	return reshapeViewIdentity() + "\n"
+}
+
+// repoViewReusable reports whether viewPath is a COMPLETE view of cachePath's CURRENT
+// resolved commit. A view of a mutable ref (@main / any branch) whose export advanced
+// upstream no longer matches its stamped commit and is re-derived. A view of an immutable
+// ref (a CalVer tag) carries no commit stamp and is still reused — its export can never
+// move, so the identity stamp is sufficient.
+func repoViewReusable(viewPath, cachePath string) bool {
+	data, err := os.ReadFile(filepath.Join(viewPath, reshapeViewMarker))
+	if err != nil {
+		return false
+	}
+	stamp := strings.TrimSpace(string(data))
+	if want := repoViewResolvedCommit(cachePath); want != "" {
+		return stamp == want
+	}
+	return stamp == reshapeViewIdentity()
+}
 
 // DeriveRepoView returns a directory holding the repo's project files reshaped to the
 // current schema, WITHOUT ever mutating the pristine cache export. The pristine export
@@ -113,12 +157,12 @@ const reshapeViewMarker = ".charly-view-ok"
 // in keeps this mechanism kind-blind and unit-testable.
 func DeriveRepoView(cachePath string, migrate func(path string) error) (string, error) {
 	viewPath := reshapeViewPath(cachePath)
-	if _, err := os.Stat(filepath.Join(viewPath, reshapeViewMarker)); err == nil {
+	if repoViewReusable(viewPath, cachePath) {
 		return viewPath, nil
 	}
 	// Re-entry guard (see autoMigratedRepos): admit each view once per process.
 	if !markRepoAutoMigrating(viewPath) {
-		if _, err := os.Stat(filepath.Join(viewPath, reshapeViewMarker)); err == nil {
+		if repoViewReusable(viewPath, cachePath) {
 			return viewPath, nil
 		}
 		return cachePath, nil
@@ -132,8 +176,9 @@ func DeriveRepoView(cachePath string, migrate func(path string) error) (string, 
 		return "", fmt.Errorf("deriving reshape view of %s: acquiring view lock: %w", cachePath, err)
 	}
 	defer func() { _ = release() }()
-	// Re-check under the lock: a concurrent first-misser may have built the view.
-	if _, err := os.Stat(filepath.Join(viewPath, reshapeViewMarker)); err == nil {
+	// Re-check under the lock: a concurrent first-misser may have built the view, or
+	// another process may have rebuilt it against a newer upstream commit.
+	if repoViewReusable(viewPath, cachePath) {
 		return viewPath, nil
 	}
 	tmpPath := viewPath + ".tmp"
@@ -146,7 +191,7 @@ func DeriveRepoView(cachePath string, migrate func(path string) error) (string, 
 		_ = os.RemoveAll(tmpPath)
 		return "", fmt.Errorf("reshaping derived view of %s: %w", cachePath, err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpPath, reshapeViewMarker), []byte(reshapeViewIdentity()+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpPath, reshapeViewMarker), []byte(repoViewMarkerContent(cachePath)), 0o644); err != nil {
 		_ = os.RemoveAll(tmpPath)
 		return "", err
 	}
