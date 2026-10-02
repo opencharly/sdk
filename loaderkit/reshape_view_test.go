@@ -150,7 +150,7 @@ func TestDeriveRepoView_ReentryGuardReturnsPristine(t *testing.T) {
 	}
 }
 
-// TestDeriveRepoView_ReDerivesWhenMutableRefAdvances is the charly#327 regression guard.
+// TestDeriveRepoView_ReDerivesWhenMutableRefAdvances is the sdk#327 regression guard.
 // A view of a MUTABLE ref (the default branch / any branch) is keyed on the resolved
 // COMMIT, not the ref name: when upstream advances (the pristine export's provenance
 // commit changes) the view MUST be re-derived, so a stale view is never served.

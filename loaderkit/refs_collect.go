@@ -106,7 +106,7 @@ func reshapeViewPath(cachePath string) string {
 // Its CONTENT is the pristine export's resolved COMMIT (repoViewMarkerContent), so a view
 // of a MUTABLE ref (a branch / the default branch) is re-derived the moment upstream
 // advances — an untagged reference is ALWAYS checked against upstream before its view is
-// reused (charly#327). A view whose marker still carries the legacy identity string (a
+// reused (sdk#327). A view whose marker still carries the legacy identity string (a
 // pre-fix view) never equals a commit, so it is re-derived exactly once: the same
 // self-healing migration refs.repoCacheFresh uses for provenance-less exports.
 const reshapeViewMarker = ".charly-view-ok"
