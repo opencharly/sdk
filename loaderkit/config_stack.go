@@ -5,10 +5,12 @@ package loaderkit
 // effective PROJECT config of any invocation (and of the systemd-started MCP
 // server) is the merged document.
 //
-//   - system: /etc/charly/charly.yml (CHARLY_SYSTEM_CONFIG override) — shipped by
-//     the charly package (`charly generate-packages`, packaging.config) as a bare
-//     minimal PROJECT (a version + a charly-mcp candy node), so a host with no
-//     project directory still resolves one;
+//   - system: /etc/charly/charly.yml (CHARLY_SYSTEM_CONFIG override) — written by the
+//     charly PACKAGE (charly generate-packages), never authored. Its RETIRED directives
+//     are dropped before the merge (retiredSystemDirectives), and a layer the strip
+//     leaves empty is skipped: a stamp the spec no longer accepts would otherwise enter
+//     EVERY project document on the host, and no project could remove it — the file is
+//     root-owned;
 //   - in-dir: <dir>/charly.yml — the project's own config (existing resolution).
 //
 // The per-host DEPLOY OVERLAY (~/.config/charly/charly.yml, spec.DefaultDeployConfigPath)
@@ -35,6 +37,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
@@ -48,9 +51,21 @@ const SystemConfigEnv = "CHARLY_SYSTEM_CONFIG"
 // DefaultSystemConfigPath is the system config layer path.
 const DefaultSystemConfigPath = "/etc/charly/charly.yml"
 
+// retiredSystemDirectives are top-level keys an OLDER charly PACKAGE wrote into the
+// SYSTEM layer that the current contract no longer accepts there. `version` is the
+// first: spec #183 removed the field from the closed #NodeDoc, so a leftover stamp at
+// the top level resolves as a NODE named `version` whose value must be a struct, and
+// the merged document fails with `mismatched types string and struct` — for EVERY
+// project on the host, whether the stamp came from the system layer (this strip) or
+// from the project itself (there, a hard error and `charly migrate`'s job — see
+// TestConfigStack_AuthoredProjectVersionSurvives). This list is the ONE place the
+// system layer's retired vocabulary is declared (R3).
+var retiredSystemDirectives = []string{"version"}
+
 // readConfigStack reads the PROJECT config layers (system → in-dir) and merges them
 // (later files winning) at the raw document level. Returns (nil, false) when no layer
-// exists (no project). A missing system layer is skipped (a stat). The per-host deploy
+// exists (no project). A missing system layer is skipped (a stat), and so is a system
+// layer left empty once its retired directives are dropped. The per-host deploy
 // overlay is NOT a layer here — see the file header for why.
 func readConfigStack(dir string) ([]byte, bool, error) {
 	systemPath := os.Getenv(SystemConfigEnv)
@@ -60,13 +75,25 @@ func readConfigStack(dir string) ([]byte, bool, error) {
 	projectPath := filepath.Join(dir, spec.UnifiedFileName)
 
 	var layers [][]byte
-	for _, p := range []string{systemPath, projectPath} {
-		if p == "" || !kit.FileExists(p) {
+	for _, l := range []struct {
+		path   string
+		system bool
+	}{{systemPath, true}, {projectPath, false}} {
+		if l.path == "" || !kit.FileExists(l.path) {
 			continue
 		}
-		data, err := os.ReadFile(p)
+		data, err := os.ReadFile(l.path)
 		if err != nil {
-			return nil, true, fmt.Errorf("read config stack layer %s: %w", p, err)
+			return nil, true, fmt.Errorf("read config stack layer %s: %w", l.path, err)
+		}
+		if l.system {
+			data, err = stripRetiredSystemDirectives(data, l.path)
+			if err != nil {
+				return nil, true, err
+			}
+			if data == nil {
+				continue // nothing but retired directives — contributes nothing
+			}
 		}
 		layers = append(layers, data)
 	}
@@ -78,6 +105,45 @@ func readConfigStack(dir string) ([]byte, bool, error) {
 		return nil, true, err
 	}
 	return merged, true, nil
+}
+
+// stripRetiredSystemDirectives drops retiredSystemDirectives from a SYSTEM-layer
+// document, keeping every other node through the yaml.Node round trip. It returns the
+// input unchanged when there is nothing to strip (so the common path is byte-for-byte),
+// and (nil, nil) when the layer held NOTHING but retired directives — the caller then
+// skips the layer rather than merging an empty mapping. A layer that is not a mapping
+// document is returned unchanged: the stack's own parse reports it with the message it
+// has always used.
+func stripRetiredSystemDirectives(data []byte, path string) ([]byte, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc.Content) == 0 {
+		return data, nil
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return data, nil
+	}
+	kept := make([]*yaml.Node, 0, len(root.Content))
+	retired := false
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if slices.Contains(retiredSystemDirectives, root.Content[i].Value) {
+			retired = true
+			continue
+		}
+		kept = append(kept, root.Content[i], root.Content[i+1])
+	}
+	if !retired {
+		return data, nil
+	}
+	if len(kept) == 0 {
+		return nil, nil
+	}
+	root.Content = kept
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return nil, fmt.Errorf("strip retired directives from the system layer %s: %w", path, err)
+	}
+	return out, nil
 }
 
 // mergeConfigStackRaw merges the raw charly.yml documents, LATER files winning
