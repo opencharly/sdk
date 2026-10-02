@@ -59,7 +59,9 @@ func TestConfigStack_LaterWins(t *testing.T) {
 }
 
 // TestConfigStack_SystemLayerFormsProject — without an in-dir layer, the system
-// layer alone forms a project (the packaged /etc/charly fallback).
+// layer's OWN candy node forms a project (the packaged fallback that survives the
+// retired-directive strip; a stamp-only layer contributes nothing — see
+// TestConfigStack_RetiredOnlySystemLayerContributesNothing).
 func TestConfigStack_SystemLayerFormsProject(t *testing.T) {
 	tmp := t.TempDir()
 	project := t.TempDir() // no charly.yml in the project dir
@@ -78,20 +80,96 @@ func TestConfigStack_SystemLayerFormsProject(t *testing.T) {
 	}
 }
 
-// TestConfigStack_VersionLaterWins — the merged version is the LATER layer's.
-func TestConfigStack_VersionLaterWins(t *testing.T) {
+// TestConfigStack_RetiredSystemVersionIsDropped — the SYSTEM layer's `version:` stamp
+// must NOT reach the merged document. The system file is package-RENDERED, never
+// authored, and spec #183 removed the top-level `version` from the closed #NodeDoc, so
+// merging the stamp made EVERY project on a host carrying it unresolvable
+// (`conflicting values … mismatched types string and struct`) — an empty HOME/XDG test
+// could not see it, because the stack layer is not user config.
+func TestConfigStack_RetiredSystemVersionIsDropped(t *testing.T) {
 	tmp := t.TempDir()
 	project := t.TempDir()
 	system := writeLayer(t, tmp, "system.yml", "version: 2026.249.2125\n")
-	writeLayer(t, project, spec.UnifiedFileName, "version: 2026.250.0001\n")
+	writeLayer(t, project, spec.UnifiedFileName,
+		"alpha:\n    candy:\n        version: 2026.249.2125\n        description: project-alpha\n")
+	t.Setenv(SystemConfigEnv, system)
+
+	data, ok, err := readConfigStack(project)
+	if err != nil {
+		t.Fatalf("readConfigStack: %v", err)
+	}
+	if !ok {
+		t.Fatal("readConfigStack: ok=false, want a project")
+	}
+	var merged map[string]any
+	if err := yaml.Unmarshal(data, &merged); err != nil {
+		t.Fatalf("parse merged: %v", err)
+	}
+	if v, leaked := merged["version"]; leaked {
+		t.Fatalf("the retired system-layer `version:` stamp leaked into the merged document (%v) — on a host carrying it the closed #NodeDoc rejects every project", v)
+	}
+	// Only the TOP-LEVEL key is retired: a candy node's own nested version is a
+	// different field and must survive the strip untouched.
+	alpha, _ := merged["alpha"].(map[string]any)
+	candy, _ := alpha["candy"].(map[string]any)
+	if got := candy["version"]; got != "2026.249.2125" {
+		t.Errorf("alpha.candy.version = %v, want 2026.249.2125 — the strip must drop only the top-level key: %s", got, data)
+	}
+}
+
+// TestConfigStack_RetiredOnlySystemLayerContributesNothing — the document a package
+// actually renders is (just) the retired stamp. Stripped, it leaves nothing, so the
+// layer is SKIPPED rather than merged as an empty mapping: a host carrying only the
+// stamp resolves exactly like a host with no system config at all — a project beside it
+// is that project alone, and with no project there is no project.
+func TestConfigStack_RetiredOnlySystemLayerContributesNothing(t *testing.T) {
+	tmp := t.TempDir()
+	system := writeLayer(t, tmp, "system.yml", "version: 2026.249.2125\n")
+	t.Setenv(SystemConfigEnv, system)
+
+	project := t.TempDir()
+	writeLayer(t, project, spec.UnifiedFileName, "alpha:\n    description: authored\n")
+	data, ok, err := readConfigStack(project)
+	if err != nil {
+		t.Fatalf("readConfigStack: %v", err)
+	}
+	if !ok {
+		t.Fatal("readConfigStack: ok=false, want the project to form one")
+	}
+	var merged map[string]any
+	if err := yaml.Unmarshal(data, &merged); err != nil {
+		t.Fatalf("parse merged: %v", err)
+	}
+	if len(merged) != 1 {
+		t.Errorf("a retired-only system layer changed the merged document: %v", merged)
+	}
+
+	data, ok, err = readConfigStack(t.TempDir()) // no charly.yml in the dir
+	if err != nil {
+		t.Fatalf("readConfigStack (no project): %v", err)
+	}
+	if ok || data != nil {
+		t.Fatalf("a retired-only system layer manufactured a project: (%v, %v), want (nil, false)", data != nil, ok)
+	}
+}
+
+// TestConfigStack_AuthoredProjectVersionSurvives — the strip is scoped to the SYSTEM
+// layer. An AUTHORED project that still carries `version:` keeps it in the merge, so the
+// leftover is still a hard error at the schema gate and `charly migrate` still sees the
+// key it exists to strip. Dropping it here would silently swallow a real leftover.
+func TestConfigStack_AuthoredProjectVersionSurvives(t *testing.T) {
+	tmp := t.TempDir()
+	project := t.TempDir()
+	system := writeLayer(t, tmp, "system.yml", "version: 2026.249.2125\n")
+	writeLayer(t, project, spec.UnifiedFileName, "version: 2026.261.1747\n")
 	t.Setenv(SystemConfigEnv, system)
 
 	data, _, err := readConfigStack(project)
 	if err != nil {
 		t.Fatalf("readConfigStack: %v", err)
 	}
-	if !strings.Contains(string(data), "version: 2026.250.0001") {
-		t.Errorf("merged version = %s, want the project layer's (later wins)", data)
+	if !strings.Contains(string(data), "version: 2026.261.1747") {
+		t.Errorf("the authored project's `version:` was dropped from the merge (%s) — the strip must stay scoped to the package-rendered system layer", data)
 	}
 }
 
