@@ -332,6 +332,56 @@ func desugarEntityPlan(entity string, body *yaml.Node, t spec.Threaded) error {
 			}
 		}
 	}
+	// NESTED plans: a `kind: pipeline` body carries `plan:` blocks inside its steps
+	// (a `task: {plan: …}` nested task, a parallel branch, an inline entity), and every
+	// one of them authors the SAME `<word>: <input>` sugar as the top-level plan. Walk
+	// the body kind-blind and desugar each one, stopping at a member-kind key (the loader
+	// never desugars inside a resource member, and `plan:`/`instrument:` are handled above).
+	for i := 0; i+1 < len(body.Content); i += 2 {
+		k := body.Content[i].Value
+		if k == "plan" || k == "instrument" || classifyKind(k, true, t) {
+			continue
+		}
+		if err := desugarNestedPlans(entity, k, body.Content[i+1], t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// desugarNestedPlans is the recursive, KIND-BLIND desugar of nested `plan:` step lists: it
+// walks any sequence/mapping subtree and rewrites every nested plan's `<word>: <input>`
+// plugin-verb sugar into the internal plugin/plugin_input pair, exactly as the top-level
+// plan: does. A member-kind key stops the walk (see classifyKind/memberDisc) — the loader
+// does not desugar inside a resource member, so neither does this. `path` is the dotted
+// path from the entity body, used only for the error context.
+func desugarNestedPlans(entity, path string, n *yaml.Node, t spec.Threaded) error {
+	switch n.Kind {
+	case yaml.SequenceNode:
+		for i, c := range n.Content {
+			if err := desugarNestedPlans(entity, fmt.Sprintf("%s[%d]", path, i), c, t); err != nil {
+				return err
+			}
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i].Value, n.Content[i+1]
+			if classifyKind(k, true, t) {
+				continue
+			}
+			if k == "plan" && v.Kind == yaml.SequenceNode && len(v.Content) > 0 && v.Content[0].Kind == yaml.MappingNode {
+				for j, st := range v.Content {
+					if err := desugarStep(entity, j, st, t); err != nil {
+						return fmt.Errorf("%s.plan: %w", path, err)
+					}
+				}
+				continue
+			}
+			if err := desugarNestedPlans(entity, path+"."+k, v, t); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
