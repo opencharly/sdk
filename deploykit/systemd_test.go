@@ -10,9 +10,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// systemd_unit_test.go / systemd_timer_test.go share this `-update` switch: the unit
-// text is what the operator reads and what systemd parses, so a change to it must be a
-// reviewable diff, never a silent drift.
+// The unit and timer golden tests both live in this file and share this `-update` switch:
+// the emitted text is what the operator reads and what systemd parses, so a change to it
+// must be a reviewable diff, never a silent drift.
 var updateGoldens = false
 
 func TestMain(m *testing.M) {
