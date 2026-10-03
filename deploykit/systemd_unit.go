@@ -46,6 +46,13 @@ type SystemdUnitConfig struct {
 	WorkingDirectory string
 	// Environment holds KEY=VALUE pairs rendered as Environment= lines.
 	Environment map[string]string
+	// Type is the systemd [Service] Type=. Empty means "simple" (the engine-CLI
+	// wrapper posture); "oneshot" is the run-to-completion posture a TIMER-activated
+	// workflow service needs (see GenerateTimerService).
+	Type string
+	// OmitStop suppresses ExecStop even when StopArgv is set — the oneshot posture,
+	// where there is no long-lived process to stop.
+	OmitStop bool
 }
 
 // SystemdUnitFilename returns the unit basename for a deployment name. The
@@ -65,9 +72,20 @@ func GenerateSystemdUnit(cfg SystemdUnitConfig) string {
 	if desc == "" {
 		desc = fmt.Sprintf("charly deployment %s (nerdctl-managed container)", name)
 	}
+	unitType := cfg.Type
+	if unitType == "" {
+		unitType = "simple"
+	}
 	restart := cfg.Restart
 	if restart == "" {
-		restart = "on-failure"
+		// A oneshot service runs to completion; restarting it on failure would re-run
+		// the whole job, so its default is `no`. A long-lived simple service keeps the
+		// container alive, so its default is on-failure.
+		if unitType == "oneshot" {
+			restart = "no"
+		} else {
+			restart = "on-failure"
+		}
 	}
 
 	var b strings.Builder
@@ -86,13 +104,13 @@ func GenerateSystemdUnit(cfg SystemdUnitConfig) string {
 	fmt.Fprintf(&b, "Wants=%s\n", strings.Join(wants, " "))
 
 	b.WriteString("\n[Service]\n")
-	// Type=simple: StartArgv must be a FOREGROUND engine launch (`<engine> run
+	// Type=simple (the default): StartArgv must be a FOREGROUND engine launch (`<engine> run
 	// --rm …`, NO `-d`) — the CLI stays in the foreground for the container's
 	// lifetime, so systemd supervises it directly and ExecStop stops the container.
 	// This is the spike-proven persistence model. A DETACHED argv (`-d`) would make
 	// the unit go inactive the moment the CLI returned, AND nerdctl rejects `-d`
 	// with `--rm` outright — so the unit's argv is foreground by contract.
-	b.WriteString("Type=simple\n")
+	fmt.Fprintf(&b, "Type=%s\n", unitType)
 	for _, pre := range cfg.ExecStartPre {
 		if len(pre) == 0 {
 			continue
@@ -102,7 +120,7 @@ func GenerateSystemdUnit(cfg SystemdUnitConfig) string {
 		fmt.Fprintf(&b, "ExecStartPre=-%s\n", systemdEscapeArgv(pre))
 	}
 	fmt.Fprintf(&b, "ExecStart=%s\n", systemdEscapeArgv(cfg.StartArgv))
-	if len(cfg.StopArgv) > 0 {
+	if len(cfg.StopArgv) > 0 && !cfg.OmitStop {
 		fmt.Fprintf(&b, "ExecStop=%s\n", systemdEscapeArgv(cfg.StopArgv))
 	}
 	// Deterministic order: a Go map range is non-deterministic, so the same config
@@ -114,7 +132,9 @@ func GenerateSystemdUnit(cfg SystemdUnitConfig) string {
 		fmt.Fprintf(&b, "WorkingDirectory=%s\n", cfg.WorkingDirectory)
 	}
 	fmt.Fprintf(&b, "Restart=%s\n", restart)
-	b.WriteString("RestartSec=3\n")
+	if restart != "no" {
+		b.WriteString("RestartSec=3\n")
+	}
 
 	b.WriteString("\n[Install]\n")
 	b.WriteString("WantedBy=default.target\n")

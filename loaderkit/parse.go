@@ -198,7 +198,15 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	// the `iterate:`-carrying-`agent:` collision class dies here); a kind-word key that IS a
 	// declared field stays data. A kind with NO declared schema threaded falls back to every
 	// kind-word key being a member (the documented, tested fallback).
-	if t.DeploySubstrates[disc] {
+	// A CORE resource kind (spec.ResourceKinds — the deployable kinds whose #Node arm nests a
+	// sub-entity child) is ALWAYS a substrate parent: its in-body members are classified by the
+	// value-shape scan below, never by the structural key rule. Threading alone cannot decide
+	// this — t.DeploySubstrates is filled from the host's out-of-process deploy providers (plus
+	// the parse-time prescan), so before those connect a core word like `vm` is absent from it
+	// while still being a StructuralKind; the structural key rule then skips every in-body member
+	// (a member's KEY is its own name, never a kind word), leaving the member key in the body for
+	// a closed #<Kind>Value gate to reject.
+	if t.DeploySubstrates[disc] || resourceKindSet[disc] {
 		deployDeclared := threadedDeclaredFields(t.DeployDeclaredFields, disc)
 		for _, c := range discEntityPairs(discValue, t) {
 			if deployDeclared[c.k.Value] {
@@ -328,6 +336,56 @@ func desugarEntityPlan(entity string, body *yaml.Node, t spec.Threaded) error {
 		}
 		for i, entry := range inst.Content {
 			if err := desugarInstrumentEntry(entity, i, entry, t); err != nil {
+				return err
+			}
+		}
+	}
+	// NESTED plans: a `kind: pipeline` body carries `plan:` blocks inside its steps
+	// (a `task: {plan: …}` nested task, a parallel branch, an inline entity), and every
+	// one of them authors the SAME `<word>: <input>` sugar as the top-level plan. Walk
+	// the body kind-blind and desugar each one, stopping at a member-kind key (the loader
+	// never desugars inside a resource member, and `plan:`/`instrument:` are handled above).
+	for i := 0; i+1 < len(body.Content); i += 2 {
+		k := body.Content[i].Value
+		if k == "plan" || k == "instrument" || classifyKind(k, true, t) {
+			continue
+		}
+		if err := desugarNestedPlans(entity, k, body.Content[i+1], t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// desugarNestedPlans is the recursive, KIND-BLIND desugar of nested `plan:` step lists: it
+// walks any sequence/mapping subtree and rewrites every nested plan's `<word>: <input>`
+// plugin-verb sugar into the internal plugin/plugin_input pair, exactly as the top-level
+// plan: does. A member-kind key stops the walk (see classifyKind/memberDisc) — the loader
+// does not desugar inside a resource member, so neither does this. `path` is the dotted
+// path from the entity body, used only for the error context.
+func desugarNestedPlans(entity, path string, n *yaml.Node, t spec.Threaded) error {
+	switch n.Kind {
+	case yaml.SequenceNode:
+		for i, c := range n.Content {
+			if err := desugarNestedPlans(entity, fmt.Sprintf("%s[%d]", path, i), c, t); err != nil {
+				return err
+			}
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i].Value, n.Content[i+1]
+			if classifyKind(k, true, t) {
+				continue
+			}
+			if k == "plan" && v.Kind == yaml.SequenceNode && len(v.Content) > 0 && v.Content[0].Kind == yaml.MappingNode {
+				for j, st := range v.Content {
+					if err := desugarStep(entity, j, st, t); err != nil {
+						return fmt.Errorf("%s.plan: %w", path, err)
+					}
+				}
+				continue
+			}
+			if err := desugarNestedPlans(entity, path+"."+k, v, t); err != nil {
 				return err
 			}
 		}
