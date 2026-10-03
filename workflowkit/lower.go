@@ -194,6 +194,7 @@ func (c *lowerCtx) lowerStep(st *yaml.Node, path string) (*yaml.Node, error) {
 			}
 		}
 		rewritePlanRefs(planCopy, refs)
+		carryStepRedo(st, planCopy)
 		deleteKey(st, "plan")
 		setKey(st, "run", scalarNode(strings.Join(argv, " ")))
 		pruneEmptyMappings(st)
@@ -251,6 +252,42 @@ func rewritePlanRefs(plan *yaml.Node, refs []string) {
 	walkScalarValues(plan, func(n *yaml.Node) {
 		n.Value = refRe.ReplaceAllStringFunc(n.Value, func(m string) string { return index[m] })
 	})
+}
+
+// carryStepRedo COPIES a lowered plan's `redo` spec onto the lobster step as a
+// charly-only key. The spec must reach BOTH halves: the VERB still reads `redo.on_fail`
+// to choose the trigger it emits, while the ENGINE reads `triggers`/`max`/`escalate_after`
+// off the STEP — and `plan:` is deleted from the lobster step at lowering, so the engine
+// would otherwise see nothing to rewind on. The lowered plan's shape here is exact and
+// known: a one-element `!!seq` whose element is a one-pair `{<verbKey>: <verbBody>}` map,
+// with `redo` a direct child of the verb body. The node is CLONED (never inserted twice),
+// GUARDED (an already-present step redo wins; a second Lower must not duplicate) and
+// DEFENSIVE (any shape mismatch, or no `redo` child, emits NOTHING — never an empty
+// `redo:`, which would be noise and a behaviour change).
+func carryStepRedo(st, plan *yaml.Node) {
+	if kit.MappingChild(st, "redo") != nil {
+		return
+	}
+	if plan == nil || plan.Kind != yaml.SequenceNode || len(plan.Content) != 1 {
+		return
+	}
+	el := plan.Content[0]
+	if el == nil || el.Kind != yaml.MappingNode || len(el.Content) != 2 {
+		return
+	}
+	body := el.Content[1]
+	if body == nil || body.Kind != yaml.MappingNode {
+		return
+	}
+	spec := kit.MappingChild(body, "redo")
+	if spec == nil {
+		return
+	}
+	cp, err := cloneNode(spec)
+	if err != nil || cp == nil {
+		return
+	}
+	setKey(st, "redo", cp)
 }
 
 // walkScalarValues calls fn on every scalar VALUE in a node subtree (mapping KEYS are

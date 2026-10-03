@@ -89,6 +89,69 @@ func TestLowerRefsBraceForm(t *testing.T) {
 	}
 }
 
+// redoPipeline is the migrated-stage shape: ONE lobster step whose plan is ONE
+// `{<verb>: {…, redo: {…}}}` pair (what plugin-migrate's reshapePipelineVerbStage emits).
+// The redo spec lives in the verb body and must be COPIED onto the lobster step.
+func redoPipeline() *spec.Pipeline {
+	return &spec.Pipeline{
+		Description: "redo-carry fixture",
+		Steps: []spec.PipelineStep{
+			{Id: "oracle", Plan: []spec.Step{
+				{Op: spec.Op{Plugin: "task", PluginInput: map[string]any{
+					"task": "oracle",
+					"redo": map[string]any{
+						"max":            4,
+						"escalate_after": 5,
+						"triggers":       map[string]any{"redo-plan": "oracle"},
+					},
+				}}},
+			}},
+			{Id: "plain", Plan: []spec.Step{
+				{Op: spec.Op{Plugin: "task", PluginInput: map[string]any{"task": "plain"}}},
+			}},
+		},
+	}
+}
+
+// TestLowerRedoCarry proves the redo spec is COPIED, not moved: the engine reads it off
+// the lobster STEP (which would otherwise be `{id, run}` only, since `plan:` is deleted),
+// while the VERB still reads `redo.on_fail` from its own input.
+func TestLowerRedoCarry(t *testing.T) {
+	lobster, charly, err := Lower(redoPipeline(), "/proj", "/proj/.opencharly/pipelines/redo", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	checkGolden(t, "redo.workflow.lobster.golden", lobster)
+	checkGolden(t, "redo.charly.yml.golden", charly)
+
+	// BOTH halves must carry it — either alone would pass under a wrong implementation.
+	if !strings.Contains(string(lobster), "redo:") {
+		t.Errorf("lobster step does not carry the redo spec (engine cannot rewind):\n%s", lobster)
+	}
+	if !strings.Contains(string(charly), "redo:") {
+		t.Errorf("generated charly verb input lost the redo spec (move, not copy):\n%s", charly)
+	}
+	// The step with no plan redo must gain NO `redo:` key at all.
+	if i := strings.Index(string(lobster), "id: plain"); i >= 0 && strings.Contains(string(lobster)[i:], "redo:") {
+		t.Errorf("a plan step with no redo gained a `redo:` key:\n%s", lobster)
+	}
+}
+
+// TestLowerNoRedoEmitsNoKey pins the defensive half: no redo child → no `redo:` key
+// anywhere (never an empty `redo: {}`), so a plain plan lowers byte-identically to before.
+func TestLowerNoRedoEmitsNoKey(t *testing.T) {
+	lobster, charly, err := Lower(e2ePipeline(), "/proj", "/proj/.opencharly/pipelines/e2e", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	if strings.Contains(string(lobster), "redo") {
+		t.Errorf("lowered a step with no redo but emitted a `redo` key:\n%s", lobster)
+	}
+	if strings.Contains(string(charly), "redo") {
+		t.Errorf("generated charly.yml with no redo gained a `redo` key:\n%s", charly)
+	}
+}
+
 func TestLowerCharlyStep(t *testing.T) {
 	p := &spec.Pipeline{
 		Description: "charly-arm fixture",
