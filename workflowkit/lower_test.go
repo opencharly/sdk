@@ -111,6 +111,39 @@ func TestLowerRefsBraceForm(t *testing.T) {
 	}
 }
 
+// TestLowerInputSchemaKey pins the ONE key whose spelling differs between the authored
+// pipeline and the lobster file. The authoring def spells the input gate's schema
+// `response_schema` (spec/schema/pipeline.cue #PipelineInput, whose Go field carries
+// `yaml:"response_schema"`); the lobster file spells it `responseSchema` — what upstream
+// lobster reads, transcribed into plugin-lobster's #LobsterInput, whose loader REQUIRES it
+// (a step whose input object lacks `responseSchema` is rejected at load with
+// "input.responseSchema must be an object"). So the lowering has to translate this one
+// key: emitted with the authoring spelling, an input gate never reaches the engine.
+func TestLowerInputSchemaKey(t *testing.T) {
+	p := &spec.Pipeline{
+		Description: "input-gate fixture",
+		Steps: []spec.PipelineStep{
+			{Id: "ask", Input: spec.PipelineInput{
+				Prompt:         "which branch?",
+				ResponseSchema: map[string]any{"type": "object"},
+			}},
+		},
+	}
+	lobster, _, err := Lower(p, "/proj", "/proj/.opencharly/pipelines/ask", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	plan := string(lobster)
+	// The engine's key, and the only form any lobster consumer reads.
+	if !strings.Contains(plan, "responseSchema:") {
+		t.Errorf("the lobster file does not carry `responseSchema`, the key the engine requires:\n%s", plan)
+	}
+	// The authoring spelling must not survive into the lobster file.
+	if strings.Contains(plan, "response_schema") {
+		t.Errorf("the lobster file carries the AUTHORING spelling `response_schema`, which the engine's loader rejects:\n%s", plan)
+	}
+}
+
 // redoPipeline is the migrated-stage shape: ONE lobster step whose plan is ONE
 // `{<verb>: {…, redo: {…}}}` pair (what plugin-migrate's reshapePipelineVerbStage emits).
 // The redo spec lives in the verb body and must be COPIED onto the lobster step.

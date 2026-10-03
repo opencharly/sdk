@@ -133,6 +133,28 @@ type generatedTask struct {
 	node *yaml.Node
 }
 
+// mapLobsterInputKey renames the input gate's schema key to the spelling the LOBSTER file
+// uses. It is the ONE key whose spelling differs between the authored pipeline and the
+// lobster file: the authoring def spells it `response_schema` (spec/schema/pipeline.cue
+// #PipelineInput, whose Go field carries `yaml:"response_schema"`), while the lobster file —
+// and every lobster consumer, upstream's loader included — spells it `responseSchema`
+// (plugin-lobster's #LobsterInput). The engine's loader REQUIRES the key: a step whose
+// `input` object lacks `responseSchema` is rejected at load. Emitted with the authoring
+// spelling, an input gate would never reach the engine at all. Every other step key already
+// agrees between the two spellings, so this is the whole of the translation.
+func mapLobsterInputKey(st *yaml.Node) {
+	in := kit.MappingChild(st, "input")
+	if in == nil || in.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(in.Content); i += 2 {
+		if in.Content[i].Value == "response_schema" {
+			in.Content[i].Value = "responseSchema"
+			return
+		}
+	}
+}
+
 // lowerStep lowers ONE step (or sub-step / parallel branch) in place and returns it. A
 // `plan:` step becomes a `run:` that calls the generated charly task with `--output` and
 // the step's lobstered references passed as `-p REF_n="$REF_n"`; a `charly:` step becomes a
@@ -142,6 +164,7 @@ func (c *lowerCtx) lowerStep(st *yaml.Node, path string) (*yaml.Node, error) {
 	if st == nil || st.Kind != yaml.MappingNode {
 		return st, nil
 	}
+	mapLobsterInputKey(st)
 
 	// recurse into the nested step lists FIRST, so a branch's own plan:/charly: lowers too.
 	if par := kit.MappingChild(st, "parallel"); par != nil {
