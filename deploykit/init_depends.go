@@ -98,42 +98,46 @@ func InjectInitDependsCandy(cfg *spec.Config, layers map[string]CandyModel, init
 		// Already satisfied — either listed directly or pulled in transitively by a composed
 		// candy's require:. Checking the RESOLVED order (not the authored list) is what makes this
 		// idempotent and keeps a box that already depends on the init from gaining a duplicate.
-		if slices.Contains(order, def.DependsCandy) {
+		// The vocabulary names the init-runtime candy by its AUTHORED entry — a bare local name
+		// (`supervisord`) or, post-cutover, a pinned remote ref
+		// (`@github.com/opencharly/layer-supervisord:v2026.271.1817`), exactly the two shapes
+		// `seam.cue`'s candy_ref documents. Every check below compares against the BARE ref
+		// (spec.BareCandyRef: no `@`, no `:version`), which is what the scanned map is keyed by
+		// and what a box's resolved order carries; without the normalization a ref-shaped
+		// depends_candy matched nothing and EVERY box reported itself unsatisfied even with the
+		// candy composed. BareCandyRef is identity on the bare form, so this is the one shape
+		// that serves both.
+		depends := spec.BareCandyRef(def.DependsCandy)
+		if slices.Contains(order, depends) {
 			continue
 		}
-		// Inject the candy's own MAP KEY, which is NOT always its name: BareCandyRef strips only the
-		// `@` and the `:version` suffix, so a REMOTE candy is keyed by its full repo path
-		// (`github.com/opencharly/charly/candy/supervisord`) while the init vocabulary names it bare
-		// (`supervisord`). Resolving by key alone silently skipped every distro submodule, where the
-		// init candy is always a remote `@github…` ref — caught by reading the emitted Containerfile,
-		// not by the unit tests, which model a local project. Matching on GetName() is what the
-		// former validator did for the same reason.
-		// A candy repo is NAMED after its repo, not its entity: ScanRemoteCandy derives a
-		// root-level candy's name from path.Base(repoPath), so the standalone
-		// `layer-supervisord` repo yields the name "layer-supervisord" while the entity it
-		// defines — and the one `depends_candy:` names — is "supervisord". Judging
-		// satisfaction by the scanned name alone therefore reported every post-cutover
-		// project as unsatisfied even when it composes the candy explicitly.
-		if orderSatisfiesInitDepends(order, def.DependsCandy) {
+		// The order may already supply the init candy under a key that is NOT the bare name — a
+		// box that composes the wrapper repo (`github.com/opencharly/layer-supervisord`) or a
+		// sub-path candy ref. The tolerant name rule is asked BEFORE the scanned-set lookup,
+		// exactly as it was before this normalization: candyKeyForName is a NAME lookup and
+		// cannot see the bare name on a wrapper-repo key, so asking it first reported every such
+		// box as unsatisfied even though its image starts fine.
+		if orderSatisfiesInitDepends(order, depends) {
 			continue
 		}
-		key, ok := candyKeyForName(layers, def.DependsCandy)
+		key, ok := candyKeyForName(layers, depends)
 		if !ok {
-			// The init candy is not in the project's scanned set at all. A project where it is
-			// absent could not install that init by ANY route, so there is nothing to inject and
-			// this pass leaves the box exactly as it found it; injecting a dangling name would
-			// manufacture an "unknown candy" resolve failure that buries the project's real defect.
-			//
-			// Declining to inject is right. Saying nothing is not: the build then SUCCEEDS,
-			// stamping this init and its entrypoint onto an image that has no binary to run,
-			// and the failure surfaces only at `charly start` as a bare
-			// "executable file not found in $PATH" — naming neither the init that was
-			// resolved nor the candy that would have satisfied it. Everything needed to say
-			// so is known right here, and the condition is decidable at BUILD time.
+			// The init candy is not in the project's scanned set at all, even though
+			// loaderkit's fetch seed (initDependsSeeds) materializes every init runtime the
+			// composition triggers. Reaching here therefore means the FETCH failed or the
+			// vocabulary's ref is unpinned-but-unresolvable — not that the project forgot to
+			// list something. Say so: the build would otherwise succeed, stamping this init and
+			// its entrypoint onto an image with no binary to run, and surface at `charly start`
+			// as a bare "executable file not found in $PATH" naming neither the init nor the
+			// candy.
 			reportUnsatisfiedInitDepends(name, initName, def.DependsCandy)
 			continue
 		}
-		if slices.Contains(order, key) {
+		// The order may ALSO carry the candy under the scanned map key itself, or under the
+		// scanned NAME (`supervisord` for a `layer-supervisord` repo) — ask the tolerant rule
+		// about both before injecting a duplicate.
+		if slices.Contains(order, key) ||
+			orderSatisfiesInitDepends(order, layers[key].GetName()) {
 			continue
 		}
 		img.Candy = append([]string{key}, img.Candy...)

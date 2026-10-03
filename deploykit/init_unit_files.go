@@ -92,10 +92,10 @@ func reportUnsatisfiedInitDepends(boxName, initName, dependsCandy string) {
 
 var unsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
 	fmt.Fprintf(os.Stderr,
-		"warning: box %q resolves init %q, which depends on the %q candy, but no candy of "+
-			"that name is in this project's scanned set — nothing was injected, so the image "+
-			"will declare init %q with no %s binary and fail at start. Reference the candy "+
-			"directly in the box's candy: list, or pull it in via a composed candy's require:.\n",
+		"warning: box %q resolves init %q, which depends on the %q candy, but that candy is not in "+
+			"this project's scanned set — the fetch that should have materialized it did not, so "+
+			"nothing was injected: the image will declare init %q with no %s binary and fail at start. "+
+			"Check that the init vocabulary's depends_candy ref exists and is reachable.\n",
 		boxName, initName, dependsCandy, initName, dependsCandy)
 }
 
