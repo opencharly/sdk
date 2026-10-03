@@ -29,8 +29,6 @@ var cronMacros = map[string]string{
 // mon..sun in cron's day-of-week order (0 = Sunday), for systemd's weekday names.
 var cronDows = []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
 
-const cronStarBit = 1 << 63
-
 // CronToOnCalendar converts a 5-field cron expression (or an @-macro) into a systemd
 // `OnCalendar=` value. It validates through robfig/cron's standard parser — the SAME
 // grammar the rest of charly accepts — and renders the parsed bit-set, so every cron

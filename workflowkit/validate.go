@@ -15,7 +15,13 @@ import (
 
 // execArms are the mutually exclusive execution arms of a step/sub-step. Exactly one
 // must be set: a step that sets none does nothing, a step that sets two is ambiguous.
-var execArms = []string{"run", "pipeline", "workflow", "parallel", "for_each", "input", "steps", "plan", "charly", "approval"}
+//
+// `steps:` is deliberately NOT here: it is the for_each BODY, not an arm — `spec` groups
+// it with the other for_each companions ("--- for_each companions (meaningful only
+// alongside for_each) ---", PipelineStepBase). Counting it as an arm made every valid
+// for_each step set TWO arms and be rejected. A `steps:` with no `for_each` is caught by
+// the stray-companion rule below instead.
+var execArms = []string{"run", "pipeline", "workflow", "parallel", "for_each", "input", "plan", "charly", "approval"}
 
 // waitModes is the closed `parallel.wait` vocabulary (upstream lobster).
 var waitModes = []string{"", "all", "any"}
@@ -129,7 +135,6 @@ func validateStepBase(v stepView, where string) []error {
 		"parallel": v.parallelBranches > 0,
 		"for_each": v.forEach != "",
 		"input":    v.input,
-		"steps":    v.steps,
 		"plan":     v.plan,
 		"charly":   v.charly,
 		"approval": v.approval,
@@ -154,6 +159,9 @@ func validateStepBase(v stepView, where string) []error {
 	}
 	if v.forEach == "" {
 		var strays []string
+		if v.steps {
+			strays = append(strays, "steps")
+		}
 		if v.itemVar != "" {
 			strays = append(strays, "item_var")
 		}

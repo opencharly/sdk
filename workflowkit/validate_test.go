@@ -16,6 +16,54 @@ func TestValidatePipelineAcceptsAValidPipeline(t *testing.T) {
 	}
 }
 
+// TestValidatePipelineAcceptsForEach is an EXACT-EMPTINESS check: a valid for_each step
+// must validate with ZERO errors. A substring assertion is not enough here — a stray
+// "execution arms set" alongside the expected text passes a Contains check while the
+// pipeline is still rejected, which is exactly how a steps:/for_each double-count hides.
+// `steps:` is the for_each BODY (spec groups it under "for_each companions"), never an
+// arm of its own.
+func TestValidatePipelineAcceptsForEach(t *testing.T) {
+	cases := []struct {
+		name string
+		p    *spec.Pipeline
+	}{
+		{
+			name: "bare for_each",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "a", Run: "echo x"},
+				{Id: "fan", ForEach: "$a.json.items",
+					Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+			}},
+		},
+		{
+			name: "for_each with every companion",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "a", Run: "echo x"},
+				{Id: "fan", ForEach: "$a.json.items", ItemVar: "item", IndexVar: "i",
+					BatchSize: 2, PauseMs: 100,
+					Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+			}},
+		},
+		{
+			name: "for_each with a sub-step arm of its own",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "a", Run: "echo x"},
+				{Id: "fan", ForEach: "$a.json.items", Steps: []spec.PipelineSubStep{
+					{Id: "s1", Run: "true"},
+					{Id: "s2", Charly: []string{"status"}},
+				}},
+			}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidatePipeline(tc.p); err != nil {
+				t.Fatalf("ValidatePipeline rejected a valid %s pipeline: %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestValidatePipelineRules(t *testing.T) {
 	cases := []struct {
 		name string
@@ -36,6 +84,12 @@ func TestValidatePipelineRules(t *testing.T) {
 			name: "for_each without steps",
 			p:    &spec.Pipeline{Steps: []spec.PipelineStep{{Id: "a", ForEach: "$x.y"}}},
 			want: "for_each requires a non-empty steps:",
+		},
+		{
+			name: "steps without for_each",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{{Id: "a",
+				Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}}}},
+			want: "steps only apply alongside for_each",
 		},
 		{
 			name: "item_var equals index_var",

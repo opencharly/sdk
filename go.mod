@@ -5,7 +5,6 @@ go 1.26.4
 require (
 	cuelang.org/go v0.16.1
 	github.com/alecthomas/kong v1.15.0
-	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/emicklei/dot v1.11.0
 	github.com/expr-lang/expr v1.17.8
 	github.com/fsnotify/fsnotify v1.10.1
@@ -23,7 +22,6 @@ require (
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 	gopkg.in/yaml.v3 v3.0.1
-	mvdan.cc/sh/v3 v3.14.1
 )
 
 require (
