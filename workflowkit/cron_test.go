@@ -30,6 +30,16 @@ func TestCronToOnCalendar(t *testing.T) {
 		// not a restriction (see TestCronToOnCalendarRejectsRestrictedDomAndDow).
 		{"0 3 1 * *", "*-*-01 03:00:00"},
 		{"0 3 * * 1", "Mon *-*-* 03:00:00"},
+		// A `..` range may only be emitted for a CONTIGUOUS run: a list whose first two
+		// values are consecutive but which has a later gap must stay a comma list, or the
+		// schedule fires at hours/minutes the author never asked for. One non-contiguous
+		// list per field, so no field can silently widen.
+		{"0 1,2,3,5 * * *", "*-*-* 01,02,03,05:00:00"},
+		{"0,1,2,5 * * * *", "*-*-* *:00,01,02,05:00"},
+		{"0 3 1,2,3,5 * *", "*-*-01,02,03,05 03:00:00"},
+		{"0 3 1 1,2,3,5 *", "*-01,02,03,05-01 03:00:00"},
+		// ...while a genuinely contiguous run still ranges.
+		{"0-5 * * * *", "*-*-* *:00..05:00"},
 	}
 	for _, tc := range cases {
 		got, err := CronToOnCalendar(tc.cron)

@@ -119,7 +119,12 @@ func CronToOnCalendar(expr string) (string, error) {
 	return strings.Join(names, ",") + " " + datePart + " " + timePart, nil
 }
 
-// bitValues returns the sorted values set in a robfig cron bit-set within [lo, hi].
+// bitValues returns the sorted values set in a robfig cron bit-set within [lo, hi]. The
+// scan is monotonic and covers [lo, hi] exactly once, so the result is SORTED, UNIQUE and
+// confined to [lo, hi] — the invariant every count-based shortcut above relies on: for a
+// slice with those three properties, `len(vals) == hi-lo+1` means the whole range (the `*`
+// branch), and `len(vals) == 7`/`31`/`12` means "unrestricted" for day-of-week/day-of-month/
+// month.
 func bitValues(field uint64, lo, hi int) []int {
 	var out []int
 	for v := lo; v <= hi; v++ {
@@ -131,7 +136,10 @@ func bitValues(field uint64, lo, hi int) []int {
 }
 
 // numField renders a numeric field the systemd way: `*` when the whole range is set,
-// `lo/step` for a uniform step from the range start, else a comma list.
+// `lo..hi` for a CONTIGUOUS run, `lo/step` for a uniform step from the range start, else
+// a comma list. Every one of those shortcuts states a property of the WHOLE value set and
+// verifies it: a shortcut inferred from a partial observation (say the first gap) would
+// widen the schedule, so the fallback is the exact comma list.
 func numField(vals []int, lo, hi int) string {
 	if len(vals) == hi-lo+1 {
 		return "*"
@@ -151,7 +159,19 @@ func numField(vals []int, lo, hi int) string {
 			}
 		}
 		if step == 1 {
-			return strconv.Itoa(vals[0]) + ".." + strconv.Itoa(vals[len(vals)-1])
+			// Verify contiguity over the WHOLE set, exactly as the `lo/step` branch
+			// verifies uniformity: `1,2,3,5` has a first gap of 1 but is not a range, and
+			// rendering it `1..5` would fire at 4 too.
+			contiguous := true
+			for i, v := range vals {
+				if v != vals[0]+i {
+					contiguous = false
+					break
+				}
+			}
+			if contiguous {
+				return strconv.Itoa(vals[0]) + ".." + strconv.Itoa(vals[len(vals)-1])
+			}
 		}
 	}
 	parts := make([]string, len(vals))
