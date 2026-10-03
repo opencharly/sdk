@@ -99,4 +99,11 @@ func TestIsQcow2Overlay_UnreadableErrorsClosed(t *testing.T) {
 	if v {
 		t.Errorf("isQcow2Overlay(unreadable) returned true with an error; want false")
 	}
+	// A DIRECTORY: os.Open succeeds on Linux, so the failure surfaces at the READ
+	// (EISDIR) — a non-EOF read error that must ALSO fail closed, not silently
+	// report "not an overlay". This is the path the open-only test cannot reach.
+	dir := t.TempDir()
+	if v, err := isQcow2Overlay(dir); err == nil {
+		t.Fatalf("isQcow2Overlay(directory) = (%v,nil), want a non-nil error (fail CLOSED on the READ)", v)
+	}
 }

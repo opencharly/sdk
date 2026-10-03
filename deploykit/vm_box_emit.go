@@ -20,6 +20,7 @@ package deploykit
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -180,9 +181,14 @@ func isQcow2Overlay(path string) (bool, error) {
 		return false, fmt.Errorf("inspecting disk %s: %w", path, cerr)
 	}
 	if rerr != nil {
-		// A file too short to hold an image header is not a qcow2 overlay; the
-		// emit COPYs it as-is. (A genuinely unreadable file already errored above.)
-		return false, nil
+		// A genuine short read (EOF) is a file too small to hold an image header —
+		// not a qcow2 overlay, so the emit COPYs it as-is. Any OTHER read error
+		// (EISDIR from an os.Open'd directory, EIO, …) is a genuinely UNREADABLE
+		// disk and must fail CLOSED, never a silent false.
+		if errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspecting disk %s: %w", path, rerr)
 	}
 	if string(magic) != "QFI\xfb" {
 		return false, nil // not qcow2 (raw image / fixture): no overlay, no flatten
