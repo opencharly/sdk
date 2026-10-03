@@ -31,12 +31,20 @@ var cronDows = []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
 
 // CronToOnCalendar converts a 5-field cron expression (or an @-macro) into a systemd
 // `OnCalendar=` value. It validates through robfig/cron's standard parser — the SAME
-// grammar the rest of charly accepts — and renders the parsed bit-set, so every cron
-// form (lists, ranges, steps, names) lowers correctly:
+// grammar the rest of charly accepts — and renders the parsed bit-set, so lists, ranges,
+// steps and names all lower correctly:
 //
-//	"0 3 * * *"   -> "*-*-* 03:00:00"
-//	"*/15 9-17 * * Mon-Fri" -> "Mon,Tue,Wed,Thu,Fri *-*-* 09..17:0/15:00"
-//	"0 0 1 * *"   -> "*-*-01 00:00:00"
+//	"0 3 * * *"             -> "*-*-* 03:00:00"
+//	"*/15 9-17 * * Mon-Fri" -> "Mon,Tue,Wed,Thu,Fri *-*-* 09..17:00/15:00"
+//	"0 0 1 * *"             -> "*-*-01 00:00:00"
+//
+// ONE cron form is REJECTED rather than lowered: a restricted day-of-month AND a
+// restricted day-of-week in the same expression (`0 3 1 * 1`). cron fires when EITHER of
+// those two fields matches; systemd's calendar spec requires BOTH. A single
+// `OnCalendar=` line cannot express that OR, and GenerateSystemdTimer writes exactly one
+// — so the conversion returns an error naming the cause instead of a schedule that fires
+// on the wrong days. Either field restricted ALONE (`0 3 1 * *`, `0 3 * * 1`) is
+// unaffected: an unrestricted field is not a restriction.
 //
 // The result is a valid OnCalendar expression; a caller may assert it with
 // `systemd-analyze calendar`.
@@ -67,12 +75,28 @@ func CronToOnCalendar(expr string) (string, error) {
 		return "", fmt.Errorf("cron %q: empty field", expr)
 	}
 
+	domAll := len(doms) == 31
+	monAll := len(months) == 12
+	dowAll := len(dows) == 7
+
+	// cron ORs day-of-month with day-of-week when BOTH are restricted; systemd ANDs them.
+	// One OnCalendar= line cannot say "the 1st OR a Monday", so refuse rather than emit a
+	// schedule that silently fires on the wrong days (R1: never paper over the divergence).
+	if !domAll && !dowAll {
+		fields := strings.Fields(src)
+		domSrc, dowSrc := fields[2], fields[4]
+		return "", fmt.Errorf(
+			"cron %q: day-of-month %q and day-of-week %q are both restricted — cron fires when "+
+				"EITHER matches, but systemd's OnCalendar= requires BOTH to match, so the two "+
+				"cannot be expressed as a single OnCalendar= line; split it into two schedules "+
+				"(one restricted by day-of-month, one by day-of-week)",
+			expr, domSrc, dowSrc)
+	}
+
 	// time part: HH:MM:SS (zero-padded — systemd's canonical spelling).
 	timePart := fmt.Sprintf("%s:%s:00", padTimeField(numField(hours, 0, 23)), padTimeField(numField(minutes, 0, 59)))
 
 	// date part: [DOW] [YYYY-]MM-DD — omit wildcard components for readability.
-	domAll := len(doms) == 31
-	monAll := len(months) == 12
 	var datePart string
 	switch {
 	case domAll && monAll:
@@ -85,7 +109,7 @@ func CronToOnCalendar(expr string) (string, error) {
 		datePart = "*-" + pad2List(months) + "-" + pad2List(doms)
 	}
 
-	if len(dows) == 7 {
+	if dowAll {
 		return datePart + " " + timePart, nil
 	}
 	names := make([]string, 0, len(dows))
