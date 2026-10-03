@@ -57,6 +57,17 @@ func remoteBuildConfigCacheRoots(candies map[string]CandyModel) []string {
 // the file locally (local build.yml), relPath is returned unchanged. Otherwise the file is copied
 // from the remote build-config cache into buildDir/_buildconfig/<relPath> (gitignored, like
 // .build/_candy/) and the build-root-relative path is returned for use as a COPY source.
+//
+// When NEITHER location carries the asset the call FAILS. `dir` is the build context the emitted
+// `COPY <src>` resolves against — the Containerfile is written to buildDir/<box>/Containerfile and
+// the build runs with `dir` as its context, which is exactly why the materialized branch returns a
+// `.build/_buildconfig/...` path relative to `dir` rather than to buildDir. Both probes below
+// therefore test the very path a `COPY <relPath>` would resolve to, so once both have missed the
+// directive cannot do anything but fail inside the engine — with a
+// `copier: stat: "<relPath>": no such file or directory` that names neither the candy nor the
+// cache. Failing here instead can never reject a build that would otherwise have succeeded (the
+// fallthrough was reachable ONLY when the COPY was already doomed); it converts an opaque engine
+// error into a generate-time one that reports the asset and every root that was searched.
 func materializeBuildConfigAsset(candies map[string]CandyModel, dir, buildDir, relPath string) (string, error) {
 	if relPath == "" {
 		return relPath, nil
@@ -67,7 +78,8 @@ func materializeBuildConfigAsset(candies map[string]CandyModel, dir, buildDir, r
 	// Search EVERY distinct repo@version cache root — after the candy de-submodule cutover each
 	// remote candy lives in its own standalone repo, so the build-config asset (e.g. the init
 	// header_file) may live in any candy's cache root, not just the first.
-	for _, root := range remoteBuildConfigCacheRoots(candies) {
+	roots := remoteBuildConfigCacheRoots(candies)
+	for _, root := range roots {
 		srcAbs := filepath.Join(root, relPath)
 		if _, err := os.Stat(srcAbs); err != nil {
 			continue
@@ -81,11 +93,26 @@ func materializeBuildConfigAsset(candies map[string]CandyModel, dir, buildDir, r
 		}
 		return filepath.ToSlash(filepath.Join(".build", "_buildconfig", relPath)), nil
 	}
-	return relPath, nil // not in any remote cache root; leave as authored
+	searched := "no remote candy is in the resolved set"
+	if len(roots) > 0 {
+		searched = strings.Join(roots, ", ")
+	}
+	return relPath, fmt.Errorf(
+		"build-config asset %q cannot be resolved: it is not in the project tree (%s), and not in any "+
+			"resolved candy's repo@version cache root (%s). The COPY this renders would name a source "+
+			"that provably does not exist, so the image build would fail inside the engine with an "+
+			"opaque \"no such file or directory\" naming neither the candy nor the cache. Check that "+
+			"the candy whose build.yml references %q is in the resolved set (a candy that was never "+
+			"fetched leaves no cache root to search) and that the path is spelled as it is in that "+
+			"candy's repo",
+		relPath, filepath.Join(dir, relPath), searched, relPath)
 }
 
-// rewriteHeaderCopyForRemote rewrites a `COPY <src> <dst>` header directive so its source points
-// at the materialized build-config asset (or stays as-authored when no remote source is found).
+// rewriteHeaderCopyForRemote rewrites a `COPY <src> <dst>` header directive so its source points at
+// the materialized build-config asset. A line that is not a 3-field COPY is passed through
+// as-authored; a COPY whose source resolves in neither the project tree nor any remote cache root
+// is an ERROR (see materializeBuildConfigAsset), never a silently emitted directive that cannot
+// build.
 func rewriteHeaderCopyForRemote(candies map[string]CandyModel, dir, buildDir, headerCopy string) (string, error) {
 	fields := strings.Fields(headerCopy)
 	if len(fields) != 3 || fields[0] != "COPY" {

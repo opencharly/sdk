@@ -29,6 +29,8 @@ import (
 // ResolveOpts.InitCfg's doc comment). Byte-identical logic to the pre-move
 // *Candy.InitSystems population, retargeted at scanned[name].Model.Service /
 // .Model.SourceDir / .View.InitSystems.
+// The per-candy DETECTION predicate itself lives in candyTriggersInit, below; this pass now
+// only iterates the scanned set and records which inits each candy triggers.
 func PopulateCandyInitSystem(scanned map[string]spec.ScannedCandy, initCfg *buildkit.InitConfig) {
 	if initCfg == nil {
 		return
@@ -36,40 +38,52 @@ func PopulateCandyInitSystem(scanned map[string]spec.ScannedCandy, initCfg *buil
 	for name, sc := range scanned {
 		sc.View.InitSystems = make(map[string]bool)
 		for initName, def := range initCfg.Init {
-			// Schema-driven detection: iterate the unified service: entries.
-			// Each entry binds to init systems per per-entry routing:
-			//   - IsPackaged()  → inits with ServiceSchema.SupportsPackaged
-			//   - custom exec   → inits with ServiceSchema.ServiceTemplate != ""
-			// The legacy `candy_field: [service]` config just gates whether
-			// this init participates in schema detection at all.
-			participatesInSchema := slices.Contains(def.CandyFields, "service")
-			if participatesInSchema {
-				for i := range sc.Model.Service {
-					entry := &sc.Model.Service[i]
-					if entry.IsPackaged() {
-						if def.ServiceSchema != nil && def.ServiceSchema.SupportsPackaged {
-							sc.View.InitSystems[initName] = true
-							break
-						}
-					} else {
-						if def.ServiceSchema != nil && def.ServiceSchema.ServiceTemplate != "" {
-							sc.View.InitSystems[initName] = true
-							break
-						}
-					}
-				}
-			}
-			// Check candy_file (anchored at the candy's scanned SourceDir)
-			// for init systems like systemd that use the file_copy model.
-			for _, pattern := range def.CandyFiles {
-				matches, _ := filepath.Glob(filepath.Join(sc.Model.SourceDir, pattern))
-				if len(matches) > 0 {
-					sc.View.InitSystems[initName] = true
-				}
+			if candyTriggersInit(sc, def) {
+				sc.View.InitSystems[initName] = true
 			}
 		}
 		scanned[name] = sc
 	}
+}
+
+// candyTriggersInit reports whether the init definition def is triggered by the scanned candy
+// sc. It is THE one detection predicate (R3): PopulateCandyInitSystem runs it over every candy
+// of a project, and the init-runtime fetch seed (initDependsSeeds, init_depends_seed.go) asks the
+// SAME question of the SAME pair — so the two can never disagree about whether a composition
+// needs an init, which is what makes the seed complete rather than a guess.
+//
+// Schema-driven: a `service:` entry routes to the `use_packaged:` inits (ServiceSchema.
+// SupportsPackaged) or to every init carrying a service_template. The `candy_file:` glob is an
+// ORTHOGONAL arm covering the file_copy model — the `.service`/`.socket`/`.target`/`.timer`/
+// `.path`/`.slice` units a candy SHIPS, a route a `service:` entry cannot express (a candy that
+// ships unit files declares no `service:` list at all). Note the two arms are independent:
+// supervisord sets supports_packaged: false, so a `use_packaged` entry triggers every init
+// EXCEPT it, while an `exec:` entry triggers it alongside the others.
+func candyTriggersInit(sc spec.ScannedCandy, def *spec.ResolvedInit) bool {
+	if def == nil {
+		return false
+	}
+	if slices.Contains(def.CandyFields, "service") {
+		for i := range sc.Model.Service {
+			entry := &sc.Model.Service[i]
+			if entry.IsPackaged() {
+				if def.ServiceSchema != nil && def.ServiceSchema.SupportsPackaged {
+					return true
+				}
+				continue
+			}
+			if def.ServiceSchema != nil && def.ServiceSchema.ServiceTemplate != "" {
+				return true
+			}
+		}
+	}
+	for _, pattern := range def.CandyFiles {
+		matches, _ := filepath.Glob(filepath.Join(sc.Model.SourceDir, pattern))
+		if len(matches) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // CompleteCandyRunOps finishes the ONE host-completed predicate scanFromParsed's own doc comment

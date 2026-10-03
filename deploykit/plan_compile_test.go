@@ -24,12 +24,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"testing"
 
 	"google.golang.org/grpc"
 
 	"github.com/opencharly/sdk"
+	"github.com/opencharly/sdk/internal/spectest"
 	pb "github.com/opencharly/spec/proto"
 	"github.com/opencharly/spec/spec"
 )
@@ -37,35 +37,15 @@ import (
 // spec.OpInContext is a package-level DI hook CompileOpSteps calls (spec/spec/injection_seams.go):
 // in production charly core's own init() wires it (charly/layers.go: spec.OpInContext =
 // opInContext), safe there because charly always shares that process with the compile call. This
-// package's own test binary links no charly core, so the hook stays nil unless wired here. The
-// implementation is pure (spec.VerbCatalog is static data + the op's own declared Context — no
-// registry consult), so it is ported verbatim from charly/planrun_adapter.go's opInContext/
-// opEffectiveContexts (the SAME port candy/plugin-fleet's deploy_test_helpers_test.go already
-// carries for its own out-of-module test binary — R3 would collapse these into one shared sdk
-// helper if a THIRD package ever needed it; two independent test-binary ports of a ~15-line pure
-// function is not yet worth a shared-package indirection).
+// package's own test binary links no charly core, so the hook stays nil unless wired here.
+//
+// The port itself lives ONCE, in sdk/internal/spectest: deploykit and loaderkit's live bed both
+// need it, so it is a shared sdk-internal helper rather than a per-package copy (R3 — one
+// canonical implementation per behaviour, and no "a second copy is fine" threshold).
+// candy/plugin-fleet's deploy_test_helpers_test.go keeps its own copy because it is OUT-OF-MODULE
+// and cannot import sdk/internal.
 func init() {
-	spec.OpInContext = compileTestOpInContext
-}
-
-func compileTestOpEffectiveContexts(c *spec.Op) []spec.ExecContext {
-	if len(c.Context) > 0 {
-		out := make([]spec.ExecContext, 0, len(c.Context))
-		for _, s := range c.Context {
-			out = append(out, spec.ExecContext(s))
-		}
-		return out
-	}
-	if verb, err := c.Kind(); err == nil {
-		if vs, ok := spec.VerbCatalog[verb]; ok {
-			return vs.Contexts
-		}
-	}
-	return nil
-}
-
-func compileTestOpInContext(c *spec.Op, ctx spec.ExecContext) bool {
-	return slices.Contains(compileTestOpEffectiveContexts(c), ctx)
+	spectest.Install()
 }
 
 // testCandy (the literal-fixture spec.CandyReader constructor) and testResolvedBox (a hand-built

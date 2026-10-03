@@ -583,6 +583,11 @@ func CandyProvidedByBox(boxName string, boxes map[string]*buildkit.ResolvedBox, 
 	return provided, nil
 }
 
+// containerInitCandy is the init-runtime candy of the CONTAINER init system — the one candy a
+// systemd target must never carry. Named here once, so the prune and the init vocabulary's own
+// `depends_candy: supervisord` cannot drift apart unnoticed.
+const containerInitCandy = "supervisord"
+
 // PruneContainerInitForSystemd drops the `supervisord` candy (the CONTAINER init system) from a
 // resolved DEPLOY candy order when the target is systemd (a host/vm MachineVenue compile). On a
 // systemd target the OS init is the one and only init system — every candy's `service:` entries
@@ -591,6 +596,12 @@ func CandyProvidedByBox(boxName string, boxes map[string]*buildkit.ResolvedBox, 
 // only affects host/vm deploys. Candies that `require: supervisord` purely for graph ordering are
 // unaffected at runtime — their services run under systemd regardless of whether the supervisord
 // package is present.
+//
+// The match is by the tolerant candy-name rule (orderSatisfiesInitDepends), not a literal: a
+// resolved order can carry the same candy under either key the scan registers it by — the bare
+// name (`supervisord`) or the candy repo's own ref
+// (`github.com/opencharly/layer-supervisord`) — and a ref-keyed entry is pruned exactly as the
+// bare name is.
 //
 // Relocated from charly/deploy_add_cmd.go (K4 unit B, core-min wave 3) — a pure function of
 // order+HostContext.MachineVenue with no core-only dependency, now shared (R3) by charly-core's
@@ -602,7 +613,12 @@ func PruneContainerInitForSystemd(order []string, hostCtx HostContext) []string 
 	}
 	out := make([]string, 0, len(order))
 	for _, n := range order {
-		if n == "supervisord" {
+		// The container init is reachable under either key the scan registers it by — the bare
+		// name (`supervisord`, a local candy or an injected key) or the candy repo's own ref
+		// (`github.com/opencharly/layer-supervisord`). `orderSatisfiesInitDepends` is the ONE
+		// rule for that divergence (it matches the exact key, the last path segment, and a
+		// `<kind>-<entity>` wrapped name), so ask it rather than comparing to a literal.
+		if orderSatisfiesInitDepends([]string{n}, containerInitCandy) {
 			continue
 		}
 		out = append(out, n)
