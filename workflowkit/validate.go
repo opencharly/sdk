@@ -106,16 +106,16 @@ func ValidatePipeline(p *spec.Pipeline) error {
 // stepView is the common shape of PipelineStep / PipelineSubStep for validation, so
 // the rules live once (R3) instead of being copy-pasted per type.
 type stepView struct {
-	id, when, stdin, forEach                 string
-	itemVar, indexVar                        string
-	batchSize, pauseMs                       int64
-	run, pipeline, workflow                 string
-	charly                                   bool
-	plan, steps, input, approval             bool
-	planRefs                                 []string
-	parallelBranches                         int
-	parallelWait                             string
-	refsAmong                                map[string]bool
+	id, when, stdin, forEach     string
+	itemVar, indexVar            string
+	batchSize, pauseMs           int64
+	run, pipeline, workflow      string
+	charly                       bool
+	plan, steps, input, approval bool
+	planRefs                     []string
+	parallelBranches             int
+	parallelWait                 string
+	refsAmong                    map[string]bool
 }
 
 func validateStepBase(v stepView, where string) []error {

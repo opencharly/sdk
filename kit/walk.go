@@ -287,12 +287,12 @@ func walkServicePackaged(ctx context.Context, exec DeployExecutor, step spec.Ins
 		if err := exec.PutFile(ctx, step.OverridesPath, []byte(step.OverridesText), 0o644, isSystem(step.TargetScope)); err != nil {
 			return nil, err
 		}
-		if err := reloadDaemon(ctx, exec, step.TargetScope); err != nil {
+		if err := ReloadDaemon(ctx, exec, step.TargetScope); err != nil {
 			return nil, err
 		}
 	}
 	if step.Enable {
-		if err := enableUnit(ctx, exec, step.Unit, step.TargetScope); err != nil {
+		if err := EnableUnit(ctx, exec, step.Unit, step.TargetScope); err != nil {
 			return nil, err
 		}
 	}
@@ -307,11 +307,11 @@ func walkServiceCustom(ctx context.Context, exec DeployExecutor, step spec.Insta
 	if err := exec.PutFile(ctx, step.UnitPath, []byte(step.UnitText), 0o644, isSystem(step.TargetScope)); err != nil {
 		return nil, err
 	}
-	if err := reloadDaemon(ctx, exec, step.TargetScope); err != nil {
+	if err := ReloadDaemon(ctx, exec, step.TargetScope); err != nil {
 		return nil, err
 	}
 	if step.Enable {
-		if err := enableUnit(ctx, exec, step.Name, step.TargetScope); err != nil {
+		if err := EnableUnit(ctx, exec, step.Name, step.TargetScope); err != nil {
 			return nil, err
 		}
 	}
@@ -336,17 +336,20 @@ func runByScope(ctx context.Context, exec DeployExecutor, scope spec.Scope, scri
 	return exec.RunUser(ctx, script, nil)
 }
 
-// enableUnit runs `systemctl [--user] enable --now <unit>` on the venue.
-func enableUnit(ctx context.Context, exec DeployExecutor, unit string, scope spec.Scope) error {
+// EnableUnit runs `systemctl [--user] enable --now <unit>` on the venue. Exported for the
+// workflow/lowering path, which enables a generated TIMER unit beside the engine's own
+// deploy steps — the deployment walk and the workflow lowering must drive systemd through
+// ONE call site (R3).
+func EnableUnit(ctx context.Context, exec DeployExecutor, unit string, scope spec.Scope) error {
 	if scope == spec.ScopeUser {
 		return exec.RunUser(ctx, "systemctl --user enable --now "+ShQuoteArg(unit), nil)
 	}
 	return exec.RunSystem(ctx, "systemctl enable --now "+ShQuoteArg(unit), nil)
 }
 
-// reloadDaemon runs `systemctl [--user] daemon-reload` so a freshly-written unit/drop-in is
-// picked up before enable.
-func reloadDaemon(ctx context.Context, exec DeployExecutor, scope spec.Scope) error {
+// ReloadDaemon runs `systemctl [--user] daemon-reload` so a freshly-written unit/drop-in is
+// picked up before enable. Exported alongside EnableUnit (R3): one daemon-reload call site.
+func ReloadDaemon(ctx context.Context, exec DeployExecutor, scope spec.Scope) error {
 	if scope == spec.ScopeUser {
 		return exec.RunUser(ctx, "systemctl --user daemon-reload", nil)
 	}

@@ -69,8 +69,8 @@ func CronToOnCalendar(expr string) (string, error) {
 		return "", fmt.Errorf("cron %q: empty field", expr)
 	}
 
-	// time part: HH:MM:SS.
-	timePart := fmt.Sprintf("%s:%s:00", numField(hours, 0, 23), numField(minutes, 0, 59))
+	// time part: HH:MM:SS (zero-padded — systemd's canonical spelling).
+	timePart := fmt.Sprintf("%s:%s:00", padTimeField(numField(hours, 0, 23)), padTimeField(numField(minutes, 0, 59)))
 
 	// date part: [DOW] [YYYY-]MM-DD — omit wildcard components for readability.
 	domAll := len(doms) == 31
@@ -137,6 +137,35 @@ func numField(vals []int, lo, hi int) string {
 		parts[i] = strconv.Itoa(v)
 	}
 	return strings.Join(parts, ",")
+}
+
+// padTimeField zero-pads every numeric component of a rendered minute/hour field
+// (`9..17` -> `09..17`, `0/5` -> `00/5`), leaving `*` and the separators alone.
+func padTimeField(s string) string {
+	if s == "*" {
+		return s
+	}
+	var b strings.Builder
+	num := ""
+	flush := func() {
+		if num != "" {
+			if len(num) == 1 {
+				b.WriteByte('0')
+			}
+			b.WriteString(num)
+			num = ""
+		}
+	}
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			num += string(r)
+			continue
+		}
+		flush()
+		b.WriteRune(r)
+	}
+	flush()
+	return b.String()
 }
 
 // pad2List renders zero-padded, comma-joined values (systemd dates are 2-digit).
