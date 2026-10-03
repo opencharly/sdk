@@ -22,14 +22,14 @@ func TestFlockBounded_FailsFastOnContendedLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	// Hold the lock exclusively on a SEPARATE fd — the contended shape
 	// (flock on the same fd is idempotent).
 	f2, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f2.Close()
+	defer func() { _ = f2.Close() }()
 	if err := syscall.Flock(int(f2.Fd()), syscall.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,6 @@ import (
 
 // screenScriptTransport replays a script of screens, advancing on each capture.
 type screenScriptTransport struct {
-	fakeTransport
 	screens []string
 	idx     int
 	keys    []string

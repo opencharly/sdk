@@ -125,7 +125,7 @@ func TestDeriveRepoView_ReentryGuardReturnsPristine(t *testing.T) {
 
 	var reentered string
 	var migrate func(string) error
-	migrate = func(p string) error {
+	migrate = func(_ string) error {
 		// Re-enter mid-reshape (the cycle). Must return the pristine cache, not block/rebuild.
 		v, err := DeriveRepoView(cache, migrate)
 		if err != nil {

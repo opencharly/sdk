@@ -60,7 +60,7 @@ func RemoveImagesByReference(engineBin, reference string) {
 	if err != nil {
 		return
 	}
-	for _, ref := range exactRepoRefs(string(out), reference) {
+	for _, ref := range exactRepoRefs(out, reference) {
 		_, _ = runEngineCommand(ctx, engineBin, "rmi", ref)
 	}
 }

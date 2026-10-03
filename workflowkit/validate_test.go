@@ -83,7 +83,7 @@ func TestValidatePipelineRules(t *testing.T) {
 		{
 			name: "for_each without steps",
 			p:    &spec.Pipeline{Steps: []spec.PipelineStep{{Id: "a", ForEach: "$x.y"}}},
-			want: "for_each requires a non-empty steps:",
+			want: "for_each requires a non-empty steps list",
 		},
 		{
 			name: "steps without for_each",
