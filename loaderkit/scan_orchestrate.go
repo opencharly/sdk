@@ -2,6 +2,7 @@ package loaderkit
 
 import (
 	"fmt"
+	"path"
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
@@ -48,10 +49,6 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		return nil, err
 	}
 
-	if len(downloads) == 0 {
-		return FinalizeScannedCandies(localScanned, initCfg), nil
-	}
-
 	// 3. Per-entity-version resolution. The git tag is ONLY the fetch coordinate;
 	// the authority is each candy's own `version:`, read AFTER fetch. So fetch
 	// EVERY distinct (repo, git-tag) referenced (directly or transitively),
@@ -61,6 +58,92 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 	// dep carries its own repo/git-tag. Fix-point until no new (repo, git-tag,
 	// ref) surfaces, so cross-repo transitive closures are fully materialized.
 	type repoVer struct{ repo, ver string }
+	defaultBranches := make(map[string]string) // repo → resolved default branch
+
+	// The init-runtime seed (see initDependsSeeds). `seeded` makes the seed idempotent across
+	// fix-point rounds: without it a round that adds the init candy would re-add it forever
+	// (the round's own scan marks its ref done, the re-seed appends it again, and the loop
+	// never drains).
+	seeded := map[repoVer]map[string]bool{}
+	seedDownloads := func(into []RemoteDownload, scanned map[string]spec.ScannedCandy) ([]RemoteDownload, error) {
+		// A composition that ALREADY names the init runtime — in the fetch set it came in with,
+		// or already materialized — needs no seed. The seed exists to make the fetch never
+		// MISSING, not to override a reference that already exists: adding a second candidate for
+		// the same bare ref at the vocabulary's tag would let PickCandyVersion's newest-wins rule
+		// silently move a project's own explicit pin, and the seed's non-box scope means the
+		// arbiter would not even report it.
+		named := map[string]bool{}
+		note := func(s string) {
+			if s != "" {
+				named[s] = true
+			}
+		}
+		for _, dl := range into {
+			for _, r := range dl.Refs {
+				note(r)
+				note(path.Base(r))
+			}
+		}
+		for k, sc := range scanned {
+			note(k)
+			note(path.Base(k))
+			note(sc.Model.Name)
+		}
+		for _, s := range initDependsSeeds(scanned, initCfg) {
+			// Matched by the bare ref AND by its last path segment: the vocabulary may name a
+			// root-level candy repo (`github.com/opencharly/layer-supervisord`) while a project
+			// pins the same candy under its pre-cutover sub-path
+			// (`github.com/opencharly/layer-supervisord/candy/layer-supervisord`). BOTH sources above
+			// note the last segment, not just the fetch set: after the project's own ref has been
+			// materialized it leaves `into` and survives only as a `scanned` key, so a rule that
+			// matched segments on one source alone would re-add the seed on the re-seed round — for
+			// exactly the sub-path shape the segment match exists for.
+			if named[s.Ref] || named[path.Base(s.Ref)] {
+				continue
+			}
+			ver := s.Version
+			if ver == "" {
+				// A version-less ref means "the current tip of that repo" — resolve the DEFAULT
+				// BRANCH through the same cache `enqueue` below uses, never to a tag
+				// (opencharly/charly#715).
+				if b, ok := defaultBranches[s.RepoPath]; ok {
+					ver = b
+				} else {
+					b, err := gitClient().DefaultBranch(kit.RepoGitURL(s.RepoPath))
+					if err != nil {
+						return nil, fmt.Errorf("resolving default branch for init-runtime candy %s: %w", s.RepoPath, err)
+					}
+					defaultBranches[s.RepoPath] = b
+					ver = b
+				}
+			}
+			key := repoVer{s.RepoPath, ver}
+			if seeded[key] == nil {
+				seeded[key] = map[string]bool{}
+			}
+			if seeded[key][s.Ref] {
+				continue
+			}
+			seeded[key][s.Ref] = true
+			into = append(into, RemoteDownload{
+				RepoPath:     s.RepoPath,
+				Version:      ver,
+				Refs:         []string{s.Ref},
+				RefReferrers: map[string][]string{s.Ref: {s.Scope}},
+			})
+		}
+		return into, nil
+	}
+
+	downloads, err = seedDownloads(downloads, localScanned)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(downloads) == 0 {
+		return FinalizeScannedCandies(localScanned, initCfg), nil
+	}
+
 	// materials[key][ref] is the fetched body of one (repo, git-tag, ref); refReferrers[key][ref]
 	// is the UNION of the SCOPE labels (boxes) that referenced that ref anywhere in the closure.
 	// Both accumulate across the fix-point rounds, so a ref reached by several independent boxes
@@ -80,7 +163,6 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 		}
 	}
 	scanned := make(map[repoVer]map[string]bool) // (repo, git-tag) -> refs already scanned
-	defaultBranches := make(map[string]string)   // repo → resolved default branch
 
 	queue := downloads
 	for len(queue) > 0 {
@@ -199,6 +281,23 @@ func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buil
 				Refs:         refList,
 				RefReferrers: refReferrers[key],
 			})
+		}
+
+		// Re-seed over everything materialized so far: a REMOTE service candy's trigger is only
+		// visible once its round has scanned it, so the init runtime it needs is seeded a round
+		// AFTER the candy that needs it.
+		scannedSoFar := make(map[string]spec.ScannedCandy, len(localScanned))
+		for k, v := range localScanned {
+			scannedSoFar[k] = v
+		}
+		for byRef := range materials {
+			for ref, sc := range materials[byRef] {
+				scannedSoFar[ref] = sc
+			}
+		}
+		queue, err = seedDownloads(queue, scannedSoFar)
+		if err != nil {
+			return nil, err
 		}
 	}
 
