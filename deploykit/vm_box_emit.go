@@ -123,7 +123,11 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 	// guest cannot open the disk. Flatten the overlay into a standalone qcow2 first
 	// (qemu-img convert), so the COPY is the whole artifact.
 	diskBase := filepath.Base(absDisk)
-	if isQcow2Overlay(absDisk) {
+	overlay, err := isQcow2Overlay(absDisk)
+	if err != nil {
+		return fmt.Errorf("EmitVmBox: inspecting disk %q: %w", absDisk, err)
+	}
+	if overlay {
 		flat := filepath.Join(dir, diskBase)
 		if err := flattenQcow2(absDisk, flat); err != nil {
 			return fmt.Errorf("EmitVmBox: flattening disk %q: %w", absDisk, err)
@@ -154,14 +158,18 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 // isQcow2Overlay reports whether path is a qcow2 image that carries a BACKING
 // file (a copy-on-write overlay). Such an image is NOT self-contained — its
 // backing path is host-absolute — so it must be flattened before being wrapped
-// into a box/containerDisk. A non-qcow2 path or an unreadable image is reported
-// false: the caller falls through to the plain COPY (the raw/whole-disk case).
-func isQcow2Overlay(path string) bool {
+// into a box/containerDisk. A non-qcow2 path (a raw/whole-disk image) is
+// reported (false, nil): the caller falls through to the plain COPY. An
+// UNREADABLE image is reported as an error, never a silent false — a failed
+// `qemu-img info` must fail the emit CLOSED rather than wrap an unflattened
+// overlay whose backing file is missing on every other host (the exact
+// CrashLoop this PR exists to prevent).
+func isQcow2Overlay(path string) (bool, error) {
 	out, err := exec.Command("qemu-img", "info", "--output=json", path).Output()
 	if err != nil {
-		return false
+		return false, fmt.Errorf("qemu-img info %s: %w", path, err)
 	}
-	return strings.Contains(string(out), `"backing-filename"`)
+	return strings.Contains(string(out), `"backing-filename"`), nil
 }
 
 // flattenQcow2 writes a SELF-CONTAINED qcow2 copy of src to dst (qemu-img

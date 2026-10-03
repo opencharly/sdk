@@ -39,19 +39,19 @@ func TestIsQcow2Overlay_DetectsBackingFile(t *testing.T) {
 	run("create", "-f", "qcow2", base, "64M")
 	run("create", "-f", "qcow2", "-F", "qcow2", "-b", base, overlay, "64M")
 
-	if isQcow2Overlay(base) {
-		t.Errorf("isQcow2Overlay(base) = true, want false (a standalone image has no backing file)")
+	if v, err := isQcow2Overlay(base); err != nil || v {
+		t.Errorf("isQcow2Overlay(base) = (%v,%v), want (false,nil) (a standalone image has no backing file)", v, err)
 	}
-	if !isQcow2Overlay(overlay) {
-		t.Fatalf("isQcow2Overlay(overlay) = false, want true — the emitted disk IS a COW overlay")
+	if v, err := isQcow2Overlay(overlay); err != nil || !v {
+		t.Fatalf("isQcow2Overlay(overlay) = (%v,%v), want (true,nil) — the emitted disk IS a COW overlay", v, err)
 	}
 
 	flat := filepath.Join(dir, "flat.qcow2")
 	if err := flattenQcow2(overlay, flat); err != nil {
 		t.Fatalf("flattenQcow2: %v", err)
 	}
-	if isQcow2Overlay(flat) {
-		t.Errorf("flattened image still reports a backing file — the box would remain host-coupled")
+	if v, err := isQcow2Overlay(flat); err != nil || v {
+		t.Errorf("flattened image = (%v,%v), want (false,nil) — the box would remain host-coupled", v, err)
 	}
 	out, err := exec.Command("qemu-img", "info", "--output=json", flat).Output()
 	if err != nil {
@@ -65,13 +65,33 @@ func TestIsQcow2Overlay_DetectsBackingFile(t *testing.T) {
 	}
 }
 
-func TestIsQcow2Overlay_NonImageIsFalse(t *testing.T) {
+func TestIsQcow2Overlay_NonImageIsRawWholeDisk(t *testing.T) {
 	requireQemuImg(t)
+	// A NON-qcow2 file qemu-img can still read is reported `format: raw` with
+	// exit 0 — a legitimate whole-disk image that needs no flattening, so the
+	// caller correctly falls through to the plain COPY: (false, nil), no error.
 	p := filepath.Join(t.TempDir(), "notaqcow2")
 	if err := os.WriteFile(p, []byte("not a disk image"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if isQcow2Overlay(p) {
-		t.Errorf("isQcow2Overlay(non-image) = true, want false (fail-open to the plain COPY)")
+	if v, err := isQcow2Overlay(p); err != nil || v {
+		t.Errorf("isQcow2Overlay(raw non-image) = (%v,%v), want (false,nil) — a raw whole disk copies as-is", v, err)
+	}
+}
+
+func TestIsQcow2Overlay_UnreadableErrorsClosed(t *testing.T) {
+	requireQemuImg(t)
+	// An image qemu-img CANNOT read (missing file, unreadable/corrupt) must NOT
+	// be silently treated as "not an overlay": that is the fail-open which wraps
+	// an unflattened COW disk — whose host-absolute backing file is absent on
+	// every other host — straight into the box, the exact CrashLoop this change
+	// fixes. It must return an error so EmitVmBox fails CLOSED.
+	missing := filepath.Join(t.TempDir(), "does-not-exist.qcow2")
+	v, err := isQcow2Overlay(missing)
+	if err == nil {
+		t.Fatalf("isQcow2Overlay(unreadable) = (%v,nil), want a non-nil error (fail CLOSED)", v)
+	}
+	if v {
+		t.Errorf("isQcow2Overlay(unreadable) returned true with an error; want false")
 	}
 }
