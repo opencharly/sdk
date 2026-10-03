@@ -4,6 +4,8 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -51,6 +53,40 @@ func TestLowerGolden(t *testing.T) {
 	}
 	checkGolden(t, "e2e.workflow.lobster.golden", lobster)
 	checkGolden(t, "e2e.charly.yml.golden", charly)
+}
+
+// TestLowerRefsBraceForm pins the FORM of the ref the lowering writes into a generated
+// plan. The expander that runs that plan (kit.ExpandOpVars, whose grammar is
+// kit.TestVarRefPattern) is BRACE-ONLY, so a ref consumed as a non-shell verb input must
+// be emitted as ${REF_n}: the bare $REF_n form is passed through as literal text.
+func TestLowerRefsBraceForm(t *testing.T) {
+	p := &spec.Pipeline{
+		Description: "ref-form fixture",
+		Steps: []spec.PipelineStep{
+			{Id: "fetch", Run: `printf '{"name":"ok"}'`},
+			{Id: "probe", Plan: []spec.Step{
+				// a NON-SHELL verb input carrying the ref (a plugin verb's opaque field).
+				{Run: "the ref reaches a plugin verb input", Op: spec.Op{Plugin: "task", PluginInput: map[string]any{"task": "$fetch.json.name"}}},
+			}},
+		},
+	}
+	_, charly, err := Lower(p, "/proj", "/proj/.opencharly/pipelines/ref", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	plan := string(charly)
+	braceRef := "${REF_1}"
+	if !strings.Contains(plan, braceRef) {
+		t.Errorf("generated plan does not carry the brace form %s:\n%s", braceRef, plan)
+	}
+	if strings.Contains(plan, "$REF_1") {
+		t.Errorf("generated plan still carries the bare form $REF_1 (never expanded):\n%s", plan)
+	}
+	// The plan's ref must be matched by kit.ExpandOpVars' brace-only grammar.
+	braceOnly := regexp.MustCompile(`\$\{[A-Z_][A-Z0-9_]*\}`)
+	if !braceOnly.MatchString(braceRef) {
+		t.Fatalf("%s is not matched by the plan expander's brace-only pattern", braceRef)
+	}
 }
 
 func TestLowerCharlyStep(t *testing.T) {

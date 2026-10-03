@@ -239,12 +239,14 @@ func planRefs(plan *yaml.Node) []string {
 	return out
 }
 
-// rewritePlanRefs rewrites every `$step.path` in a plan to `$REF_<n>`, the env var the
-// lobster step sets (index i → REF_(i+1), matching planRefs' order).
+// rewritePlanRefs rewrites every `$step.path` in a plan to `${REF_<n>}`, the env var the
+// lobster step sets (index i → REF_(i+1), matching planRefs' order). The BRACE form is
+// mandatory: the expander that runs the plan (kit.ExpandOpVars, kit.TestVarRefPattern) is
+// brace-only, so a bare `$REF_<n>` would reach a plugin-verb input as literal text.
 func rewritePlanRefs(plan *yaml.Node, refs []string) {
 	index := make(map[string]string, len(refs))
 	for i, r := range refs {
-		index[r] = fmt.Sprintf("$REF_%d", i+1)
+		index[r] = fmt.Sprintf("${REF_%d}", i+1)
 	}
 	walkScalarValues(plan, func(n *yaml.Node) {
 		n.Value = refRe.ReplaceAllStringFunc(n.Value, func(m string) string { return index[m] })
