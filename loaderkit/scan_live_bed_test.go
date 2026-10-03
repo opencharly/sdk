@@ -3,10 +3,11 @@ package loaderkit
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/deploykit"
+	"github.com/opencharly/sdk/internal/spectest"
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/refs"
 	"github.com/opencharly/spec/spec"
@@ -20,33 +21,11 @@ import (
 // unless wired here — and the REAL layer-supervisord materialization the init-depends bed fetches
 // carries a `run:` step, so the nil hook panics on the FIRST live run of a candy with one (the two
 // pre-existing live beds' layer-direnv candies carry no run step, which is why they never reached it).
-// The classifier is pure — spec.VerbCatalog is static data plus the op's own declared Context, no
-// registry consult — so it is ported verbatim from charly/planrun_adapter.go's
-// opInContext/opEffectiveContexts, the SAME port deploykit/plan_compile_test.go carries for its own
-// sdk-only test binary (R3 would collapse these into one shared sdk test helper if a THIRD sdk package
-// needed it).
+// The port itself lives ONCE, in sdk/internal/spectest — deploykit's compiler tests need the same
+// classifier for their own sdk-only test binary, so it is one shared sdk-internal helper rather
+// than a per-package copy (R3).
 func init() {
-	spec.OpInContext = liveBedOpInContext
-}
-
-func liveBedOpEffectiveContexts(c *spec.Op) []spec.ExecContext {
-	if len(c.Context) > 0 {
-		out := make([]spec.ExecContext, 0, len(c.Context))
-		for _, s := range c.Context {
-			out = append(out, spec.ExecContext(s))
-		}
-		return out
-	}
-	if verb, err := c.Kind(); err == nil {
-		if vs, ok := spec.VerbCatalog[verb]; ok {
-			return vs.Contexts
-		}
-	}
-	return nil
-}
-
-func liveBedOpInContext(c *spec.Op, ctx spec.ExecContext) bool {
-	return slices.Contains(liveBedOpEffectiveContexts(c), ctx)
+	spectest.Install()
 }
 
 // scan_live_bed_test.go — the LIVE MECHANISM BED for the per-box scope fix (charly#735).
@@ -335,4 +314,59 @@ func TestLiveBedInitDependsSeedFetchesTheInitRuntime(t *testing.T) {
 	}
 	t.Logf("LIVE init seed: materialized %s@%s with %d diagnostics:\n%s",
 		initRuntimeRef, w.GetVersion(), len(levels), strings.Join(msgs, "\n"))
+}
+
+// TestLiveBedInjectionResolvesTheSeedsRealMaterialization closes the loop the seed bed above opens,
+// and it is the LIVE PROOF ON THE COMMITTED TREE for this PR's two deploykit behaviour changes. It
+// drives the REAL deploykit.InjectInitDependsCandy and the REAL
+// deploykit.PruneContainerInitForSystemd — the committed functions, unmodified — over the SAME real
+// materialization the seed produced, with the vocabulary's REAL ref-shaped `depends_candy`
+// (supervisordInitCfg sets DependsCandy to initRuntimeRemote). What it reaches that the unit tests
+// cannot is the actual KEYS a real scan registers a remote candy under — its full repo path AND its
+// bare repo name — which is exactly the divergence the ref-shaped normalization and the tolerant
+// prune exist to absorb.
+//
+// It FAILS without EITHER change:
+//   - without the BareCandyRef normalization, `depends_candy` stays the raw `@github…:v…` ref, which
+//     matches no scanned key and no order entry, so the pass reports the box unsatisfied and injects
+//     nothing;
+//   - without the tolerant prune, the ref-keyed entry is compared against the literal "supervisord"
+//     and survives onto a systemd guest.
+func TestLiveBedInjectionResolvesTheSeedsRealMaterialization(t *testing.T) {
+	liveInitSeedFixtureAvailable(t)
+	localScanned := map[string]spec.ScannedCandy{"svc": scannedServiceCandy("svc", t.TempDir())}
+	var levels []spec.DiagLevel
+	var msgs []string
+	seams := liveBedSeams(&spec.Config{}, map[string]spec.CandyReader{
+		"svc": newLoaderTestCandy("svc", spec.CandyModel{}, spec.CandyView{}),
+	}, &levels, &msgs)
+
+	scanned, err := ScanCandyFromLocal(localScanned, supervisordInitCfg(), seams)
+	if err != nil {
+		t.Fatalf("live init-seed scan failed: %v\n%s", err, strings.Join(msgs, "\n"))
+	}
+	if _, ok := scanned[initRuntimeRef]; !ok {
+		t.Fatalf("the init-runtime candy %q must be materialized before the injection can see it; got keys %v",
+			initRuntimeRef, readerKeys(scanned))
+	}
+
+	// The REAL injection pass, over the REAL scanned set, with the REAL ref-shaped depends_candy.
+	cfg := &spec.Config{Box: spec.BoxMap{"svcbox": []byte(`{"candy": ["svc"]}`)}}
+	deploykit.InjectInitDependsCandy(cfg, scanned, supervisordInitCfg())
+	img, ok := cfg.BoxConfig("svcbox")
+	if !ok {
+		t.Fatal("box svcbox must survive the injection pass")
+	}
+	if len(img.Candy) == 0 || img.Candy[0] != initRuntimeRef {
+		t.Fatalf("the ref-shaped depends_candy must inject the REAL scanned key %q, got %v",
+			initRuntimeRef, img.Candy)
+	}
+
+	// The REAL machine-venue prune, over the order the injection just produced.
+	pruned := deploykit.PruneContainerInitForSystemd(img.Candy, deploykit.HostContext{MachineVenue: true})
+	if len(pruned) != 1 || pruned[0] != "svc" {
+		t.Fatalf("the REAL ref-keyed init candy must be pruned on a machine venue, got %v", pruned)
+	}
+	t.Logf("LIVE init injection: scanned set carries %s (name %q); injected order %v; machine-venue prune -> %v",
+		initRuntimeRef, scanned[initRuntimeRef].GetName(), img.Candy, pruned)
 }
