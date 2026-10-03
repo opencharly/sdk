@@ -3,13 +3,51 @@ package loaderkit
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/refs"
 	"github.com/opencharly/spec/spec"
+	"gopkg.in/yaml.v3"
 )
+
+// spec.OpInContext is a package-level DI hook FinalizeScannedCandies → CompleteCandyRunOps calls for
+// every scanned candy (spec/spec/injection_seams.go). In PRODUCTION charly core's own init() wires it
+// (charly/charly/layers.go: spec.OpInContext = opInContext), safe there because charly always shares
+// that process with the scan. This sdk-only test binary links no charly core, so the hook stays nil
+// unless wired here — and the REAL layer-supervisord materialization the init-depends bed fetches
+// carries a `run:` step, so the nil hook panics on the FIRST live run of a candy with one (the two
+// pre-existing live beds' layer-direnv candies carry no run step, which is why they never reached it).
+// The classifier is pure — spec.VerbCatalog is static data plus the op's own declared Context, no
+// registry consult — so it is ported verbatim from charly/planrun_adapter.go's
+// opInContext/opEffectiveContexts, the SAME port deploykit/plan_compile_test.go carries for its own
+// sdk-only test binary (R3 would collapse these into one shared sdk test helper if a THIRD sdk package
+// needed it).
+func init() {
+	spec.OpInContext = liveBedOpInContext
+}
+
+func liveBedOpEffectiveContexts(c *spec.Op) []spec.ExecContext {
+	if len(c.Context) > 0 {
+		out := make([]spec.ExecContext, 0, len(c.Context))
+		for _, s := range c.Context {
+			out = append(out, spec.ExecContext(s))
+		}
+		return out
+	}
+	if verb, err := c.Kind(); err == nil {
+		if vs, ok := spec.VerbCatalog[verb]; ok {
+			return vs.Contexts
+		}
+	}
+	return nil
+}
+
+func liveBedOpInContext(c *spec.Op, ctx spec.ExecContext) bool {
+	return slices.Contains(liveBedOpEffectiveContexts(c), ctx)
+}
 
 // scan_live_bed_test.go — the LIVE MECHANISM BED for the per-box scope fix (charly#735).
 //
@@ -41,11 +79,84 @@ const (
 	liveOlderTag  = "v2026.242.1147" // an independent box's own pin (content DIFFERS)
 )
 
+// liveBedThreaded is a hand-built subset MODELLED ON the snapshot production supplies from charly's
+// `loaderThreaded()` (charly/charly/loader_threaded.go) — the sdk layer cannot call it, so the bed
+// carries only the DATA its own real materializations need. It is not the registry-derived snapshot
+// itself, and an sdk test must not pretend to reproduce it; it holds the two facts the bed's manifests
+// actually consult:
+//   - Kinds: the bed's candy manifests stack a candy node with sibling skill/hook/marketplace
+//     entities, so kind classification must recognize all four (an empty snapshot sends ParseDoc
+//     down ParseCandyManifest's direct-mapping fallback, which never desugars verb sugar);
+//   - Primaries: the SCALAR verb shorthand (`command: |`) desugars into the internal
+//     plugin/plugin_input envelope only when the verb's primary field is known — `command`'s is
+//     `command` (the map form `command: {command: …}` names it). This mirrors the `file` entry
+//     candyThreaded declares for the same reason.
+var liveBedThreaded = spec.Threaded{
+	Kinds:     map[string]bool{"candy": true, "skill": true, "hook": true, "marketplace": true},
+	Primaries: map[string]string{"command": "command"},
+}
+
 // liveBedParse is the REAL per-document parse seam (the same ParseCandyManifest candy/plugin-build
-// wires), with an empty Threaded snapshot — sufficient for these node-form manifests, which route
-// through ParseCandyManifest's direct mapping fallback.
+// wires), threading liveBedThreaded — the bed's hand-built, production-modelled snapshot — so the
+// node-form branch desugars the authored verb sugar against it, exactly as production does.
+//
+// The bed's MigrateCache is a documented no-op, so the derived view still carries the pristine
+// export's legacy top-level `version:` stamp. Production's command:migrate reshapes that stamp away
+// BEFORE the parse, and ParseCandyManifest's node-form branch (the ONLY branch that desugars authored
+// verb sugar) rejects a scalar top-level `version:` — it would fall back to a decoder that does not
+// desugar, which the real layer-supervisord plan (`command: {command: supervisorctl pid,
+// in_container: true}`) then fails. Dropping that ONE legacy directive here hands the parser the same
+// node-form shape production hands it, without mutating the read-only view.
 func liveBedParse(path string) (*spec.CandyYAML, error) {
-	return ParseCandyManifest(path, spec.Threaded{}, spec.NewCandyVocab(nil))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if stripped, ok := stripLegacyTopLevelVersion(data); ok {
+		tmp, terr := os.CreateTemp("", "livebed-*.yml")
+		if terr != nil {
+			return nil, terr
+		}
+		defer func() { _ = os.Remove(tmp.Name()) }()
+		if _, werr := tmp.Write(stripped); werr != nil {
+			_ = tmp.Close()
+			return nil, werr
+		}
+		if cerr := tmp.Close(); cerr != nil {
+			return nil, cerr
+		}
+		path = tmp.Name()
+	}
+	return ParseCandyManifest(path, liveBedThreaded, spec.NewCandyVocab(nil))
+}
+
+// stripLegacyTopLevelVersion removes a legacy top-level `version:` directive from a candy-manifest
+// byte stream and returns the rewritten bytes. It reports false when the stream carries no such
+// directive (the already-migrated shape) or is not a single top-level mapping.
+func stripLegacyTopLevelVersion(data []byte) ([]byte, bool) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, false
+	}
+	root := &doc
+	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+		root = root.Content[0]
+	}
+	if root.Kind != yaml.MappingNode {
+		return nil, false
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != "version" {
+			continue
+		}
+		root.Content = append(root.Content[:i], root.Content[i+2:]...)
+		out, err := yaml.Marshal(&doc)
+		if err != nil {
+			return nil, false
+		}
+		return out, true
+	}
+	return nil, false
 }
 
 // liveBedSeams wires the REAL production legs. Only the network hop is served from the warmed
@@ -177,4 +288,51 @@ func TestLiveBedSameBoxConflictIsInfo(t *testing.T) {
 	}
 	t.Logf("LIVE same-box: resolved %s@%s; %d INFO, 0 WARNING:\n%s",
 		liveCandyRef, w.GetVersion(), len(levels), strings.Join(msgs, "\n"))
+}
+
+// liveInitSeedFixtureAvailable gates the init-depends-seed bed on the LIVE opt-in AND the warmed
+// init-runtime materialization the seed fetches. Absent either -> the bed SKIPS visibly, never
+// fakes the boundary (the same live-or-skip contract as liveBedFixtureAvailable).
+func liveInitSeedFixtureAvailable(t *testing.T) {
+	t.Helper()
+	if os.Getenv("LIVE_SDK_MECHANISM_BED") == "" {
+		t.Skip("LIVE_SDK_MECHANISM_BED unset — skipping the live init-depends seed bed (set it to run against the warmed repo cache)")
+	}
+	p, err := refs.RepoCachePath(initRuntimeRepo, initRuntimeVer)
+	if err != nil {
+		t.Fatalf("resolving cache path for %s@%s: %v", initRuntimeRepo, initRuntimeVer, err)
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("warmed repo cache missing %s@%s (%v) — skipping the live init-depends seed bed", initRuntimeRepo, initRuntimeVer, err)
+	}
+}
+
+// TestLiveBedInitDependsSeedFetchesTheInitRuntime proves the NEW init-depends fetch seed end to end
+// against a REAL materialization: a fully-local project whose only candy declares a non-packaged
+// `exec:` service triggers supervisord, so ScanCandyFromLocal must FETCH supervisord's runtime candy
+// (gitlink #336's seed) through the real repo-cache fetch + manifest scan and resolve it at the
+// vocabulary's tag. The unit tests pin the seed's SHAPE against stubbed seams; this bed pins that the
+// production legs materialize and parse the real `layer-supervisord` tree it names.
+func TestLiveBedInitDependsSeedFetchesTheInitRuntime(t *testing.T) {
+	liveInitSeedFixtureAvailable(t)
+	localScanned := map[string]spec.ScannedCandy{"svc": scannedServiceCandy("svc", t.TempDir())}
+	var levels []spec.DiagLevel
+	var msgs []string
+	seams := liveBedSeams(&spec.Config{}, map[string]spec.CandyReader{
+		"svc": newLoaderTestCandy("svc", spec.CandyModel{}, spec.CandyView{}),
+	}, &levels, &msgs)
+
+	got, err := ScanCandyFromLocal(localScanned, supervisordInitCfg(), seams)
+	if err != nil {
+		t.Fatalf("live init-seed scan failed: %v\n%s", err, strings.Join(msgs, "\n"))
+	}
+	w, ok := got[initRuntimeRef]
+	if !ok {
+		t.Fatalf("the init-runtime candy %q must be fetched by the seed; got keys %v", initRuntimeRef, readerKeys(got))
+	}
+	if v := w.GetVersion(); v != initRuntimeVer {
+		t.Errorf("init runtime resolved at %q, want the vocabulary's %q", v, initRuntimeVer)
+	}
+	t.Logf("LIVE init seed: materialized %s@%s with %d diagnostics:\n%s",
+		initRuntimeRef, w.GetVersion(), len(levels), strings.Join(msgs, "\n"))
 }
