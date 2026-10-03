@@ -20,7 +20,9 @@ package deploykit
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,7 +118,26 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
-	cf := renderVmBoxContainerfile(filepath.Base(absDisk), inImagePath, metaJSON, meta)
+	// The disk the box carries MUST be SELF-CONTAINED. `charly vm build` produces a
+	// copy-on-write overlay whose BACKING FILE is a host-absolute path under the
+	// build cache; a `FROM scratch` + COPY box carries only the overlay, so on any
+	// other host (a KubeVirt node's containerd) the backing file is absent and the
+	// guest cannot open the disk. Flatten the overlay into a standalone qcow2 first
+	// (qemu-img convert), so the COPY is the whole artifact.
+	diskBase := filepath.Base(absDisk)
+	overlay, err := isQcow2Overlay(absDisk)
+	if err != nil {
+		return fmt.Errorf("EmitVmBox: inspecting disk %q: %w", absDisk, err)
+	}
+	if overlay {
+		flat := filepath.Join(dir, diskBase)
+		if err := flattenQcow2(absDisk, flat); err != nil {
+			return fmt.Errorf("EmitVmBox: flattening disk %q: %w", absDisk, err)
+		}
+		absDisk = flat
+	}
+
+	cf := renderVmBoxContainerfile(diskBase, inImagePath, metaJSON, meta)
 
 	cfPath := filepath.Join(dir, "Containerfile")
 	if err := os.WriteFile(cfPath, []byte(cf), 0o644); err != nil {
@@ -132,6 +153,66 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 			msg = err.Error()
 		}
 		return fmt.Errorf("EmitVmBox: %s build -t %s: %w: %s", binary, ref, err, msg)
+	}
+	return nil
+}
+
+// isQcow2Overlay reports whether path is a qcow2 image that carries a BACKING
+// file (a copy-on-write overlay). Such an image is NOT self-contained — its
+// backing path is host-absolute — so it must be flattened before being wrapped
+// into a box/containerDisk. A non-qcow2 path (a raw/whole-disk image) is
+// reported (false, nil): the caller falls through to the plain COPY. An
+// UNREADABLE image is reported as an error, never a silent false — a failed
+// `qemu-img info` must fail the emit CLOSED rather than wrap an unflattened
+// overlay whose backing file is missing on every other host (the exact
+// CrashLoop this PR exists to prevent).
+func isQcow2Overlay(path string) (bool, error) {
+	// Only a QCow2 image can be a COW overlay. Read the magic first: a NON-qcow2
+	// artifact (a raw/whole-disk image, or a fixture) is not an overlay and needs
+	// no `qemu-img` — so `EmitVmBox` never shells out for it, and a host/CI without
+	// `qemu-img` still emits a raw disk (it just cannot flatten a real overlay).
+	f, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Errorf("inspecting disk %s: %w", path, err)
+	}
+	magic := make([]byte, 4)
+	_, rerr := io.ReadFull(f, magic)
+	if cerr := f.Close(); cerr != nil {
+		return false, fmt.Errorf("inspecting disk %s: %w", path, cerr)
+	}
+	if rerr != nil {
+		// A genuine short read (EOF) is a file too small to hold an image header —
+		// not a qcow2 overlay, so the emit COPYs it as-is. Any OTHER read error
+		// (EISDIR from an os.Open'd directory, EIO, …) is a genuinely UNREADABLE
+		// disk and must fail CLOSED, never a silent false.
+		if errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspecting disk %s: %w", path, rerr)
+	}
+	if string(magic) != "QFI\xfb" {
+		return false, nil // not qcow2 (raw image / fixture): no overlay, no flatten
+	}
+	// A qcow2 image: ask qemu-img whether it carries a backing file. An unreadable
+	// qcow2 fails CLOSED — never a silent false, which would wrap an unflattened
+	// COW disk (host-absolute backing, absent elsewhere) straight into the box.
+	out, err := exec.Command("qemu-img", "info", "--output=json", path).Output()
+	if err != nil {
+		return false, fmt.Errorf("qemu-img info %s: %w", path, err)
+	}
+	return strings.Contains(string(out), `"backing-filename"`), nil
+}
+
+// flattenQcow2 writes a SELF-CONTAINED qcow2 copy of src to dst (qemu-img
+// convert), dropping any backing-file reference so the result stands alone.
+func flattenQcow2(src, dst string) error {
+	out, err := exec.Command("qemu-img", "convert", "-O", "qcow2", src, dst).CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("qemu-img convert %s -> %s: %w: %s", src, dst, err, msg)
 	}
 	return nil
 }
