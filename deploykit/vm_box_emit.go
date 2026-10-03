@@ -21,6 +21,7 @@ package deploykit
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -165,6 +166,28 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 // overlay whose backing file is missing on every other host (the exact
 // CrashLoop this PR exists to prevent).
 func isQcow2Overlay(path string) (bool, error) {
+	// Only a QCow2 image can be a COW overlay. Read the magic first: a NON-qcow2
+	// artifact (a raw/whole-disk image, or a fixture) is not an overlay and needs
+	// no `qemu-img` — so `EmitVmBox` never shells out for it, and a host/CI without
+	// `qemu-img` still emits a raw disk (it just cannot flatten a real overlay).
+	f, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Errorf("inspecting disk %s: %w", path, err)
+	}
+	magic := make([]byte, 4)
+	_, rerr := io.ReadFull(f, magic)
+	f.Close()
+	if rerr != nil {
+		// A file too short to hold an image header is not a qcow2 overlay; the
+		// emit COPYs it as-is. (A genuinely unreadable file already errored above.)
+		return false, nil
+	}
+	if string(magic) != "QFI\xfb" {
+		return false, nil // not qcow2 (raw image / fixture): no overlay, no flatten
+	}
+	// A qcow2 image: ask qemu-img whether it carries a backing file. An unreadable
+	// qcow2 fails CLOSED — never a silent false, which would wrap an unflattened
+	// COW disk (host-absolute backing, absent elsewhere) straight into the box.
 	out, err := exec.Command("qemu-img", "info", "--output=json", path).Output()
 	if err != nil {
 		return false, fmt.Errorf("qemu-img info %s: %w", path, err)

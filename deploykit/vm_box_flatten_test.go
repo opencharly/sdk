@@ -66,10 +66,8 @@ func TestIsQcow2Overlay_DetectsBackingFile(t *testing.T) {
 }
 
 func TestIsQcow2Overlay_NonImageIsRawWholeDisk(t *testing.T) {
-	requireQemuImg(t)
-	// A NON-qcow2 file qemu-img can still read is reported `format: raw` with
-	// exit 0 — a legitimate whole-disk image that needs no flattening, so the
-	// caller correctly falls through to the plain COPY: (false, nil), no error.
+	// A NON-qcow2 file is not an overlay and needs no qemu-img: the magic gate
+	// reports (false, nil) so the caller copies it as-is. Runs WITHOUT qemu-img.
 	p := filepath.Join(t.TempDir(), "notaqcow2")
 	if err := os.WriteFile(p, []byte("not a disk image"), 0o644); err != nil {
 		t.Fatal(err)
@@ -77,15 +75,22 @@ func TestIsQcow2Overlay_NonImageIsRawWholeDisk(t *testing.T) {
 	if v, err := isQcow2Overlay(p); err != nil || v {
 		t.Errorf("isQcow2Overlay(raw non-image) = (%v,%v), want (false,nil) — a raw whole disk copies as-is", v, err)
 	}
+	// A file too short to hold an image header is likewise not an overlay.
+	short := filepath.Join(t.TempDir(), "short")
+	if err := os.WriteFile(short, []byte{0x01}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := isQcow2Overlay(short); err != nil || v {
+		t.Errorf("isQcow2Overlay(short file) = (%v,%v), want (false,nil)", v, err)
+	}
 }
 
 func TestIsQcow2Overlay_UnreadableErrorsClosed(t *testing.T) {
-	requireQemuImg(t)
-	// An image qemu-img CANNOT read (missing file, unreadable/corrupt) must NOT
-	// be silently treated as "not an overlay": that is the fail-open which wraps
-	// an unflattened COW disk — whose host-absolute backing file is absent on
-	// every other host — straight into the box, the exact CrashLoop this change
-	// fixes. It must return an error so EmitVmBox fails CLOSED.
+	// A path that cannot be opened must NOT be silently treated as "not an
+	// overlay": that is the fail-open which wraps an unflattened COW disk — whose
+	// host-absolute backing file is absent on every other host — straight into the
+	// box, the exact CrashLoop this change fixes. It must return an error. Runs
+	// WITHOUT qemu-img (the open failure precedes any tool).
 	missing := filepath.Join(t.TempDir(), "does-not-exist.qcow2")
 	v, err := isQcow2Overlay(missing)
 	if err == nil {
