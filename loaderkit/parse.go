@@ -198,7 +198,15 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	// the `iterate:`-carrying-`agent:` collision class dies here); a kind-word key that IS a
 	// declared field stays data. A kind with NO declared schema threaded falls back to every
 	// kind-word key being a member (the documented, tested fallback).
-	if t.DeploySubstrates[disc] {
+	// A CORE resource kind (spec.ResourceKinds — the deployable kinds whose #Node arm nests a
+	// sub-entity child) is ALWAYS a substrate parent: its in-body members are classified by the
+	// value-shape scan below, never by the structural key rule. Threading alone cannot decide
+	// this — t.DeploySubstrates is filled from the host's out-of-process deploy providers (plus
+	// the parse-time prescan), so before those connect a core word like `vm` is absent from it
+	// while still being a StructuralKind; the structural key rule then skips every in-body member
+	// (a member's KEY is its own name, never a kind word), leaving the member key in the body for
+	// a closed #<Kind>Value gate to reject.
+	if t.DeploySubstrates[disc] || resourceKindSet[disc] {
 		deployDeclared := threadedDeclaredFields(t.DeployDeclaredFields, disc)
 		for _, c := range discEntityPairs(discValue, t) {
 			if deployDeclared[c.k.Value] {
