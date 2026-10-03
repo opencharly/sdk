@@ -80,6 +80,12 @@ func initUnitFiles(def *spec.ResolvedInit, layer CandyModel) []string {
 // problems. The dedupe lives HERE, at the call path, not inside the reporting hook —
 // "report at most once" is the caller's policy, while the hook only decides HOW to
 // report, which is what lets a test swap the hook and still observe the policy.
+//
+// The message names the INIT for the missing runtime, never `depends_candy`: the vocabulary
+// spells that field as a bare name (`supervisord`) or a pinned remote ref
+// (`@github.com/opencharly/layer-supervisord:v…`), and only the init's own name is the
+// runtime the image will look for in $PATH. Interpolating the candy would print a ref where
+// a binary belongs.
 var unsatisfiedInitDependsSeen sync.Map
 
 func reportUnsatisfiedInitDepends(boxName, initName, dependsCandy string) {
@@ -94,9 +100,10 @@ var unsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
 	fmt.Fprintf(os.Stderr,
 		"warning: box %q resolves init %q, which depends on the %q candy, but that candy is not in "+
 			"this project's scanned set — the fetch that should have materialized it did not, so "+
-			"nothing was injected: the image will declare init %q with no %s binary and fail at start. "+
-			"Check that the init vocabulary's depends_candy ref exists and is reachable.\n",
-		boxName, initName, dependsCandy, initName, dependsCandy)
+			"nothing was injected: the image will declare init %q with no %s implementation installed "+
+			"and fail at start. Check that the init vocabulary's depends_candy ref exists and is "+
+			"reachable.\n",
+		boxName, initName, dependsCandy, initName, initName)
 }
 
 // orderSatisfiesInitDepends reports whether a box's RESOLVED candy order already
