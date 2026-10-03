@@ -229,7 +229,9 @@ func TestMaterializedCache_ValidWhileInputsUnchanged(t *testing.T) {
 		t.Fatalf("store.Get: no entry for the materialized key")
 	}
 	e.Resolved = time.Now().Add(-720 * time.Hour)
-	store.PutEntry(key, e)
+	if err := store.PutEntry(key, e); err != nil {
+		t.Fatalf("store.PutEntry: %v", err)
+	}
 	// Same inputs, very old entry: still a HIT (no time validity).
 	merged2 := &spec.UnifiedFile{}
 	if err := seams.MaterializeLoadedProject(&lp, merged2, map[int64]*spec.UnifiedFile{}); err != nil {

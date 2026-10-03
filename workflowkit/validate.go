@@ -155,7 +155,7 @@ func validateStepBase(v stepView, where string) []error {
 
 	// co-fields.
 	if v.forEach != "" && !v.steps {
-		errs = append(errs, fmt.Errorf("%s: for_each requires a non-empty steps:", where))
+		errs = append(errs, fmt.Errorf("%s: for_each requires a non-empty steps list", where))
 	}
 	if v.forEach == "" {
 		var strays []string

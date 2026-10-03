@@ -15,13 +15,14 @@ import (
 // the box scope(s) whose candy closure reaches it, and — for a layer's require:/candy: — with the
 // box that pulled that layer in, not with the layer's own name.
 
-func scopeOf(t *testing.T, downloads []spec.RemoteDownload, repo, ver, bare string) []string {
+func scopeOf(t *testing.T, downloads []spec.RemoteDownload, ver string) []string {
 	t.Helper()
+	const repo = "github.com/opencharly/pod-dbus"
 	for _, d := range downloads {
 		if d.RepoPath != repo || d.Version != ver {
 			continue
 		}
-		if refs := d.RefReferrers[bare]; len(refs) > 0 {
+		if refs := d.RefReferrers[repo]; len(refs) > 0 {
 			out := append([]string(nil), refs...)
 			sort.Strings(out)
 			return out
@@ -40,7 +41,7 @@ func TestCollectScopesBoxCandyListToOwningBox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.243.1831", "github.com/opencharly/pod-dbus")
+	got := scopeOf(t, downloads, "v2026.243.1831")
 	if len(got) != 1 || got[0] != "box=versa" {
 		t.Fatalf("box candy ref scope = %v, want [box=versa]", got)
 	}
@@ -60,11 +61,11 @@ func TestCollectScopesTwoBoxesAtDifferentTagsStayIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.239.1555", "github.com/opencharly/pod-dbus")
+	old := scopeOf(t, downloads, "v2026.239.1555")
 	if len(old) != 1 || old[0] != "box=fedora-coder" {
 		t.Fatalf("old-tag scope = %v, want [box=fedora-coder]", old)
 	}
-	fresh := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.243.1831", "github.com/opencharly/pod-dbus")
+	fresh := scopeOf(t, downloads, "v2026.243.1831")
 	if len(fresh) != 1 || fresh[0] != "box=versa" {
 		t.Fatalf("new-tag scope = %v, want [box=versa]", fresh)
 	}
@@ -91,11 +92,11 @@ func TestCollectScopesTwoLayersInOneBoxShareTheBoxScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.239.1555", "github.com/opencharly/pod-dbus")
+	old := scopeOf(t, downloads, "v2026.239.1555")
 	if len(old) != 1 || old[0] != "box=one-box" {
 		t.Fatalf("layer-a ref scope = %v, want [box=one-box] (the box that pulled the layer in)", old)
 	}
-	fresh := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.243.1831", "github.com/opencharly/pod-dbus")
+	fresh := scopeOf(t, downloads, "v2026.243.1831")
 	if len(fresh) != 1 || fresh[0] != "box=one-box" {
 		t.Fatalf("layer-b ref scope = %v, want [box=one-box]", fresh)
 	}
@@ -117,7 +118,7 @@ func TestCollectScopesLayerSharedByTwoBoxesCarriesBoth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.243.1831", "github.com/opencharly/pod-dbus")
+	got := scopeOf(t, downloads, "v2026.243.1831")
 	if len(got) != 2 || got[0] != "box=alpha" || got[1] != "box=beta" {
 		t.Fatalf("shared-layer ref scope = %v, want [box=alpha box=beta]", got)
 	}
@@ -140,11 +141,11 @@ func TestCollectScopesDeployAddCandyCarriesItsBoxNeverAConstant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.239.1555", "github.com/opencharly/pod-dbus")
+	old := scopeOf(t, downloads, "v2026.239.1555")
 	if len(old) != 1 || old[0] != "box=deploy-a" {
 		t.Fatalf("deploy-a add_candy scope = %v, want [box=deploy-a] (never a constant)", old)
 	}
-	fresh := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.243.1831", "github.com/opencharly/pod-dbus")
+	fresh := scopeOf(t, downloads, "v2026.243.1831")
 	if len(fresh) != 1 || fresh[0] != "box=deploy-b" {
 		t.Fatalf("deploy-b add_candy scope = %v, want [box=deploy-b]", fresh)
 	}
@@ -178,7 +179,7 @@ func TestCollectScopesNamespaceBoxIsQualified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.243.1831", "github.com/opencharly/pod-dbus")
+	got := scopeOf(t, downloads, "v2026.243.1831")
 	if len(got) != 1 || got[0] != "box=cachyos.cachyos" {
 		t.Fatalf("namespaced box scope = %v, want [box=cachyos.cachyos] (qualified, not the bare leaf)", got)
 	}
@@ -200,7 +201,7 @@ func TestCollectScopesUnownedLayerIsItsOwnSilentScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := scopeOf(t, downloads, "github.com/opencharly/pod-dbus", "v2026.243.1831", "github.com/opencharly/pod-dbus")
+	got := scopeOf(t, downloads, "v2026.243.1831")
 	if len(got) != 1 || got[0] != "layer=orphan" {
 		t.Fatalf("unowned layer scope = %v, want [layer=orphan]", got)
 	}

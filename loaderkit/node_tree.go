@@ -314,10 +314,10 @@ func IsDeployShape(pn spec.ParsedNode) bool {
 		agentProvisioned := false
 		for i := 0; i+1 < len(dv.Content); i += 2 {
 			k := dv.Content[i].Value
-			switch {
-			case k == "from" || k == "image":
+			switch k {
+			case "from", "image":
 				hasFromImage = true
-			case k == "agent_provisioned":
+			case "agent_provisioned":
 				// the flag's VALUE is a yaml scalar; true means the authored bool
 				if dv.Content[i+1].Kind == yaml.ScalarNode && dv.Content[i+1].Value == "true" {
 					agentProvisioned = true

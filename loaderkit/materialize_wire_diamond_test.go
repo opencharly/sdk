@@ -61,7 +61,7 @@ func TestCapturePluginKinds_SelfCycleTerminates(t *testing.T) {
 }
 
 func sortedKinds(m map[string]map[string]json.RawMessage) []string {
-	var o []string
+	o := make([]string, 0, len(m))
 	for k := range m {
 		o = append(o, k)
 	}

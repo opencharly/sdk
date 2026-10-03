@@ -307,6 +307,8 @@ func (g *Generator) EmitInitFragmentStages(b *strings.Builder, boxName string, i
 // (use_packaged → systemd; custom exec → any init with a service_template).
 // Relocated from charly (P8); byte-identical. The service render itself crosses
 // to candy/plugin-init via the RenderService seam.
+//
+//nolint:gocyclo // three peer def.Model-selected render arms (fragment_assembly concat with per-distro and packaged/custom entry filters, relay emission, file_copy globbing) inside one per-candy loop; they share only fragDir/layer, so no cohesive sub-function to lift.
 func (g *Generator) GenerateInitFragments(boxName, initName string, def *spec.ResolvedInit, candyOrder []string) error {
 	fragDir := filepath.Join(g.BuildDir, boxName, def.FragmentDir)
 	if err := os.MkdirAll(fragDir, 0755); err != nil {

@@ -4,8 +4,11 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -51,6 +54,183 @@ func TestLowerGolden(t *testing.T) {
 	}
 	checkGolden(t, "e2e.workflow.lobster.golden", lobster)
 	checkGolden(t, "e2e.charly.yml.golden", charly)
+}
+
+// TestLowerRefsBraceForm pins the FORM of the ref the lowering writes into a generated
+// plan, and proves it through the REAL expander — kit.ExpandOpVars, whose grammar is the
+// exported kit.TestVarRefPattern — rather than through a local copy of that grammar, which
+// would only re-state it. The expander is BRACE-ONLY, so a ref consumed as a non-shell verb
+// input must be emitted as ${REF_n}: the bare $REF_n form is not a ref at all and passes
+// through as literal text, which is the defect this pins.
+func TestLowerRefsBraceForm(t *testing.T) {
+	p := &spec.Pipeline{
+		Description: "ref-form fixture",
+		Steps: []spec.PipelineStep{
+			{Id: "fetch", Run: `printf '{"name":"ok"}'`},
+			{Id: "probe", Plan: []spec.Step{
+				// a NON-SHELL verb input carrying the ref (a plugin verb's opaque field).
+				{Run: "the ref reaches a plugin verb input", Op: spec.Op{Plugin: "task", PluginInput: map[string]any{"task": "$fetch.json.name"}}},
+			}},
+		},
+	}
+	_, charly, err := Lower(p, "/proj", "/proj/.opencharly/pipelines/ref", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	plan := string(charly)
+	braceRef := "${REF_1}"
+	if !strings.Contains(plan, braceRef) {
+		t.Errorf("generated plan does not carry the brace form %s:\n%s", braceRef, plan)
+	}
+	if strings.Contains(plan, "$REF_1") {
+		t.Errorf("generated plan still carries the bare form $REF_1 (never expanded):\n%s", plan)
+	}
+	// The emitted ref must be matched by the REAL expander's grammar — kit.TestVarRefPattern,
+	// read off the generated artifact itself. A local copy of the pattern matched against the
+	// literal constant would only re-state the grammar and could never fail.
+	if refs := kit.TestVarRefPattern.FindAllString(plan, -1); !slices.Contains(refs, braceRef) {
+		t.Fatalf("generated plan's refs %v do not include %s, the form kit.ExpandOpVars expands:\n%s", refs, braceRef, plan)
+	}
+	// And it must actually RESOLVE through that expander, in the field a plugin verb reads (the
+	// opaque PluginInput map, not a shell string): this is the behaviour the lowering change is for.
+	op := &spec.Op{Plugin: "task", PluginInput: map[string]any{"task": braceRef}}
+	if missing := kit.ExpandOpVars(op, map[string]string{"REF_1": "ok"}); len(missing) != 0 {
+		t.Fatalf("%s did not resolve in kit.ExpandOpVars: unresolved %v", braceRef, missing)
+	}
+	if got := op.PluginInput["task"]; got != "ok" {
+		t.Errorf("plugin input = %v, want the expanded value \"ok\"", got)
+	}
+	// The control the fix exists for: the BARE form is not a reference at all, so it passes
+	// through as literal text — which is exactly why the plan must not carry it.
+	bare := &spec.Op{Plugin: "task", PluginInput: map[string]any{"task": "$REF_1"}}
+	if missing := kit.ExpandOpVars(bare, map[string]string{"REF_1": "ok"}); len(missing) != 0 {
+		t.Fatalf("the bare form must not parse as a reference: unexpected unresolved %v", missing)
+	}
+	if got := bare.PluginInput["task"]; got != "$REF_1" {
+		t.Errorf("bare $REF_1 must pass through as literal text, got %v", got)
+	}
+}
+
+// TestLowerInputSchemaKey pins the ONE key whose spelling differs between the authored
+// pipeline and the lobster file. The authoring def spells the input gate's schema
+// `response_schema` (spec/schema/pipeline.cue #PipelineInput, whose Go field carries
+// `yaml:"response_schema"`); the lobster file spells it `responseSchema` — what upstream
+// lobster reads, transcribed into plugin-lobster's #LobsterInput, whose loader REQUIRES it
+// (a step whose input object lacks `responseSchema` is rejected at load with
+// "input.responseSchema must be an object"). So the lowering has to translate this one
+// key: emitted with the authoring spelling, an input gate never reaches the engine.
+func TestLowerInputSchemaKey(t *testing.T) {
+	p := &spec.Pipeline{
+		Description: "input-gate fixture",
+		Steps: []spec.PipelineStep{
+			{Id: "ask", Input: spec.PipelineInput{
+				Prompt:         "which branch?",
+				ResponseSchema: map[string]any{"type": "object"},
+			}},
+		},
+	}
+	lobster, _, err := Lower(p, "/proj", "/proj/.opencharly/pipelines/ask", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	plan := string(lobster)
+	// The engine's key, and the only form any lobster consumer reads.
+	if !strings.Contains(plan, "responseSchema:") {
+		t.Errorf("the lobster file does not carry `responseSchema`, the key the engine requires:\n%s", plan)
+	}
+	// The authoring spelling must not survive into the lobster file.
+	if strings.Contains(plan, "response_schema") {
+		t.Errorf("the lobster file carries the AUTHORING spelling `response_schema`, which the engine's loader rejects:\n%s", plan)
+	}
+}
+
+// redoPipeline is the migrated-stage shape: a lobster step whose plan is ONE
+// `{<verb>: {…, redo: {…}}}` element (what plugin-migrate's reshapePipelineVerbStage emits).
+// The redo spec lives in the verb body and must be COPIED onto the lobster step. It covers
+// BOTH marshalled element shapes, because the verb body has to be found by KEY and not by
+// position: `oracle` carries a `Run` description — the ordinary authored step, which marshals
+// as the two-pair `{run: <desc>, task: {…}}` element (spec.Step emits its intent keyword
+// first) — while `renode` does not, the one-pair `{task: {…}}` element. A positional lookup
+// passes exactly one of the two and silently drops the redo on the other.
+func redoPipeline() *spec.Pipeline {
+	return &spec.Pipeline{
+		Description: "redo-carry fixture",
+		Steps: []spec.PipelineStep{
+			{Id: "oracle", Plan: []spec.Step{
+				{Run: "rewind the oracle", Op: spec.Op{Plugin: "task", PluginInput: map[string]any{
+					"task": "oracle",
+					"redo": map[string]any{
+						"max":            4,
+						"escalate_after": 5,
+						"triggers":       map[string]any{"redo-plan": "oracle"},
+					},
+				}}},
+			}},
+			{Id: "renode", Plan: []spec.Step{
+				{Op: spec.Op{Plugin: "task", PluginInput: map[string]any{
+					"task": "renode",
+					"redo": map[string]any{
+						"max":      2,
+						"triggers": map[string]any{"redo-plan": "renode"},
+					},
+				}}},
+			}},
+			{Id: "plain", Plan: []spec.Step{
+				{Op: spec.Op{Plugin: "task", PluginInput: map[string]any{"task": "plain"}}},
+			}},
+		},
+	}
+}
+
+// TestLowerRedoCarry proves the redo spec is COPIED, not moved: the engine reads it off
+// the lobster STEP (which would otherwise be `{id, run}` only, since `plan:` is deleted),
+// while the VERB still reads `redo.on_fail` from its own input. Both plan-element shapes are
+// asserted separately, so a regression to a positional verb-body lookup fails here.
+func TestLowerRedoCarry(t *testing.T) {
+	lobster, charly, err := Lower(redoPipeline(), "/proj", "/proj/.opencharly/pipelines/redo", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	checkGolden(t, "redo.workflow.lobster.golden", lobster)
+	checkGolden(t, "redo.charly.yml.golden", charly)
+
+	// BOTH halves must carry it — either alone would pass under a wrong implementation.
+	if !strings.Contains(string(charly), "redo:") {
+		t.Errorf("generated charly verb input lost the redo spec (move, not copy):\n%s", charly)
+	}
+	ls := string(lobster)
+	if n := strings.Count(ls, "redo:"); n != 2 {
+		t.Errorf("want the redo spec on BOTH redo steps of the lobster file, got %d `redo:` keys:\n%s", n, ls)
+	}
+	// Per-step, so each element shape is pinned on its own.
+	io, ir, ip := strings.Index(ls, "id: oracle"), strings.Index(ls, "id: renode"), strings.Index(ls, "id: plain")
+	if io < 0 || ir < 0 || ip < 0 || io >= ir || ir >= ip {
+		t.Fatalf("the lobster file does not carry the three steps in order:\n%s", ls)
+	}
+	if !strings.Contains(ls[io:ir], "redo:") {
+		t.Errorf("the step with a `Run` description did not get the redo spec (two-pair element):\n%s", ls[io:ir])
+	}
+	if !strings.Contains(ls[ir:ip], "redo:") {
+		t.Errorf("the description-free step did not get the redo spec (one-pair element):\n%s", ls[ir:ip])
+	}
+	if strings.Contains(ls[ip:], "redo:") {
+		t.Errorf("a plan step with no redo gained a `redo:` key:\n%s", ls[ip:])
+	}
+}
+
+// TestLowerNoRedoEmitsNoKey pins the defensive half: no redo child → no `redo:` key
+// anywhere (never an empty `redo: {}`), so a plain plan lowers byte-identically to before.
+func TestLowerNoRedoEmitsNoKey(t *testing.T) {
+	lobster, charly, err := Lower(e2ePipeline(), "/proj", "/proj/.opencharly/pipelines/e2e", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	if strings.Contains(string(lobster), "redo") {
+		t.Errorf("lowered a step with no redo but emitted a `redo` key:\n%s", lobster)
+	}
+	if strings.Contains(string(charly), "redo") {
+		t.Errorf("generated charly.yml with no redo gained a `redo` key:\n%s", charly)
+	}
 }
 
 func TestLowerCharlyStep(t *testing.T) {

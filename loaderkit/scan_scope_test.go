@@ -59,7 +59,7 @@ func versionOf(cacheDir string) string {
 }
 
 func downloadsForScope(tags []string, referrersByTag map[string][]string) []spec.RemoteDownload {
-	var out []spec.RemoteDownload
+	out := make([]spec.RemoteDownload, 0, len(tags))
 	for _, tag := range tags {
 		out = append(out, spec.RemoteDownload{
 			RepoPath:     "github.com/opencharly/pod-dbus",

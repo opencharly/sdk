@@ -190,7 +190,7 @@ func writeLedger(paths *LedgerPaths, deploys map[string]DeployRecord, candies ma
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	defer func() { _ = unlock() }()
 
 	data, err := os.ReadFile(paths.ConfigFile)
 	var doc yaml.Node
@@ -232,26 +232,15 @@ func writeLedger(paths *LedgerPaths, deploys map[string]DeployRecord, candies ma
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(out); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return err
 	}
 	return os.Rename(tmpName, paths.ConfigFile)
-}
-
-// hasMappingKey reports whether a mapping node has a top-level key with the given
-// name.
-func hasMappingKey(m *yaml.Node, name string) bool {
-	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == name {
-			return true
-		}
-	}
-	return false
 }
 
 // recordMapNode builds a YAML mapping node from a record map (deploy-id or
@@ -567,6 +556,9 @@ func AddCandyDeploymentVia(exec spec.DeployExecutor, paths *LedgerPaths, candyNa
 	// charly.yml. `~` resolves in the substrate shell.
 	const remoteFile = "~/.config/charly/charly.yml"
 	data, err := exec.GetFile(ctx, remoteFile, false, EmitOpts{})
+	if err != nil {
+		return err
+	}
 	// Read-modify-write the substrate's charly.yml: preserve every other key
 	// (deploy:, provides:, cache:, system:), update only the ledger: section.
 	out, err := mutateRemoteLedger(data, func(deploys map[string]DeployRecord, candies map[string]CandyRecord) (map[string]DeployRecord, map[string]CandyRecord, error) {
@@ -617,6 +609,9 @@ func WriteDeployRecordVia(exec spec.DeployExecutor, paths *LedgerPaths, rec *Dep
 		return err
 	}
 	data, err := exec.GetFile(ctx, remoteFile, false, EmitOpts{})
+	if err != nil {
+		return err
+	}
 	out, err := mutateRemoteLedger(data, func(deploys map[string]DeployRecord, candies map[string]CandyRecord) (map[string]DeployRecord, map[string]CandyRecord, error) {
 		deploys[rec.DeployID] = *rec
 		return deploys, candies, nil

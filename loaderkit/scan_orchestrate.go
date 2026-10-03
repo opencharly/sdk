@@ -40,6 +40,8 @@ type ScanSeams = spec.ScanSeams
 // supplying the seams. Behavior-identical to the pre-move function: same steps 2-5, same order.
 // initCfg is the project init: vocabulary threaded into the FINAL finalize choke point (nil for a
 // non-generate caller — matches the pre-move opts.InitCfg).
+//
+//nolint:gocyclo // fix-point fetch loop: the seed and enqueue closures guard on the same scanned/seeded/referrer maps each round accumulates, plus per-dep remote-vs-sibling routing and per-ref arbitration; the branches are state-coupled to the loop, not liftable.
 func ScanCandyFromLocal(localScanned map[string]spec.ScannedCandy, initCfg *buildkit.InitConfig, seams ScanSeams) (map[string]spec.CandyReader, error) {
 	// 2. Collect remote refs from @-prefixed candy references, PLUS every local candy's raw
 	// (pre-finalize) require:/candy: refs — see the CollectRemoteRefs closure (spec.WithLocalRawRefs)

@@ -51,7 +51,7 @@ func TestOCITarget_ResetsUserBetweenCandies(t *testing.T) {
 	if rootIdx < 0 {
 		t.Fatalf("no USER root reset emitted between candies; the root step would run as UID 1000:\n%s", got)
 	}
-	if !(userIdx < rootIdx && rootIdx < pacmanIdx) {
+	if userIdx >= rootIdx || rootIdx >= pacmanIdx {
 		t.Errorf("USER root must sit between the user switch and the next candy's root step "+
 			"(userIdx=%d rootIdx=%d pacmanIdx=%d):\n%s", userIdx, rootIdx, pacmanIdx, got)
 	}

@@ -1,6 +1,7 @@
 package charlylib
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"reflect"
@@ -84,7 +85,8 @@ func TestRunUnknownNameExitsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Run with an unknown name exited 0; want a non-zero exit\n%s", out)
 	}
-	if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() != 2 {
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 2 {
 		t.Fatalf("exit = %v, want code 2\n%s", err, out)
 	}
 	if !strings.Contains(string(out), "known plugins") {

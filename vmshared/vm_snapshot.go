@@ -308,6 +308,8 @@ type SnapshotCreateOpts struct {
 // create`. Looks up the active VM, dispatches to the matching mode-
 // specific implementation, and records the result in registry.json +
 // meta.json.
+//
+//nolint:gocyclo // linear validation and idempotency guards over two independent staleness forms (missing disk, rebuilt backing chain) with external-only libvirt/dir cleanup, then a two-arm mode dispatch; each guard returns its own distinct wrapped error.
 func CreateSnapshot(opts SnapshotCreateOpts) (*SnapshotEntry, error) {
 	if opts.VmName == "" {
 		return nil, fmt.Errorf("CreateSnapshot: vm name is required")

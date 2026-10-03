@@ -36,6 +36,8 @@ type QemuRuntimePaths struct {
 // launch_security beyond SEV, PCI hostdev, graphics/spice, TPM) are
 // skipped with a warning comment inserted via the caller's log output —
 // this function only returns argv.
+//
+//nolint:gocyclo // a linear sequence of independent argv emissions, one guard per runtime/spec field (firmware variant, seed vs installer ISO, per disk/nic/rng/channel/socket); each appends to the same args slice and shares no arm logic.
 func RenderQemuArgv(spec *VmSpec, rt VmRuntimeParams, paths QemuRuntimePaths) []string {
 	arch := rt.HostArch
 	if arch == "" {
