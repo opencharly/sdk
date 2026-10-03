@@ -5,6 +5,8 @@ go 1.26.4
 require (
 	cuelang.org/go v0.16.1
 	github.com/alecthomas/kong v1.15.0
+	github.com/emicklei/dot v1.11.0
+	github.com/expr-lang/expr v1.17.8
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/renameio/v2 v2.0.2
 	github.com/google/uuid v1.6.0
@@ -13,7 +15,9 @@ require (
 	github.com/openai/openai-go/v3 v3.61.0
 	github.com/opencharly/plugin-egress/candy/plugin-egress v0.2026237.1419
 	github.com/opencharly/plugin-init/candy/plugin-init v0.2026237.1424
-	github.com/opencharly/spec v0.2026273.203
+	github.com/opencharly/spec v0.2026276.0
+	github.com/robfig/cron/v3 v3.0.1
+	github.com/tidwall/gjson v1.19.0
 	golang.org/x/term v0.45.0
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
@@ -70,7 +74,6 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect

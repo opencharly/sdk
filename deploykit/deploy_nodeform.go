@@ -62,15 +62,15 @@ func MarshalDeployNode(node *spec.Deploy, primaries map[string]string) (*yaml.No
 	// Copy ONLY the inline fields — skip the structural keys handled specially: target (→
 	// the discriminator), the loader-built member tree (member/member_of → recursive child
 	// nodes below), descent (loader-derived, never persisted), name (the map key, never a
-	// body field). Plan steps get resugared.
+	// body field). Plan steps get resugared — at EVERY depth, because the loader desugars
+	// nested plans too (loaderkit.desugarNestedPlans), so a `task: {plan: …}` or a nested
+	// `plan:` must round-trip back to the authored sugar with it.
+	ResugarNested(fullBody, primaries)
 	skip := map[string]bool{"target": true, "member": true, "member_of": true, "descent": true, "name": true}
 	for i := 0; i+1 < len(fullBody.Content); i += 2 {
 		k, v := fullBody.Content[i], fullBody.Content[i+1]
 		if skip[k.Value] {
 			continue
-		}
-		if k.Value == "plan" {
-			resugarPlan(v, primaries)
 		}
 		value.Content = append(value.Content, k, v)
 	}
@@ -143,7 +143,7 @@ func scalarFieldValue(m *yaml.Node, key string) string {
 	return ""
 }
 
-// resugarPlan is the parse-time desugar's INVERSE, used by the deploy-state WRITER: each step's
+// ResugarPlan is the parse-time desugar's INVERSE, used by the deploy-state WRITER: each step's
 // internal plugin/plugin_input pair rewrites back to the authored `<word>: <input>` sugar
 // (collapsing a single-primary map to the scalar shorthand), so a written file round-trips through
 // the parse-time desugar instead of tripping its authored-envelope ban.
@@ -151,8 +151,10 @@ func scalarFieldValue(m *yaml.Node, key string) string {
 // primaries is the plugin-verb WORD → primary-field D-fact (spec.ResolvedProject.Primaries /
 // spec.Threaded.Primaries): resugar reads it as DATA rather than dialing a provider registry, so
 // any holder of the envelope drives the identical resugar. (Replaces the pre-convergence
-// kit.ResugarPlan, which lacked the primaries-driven scalar-collapse.)
-func resugarPlan(plan *yaml.Node, primaries map[string]string) {
+// kit.ResugarPlan, which lacked the primaries-driven scalar-collapse.) Exported because the
+// workflow LOWERING (sdk/workflowkit) emits a plan: block into a generated charly.yml and must
+// write the SAME authored sugar the deploy writer does.
+func ResugarPlan(plan *yaml.Node, primaries map[string]string) {
 	if plan == nil || plan.Kind != yaml.SequenceNode {
 		return
 	}
@@ -197,4 +199,50 @@ func resugarPlan(plan *yaml.Node, primaries map[string]string) {
 		}
 		st.Content = nc
 	}
+}
+
+// ResugarNested is ResugarPlan's recursive counterpart: it walks a whole body subtree and
+// resugars EVERY plan it reaches, not just a top-level `plan:`. It is the INVERSE of the
+// loader's nested-plan desugar (loaderkit.desugarNestedPlans), so a writer that emits a
+// body containing a nested `task: {plan: …}`, a `parallel.branches[].plan`, or an inline
+// entity's plan round-trips through the parse instead of tripping its authored-envelope ban.
+//
+// It stops at a MEMBER-kind key (spec.ResourceKinds), exactly as the loader does — the
+// loader never desugars inside a resource member, so resugaring there would drift on reload.
+// The threaded external structural/deploy-substrate kinds the loader ALSO stops at are not
+// in reach here (this signature carries no spec.Threaded); the CUE-derived resource kinds are
+// the closed set the writer must cover.
+func ResugarNested(node *yaml.Node, primaries map[string]string) {
+	if node == nil {
+		return
+	}
+	switch node.Kind {
+	case yaml.SequenceNode:
+		for _, c := range node.Content {
+			ResugarNested(c, primaries)
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			k, v := node.Content[i].Value, node.Content[i+1]
+			if isResourceKindWord(k) {
+				continue
+			}
+			if k == "plan" && v.Kind == yaml.SequenceNode && len(v.Content) > 0 && v.Content[0].Kind == yaml.MappingNode {
+				ResugarPlan(v, primaries)
+				continue
+			}
+			ResugarNested(v, primaries)
+		}
+	}
+}
+
+// isResourceKindWord reports whether w is one of the CUE-derived resource kinds (#ResourceKind)
+// — the member keys the loader does not descend into.
+func isResourceKindWord(w string) bool {
+	for _, k := range spec.ResourceKinds {
+		if k == w {
+			return true
+		}
+	}
+	return false
 }
