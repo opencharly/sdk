@@ -421,8 +421,9 @@ func TestConsoleSession_MarkerUniquenessAcrossSessions(t *testing.T) {
 	if a.NextMarker() == b.NextMarker() {
 		t.Fatalf("markers from two sessions must differ (stale-echo guard): %q", a.NextMarker())
 	}
-	if a.NextMarker() == a.NextMarker() {
-		t.Fatal("markers within a session must differ")
+	m1, m2 := a.NextMarker(), a.NextMarker()
+	if m1 == m2 {
+		t.Fatalf("markers within a session must differ: %q == %q", m1, m2)
 	}
 	for _, r := range a.NextMarker() {
 		ok := r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')

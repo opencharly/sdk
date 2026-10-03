@@ -628,7 +628,7 @@ func Chat(ctx context.Context, cfg Config, msgs []openai.ChatCompletionMessagePa
 
 	svc := openai.NewChatCompletionService(cfg.clientOptions()...)
 	stream := svc.NewStreaming(readCtx, cfg.buildParams(msgs, tools), cfg.extraOptions()...)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var acc openai.ChatCompletionAccumulator
 	var sawChunk bool

@@ -13,9 +13,9 @@ _pipeline-e2e-probe:
         description: lowered from pipeline step e2e/probe
         plan:
             - run: the ref reaches the charly step shell-safely
-              command: printf "NAME=%s\n" "$REF_1"
+              command: printf "NAME=%s\n" "${REF_1}"
             - run: a plugin verb dispatches through the core registry
               task:
                 task: hello
             - run: a passed-through env var expands
-              command: echo "N=$REF_2"
+              command: echo "N=${REF_2}"

@@ -57,7 +57,7 @@ func ResolveKindEntityBody(uf *spec.UnifiedFile, kind, ref string) (json.RawMess
 	}
 	if t := uf.ProjectTemplates(); t != nil {
 		if body, ok := t.ByKind(kind)[ref]; ok {
-			return json.RawMessage(body), true
+			return body, true
 		}
 	}
 	return nil, false

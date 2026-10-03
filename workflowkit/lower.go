@@ -133,6 +133,28 @@ type generatedTask struct {
 	node *yaml.Node
 }
 
+// mapLobsterInputKey renames the input gate's schema key to the spelling the LOBSTER file
+// uses. It is the ONE key whose spelling differs between the authored pipeline and the
+// lobster file: the authoring def spells it `response_schema` (spec/schema/pipeline.cue
+// #PipelineInput, whose Go field carries `yaml:"response_schema"`), while the lobster file —
+// and every lobster consumer, upstream's loader included — spells it `responseSchema`
+// (plugin-lobster's #LobsterInput). The engine's loader REQUIRES the key: a step whose
+// `input` object lacks `responseSchema` is rejected at load. Emitted with the authoring
+// spelling, an input gate would never reach the engine at all. Every other step key already
+// agrees between the two spellings, so this is the whole of the translation.
+func mapLobsterInputKey(st *yaml.Node) {
+	in := kit.MappingChild(st, "input")
+	if in == nil || in.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(in.Content); i += 2 {
+		if in.Content[i].Value == "response_schema" {
+			in.Content[i].Value = "responseSchema"
+			return
+		}
+	}
+}
+
 // lowerStep lowers ONE step (or sub-step / parallel branch) in place and returns it. A
 // `plan:` step becomes a `run:` that calls the generated charly task with `--output` and
 // the step's lobstered references passed as `-p REF_n="$REF_n"`; a `charly:` step becomes a
@@ -142,6 +164,7 @@ func (c *lowerCtx) lowerStep(st *yaml.Node, path string) (*yaml.Node, error) {
 	if st == nil || st.Kind != yaml.MappingNode {
 		return st, nil
 	}
+	mapLobsterInputKey(st)
 
 	// recurse into the nested step lists FIRST, so a branch's own plan:/charly: lowers too.
 	if par := kit.MappingChild(st, "parallel"); par != nil {
@@ -194,6 +217,7 @@ func (c *lowerCtx) lowerStep(st *yaml.Node, path string) (*yaml.Node, error) {
 			}
 		}
 		rewritePlanRefs(planCopy, refs)
+		carryStepRedo(st, planCopy)
 		deleteKey(st, "plan")
 		setKey(st, "run", scalarNode(strings.Join(argv, " ")))
 		pruneEmptyMappings(st)
@@ -239,16 +263,91 @@ func planRefs(plan *yaml.Node) []string {
 	return out
 }
 
-// rewritePlanRefs rewrites every `$step.path` in a plan to `$REF_<n>`, the env var the
-// lobster step sets (index i → REF_(i+1), matching planRefs' order).
+// rewritePlanRefs rewrites every `$step.path` in a plan to `${REF_<n>}`, the env var the
+// lobster step sets (index i → REF_(i+1), matching planRefs' order). The BRACE form is
+// mandatory: the expander that runs the plan (kit.ExpandOpVars, kit.TestVarRefPattern) is
+// brace-only, so a bare `$REF_<n>` would reach a plugin-verb input as literal text.
 func rewritePlanRefs(plan *yaml.Node, refs []string) {
 	index := make(map[string]string, len(refs))
 	for i, r := range refs {
-		index[r] = fmt.Sprintf("$REF_%d", i+1)
+		index[r] = fmt.Sprintf("${REF_%d}", i+1)
 	}
 	walkScalarValues(plan, func(n *yaml.Node) {
 		n.Value = refRe.ReplaceAllStringFunc(n.Value, func(m string) string { return index[m] })
 	})
+}
+
+// carryStepRedo COPIES a lowered plan's `redo` spec onto the lobster step as a
+// charly-only key. The spec must reach BOTH halves: the VERB still reads `redo.on_fail`
+// to choose the trigger it emits, while the ENGINE reads `triggers`/`max`/`escalate_after`
+// off the STEP — and `plan:` is deleted from the lobster step at lowering, so the engine
+// would otherwise see nothing to rewind on. The plan is a one-element `!!seq`; its element's
+// verb body — the mapping that carries the `redo` child — is located by KEY (verbBody), not
+// by position. The node is CLONED (never inserted twice), GUARDED (an already-present step
+// redo wins; a second Lower must not duplicate) and DEFENSIVE (any shape mismatch, or no
+// `redo` child, emits NOTHING — never an empty `redo:`, which would be noise and a behaviour
+// change).
+func carryStepRedo(st, plan *yaml.Node) {
+	if kit.MappingChild(st, "redo") != nil {
+		return
+	}
+	if plan == nil || plan.Kind != yaml.SequenceNode || len(plan.Content) != 1 {
+		return
+	}
+	body := verbBody(plan.Content[0])
+	if body == nil {
+		return
+	}
+	redoSpec := kit.MappingChild(body, "redo")
+	if redoSpec == nil {
+		return
+	}
+	cp, err := cloneNode(redoSpec)
+	if err != nil || cp == nil {
+		return
+	}
+	setKey(st, "redo", cp)
+}
+
+// stepIntentKeys are the plan-element keys that carry the step's INTENT DESCRIPTION (a
+// scalar) rather than a verb body — derived from spec's own exported discriminator
+// constants so the vocabulary is never duplicated here.
+var stepIntentKeys = map[string]bool{
+	string(spec.KwRun):        true,
+	string(spec.KwCheck):      true,
+	string(spec.KwAgentRun):   true,
+	string(spec.KwAgentCheck): true,
+	string(spec.KwInclude):    true,
+}
+
+// verbBody returns a lowered plan element's VERB BODY — the mapping that carries the step's
+// verb input, and with it any `redo:` spec — or nil when the element has none.
+//
+// It must be found by KEY, never by position. A plan element marshals in one of two shapes:
+//
+//	{<verbKey>: <verbBody>}                       — a plan step with no description
+//	{run: <description>, <verbKey>: <verbBody>}   — … and with one
+//
+// The second shape is the ordinary authored one (spec.Step marshals its intent keyword
+// BEFORE the inline Op, so a described step emits `run:` first), and there Content[1] is the
+// `run` SCALAR — so a positional lookup finds a non-mapping, returns early, and silently
+// drops the redo: exactly the engine-invisible failure this helper exists to prevent. Every
+// intent keyword is skipped; the first remaining pair whose value is a MAPPING is the verb
+// body (a verb's input is an object — the scalar shorthand belongs to a single-primary input,
+// which cannot carry a `redo` child at all).
+func verbBody(el *yaml.Node) *yaml.Node {
+	if el == nil || el.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(el.Content); i += 2 {
+		if stepIntentKeys[el.Content[i].Value] {
+			continue
+		}
+		if v := el.Content[i+1]; v.Kind == yaml.MappingNode {
+			return v
+		}
+	}
+	return nil
 }
 
 // walkScalarValues calls fn on every scalar VALUE in a node subtree (mapping KEYS are

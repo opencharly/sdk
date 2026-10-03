@@ -112,7 +112,7 @@ func writeSystemInfo(path string, info spec.SystemInfo) error {
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	defer func() { _ = unlock() }()
 
 	data, err := os.ReadFile(path)
 	var doc yaml.Node
@@ -154,12 +154,12 @@ func writeSystemInfo(path string, info spec.SystemInfo) error {
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(out); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return err
 	}
 	return os.Rename(tmpName, path)

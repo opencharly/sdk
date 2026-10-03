@@ -24,8 +24,12 @@ import (
 
 func TestMain(m *testing.M) {
 	tmp := os.TempDir()
-	os.Setenv(SystemConfigEnv, filepath.Join(tmp, "charly-test-absent-system.yml"))
-	os.Setenv(spec.DeployConfigEnv, filepath.Join(tmp, "charly-test-absent-user.yml"))
+	if err := os.Setenv(SystemConfigEnv, filepath.Join(tmp, "charly-test-absent-system.yml")); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv(spec.DeployConfigEnv, filepath.Join(tmp, "charly-test-absent-user.yml")); err != nil {
+		panic(err)
+	}
 	code := m.Run()
 	os.Exit(code)
 }
