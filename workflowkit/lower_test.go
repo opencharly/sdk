@@ -4,10 +4,11 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -56,9 +57,11 @@ func TestLowerGolden(t *testing.T) {
 }
 
 // TestLowerRefsBraceForm pins the FORM of the ref the lowering writes into a generated
-// plan. The expander that runs that plan (kit.ExpandOpVars, whose grammar is
-// kit.TestVarRefPattern) is BRACE-ONLY, so a ref consumed as a non-shell verb input must
-// be emitted as ${REF_n}: the bare $REF_n form is passed through as literal text.
+// plan, and proves it through the REAL expander — kit.ExpandOpVars, whose grammar is the
+// exported kit.TestVarRefPattern — rather than through a local copy of that grammar, which
+// would only re-state it. The expander is BRACE-ONLY, so a ref consumed as a non-shell verb
+// input must be emitted as ${REF_n}: the bare $REF_n form is not a ref at all and passes
+// through as literal text, which is the defect this pins.
 func TestLowerRefsBraceForm(t *testing.T) {
 	p := &spec.Pipeline{
 		Description: "ref-form fixture",
@@ -82,10 +85,29 @@ func TestLowerRefsBraceForm(t *testing.T) {
 	if strings.Contains(plan, "$REF_1") {
 		t.Errorf("generated plan still carries the bare form $REF_1 (never expanded):\n%s", plan)
 	}
-	// The plan's ref must be matched by kit.ExpandOpVars' brace-only grammar.
-	braceOnly := regexp.MustCompile(`\$\{[A-Z_][A-Z0-9_]*\}`)
-	if !braceOnly.MatchString(braceRef) {
-		t.Fatalf("%s is not matched by the plan expander's brace-only pattern", braceRef)
+	// The emitted ref must be matched by the REAL expander's grammar — kit.TestVarRefPattern,
+	// read off the generated artifact itself. A local copy of the pattern matched against the
+	// literal constant would only re-state the grammar and could never fail.
+	if refs := kit.TestVarRefPattern.FindAllString(plan, -1); !slices.Contains(refs, braceRef) {
+		t.Fatalf("generated plan's refs %v do not include %s, the form kit.ExpandOpVars expands:\n%s", refs, braceRef, plan)
+	}
+	// And it must actually RESOLVE through that expander, in the field a plugin verb reads (the
+	// opaque PluginInput map, not a shell string): this is the behaviour the lowering change is for.
+	op := &spec.Op{Plugin: "task", PluginInput: map[string]any{"task": braceRef}}
+	if missing := kit.ExpandOpVars(op, map[string]string{"REF_1": "ok"}); len(missing) != 0 {
+		t.Fatalf("%s did not resolve in kit.ExpandOpVars: unresolved %v", braceRef, missing)
+	}
+	if got := op.PluginInput["task"]; got != "ok" {
+		t.Errorf("plugin input = %v, want the expanded value \"ok\"", got)
+	}
+	// The control the fix exists for: the BARE form is not a reference at all, so it passes
+	// through as literal text — which is exactly why the plan must not carry it.
+	bare := &spec.Op{Plugin: "task", PluginInput: map[string]any{"task": "$REF_1"}}
+	if missing := kit.ExpandOpVars(bare, map[string]string{"REF_1": "ok"}); len(missing) != 0 {
+		t.Fatalf("the bare form must not parse as a reference: unexpected unresolved %v", missing)
+	}
+	if got := bare.PluginInput["task"]; got != "$REF_1" {
+		t.Errorf("bare $REF_1 must pass through as literal text, got %v", got)
 	}
 }
 
