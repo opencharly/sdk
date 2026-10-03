@@ -281,12 +281,12 @@ func rewritePlanRefs(plan *yaml.Node, refs []string) {
 // charly-only key. The spec must reach BOTH halves: the VERB still reads `redo.on_fail`
 // to choose the trigger it emits, while the ENGINE reads `triggers`/`max`/`escalate_after`
 // off the STEP — and `plan:` is deleted from the lobster step at lowering, so the engine
-// would otherwise see nothing to rewind on. The lowered plan's shape here is exact and
-// known: a one-element `!!seq` whose element is a one-pair `{<verbKey>: <verbBody>}` map,
-// with `redo` a direct child of the verb body. The node is CLONED (never inserted twice),
-// GUARDED (an already-present step redo wins; a second Lower must not duplicate) and
-// DEFENSIVE (any shape mismatch, or no `redo` child, emits NOTHING — never an empty
-// `redo:`, which would be noise and a behaviour change).
+// would otherwise see nothing to rewind on. The plan is a one-element `!!seq`; its element's
+// verb body — the mapping that carries the `redo` child — is located by KEY (verbBody), not
+// by position. The node is CLONED (never inserted twice), GUARDED (an already-present step
+// redo wins; a second Lower must not duplicate) and DEFENSIVE (any shape mismatch, or no
+// `redo` child, emits NOTHING — never an empty `redo:`, which would be noise and a behaviour
+// change).
 func carryStepRedo(st, plan *yaml.Node) {
 	if kit.MappingChild(st, "redo") != nil {
 		return
@@ -294,23 +294,60 @@ func carryStepRedo(st, plan *yaml.Node) {
 	if plan == nil || plan.Kind != yaml.SequenceNode || len(plan.Content) != 1 {
 		return
 	}
-	el := plan.Content[0]
-	if el == nil || el.Kind != yaml.MappingNode || len(el.Content) != 2 {
+	body := verbBody(plan.Content[0])
+	if body == nil {
 		return
 	}
-	body := el.Content[1]
-	if body == nil || body.Kind != yaml.MappingNode {
+	redoSpec := kit.MappingChild(body, "redo")
+	if redoSpec == nil {
 		return
 	}
-	spec := kit.MappingChild(body, "redo")
-	if spec == nil {
-		return
-	}
-	cp, err := cloneNode(spec)
+	cp, err := cloneNode(redoSpec)
 	if err != nil || cp == nil {
 		return
 	}
 	setKey(st, "redo", cp)
+}
+
+// stepIntentKeys are the plan-element keys that carry the step's INTENT DESCRIPTION (a
+// scalar) rather than a verb body — derived from spec's own exported discriminator
+// constants so the vocabulary is never duplicated here.
+var stepIntentKeys = map[string]bool{
+	string(spec.KwRun):        true,
+	string(spec.KwCheck):      true,
+	string(spec.KwAgentRun):   true,
+	string(spec.KwAgentCheck): true,
+	string(spec.KwInclude):    true,
+}
+
+// verbBody returns a lowered plan element's VERB BODY — the mapping that carries the step's
+// verb input, and with it any `redo:` spec — or nil when the element has none.
+//
+// It must be found by KEY, never by position. A plan element marshals in one of two shapes:
+//
+//	{<verbKey>: <verbBody>}                       — a plan step with no description
+//	{run: <description>, <verbKey>: <verbBody>}   — … and with one
+//
+// The second shape is the ordinary authored one (spec.Step marshals its intent keyword
+// BEFORE the inline Op, so a described step emits `run:` first), and there Content[1] is the
+// `run` SCALAR — so a positional lookup finds a non-mapping, returns early, and silently
+// drops the redo: exactly the engine-invisible failure this helper exists to prevent. Every
+// intent keyword is skipped; the first remaining pair whose value is a MAPPING is the verb
+// body (a verb's input is an object — the scalar shorthand belongs to a single-primary input,
+// which cannot carry a `redo` child at all).
+func verbBody(el *yaml.Node) *yaml.Node {
+	if el == nil || el.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(el.Content); i += 2 {
+		if stepIntentKeys[el.Content[i].Value] {
+			continue
+		}
+		if v := el.Content[i+1]; v.Kind == yaml.MappingNode {
+			return v
+		}
+	}
+	return nil
 }
 
 // walkScalarValues calls fn on every scalar VALUE in a node subtree (mapping KEYS are

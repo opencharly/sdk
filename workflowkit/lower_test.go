@@ -144,20 +144,34 @@ func TestLowerInputSchemaKey(t *testing.T) {
 	}
 }
 
-// redoPipeline is the migrated-stage shape: ONE lobster step whose plan is ONE
-// `{<verb>: {…, redo: {…}}}` pair (what plugin-migrate's reshapePipelineVerbStage emits).
-// The redo spec lives in the verb body and must be COPIED onto the lobster step.
+// redoPipeline is the migrated-stage shape: a lobster step whose plan is ONE
+// `{<verb>: {…, redo: {…}}}` element (what plugin-migrate's reshapePipelineVerbStage emits).
+// The redo spec lives in the verb body and must be COPIED onto the lobster step. It covers
+// BOTH marshalled element shapes, because the verb body has to be found by KEY and not by
+// position: `oracle` carries a `Run` description — the ordinary authored step, which marshals
+// as the two-pair `{run: <desc>, task: {…}}` element (spec.Step emits its intent keyword
+// first) — while `renode` does not, the one-pair `{task: {…}}` element. A positional lookup
+// passes exactly one of the two and silently drops the redo on the other.
 func redoPipeline() *spec.Pipeline {
 	return &spec.Pipeline{
 		Description: "redo-carry fixture",
 		Steps: []spec.PipelineStep{
 			{Id: "oracle", Plan: []spec.Step{
-				{Op: spec.Op{Plugin: "task", PluginInput: map[string]any{
+				{Run: "rewind the oracle", Op: spec.Op{Plugin: "task", PluginInput: map[string]any{
 					"task": "oracle",
 					"redo": map[string]any{
 						"max":            4,
 						"escalate_after": 5,
 						"triggers":       map[string]any{"redo-plan": "oracle"},
+					},
+				}}},
+			}},
+			{Id: "renode", Plan: []spec.Step{
+				{Op: spec.Op{Plugin: "task", PluginInput: map[string]any{
+					"task": "renode",
+					"redo": map[string]any{
+						"max":      2,
+						"triggers": map[string]any{"redo-plan": "renode"},
 					},
 				}}},
 			}},
@@ -170,7 +184,8 @@ func redoPipeline() *spec.Pipeline {
 
 // TestLowerRedoCarry proves the redo spec is COPIED, not moved: the engine reads it off
 // the lobster STEP (which would otherwise be `{id, run}` only, since `plan:` is deleted),
-// while the VERB still reads `redo.on_fail` from its own input.
+// while the VERB still reads `redo.on_fail` from its own input. Both plan-element shapes are
+// asserted separately, so a regression to a positional verb-body lookup fails here.
 func TestLowerRedoCarry(t *testing.T) {
 	lobster, charly, err := Lower(redoPipeline(), "/proj", "/proj/.opencharly/pipelines/redo", "/usr/local/bin/charly")
 	if err != nil {
@@ -180,15 +195,26 @@ func TestLowerRedoCarry(t *testing.T) {
 	checkGolden(t, "redo.charly.yml.golden", charly)
 
 	// BOTH halves must carry it — either alone would pass under a wrong implementation.
-	if !strings.Contains(string(lobster), "redo:") {
-		t.Errorf("lobster step does not carry the redo spec (engine cannot rewind):\n%s", lobster)
-	}
 	if !strings.Contains(string(charly), "redo:") {
 		t.Errorf("generated charly verb input lost the redo spec (move, not copy):\n%s", charly)
 	}
-	// The step with no plan redo must gain NO `redo:` key at all.
-	if i := strings.Index(string(lobster), "id: plain"); i >= 0 && strings.Contains(string(lobster)[i:], "redo:") {
-		t.Errorf("a plan step with no redo gained a `redo:` key:\n%s", lobster)
+	ls := string(lobster)
+	if n := strings.Count(ls, "redo:"); n != 2 {
+		t.Errorf("want the redo spec on BOTH redo steps of the lobster file, got %d `redo:` keys:\n%s", n, ls)
+	}
+	// Per-step, so each element shape is pinned on its own.
+	io, ir, ip := strings.Index(ls, "id: oracle"), strings.Index(ls, "id: renode"), strings.Index(ls, "id: plain")
+	if io < 0 || ir < 0 || ip < 0 || io >= ir || ir >= ip {
+		t.Fatalf("the lobster file does not carry the three steps in order:\n%s", ls)
+	}
+	if !strings.Contains(ls[io:ir], "redo:") {
+		t.Errorf("the step with a `Run` description did not get the redo spec (two-pair element):\n%s", ls[io:ir])
+	}
+	if !strings.Contains(ls[ir:ip], "redo:") {
+		t.Errorf("the description-free step did not get the redo spec (one-pair element):\n%s", ls[ir:ip])
+	}
+	if strings.Contains(ls[ip:], "redo:") {
+		t.Errorf("a plan step with no redo gained a `redo:` key:\n%s", ls[ip:])
 	}
 }
 
