@@ -176,7 +176,9 @@ func isQcow2Overlay(path string) (bool, error) {
 	}
 	magic := make([]byte, 4)
 	_, rerr := io.ReadFull(f, magic)
-	f.Close()
+	if cerr := f.Close(); cerr != nil {
+		return false, fmt.Errorf("inspecting disk %s: %w", path, cerr)
+	}
 	if rerr != nil {
 		// A file too short to hold an image header is not a qcow2 overlay; the
 		// emit COPYs it as-is. (A genuinely unreadable file already errored above.)
