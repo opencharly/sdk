@@ -21,7 +21,9 @@ package kit
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,7 +273,7 @@ func walkShellSnippet(ctx context.Context, exec DeployExecutor, step spec.Instal
 		return step.ReverseOps, nil
 	}
 	existing, err := exec.GetFile(ctx, step.Destination, ownerRoot)
-	if err != nil && !isNotFound(err) {
+	if err != nil && !IsNotFound(err) {
 		return nil, fmt.Errorf("read %s: %w", step.Destination, err)
 	}
 	updated := ReplaceOrAppendManagedBlock(string(existing), strings.TrimRight(step.Snippet, "\n"), step.Marker)
@@ -381,24 +383,38 @@ func ensureVenueManagedBlock(ctx context.Context, exec DeployExecutor, opts Walk
 	path := ShellInitFilePath(shell, home)
 	body := ManagedBlockBody(shell, home)
 	existing, err := exec.GetFile(ctx, path, false)
-	if err != nil && !isNotFound(err) {
+	if err != nil && !IsNotFound(err) {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	updated := ReplaceOrAppendManagedBlock(string(existing), body, "")
 	return exec.PutFile(ctx, path, []byte(updated), 0o644, false)
 }
 
-// isNotFound recognizes a "file does not exist" error from GetFile (os.ErrNotExist or the
-// common ssh/cat "No such file or directory" text).
-func isNotFound(err error) bool {
+// IsNotFound reports whether err means "the path does not exist". It is the ONE classifier for
+// a missing file read back over the DeployExecutor reverse channel, shared by every GetFile
+// caller that must tolerate absence: the env.d managed-block read above, the substrate deploy
+// ledger (install_ledger.go, where a fresh guest legitimately has no charly.yml yet), and
+// deploykit's `optional:` artifact retrieval. It recognizes a local not-found sentinel
+// (`errors.Is(err, fs.ErrNotExist)`, so a wrapped one counts too) as well as
+// the text a remote read produces — `ssh cat` reports "No such file or directory", `ls`
+// reports "cannot access", and a tool that names the path without the errno wording reports a
+// bare "not found".
+//
+// Anything else is NOT tolerated: a permission denial, a broken channel, or a syntax error in
+// the substrate's charly.yml stays a loud failure, because treating it as "absent" would let
+// the caller silently overwrite a file it could not read.
+func IsNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return true
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "No such file or directory") || strings.Contains(msg, "no such file")
+	return strings.Contains(msg, "No such file or directory") ||
+		strings.Contains(msg, "no such file") ||
+		strings.Contains(msg, "cannot access") ||
+		strings.Contains(msg, "not found")
 }
 
 // stepCarriesHomeToken reports whether any home-bearing field of the view still holds the

@@ -556,7 +556,11 @@ func AddCandyDeploymentVia(exec spec.DeployExecutor, paths *LedgerPaths, candyNa
 	// charly.yml. `~` resolves in the substrate shell.
 	const remoteFile = "~/.config/charly/charly.yml"
 	data, err := exec.GetFile(ctx, remoteFile, false, EmitOpts{})
-	if err != nil {
+	// A substrate with no ledger yet is not a failure: the file is legitimately
+	// absent on a fresh guest, and mutateRemoteLedger builds a fresh document
+	// from the empty bytes while the `mkdir -p` write below creates the file.
+	// Only a REAL read failure (permission denied, broken channel) is fatal.
+	if err != nil && !IsNotFound(err) {
 		return err
 	}
 	// Read-modify-write the substrate's charly.yml: preserve every other key
@@ -609,7 +613,9 @@ func WriteDeployRecordVia(exec spec.DeployExecutor, paths *LedgerPaths, rec *Dep
 		return err
 	}
 	data, err := exec.GetFile(ctx, remoteFile, false, EmitOpts{})
-	if err != nil {
+	// Same tolerance as AddCandyDeploymentVia: an absent substrate ledger is the
+	// normal state of a fresh guest, not a read failure.
+	if err != nil && !IsNotFound(err) {
 		return err
 	}
 	out, err := mutateRemoteLedger(data, func(deploys map[string]DeployRecord, candies map[string]CandyRecord) (map[string]DeployRecord, map[string]CandyRecord, error) {
