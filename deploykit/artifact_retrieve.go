@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/vmshared"
 	"github.com/opencharly/spec/spec"
 )
@@ -89,7 +90,7 @@ func retrieveOneArtifact(
 	// sleep workaround (R4).
 	if a.WaitSeconds > 0 {
 		if err := waitForArtifactPath(ctx, exec, a.Path, time.Duration(a.WaitSeconds)*time.Second, opts, readiness); err != nil {
-			if a.Optional && isMissingArtifactFile(err) {
+			if a.Optional && kit.IsNotFound(err) {
 				return nil
 			}
 			return fmt.Errorf("waiting for %s: %w", a.Path, err)
@@ -102,7 +103,7 @@ func retrieveOneArtifact(
 	// `as_user:` flag; the current schema is deliberately narrow.
 	data, err := exec.GetFile(ctx, a.Path, true /*asRoot*/, opts)
 	if err != nil {
-		if a.Optional && isMissingArtifactFile(err) {
+		if a.Optional && kit.IsNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("retrieving %s: %w", a.Path, err)
@@ -174,7 +175,7 @@ func waitForArtifactPath(
 		if gerr == nil {
 			return true, 0, nil
 		}
-		if !isMissingArtifactFile(gerr) {
+		if !kit.IsNotFound(gerr) {
 			fatalErr = gerr
 			return false, 0, vmshared.ErrPollFatal // fail fast
 		}
@@ -265,21 +266,4 @@ func parseArtifactMode(s string) fs.FileMode {
 		return fs.FileMode(n)
 	}
 	return 0o644
-}
-
-// isMissingArtifactFile heuristically classifies an error as "file does not
-// exist". Used to honor `optional: true` on artifacts. Checks both
-// os.IsNotExist (local path) and common SSH-cat stderr patterns for
-// remote targets.
-func isMissingArtifactFile(err error) bool {
-	if err == nil {
-		return false
-	}
-	if os.IsNotExist(err) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "No such file or directory") ||
-		strings.Contains(msg, "cannot access") ||
-		strings.Contains(msg, "not found")
 }
