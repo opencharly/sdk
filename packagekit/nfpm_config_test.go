@@ -3,6 +3,7 @@ package packagekit
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/goreleaser/nfpm/v2"
@@ -88,6 +89,69 @@ func TestBuildInfoMissingPlugin(t *testing.T) {
 	}
 	if _, err := BuildInfo(pkg, "deb", opts); err == nil {
 		t.Fatal("expected error for variant plugin missing from the plugins dir")
+	}
+}
+
+func TestBuildInfoVariantRelationships(t *testing.T) {
+	binary, pluginsDir := fixtureInputs(t)
+	pkg := testPackaging()
+	// The shared fixture carries a deliberate "broken" variant (a plugin absent
+	// from the plugins dir) exercised by TestBuildInfoMissingPlugin; drop it so
+	// every family member here actually builds.
+	delete(pkg.Variants, "broken")
+
+	// The variant family is mutually-exclusive over a shared file set, so each
+	// package must Provides the base name and Conflicts+Replaces every OTHER
+	// family member — otherwise `pacman -S charly-minimal` over `charly` aborts on
+	// the shared /usr/bin/charly + plugin paths (the defect this covers). The
+	// family is format-derived, so assert the contract against it directly.
+	for _, format := range []string{"archlinux", "deb", "rpm", "apk", "ipk"} {
+		family := FamilyNames(pkg, format)
+		for _, variant := range VariantNames(pkg, format) {
+			info, err := BuildInfo(pkg, format, BuildOptions{
+				Binary: binary, PluginsDir: pluginsDir, Version: "2026.225.1200",
+				Arch: "amd64", Variant: variant,
+			})
+			if err != nil {
+				t.Fatalf("BuildInfo(%s, %q): %v", format, variant, err)
+			}
+			if !reflect.DeepEqual(info.Provides, []string{"charly"}) {
+				t.Errorf("%s/%s Provides = %v, want [charly]", format, variant, info.Provides)
+			}
+			var want []string
+			for _, fam := range family {
+				if fam != info.Name {
+					want = append(want, fam)
+				}
+			}
+			if !reflect.DeepEqual(info.Conflicts, want) {
+				t.Errorf("%s/%s Conflicts = %v, want %v", format, variant, info.Conflicts, want)
+			}
+			if !reflect.DeepEqual(info.Replaces, want) {
+				t.Errorf("%s/%s Replaces = %v, want %v", format, variant, info.Replaces, want)
+			}
+			for _, n := range append(append([]string{}, info.Conflicts...), info.Replaces...) {
+				if n == info.Name {
+					t.Errorf("%s/%s lists ITSELF (%q) in conflicts/replaces", format, variant, n)
+				}
+			}
+		}
+	}
+
+	// The deb family specifically: default_variant "default" → plain `charly`.
+	info, err := BuildInfo(pkg, "deb", BuildOptions{
+		Binary: binary, PluginsDir: pluginsDir, Version: "2026.225.1200",
+		Arch: "amd64", Variant: "minimal",
+	})
+	if err != nil {
+		t.Fatalf("BuildInfo(deb, minimal): %v", err)
+	}
+	if info.Name != "charly-minimal" {
+		t.Fatalf("Name = %q, want charly-minimal", info.Name)
+	}
+	want := []string{"charly", "charly-full"}
+	if !reflect.DeepEqual(info.Conflicts, want) {
+		t.Errorf("deb/minimal Conflicts = %v, want %v", info.Conflicts, want)
 	}
 }
 

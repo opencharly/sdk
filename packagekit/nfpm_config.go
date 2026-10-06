@@ -59,11 +59,34 @@ func BuildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Inf
 	}
 	arch := ArchMap(format, opts.Arch)
 
+	// The variant family (`charly`, `charly-full`, `charly-minimal`, …) is a set of
+	// MUTUALLY-EXCLUSIVE packages over a SHARED file set: every variant installs the
+	// identical binary + plugin paths (buildContents), so pacman/dpkg/rpm refuse to
+	// overwrite one variant with another unless the packages declare it. Derive the
+	// family from (name, variants) and declare the relationships the canonical Arch
+	// family pattern requires (nvidia / nvidia-dkms / nvidia-open):
+	//   - Provides the BASE name on every variant, so `Depends: charly` is satisfied
+	//     by whichever variant is installed;
+	//   - Conflicts + Replaces every OTHER family member, so a variant SWAP is a
+	//     first-class package-manager operation (replaces covers the upgrade/swap,
+	//     conflicts the co-install refusal).
+	// msix (Windows) has no package-relationship concept and ignores these.
+	var conflicts, replaces []string
+	for _, fam := range FamilyNames(pkg, format) {
+		if fam != name {
+			conflicts = append(conflicts, fam)
+			replaces = append(replaces, fam)
+		}
+	}
+
 	info := &nfpm.Info{
 		Overridables: nfpm.Overridables{
 			Depends:    f.Depends,
 			Recommends: f.Recommends,
 			Suggests:   f.Suggests,
+			Provides:   []string{pkg.Name},
+			Conflicts:  conflicts,
+			Replaces:   replaces,
 			Contents:   contents,
 		},
 		Name:        name,
