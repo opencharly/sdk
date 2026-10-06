@@ -244,6 +244,24 @@ func contains(ss []string, want string) bool {
 	return false
 }
 
+// TestRepoLeafIsTheRepoNotTheTag: the ai.opencharly.box retention value must be the
+// repository LEAF, never the tag — the bug found live on the first fix attempt
+// (`spec.LeafName` split on the CalVer dots and yielded the tag; opencharly/charly#808).
+func TestRepoLeafIsTheRepoNotTheTag(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"localhost/charly-check-kubevirt-vm-box:2026.279.1211", "charly-check-kubevirt-vm-box"},
+		{"localhost/charly-check-kubevirt-vm-box:latest", "charly-check-kubevirt-vm-box"},
+		{"ghcr.io/opencharly/fedora-nonfree:2026.180.1200", "fedora-nonfree"},
+		{"localhost:5000/repo/box", "box"}, // a registry port is not a tag
+		{"fedora", "fedora"},               // bare
+		{"fedora:latest", "fedora"},
+	} {
+		if got := repoLeaf(tc.in); got != tc.want {
+			t.Errorf("repoLeaf(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // TestRenderVmBoxContainerfilePaths pins the in-image path contract both callers depend
 // on: EmitVmBox writes /disk.qcow2 (the charly VM-box reader's path) and EmitVmBoxAt
 // writes whatever the caller names — for a KubeVirt containerDisk / Cua Fleet payload,
@@ -252,15 +270,20 @@ func TestRenderVmBoxContainerfilePaths(t *testing.T) {
 	meta := &spec.VmBoxMetadata{Version: "0.2026269.0"}
 	j, _ := json.Marshal(meta)
 
-	vmBox := renderVmBoxContainerfile("disk.qcow2", VmBoxDiskPath, j, meta)
+	vmBox := renderVmBoxContainerfile("disk.qcow2", VmBoxDiskPath, j, meta, "my-box")
 	if !strings.Contains(vmBox, "COPY disk.qcow2 /disk.qcow2\n") {
 		t.Errorf("the default VM-box render must COPY to %s; got:\n%s", VmBoxDiskPath, vmBox)
 	}
 	if strings.Contains(vmBox, ContainerDiskPath) {
 		t.Errorf("the default VM-box render must NOT carry the containerDisk path:\n%s", vmBox)
 	}
+	// The retention-group label must be present: without it the emitted tag is invisible
+	// to local-image retention and grows unbounded (opencharly/charly#808).
+	if !strings.Contains(vmBox, "LABEL "+spec.LabelBox+"=\"my-box\"") {
+		t.Errorf("the VM-box render must stamp %s=<leaf> so retention can reclaim the tag:\n%s", spec.LabelBox, vmBox)
+	}
 
-	cd := renderVmBoxContainerfile("disk.img", ContainerDiskPath, j, meta)
+	cd := renderVmBoxContainerfile("disk.img", ContainerDiskPath, j, meta, "my-box")
 	if !strings.Contains(cd, "COPY disk.img /disk/disk.img\n") {
 		t.Errorf("the containerDisk render must COPY to %s; got:\n%s", ContainerDiskPath, cd)
 	}
