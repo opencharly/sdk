@@ -39,6 +39,19 @@ func constructOpStep(ctx context.Context, ex *sdk.Executor, op *spec.Op, layer C
 	if err != nil {
 		return nil, nil
 	}
+	if verb == "build" {
+		// An explicit `build:` op is a POSITION MARKER for the candy's own task
+		// order, never an install action: the builder is emitted from manifest
+		// detection (compileBuilderSteps, step 2 of BuildDeployPlan) and hoisted
+		// ahead of every task step on the image build AND the deploy plan, so the
+		// marker carries no deploy-time effect. Lowering it to a generic OpStep
+		// yields a step with no renderable verb — Op.Build has no RenderOpCommand
+		// case — and the shared deploy walk (kit.WalkPlans → walkOp) hard-fails
+		// with "op has no plugin-renderable verb" on every target:local and
+		// target:vm deploy. Skip it, exactly as the image build renders it as the
+		// no-op "# build: all (handled by builder stage)" comment (EmitTasks).
+		return nil, nil
+	}
 	if verb != "plugin" {
 		return buildGenericOpStep(op, layer, img), nil
 	}

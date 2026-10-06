@@ -128,6 +128,37 @@ func TestCompileOpSteps_FiltersToRunStepsOnly(t *testing.T) {
 	}
 }
 
+// TestCompileOpSteps_SkipsExplicitBuildMarker proves an explicit `build:` run: step
+// (e.g. `build: all`, the ordering marker the dsh-tui candy uses to force its
+// package.json's npm builder to run before a later `dsh plugin add` step) lowers to NO
+// deploy step. Op.Build is a POSITION MARKER: the builder itself is emitted from
+// manifest detection (compileBuilderSteps, plan step 2) and hoisted ahead of every task
+// step on BOTH the image build and the deploy plan, so the marker has no deploy-time
+// effect. Before this guard the marker lowered to a generic OpStep, which
+// kit.WalkPlans's walkOp could not render (no RenderOpCommand case for Op.Build) and
+// hard-failed every target:local / target:vm deploy with "op has no plugin-renderable
+// verb" (opencharly/sdk#346). A sibling real install op in the SAME plan must still
+// lower, proving the skip is op-scoped.
+func TestCompileOpSteps_SkipsExplicitBuildMarker(t *testing.T) {
+	layer := testCandy("x", spec.CandyModel{Plan: []spec.Step{
+		{Run: "run the auto-detected builders", Op: spec.Op{Build: "all", RunAs: "${USER}"}},
+		{Run: "install dir", Op: spec.Op{Mkdir: "/should/appear"}},
+	}}, spec.CandyView{})
+
+	ctx, ex := testExecutor(nil)
+	steps, err := CompileOpSteps(ctx, ex, layer, testResolvedBox())
+	if err != nil {
+		t.Fatalf("CompileOpSteps: %v", err)
+	}
+	if len(steps) != 1 {
+		t.Fatalf("len(steps) = %d, want 1 (the build: marker must lower to nothing); got %#v", len(steps), steps)
+	}
+	op, ok := steps[0].(*OpStep)
+	if !ok || op.Op.Mkdir != "/should/appear" {
+		t.Fatalf("steps[0] = %#v, want the mkdir op only", steps[0])
+	}
+}
+
 // TestCompileOpSteps_SkipsRuntimeOnlyOps proves a run: step scoped EXCLUSIVELY to runtime
 // context (context: [runtime], no build/deploy) is skipped — it belongs to the check Runner's
 // live execution, never the install timeline; lowering it would double-execute it (once at
