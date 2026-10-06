@@ -252,15 +252,20 @@ func TestRenderVmBoxContainerfilePaths(t *testing.T) {
 	meta := &spec.VmBoxMetadata{Version: "0.2026269.0"}
 	j, _ := json.Marshal(meta)
 
-	vmBox := renderVmBoxContainerfile("disk.qcow2", VmBoxDiskPath, j, meta)
+	vmBox := renderVmBoxContainerfile("disk.qcow2", VmBoxDiskPath, j, meta, "my-box")
 	if !strings.Contains(vmBox, "COPY disk.qcow2 /disk.qcow2\n") {
 		t.Errorf("the default VM-box render must COPY to %s; got:\n%s", VmBoxDiskPath, vmBox)
 	}
 	if strings.Contains(vmBox, ContainerDiskPath) {
 		t.Errorf("the default VM-box render must NOT carry the containerDisk path:\n%s", vmBox)
 	}
+	// The retention-group label must be present: without it the emitted tag is invisible
+	// to local-image retention and grows unbounded (opencharly/charly#808).
+	if !strings.Contains(vmBox, "LABEL "+spec.LabelBox+"=\"my-box\"") {
+		t.Errorf("the VM-box render must stamp %s=<leaf> so retention can reclaim the tag:\n%s", spec.LabelBox, vmBox)
+	}
 
-	cd := renderVmBoxContainerfile("disk.img", ContainerDiskPath, j, meta)
+	cd := renderVmBoxContainerfile("disk.img", ContainerDiskPath, j, meta, "my-box")
 	if !strings.Contains(cd, "COPY disk.img /disk/disk.img\n") {
 		t.Errorf("the containerDisk render must COPY to %s; got:\n%s", ContainerDiskPath, cd)
 	}
