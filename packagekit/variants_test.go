@@ -73,3 +73,20 @@ func TestVariantNames(t *testing.T) {
 		t.Errorf("VariantNames(deb) = %v, want %v", got, want)
 	}
 }
+
+func TestFamilyNames(t *testing.T) {
+	pkg := testPackaging()
+	// deb: default_variant "default" → plain `charly`; every other variant → `charly-<v>`.
+	got := FamilyNames(pkg, "deb")
+	want := []string{"charly", "charly-broken", "charly-full", "charly-minimal"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("FamilyNames(deb) = %v, want %v", got, want)
+	}
+	// archlinux: default_variant "minimal" → the `minimal` variant IS the plain name,
+	// and `default` becomes `charly-default` — the family is format-dependent.
+	got = FamilyNames(pkg, "archlinux")
+	want = []string{"charly", "charly-broken", "charly-default", "charly-full"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("FamilyNames(archlinux) = %v, want %v", got, want)
+	}
+}

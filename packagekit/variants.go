@@ -41,6 +41,35 @@ func ResolveVariant(pkg *spec.Packaging, format, variant string) (name string, p
 	return pkg.Name + "-" + variant, v.Plugins, nil
 }
 
+// FamilyNames returns every package name this (name, variants) packaging produces
+// for a format — the format's default variant packages as the plain name, every
+// other as <name>-<variant>, and FamilyNames applies that SAME rule to every
+// variant. The set is format-dependent because `default_variant` is per-format. It
+// is the input the nFPM config uses to declare the family's mutual
+// Provides/Conflicts/Replaces: every variant installs the SAME paths, so the family
+// members are mutually-exclusive packages over a shared file set.
+func FamilyNames(pkg *spec.Packaging, format string) []string {
+	if pkg == nil {
+		return nil
+	}
+	seen := make(map[string]bool, len(pkg.Variants))
+	names := make([]string, 0, len(pkg.Variants))
+	for variant := range pkg.Variants {
+		name, _, err := ResolveVariant(pkg, format, variant)
+		if err != nil {
+			// A variant that does not resolve for this format is not produced by
+			// it, so it is not part of the format's family.
+			continue
+		}
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 // VariantNames returns the sorted variant names for a format (the default variant
 // first). Used by the distro workflows to loop over variants.
 func VariantNames(pkg *spec.Packaging, format string) []string {
