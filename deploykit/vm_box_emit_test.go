@@ -244,6 +244,24 @@ func contains(ss []string, want string) bool {
 	return false
 }
 
+// TestRepoLeafIsTheRepoNotTheTag: the ai.opencharly.box retention value must be the
+// repository LEAF, never the tag — the bug found live on the first fix attempt
+// (`spec.LeafName` split on the CalVer dots and yielded the tag; opencharly/charly#808).
+func TestRepoLeafIsTheRepoNotTheTag(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"localhost/charly-check-kubevirt-vm-box:2026.279.1211", "charly-check-kubevirt-vm-box"},
+		{"localhost/charly-check-kubevirt-vm-box:latest", "charly-check-kubevirt-vm-box"},
+		{"ghcr.io/opencharly/fedora-nonfree:2026.180.1200", "fedora-nonfree"},
+		{"localhost:5000/repo/box", "box"}, // a registry port is not a tag
+		{"fedora", "fedora"},               // bare
+		{"fedora:latest", "fedora"},
+	} {
+		if got := repoLeaf(tc.in); got != tc.want {
+			t.Errorf("repoLeaf(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // TestRenderVmBoxContainerfilePaths pins the in-image path contract both callers depend
 // on: EmitVmBox writes /disk.qcow2 (the charly VM-box reader's path) and EmitVmBoxAt
 // writes whatever the caller names — for a KubeVirt containerDisk / Cua Fleet payload,

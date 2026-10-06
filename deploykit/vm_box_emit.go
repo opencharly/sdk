@@ -115,9 +115,9 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 	// the ai.opencharly.box label; the pod-side WriteLabels stamps it, but this VM emitter
 	// did not — so every `charly vm build` box tag was INVISIBLE to retention and grew
 	// unbounded (measured: 24 tags of one bed box; opencharly/charly#808). Stamp it here
-	// with the same value convention (spec.LeafName of the ref) so a VM box tag is
+	// with the SAME value convention (the repository's leaf name) so a VM box tag is
 	// reclaimable by `charly clean` / the post-build prune, exactly like a pod box.
-	boxLabel := spec.LeafName(ref)
+	boxLabel := repoLeaf(ref)
 
 	dir, err := os.MkdirTemp("", "vm-box-emit-*")
 	if err != nil {
@@ -222,6 +222,30 @@ func flattenQcow2(src, dst string) error {
 		return fmt.Errorf("qemu-img convert %s -> %s: %w: %s", src, dst, err, msg)
 	}
 	return nil
+}
+
+// repoLeaf returns the repository LEAF of an OCI ref for the ai.opencharly.box label —
+// the retention-group value. It strips any tag (@digest / :tag) and registry/host +
+// namespace path, so `localhost/charly-check-kubevirt-vm-box:2026.279.1211` → the repo
+// leaf. NOTE (measured on the fix): `spec.LeafName` is NOT usable here — it splits on
+// NAMESPACE DOTS, so a dotted CalVer tag yields the tag, not the repo
+// (opencharly/charly#808).
+func repoLeaf(ref string) string {
+	// Drop any digest, then any tag.
+	if i := strings.IndexByte(ref, '@'); i >= 0 {
+		ref = ref[:i]
+	}
+	if i := strings.LastIndexByte(ref, ':'); i >= 0 {
+		// Only treat the last ':' as a tag separator when it is after the final '/'
+		// (a registry host may carry a port, e.g. localhost:5000/repo).
+		if j := strings.LastIndexByte(ref, '/'); i > j {
+			ref = ref[:i]
+		}
+	}
+	if i := strings.LastIndexByte(ref, '/'); i >= 0 {
+		return ref[i+1:]
+	}
+	return ref
 }
 
 // renderVmBoxContainerfile is the PURE half of the emitter: the scratch image, the disk
