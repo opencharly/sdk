@@ -118,6 +118,19 @@ func ParseCandyManifest(path string, t spec.Threaded, vocab spec.CandyVocab) (*s
 				if candyBody == nil {
 					continue
 				}
+				// THE ONE DESUGAR STEP (sdk#323). The fallback is a different SHAPE SCAN, never a
+				// different PARSE: a candy node reached this way must get the SAME plan:/instrument:
+				// desugar the primary branch gets from parseNode. Without it the body is decoded RAW,
+				// the authored `<word>: <input>` plugin-verb sugar matches no #Op field, and the
+				// closed-schema CUE decode DROPS it — every authored plugin verb in the candy's plan
+				// silently disappears (reproduced in
+				// TestParseCandyManifest_ProjectFileFallbackDesugarsPlan). The fallback is live, not
+				// theoretical: any project file carrying the retired top-level `version:` scalar makes
+				// ParseDoc fail on that scalar node, which is exactly the shape
+				// TestParseCandyManifest_ProjectFileFallback pins.
+				if derr := desugarEntityPlan(nameNode.Value, candyBody, t); derr != nil {
+					return nil, fmt.Errorf("%s: %w", path, derr)
+				}
 				var c spec.CandyYAML
 				if derr := DecodeEntityViaCUE(candyBody, reflect.TypeOf(spec.CandyYAML{}), &c, path); derr != nil {
 					return nil, fmt.Errorf("%s: %w", path, derr)
@@ -161,6 +174,15 @@ func ParseCandyManifest(path string, t spec.Threaded, vocab spec.CandyVocab) (*s
 			// plural/singular typo; full closed-schema validation is `charly box validate`'s job).
 			if err := rejectUnknownCandyTopLevelKeys(path, body); err != nil {
 				return nil, err
+			}
+		}
+		// THE SAME ONE DESUGAR STEP as the node-form and fallback paths above (sdk#323): this
+		// branch is reachable only when ParseDoc failed AND no node-form candy node was found, so
+		// nothing has desugared this body yet. Idempotent — a body that already carries the
+		// internal plugin/plugin_input pair has no sugar key left to rewrite.
+		if body != nil && body.Kind == yaml.MappingNode {
+			if err := desugarEntityPlan("candy", body, t); err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
 			}
 		}
 		var ly spec.CandyYAML
