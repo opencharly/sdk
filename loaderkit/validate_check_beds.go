@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/opencharly/spec/deploy"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -132,6 +133,14 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 		if verr := validateBedStages(name, &node); verr != nil {
 			return verr
 		}
+		// sdk#330 — the load-time control on the SILENT host deploy: a host-rooted
+		// deploy-level bed member with no `host:` lands on the machine running
+		// charly, not in the bed's venue. charly#748's parse parent-classification
+		// removes the silent host deploy for the MIS-authored bed; this refuses the
+		// shape being authored again (the north-star's end-state 5).
+		if verr := validateBedMemberPositions(name, &node); verr != nil {
+			return verr
+		}
 	}
 	return nil
 }
@@ -171,6 +180,52 @@ func validateBedStages(name string, node *spec.DeployNode) error {
 		return fmt.Errorf(
 			"kind:check bed %q: mixed stage authoring — %d of %d plan steps across the bed and its members carry stage:, but %d do not; stage authoring is all-or-nothing per bed (every step of a bed must carry stage: when any step does)",
 			name, staged, len(steps), len(steps)-staged)
+	}
+	return nil
+}
+
+// validateBedMemberPositions enforces the load-time control on the SILENT host deploy (sdk#330):
+// a DEPLOY-LEVEL member of a bed whose venue is HOST-ROOTED — the substrate's own root executor
+// runs directly on the machine running charly (a local / SSH-shell venue) — and which declares no
+// `host:`. The fold stamps a member's Position from the authored depth ALONE
+// (BuildResourceMemberChildren), and every deploy-time consumer follows only
+// InSubstrateMembers(), so such a member is walked as its OWN root: it lands on the operator's
+// workstation instead of into the bed's venue — silently, and precisely the behaviour the VM
+// beds were authored to prevent.
+//
+// Host-rootedness is read BY TRAIT over the wire-stamped node.Descent through the ONE shared
+// predicate (spec/deploy.HostRooted), never by switching on the substrate kind word — the
+// kernel/plugin boundary law's predicate rule, and the same trait HostRooted's other callers
+// (DeployNestedLocalChildren, the bed-session apply path) read.
+//
+// Two shapes are legal, and both are EXPLICIT: NEST the member inside the bed's kind body (an
+// in-substrate member deploys INTO the bed's venue), or mark it `host: local` (deploy it on the
+// host deliberately). The walk covers the WHOLE member tree — a host-rooted deploy-level member
+// is the same defect at any depth — matching validateBedStages' scope. Pure; no registry, no
+// host coupling (boundary law clause D/M), so it fires identically host-side and plugin-side.
+func validateBedMemberPositions(name string, node *spec.DeployNode) error {
+	return validateHostRootedMembers(name, "", node)
+}
+
+// validateHostRootedMembers is validateBedMemberPositions' recursion: path is the dotted prefix of
+// the node being walked, so a violation is named by its address (`bed.member.inner`), not by an
+// ambiguous bare key.
+func validateHostRootedMembers(name, path string, node *spec.DeployNode) error {
+	if node == nil {
+		return nil
+	}
+	for _, m := range node.DeployLevelMembers() {
+		if m.Node == nil || m.Node.Host != "" || !deploy.HostRooted(m.Node) {
+			continue
+		}
+		return fmt.Errorf(
+			"kind:check bed %q: member %q is a deploy-level sibling of the bed's own venue with no `host:` — it would be deployed onto the machine running charly, not into the bed. Nest it inside the bed's kind body to deploy it into the bed's venue, or set `host: local` to deploy it on the host deliberately",
+			name, path+m.Name)
+	}
+	for i := range node.Member {
+		if err := validateHostRootedMembers(name, path+node.Member[i].Name+".", node.Member[i].Node); err != nil {
+			return err
+		}
 	}
 	return nil
 }
