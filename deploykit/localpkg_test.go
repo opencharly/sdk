@@ -962,3 +962,41 @@ func TestDistroRepoProvidesPackage_MatchesPinnedVersion(t *testing.T) {
 		t.Error("distroRepoProvidesPackage with a pinned package list but no repo = true, want false (no repo install)")
 	}
 }
+
+// TestCompileLocalPkgStep_CarriesNoDeadEffectiveVersion is sdk#315's regression guard. The
+// step's Version field lost its only writer when sdk#313 removed
+// deploykit.ComputeEffectiveVersions, and nothing READS it either: downloadLocalPkg
+// (deploykit/localpkg.go) obtains the distro repo's stable "latest" copy through the
+// format's download_template, never a versioned URL. The dead assignment is deleted, so a box
+// still carrying an EffectiveVersion must not leak it onto the step. This test FAILS before
+// that deletion (the fixture box's version lands on the step) and passes after it — the
+// removal is pinned so the vestige cannot be silently reinstated.
+func TestCompileLocalPkgStep_CarriesNoDeadEffectiveVersion(t *testing.T) {
+	img := &ResolvedBox{ResolvedBox: spec.ResolvedBox{
+		Name: "test-img", Pkg: "pac", Distro: []string{"arch"},
+		EffectiveVersion: "2026.268.1917",
+	}, DistroDef: &spec.ResolvedDistro{
+		Format: map[string]*spec.Format{
+			"pac": {LocalPkg: &spec.LocalPkg{
+				DownloadTemplate: "https://example.invalid/${ARCH}/charly-${ARCH}.pkg.tar.zst",
+				InstallTemplate:  "pacman -U --noconfirm {{.StageDir}}/{{.Glob}}",
+				Probe:            "command -v pacman",
+			}},
+		},
+	}}
+	candy := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+	}, spec.CandyView{})
+
+	step := CompileLocalPkgStep(candy, img, HostContext{})
+	if step == nil {
+		t.Fatal("CompileLocalPkgStep with packaging but no distro repo = nil, want a *LocalPkgInstallStep")
+	}
+	lps, ok := step.(*LocalPkgInstallStep)
+	if !ok {
+		t.Fatalf("step = %#v, want *LocalPkgInstallStep", step)
+	}
+	if lps.Version != "" {
+		t.Errorf("LocalPkgInstallStep.Version = %q, want empty (sdk#315): the box's EffectiveVersion lost its only writer in sdk#313 and has no reader (downloadLocalPkg uses the format's stable-latest download_template), so the dead assignment must not be reinstated", lps.Version)
+	}
+}
