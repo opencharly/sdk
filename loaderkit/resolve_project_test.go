@@ -73,7 +73,7 @@ func TestProjectResolvedProject_InjectsInitDependsCandy(t *testing.T) {
 				BuilderCfg: &buildkit.BuilderConfig{},
 			})
 		},
-		FillNamespacedBoxes: func(*spec.UnifiedFile, *buildkit.InitConfig, string, string, string, *spec.ResolvedProject, map[*spec.UnifiedFile]bool) {
+		FillNamespacedBoxes: func(*spec.UnifiedFile, *buildkit.InitConfig, string, string, string, *spec.ResolvedProject, NamespaceAncestors) {
 		},
 		ResolveResources:      func(*spec.UnifiedFile) map[string]*spec.ResolvedResource { return nil },
 		ShouldIncludeDisabled: func(string) bool { return false },
