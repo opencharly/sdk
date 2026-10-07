@@ -77,15 +77,15 @@ var liveBedThreaded = spec.Threaded{
 
 // liveBedParse is the REAL per-document parse seam (the same ParseCandyManifest candy/plugin-build
 // wires), threading liveBedThreaded — the bed's hand-built, production-modelled snapshot — so the
-// node-form branch desugars the authored verb sugar against it, exactly as production does.
+// authored verb sugar is desugared against it, exactly as production does.
 //
 // The bed's MigrateCache is a documented no-op, so the derived view still carries the pristine
 // export's legacy top-level `version:` stamp. Production's command:migrate reshapes that stamp away
-// BEFORE the parse, and ParseCandyManifest's node-form branch (the ONLY branch that desugars authored
-// verb sugar) rejects a scalar top-level `version:` — it would fall back to a decoder that does not
-// desugar, which the real layer-supervisord plan (`command: {command: supervisorctl pid,
-// in_container: true}`) then fails. Dropping that ONE legacy directive here hands the parser the same
-// node-form shape production hands it, without mutating the read-only view.
+// BEFORE the parse, so dropping that ONE legacy directive here hands the parser the same document
+// shape production hands it, without mutating the read-only view. (The strip models the MIGRATE
+// reshape, which is the only reason it is faithful: since sdk#323 the candy manifest's fallback branch
+// desugars too, so the sugar no longer depends on which branch recognises the node — the fixture must
+// still mirror production's post-migrate bytes, not lean on that.)
 func liveBedParse(path string) (*spec.CandyYAML, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
