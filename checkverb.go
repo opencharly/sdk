@@ -61,7 +61,44 @@ func (s *checkVerbServer) Invoke(ctx context.Context, req *pb.InvokeRequest) (*p
 		return ResultJSON("fail", "check verb: reverse channel: "+err.Error())
 	}
 	res := s.kv.RunVerb(ctx, cc, &op)
-	return ResultJSON(kitStatusWire(res.Status), res.Message)
+	return checkVerbReply(res)
+}
+
+// checkVerbReply encodes a kit verb's verdict as the InvokeReply the out-of-process placement
+// returns — the ONE place this wire is built (R3).
+//
+// The verdict's CapturedValue is a JSON-encoded document (spec.CheckVerbResult) and the wire's
+// captured_value is raw JSON (ops.resultWire), so the capture crosses as itself instead of being
+// dropped: before this function existed the single return call was the captureless builder, so a
+// probe's captured payload — the entire reason the field exists on the OUT-OF-PROCESS verb family
+// (cdp/appium/kube/adb/wl/…) — never reached the host, while the in-process path carried it
+// (charly's checkResultFromVerb). opencharly/charly#780.
+//
+// A verdict that captured nothing returns byte-identical bytes to the pre-extension wire (the
+// field's omitempty). A verdict whose stash is NOT a JSON document is a candy bug, and it is
+// reported as a FAIL naming the cause rather than emitted as a corrupt captured_value or dropped
+// silently (R1: a hidden failure poisons every consumer of the verdict).
+func checkVerbReply(res kit.Result) (*pb.InvokeReply, error) {
+	captured, err := capturedWireValue(res.CapturedValue)
+	if err != nil {
+		return ResultJSON("fail", "check verb: captured value: "+err.Error())
+	}
+	return ops.ResultJSONCaptured(kitStatusWire(res.Status), res.Message, captured)
+}
+
+// capturedWireValue validates a verb's JSON-encoded capture and returns the value the wire
+// carries: the raw JSON for a JSON document, and an untyped nil for the empty capture (which
+// ResultJSONCaptured drops via the field's omitempty). The untyped nil matters — a typed nil
+// json.RawMessage in the `any` parameter is non-nil to ResultJSONCaptured and would be marshalled
+// as an empty document, turning "captured nothing" into a wire error.
+func capturedWireValue(encoded string) (any, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	if !json.Valid([]byte(encoded)) {
+		return nil, fmt.Errorf("the contract is a JSON-encoded value, not prose or partial JSON (got %q)", encoded)
+	}
+	return json.RawMessage(encoded), nil
 }
 
 func (s *checkVerbServer) InvokeStream(req *pb.InvokeRequest, stream pb.Provider_InvokeStreamServer) error {
