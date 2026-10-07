@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 
 	"gopkg.in/yaml.v3"
@@ -79,69 +80,80 @@ func ParseCandyManifest(path string, t spec.Threaded, vocab spec.CandyVocab) (*s
 	// migration): find the candy node among them and return ITS body — the discovered-candy scan
 	// enumerates candies; the sibling entities are resolved by the full load path (ParseDoc).
 	if len(inner.Content) >= 2 {
+		// ParseDoc failed — most commonly an EMPTY Threaded snapshot in a resolver context before
+		// the provider registry is loaded, so kind classification cannot recognize the candy
+		// discriminator. The "charly.yml is everything at once" contract says a project file
+		// (version/repo/import/discover + entity nodes) must still yield its candy nodes, so a
+		// direct scan replaces it (candyFromFlatScan).
 		if _, pp, perr := ParseDoc(inner, t); perr == nil {
-			for i := range pp.Nodes {
-				if pp.Nodes[i].Disc != "candy" {
-					continue
-				}
-				// Decode-ONLY at load (fast, runs on every invocation): the full closed-schema CUE
-				// validation (CalVer/enum/unknown-key checks) runs at `charly box validate`, not here.
-				var c spec.CandyYAML
-				if derr := DecodeNodeValue(pp.Nodes[i], &c); derr != nil {
-					return nil, fmt.Errorf("%s: %w", path, derr)
-				}
-				// Name is the node KEY in node-form (the migration moves a legacy body `name:` up to
-				// the key), so stamp it — the decoded body carries no `name:`.
-				c.Name = pp.Nodes[i].Name
-				return &c, nil
+			if c, ok, derr := candyFromParsedNodes(path, pp); ok || derr != nil {
+				return c, derr
 			}
-		} else {
-			// ParseDoc failed — most commonly an EMPTY Threaded snapshot in a resolver context
-			// before the provider registry is loaded, so kind classification cannot recognize
-			// the candy discriminator. The "charly.yml is everything at once" contract says a
-			// project file (version/repo/import/discover + entity nodes) must still yield its
-			// candy nodes. Fall back to a direct scan of the top-level mapping for a node whose
-			// value is a mapping carrying a `candy:` key — the candy discriminator — without
-			// needing kind classification.
-			for i := 0; i+1 < len(inner.Content); i += 2 {
-				nameNode, valNode := inner.Content[i], inner.Content[i+1]
-				if valNode.Kind != yaml.MappingNode {
-					continue
-				}
-				var candyBody *yaml.Node
-				for j := 0; j+1 < len(valNode.Content); j += 2 {
-					if valNode.Content[j].Value == "candy" {
-						candyBody = valNode.Content[j+1]
-						break
-					}
-				}
-				if candyBody == nil {
-					continue
-				}
-				// THE ONE DESUGAR STEP (sdk#323). The fallback is a different SHAPE SCAN, never a
-				// different PARSE: a candy node reached this way must get the SAME plan:/instrument:
-				// desugar the primary branch gets from parseNode. Without it the body is decoded RAW,
-				// the authored `<word>: <input>` plugin-verb sugar matches no #Op field, and the
-				// closed-schema CUE decode DROPS it — every authored plugin verb in the candy's plan
-				// silently disappears (reproduced in
-				// TestParseCandyManifest_ProjectFileFallbackDesugarsPlan). The fallback is live, not
-				// theoretical: any project file carrying the retired top-level `version:` scalar makes
-				// ParseDoc fail on that scalar node, which is exactly the shape
-				// TestParseCandyManifest_ProjectFileFallback pins.
-				if derr := desugarEntityPlan(nameNode.Value, candyBody, t); derr != nil {
-					return nil, fmt.Errorf("%s: %w", path, derr)
-				}
-				var c spec.CandyYAML
-				if derr := DecodeEntityViaCUE(candyBody, reflect.TypeOf(spec.CandyYAML{}), &c, path); derr != nil {
-					return nil, fmt.Errorf("%s: %w", path, derr)
-				}
-				c.Name = nameNode.Value
-				return &c, nil
-			}
+		} else if c, ok, derr := candyFromFlatScan(path, inner, t); ok || derr != nil {
+			return c, derr
 		}
 	}
 
-	// Collect top-level keys.
+	return candyFromKindKeyedForm(path, inner, t, vocab)
+}
+
+// candyFromParsedNodes returns the FIRST `candy:`-discriminated node of a ParseDoc result, decoded
+// into spec.CandyYAML (ok=false when the document carries no candy node). Decode-ONLY at load (fast,
+// runs on every invocation): the full closed-schema CUE validation (CalVer/enum/unknown-key checks)
+// runs at `charly box validate`, not here.
+func candyFromParsedNodes(path string, pp spec.ParsedProject) (*spec.CandyYAML, bool, error) {
+	for i := range pp.Nodes {
+		if pp.Nodes[i].Disc != "candy" {
+			continue
+		}
+		var c spec.CandyYAML
+		if derr := DecodeNodeValue(pp.Nodes[i], &c); derr != nil {
+			return nil, false, fmt.Errorf("%s: %w", path, derr)
+		}
+		// Name is the node KEY in node-form (the migration moves a legacy body `name:` up to the
+		// key), so stamp it — the decoded body carries no `name:`.
+		c.Name = pp.Nodes[i].Name
+		return &c, true, nil
+	}
+	return nil, false, nil
+}
+
+// candyFromFlatScan is the ParseDoc-FAILURE fallback: a direct scan of the top-level mapping for a
+// node whose value is a mapping carrying a `candy:` key — the candy discriminator — without needing
+// kind classification. It runs THE ONE desugar step, because the fallback is a different SHAPE SCAN,
+// never a different PARSE: a candy node reached this way must get the SAME plan:/instrument: desugar
+// the node-form path gets from parseNode. Without it the body is decoded RAW, the authored
+// `<word>: <input>` plugin-verb sugar matches no #Op field, and the closed-schema CUE decode DROPS it
+// — every authored plugin verb in the candy's plan silently disappears (sdk#323, reproduced in
+// TestParseCandyManifest_ProjectFileFallbackDesugarsPlan). The fallback is live, not theoretical: any
+// project file carrying the retired top-level `version:` scalar makes ParseDoc fail on that scalar
+// node, which is exactly the shape TestParseCandyManifest_ProjectFileFallback pins.
+func candyFromFlatScan(path string, inner *yaml.Node, t spec.Threaded) (*spec.CandyYAML, bool, error) {
+	for i := 0; i+1 < len(inner.Content); i += 2 {
+		nameNode, valNode := inner.Content[i], inner.Content[i+1]
+		if valNode.Kind != yaml.MappingNode {
+			continue
+		}
+		candyBody := kit.MappingChild(valNode, "candy")
+		if candyBody == nil {
+			continue
+		}
+		if derr := desugarEntityPlan(nameNode.Value, candyBody, t); derr != nil {
+			return nil, false, fmt.Errorf("%s: %w", path, derr)
+		}
+		var c spec.CandyYAML
+		if derr := DecodeEntityViaCUE(candyBody, reflect.TypeOf(spec.CandyYAML{}), &c, path); derr != nil {
+			return nil, false, fmt.Errorf("%s: %w", path, derr)
+		}
+		c.Name = nameNode.Value
+		return &c, true, nil
+	}
+	return nil, false, nil
+}
+
+// candyFromKindKeyedForm handles the canonical kind-keyed form — `candy:` as the SOLE top-level key —
+// and returns the unrecognized-shape error when the document is neither that nor node-form.
+func candyFromKindKeyedForm(path string, inner *yaml.Node, t spec.Threaded, vocab spec.CandyVocab) (*spec.CandyYAML, error) {
 	var keys []string
 	candyIdx := -1
 	for i := 0; i < len(inner.Content); i += 2 {
@@ -151,49 +163,45 @@ func ParseCandyManifest(path string, t spec.Threaded, vocab spec.CandyVocab) (*s
 			candyIdx = i + 1
 		}
 	}
-
-	if candyIdx >= 0 {
-		// Canonical kind-keyed form — `candy:` must be the only top-level key.
-		if len(keys) != 1 {
-			var other []string
-			for _, k := range keys {
-				if k != "candy" {
-					other = append(other, k)
-				}
-			}
-			return nil, fmt.Errorf("%s: ambiguous — `candy:` wrapper present AND other top-level keys %v (pick one form)", path, other)
-		}
-		// 2026-05 Calamares cutover: hard-fail on legacy field shapes.
-		// Every legacy form has a one-shot remediation via `charly migrate`.
-		body := inner.Content[candyIdx]
-		if body != nil && body.Kind == yaml.MappingNode {
-			if err := rejectLegacyCandyKeys(path, body, vocab); err != nil {
-				return nil, err
-			}
-			// Load-time top-level typo-detection (CUE-decode is lenient and would silently drop a
-			// plural/singular typo; full closed-schema validation is `charly box validate`'s job).
-			if err := rejectUnknownCandyTopLevelKeys(path, body); err != nil {
-				return nil, err
+	if candyIdx < 0 {
+		// Neither node-form nor the `candy:` kind-keyed form — an unrecognized manifest.
+		return nil, fmt.Errorf("%s: unrecognized candy manifest shape — expected node-form `<name>: {candy: …}` (or the `candy:` kind-keyed form)", path)
+	}
+	// Canonical kind-keyed form — `candy:` must be the only top-level key.
+	if len(keys) != 1 {
+		var other []string
+		for _, k := range keys {
+			if k != "candy" {
+				other = append(other, k)
 			}
 		}
-		// THE SAME ONE DESUGAR STEP as the node-form and fallback paths above (sdk#323): this
-		// branch is reachable only when ParseDoc failed AND no node-form candy node was found, so
-		// nothing has desugared this body yet. Idempotent — a body that already carries the
-		// internal plugin/plugin_input pair has no sugar key left to rewrite.
-		if body != nil && body.Kind == yaml.MappingNode {
-			if err := desugarEntityPlan("candy", body, t); err != nil {
-				return nil, fmt.Errorf("%s: %w", path, err)
-			}
-		}
-		var ly spec.CandyYAML
-		if err := DecodeEntityViaCUE(body, reflect.TypeOf(spec.CandyYAML{}), &ly, path); err != nil {
+		return nil, fmt.Errorf("%s: ambiguous — `candy:` wrapper present AND other top-level keys %v (pick one form)", path, other)
+	}
+	// 2026-05 Calamares cutover: hard-fail on legacy field shapes.
+	// Every legacy form has a one-shot remediation via `charly migrate`.
+	body := inner.Content[candyIdx]
+	if body != nil && body.Kind == yaml.MappingNode {
+		if err := rejectLegacyCandyKeys(path, body, vocab); err != nil {
 			return nil, err
 		}
-		return &ly, nil
+		// Load-time top-level typo-detection (CUE-decode is lenient and would silently drop a
+		// plural/singular typo; full closed-schema validation is `charly box validate`'s job).
+		if err := rejectUnknownCandyTopLevelKeys(path, body); err != nil {
+			return nil, err
+		}
+		// THE SAME ONE DESUGAR STEP as the node-form and fallback paths above (sdk#323): this branch
+		// is reachable only when ParseDoc failed AND no node-form candy node was found, so nothing has
+		// desugared this body yet. Idempotent — a body that already carries the internal
+		// plugin/plugin_input pair has no sugar key left to rewrite.
+		if err := desugarEntityPlan("candy", body, t); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
 	}
-
-	// Neither node-form nor the `candy:` kind-keyed form — an unrecognized manifest.
-	return nil, fmt.Errorf("%s: unrecognized candy manifest shape — expected node-form `<name>: {candy: …}` (or the `candy:` kind-keyed form)", path)
+	var ly spec.CandyYAML
+	if err := DecodeEntityViaCUE(body, reflect.TypeOf(spec.CandyYAML{}), &ly, path); err != nil {
+		return nil, err
+	}
+	return &ly, nil
 }
 
 // SingleCandyMappingNode parses a candy manifest's bytes as a YAML multi-document stream and returns
