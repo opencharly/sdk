@@ -29,9 +29,12 @@
 package loaderkit
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/opencharly/spec/spec"
 )
@@ -244,6 +247,13 @@ func (w *walker) walkNamespace(ref, baseDir string, nsCache, loadingRepos map[st
 	if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
 		path = filepath.Join(path, spec.UnifiedFileName)
 	}
+	// A gitlink directory that exists but holds NOTHING is the signature of a declared submodule
+	// whose content was never fetched (`git submodule update --init` not run — the normal state of a
+	// fresh git worktree). Name that cause instead of letting the read below return a bare ENOENT,
+	// which reads like a loader defect and costs hours.
+	if err := w.uninitializedSubmodule(path); err != nil {
+		return nil, false, err
+	}
 	lp := &spec.LoadedProject{ID: w.newID()}
 	nsCache[key] = lp // version-keyed memo entry (persists across the whole walk)
 	if repoID != "" {
@@ -260,6 +270,55 @@ func (w *walker) walkNamespace(ref, baseDir string, nsCache, loadingRepos map[st
 		return nil, false, err
 	}
 	return lp, false, nil
+}
+
+// uninitializedSubmodule returns a named, actionable error when path cannot be read AND the
+// directory it lives in is EMPTY and declared as a submodule by its containing repository. That
+// combination is not a loader defect: it is a gitlink directory whose content was never fetched
+// (`git submodule update --init` not run), which is the ordinary state of a fresh git worktree.
+// Anything else — a directory with content, a path outside a declared submodule, a non-NotFound
+// error — is left untouched so the ordinary not-found path keeps working for a genuinely wrong ref.
+func (w *walker) uninitializedSubmodule(path string) error {
+	if _, err := os.Stat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	dir := filepath.Dir(path)
+	entries, derr := os.ReadDir(dir)
+	if derr != nil || len(entries) > 0 {
+		return nil
+	}
+	root, rel, ok := submoduleRoot(dir)
+	if !ok {
+		return nil
+	}
+	return fmt.Errorf("submodule %q is not initialized: %s is empty, so %s cannot be read; run: git submodule update --init %s (from %s)",
+		rel, dir, path, rel, root)
+}
+
+// submoduleRoot walks up from dir looking for the nearest .gitmodules that declares dir as a
+// submodule path, and returns that repository root plus the submodule path relative to it. The
+// search is bounded: a submodule sits at most a few levels below the repo that declares it.
+func submoduleRoot(dir string) (root, rel string, ok bool) {
+	d := dir
+	for i := 0; i < 4; i++ {
+		parent := filepath.Dir(d)
+		if parent == d {
+			return "", "", false
+		}
+		data, err := os.ReadFile(filepath.Join(parent, ".gitmodules"))
+		if err == nil {
+			relPath, rerr := filepath.Rel(parent, dir)
+			if rerr == nil {
+				for _, line := range strings.Split(string(data), "\n") {
+					if strings.TrimSpace(line) == "path = "+filepath.ToSlash(relPath) {
+						return parent, filepath.ToSlash(relPath), true
+					}
+				}
+			}
+		}
+		d = parent
+	}
+	return "", "", false
 }
 
 // parseDocs parses `data` as a multi-document YAML stream and, for each node-form document,
