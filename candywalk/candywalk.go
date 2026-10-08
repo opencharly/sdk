@@ -237,8 +237,14 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 	return out, nil
 }
 
-// remoteRefRe matches the @github.com/opencharly/... remote candy refs in require:/candy: lists.
-var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[a-zA-Z0-9._/-]+:v[0-9]+\.[0-9]+\.[0-9]+`)
+// remoteRefRe matches a remote candy ref in a require:/candy: list — ANY ref form, not CalVer
+// alone. The path class stops at the first `:` so the version stays unambiguous even when the ref
+// itself contains `/`, `.` and `-` (a branch such as `feat/kubevirt-marketplace-family-2` is
+// indistinguishable from the path by character class alone — which is exactly why the former
+// `:v[0-9]+\.[0-9]+\.[0-9]+` anchor was used, and exactly why branches and SHAs were dropped).
+// The ref class stops at the delimiters that end a YAML scalar, so a quoted (`'…'`) or
+// flow-sequence (`[…, …]`) entry yields the bare token.
+var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:]+:[^\s'"\],}#]+`)
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy
 // refs only — package names and bare candy names are never remote refs). Refs that point INTO
@@ -247,6 +253,21 @@ var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[a-zA-Z0-9._/-]+:v
 // repos and are skipped: they resolve to the LOCAL charly checkout's candy dir, which the local
 // FS walk already surfaces (or, after Phase 4, are stale refs swept by the box repos' own
 // cutover).
+//
+// WHY THE PATTERN ACCEPTS EVERY REF FORM AND NOTHING FAILS CLOSED. The former CalVer-only pattern
+// dropped a branch (`:feat/…`) or a commit SHA with no error and no warning, so a fail-closed
+// generator (`charly marketplace generate`) validated a STALE entity and reported a failure the
+// author had no way to fix — the ref that would have corrected it was never collected
+// (opencharly/sdk#322). Collecting every form is the fix; the loader already re-resolves a MUTABLE
+// ref on each access, so handing it over is what makes the generator see the branch under test.
+//
+// The issue's second, "minimum" arm — hard-error on a declared ref the collector cannot name — was
+// MEASURED and REJECTED as a text-level check: this function scans RAW file bytes, comments
+// included, and a sweep of the org's tracked charly.yml files finds 42 distinct VERSIONLESS
+// `@github.com/opencharly/…` tokens living in PROSE (a `layer-nodejs` mention in a comment, a
+// `distro-*` glob, a trailing-backtick example). Failing closed on those would break every tree
+// that documents a repo path. A versionless token is therefore not evidence of a declared ref;
+// only a token carrying a `:version` is, and every such form is now collected.
 func collectRefs(path string) []string {
 	raw, err := os.ReadFile(path)
 	if err != nil {
