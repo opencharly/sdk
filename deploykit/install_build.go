@@ -171,9 +171,9 @@ func CompileApkStep(layer CandyModel) InstallStep {
 // CompileLocalPkgStep turns a candy's `localpkg:` field into a single
 // LocalPkgInstallStep, or nil if the candy declares none. Like CompileApkStep
 // it is target-agnostic at compile time — the step carries the published
-// package name (from the candy's `packaging:` section) + the release CalVer
-// (the box's effective version) + the candy dir (the anchor for the candy's
-// charly.yml, the generate-packages plugin's --candy input). Each EmitTarget
+// package name (from the candy's `packaging:` section) + the candy dir (the
+// anchor for the candy's charly.yml, the generate-packages plugin's --candy
+// input). Each EmitTarget
 // decides whether to obtain+install (localpkg-capable host/guest), skip (image
 // build, non-pac targets, android, kubernetes).
 //
@@ -220,7 +220,6 @@ func CompileLocalPkgStep(layer CandyModel, img *ResolvedBox, _ HostContext) Inst
 	}
 	return &LocalPkgInstallStep{
 		PackageName: pkg.Name,
-		Version:     img.EffectiveVersion,
 		CandyName:   layer.GetName(),
 		CandyDir:    layer.GetSourceDir(),
 		Format:      fmtName,
