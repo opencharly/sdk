@@ -295,12 +295,19 @@ func uninitializedSubmodule(path string) error {
 		rel, dir, path, rel, root)
 }
 
+// maxSubmoduleSearchDepth bounds submoduleRoot's walk up from the failing path to the repository
+// that declares the submodule. It is a DEPTH HEURISTIC, not a contract: a gitlink lives directly
+// under the repo that declares it (umbrella/charly), or one level deeper in the nested cases
+// (repo/sub/candy), so four levels covers every layout the org uses while keeping the search from
+// climbing to the filesystem root on a path that is not in a submodule at all. Named rather than
+// inlined because this bound decides whether the named-cause error fires.
+const maxSubmoduleSearchDepth = 4
+
 // submoduleRoot walks up from dir looking for the nearest .gitmodules that declares dir as a
-// submodule path, and returns that repository root plus the submodule path relative to it. The
-// search is bounded: a submodule sits at most a few levels below the repo that declares it.
+// submodule path, and returns that repository root plus the submodule path relative to it.
 func submoduleRoot(dir string) (root, rel string, ok bool) {
 	d := dir
-	for i := 0; i < 4; i++ {
+	for i := 0; i < maxSubmoduleSearchDepth; i++ {
 		parent := filepath.Dir(d)
 		if parent == d {
 			return "", "", false
