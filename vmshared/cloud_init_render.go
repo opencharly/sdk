@@ -157,7 +157,7 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 		// design: the guest is a disposable, minutes-lived provisioning target, pacman
 		// resolves the named packages' OWN dep upgrades, and nothing long-lived survives
 		// on the pre-upgrade library set.
-		pacmanCmd := "pacman -Sy --needed --noconfirm " + strings.Join(packages, " ")
+		pacmanCmd := pacmanInstallCmd(packages)
 		// try-restart sshd right after the install: IF openssh rode along in the dep
 		// closure, a live sshd would exec a NEWER sshd-session than the parent that
 		// spawned it ("internal error: hostkeys confused" — the classic Arch
@@ -555,4 +555,36 @@ func ResolveKeyInjectionChannels(spec *VmSpec) (smbios, cloudInit bool) {
 // is declared alongside its package format and ssh unit.
 func distroInit(distro string) string {
 	return spec.DistroInits[distro]
+}
+
+// pacmanInstallCmd renders the pacman-family package install as ONE chained runcmd entry:
+// initialize + populate the keyring, run the -Sy --needed transaction, then VERIFY it committed.
+//
+// The keyring half is the cure for charly#832: an Arch-family cloud image can ship NO populated
+// pacman keyring, and `pacman-key --init && pacman-key --populate` is the documented remediation
+// for the `warning: Public keyring not found` / `error: keyring is not writable` /
+// `error: failed to commit transaction` sequence that follows. Without it the whole transaction
+// fails signature verification, and because a failed `runcmd` entry does NOT make cloud-init report
+// `status: error` (measured: `status: done`, `errors: []` while the transaction had failed), the
+// guest comes up silently missing EVERY composed package — `git`/`go`/`podman` absent while the
+// entity's `cloud_init.package:` list claims them — and every bed that needs them then fails
+// somewhere else, reading as the bed's own defect. `--populate` is called with NO keyring
+// argument on purpose: it populates every keyring the image ships under
+// /usr/share/pacman/keyrings (archlinux, and a derivative's own), so no distro→keyring table has
+// to be maintained here (R3).
+//
+// The verify half is the loudness charly#832 asks for on the render side: `pacman -Q <union>`
+// exits non-zero naming each package that is NOT installed, so a non-committing transaction fails
+// the chain at the place that performed it — with the missing names on the first line of the
+// guest's own cloud-init output — instead of surfacing later as `exec: "git": executable file not
+// found in $PATH` inside some unrelated step. (The HOST-side half — a `charly vm create` readiness
+// gate that treats a failed provisioning phase as a hard failure rather than trusting cloud-init's
+// `done` — is a `spec/exec/ssh_wait.go` change and is named in the issue, not smuggled in here.)
+//
+// An empty package list renders the same install-with-verify shape only when there is something to
+// install; the caller already guards `len(packages) > 0`.
+func pacmanInstallCmd(packages []string) string {
+	union := strings.Join(packages, " ")
+	return "pacman-key --init && pacman-key --populate && pacman -Sy --needed --noconfirm " + union +
+		" && pacman -Q " + union
 }
