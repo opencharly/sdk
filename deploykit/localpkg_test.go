@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -996,7 +997,13 @@ func TestCompileLocalPkgStep_CarriesNoDeadEffectiveVersion(t *testing.T) {
 	if !ok {
 		t.Fatalf("step = %#v, want *LocalPkgInstallStep", step)
 	}
-	if lps.Version != "" {
-		t.Errorf("LocalPkgInstallStep.Version = %q, want empty (sdk#315): the box's EffectiveVersion lost its only writer in sdk#313 and has no reader (downloadLocalPkg uses the format's stable-latest download_template), so the dead assignment must not be reinstated", lps.Version)
+	// The dead version field is GONE, not merely empty: opencharly/spec#208 removed
+	// spec.LocalPkgInstallStep.Version (and its view round-trip) after sdk#315's sdk-side
+	// half deleted the field's only writer. Asserted STRUCTURALLY so this guard survives
+	// the removal it pins — a reinstated `Version:` assignment is now a compile error,
+	// which is the strongest form of the same guarantee, and this reflection check keeps
+	// the vestige from creeping back as a field without a writer.
+	if f, present := reflect.TypeOf(*lps).FieldByName("Version"); present {
+		t.Errorf("LocalPkgInstallStep regained a %s field (off=%d, type=%s) — sdk#315/spec#208 retired it: its writer died in sdk#313 and downloadLocalPkg uses the format's stable-latest download_template, never a versioned URL", f.Name, f.Offset, f.Type)
 	}
 }
