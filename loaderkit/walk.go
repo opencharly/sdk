@@ -251,7 +251,7 @@ func (w *walker) walkNamespace(ref, baseDir string, nsCache, loadingRepos map[st
 	// whose content was never fetched (`git submodule update --init` not run — the normal state of a
 	// fresh git worktree). Name that cause instead of letting the read below return a bare ENOENT,
 	// which reads like a loader defect and costs hours.
-	if err := w.uninitializedSubmodule(path); err != nil {
+	if err := uninitializedSubmodule(path); err != nil {
 		return nil, false, err
 	}
 	lp := &spec.LoadedProject{ID: w.newID()}
@@ -278,7 +278,7 @@ func (w *walker) walkNamespace(ref, baseDir string, nsCache, loadingRepos map[st
 // (`git submodule update --init` not run), which is the ordinary state of a fresh git worktree.
 // Anything else — a directory with content, a path outside a declared submodule, a non-NotFound
 // error — is left untouched so the ordinary not-found path keeps working for a genuinely wrong ref.
-func (w *walker) uninitializedSubmodule(path string) error {
+func uninitializedSubmodule(path string) error {
 	if _, err := os.Stat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}

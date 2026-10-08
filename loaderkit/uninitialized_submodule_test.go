@@ -27,8 +27,7 @@ func TestUninitializedSubmoduleIsNamed(t *testing.T) {
 	}
 	target := filepath.Join(dir, "charly.yml")
 
-	w := &walker{}
-	err := w.uninitializedSubmodule(target)
+	err := uninitializedSubmodule(target)
 	if err == nil {
 		t.Fatalf("empty declared submodule %s reported as nil; want a named error", dir)
 	}
@@ -54,7 +53,7 @@ func TestUninitializedSubmoduleIgnoresPopulatedDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "other.yml"), []byte("x: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&walker{}).uninitializedSubmodule(filepath.Join(dir, "charly.yml")); err != nil {
+	if err := uninitializedSubmodule(filepath.Join(dir, "charly.yml")); err != nil {
 		t.Errorf("populated directory produced %v; want nil", err)
 	}
 }
@@ -67,7 +66,7 @@ func TestUninitializedSubmoduleRequiresDeclaration(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&walker{}).uninitializedSubmodule(filepath.Join(dir, "charly.yml")); err != nil {
+	if err := uninitializedSubmodule(filepath.Join(dir, "charly.yml")); err != nil {
 		t.Errorf("undeclared empty directory produced %v; want nil", err)
 	}
 }
@@ -83,7 +82,7 @@ func TestUninitializedSubmoduleIgnoresExistingTarget(t *testing.T) {
 	if err := os.WriteFile(target, []byte("x: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&walker{}).uninitializedSubmodule(target); err != nil {
+	if err := uninitializedSubmodule(target); err != nil {
 		t.Errorf("existing target produced %v; want nil", err)
 	}
 }
