@@ -577,9 +577,12 @@ func distroInit(distro string) string {
 // exits non-zero naming each package that is NOT installed, so a non-committing transaction fails
 // the chain at the place that performed it — with the missing names on the first line of the
 // guest's own cloud-init output — instead of surfacing later as `exec: "git": executable file not
-// found in $PATH` inside some unrelated step. (The HOST-side half — a `charly vm create` readiness
-// gate that treats a failed provisioning phase as a hard failure rather than trusting cloud-init's
-// `done` — is a `spec/exec/ssh_wait.go` change and is named in the issue, not smuggled in here.)
+// found in $PATH` inside some unrelated step.
+//
+// SCOPE: this change cures the RENDER defect charly#832 names, and only that. The host's readiness
+// gate trusting cloud-init's `done` — so a failed provisioning phase is accepted as a ready guest —
+// is a SEPARATE defect of a different mechanism and surface (the wait's terminal condition in
+// spec/exec/ssh_wait.go), filed as opencharly/spec#209; it is not part of this cutover.
 //
 // An empty package list renders the same install-with-verify shape only when there is something to
 // install; the caller already guards `len(packages) > 0`.
