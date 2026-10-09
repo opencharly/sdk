@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/opencharly/spec/spec"
@@ -350,8 +349,5 @@ func (r *Runner) Run(ctx context.Context, checks []spec.Op) []CheckResult {
 // A legitimately slow step raises the ceiling with `timeout:`, which ProbeNeverHang
 // honours over the floor — the mechanism's own parameter, not a workaround.
 func AnnotateNeverHangKill(msg string, bound time.Duration) string {
-	return strings.TrimSpace(fmt.Sprintf(
-		"%s\nkilled by the per-attempt never-hang bound of %s — the step ran longer than that, "+
-			"it did not crash. If it is legitimately this slow, declare `timeout:` on the step "+
-			"(a longer value is honoured over the bound).", msg, bound))
+	return AnnotateNeverHangKillWithEvidence(msg, KillEvidence{Bound: bound})
 }
