@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -960,5 +961,51 @@ func TestDistroRepoProvidesPackage_MatchesPinnedVersion(t *testing.T) {
 	}, spec.CandyView{})
 	if distroRepoProvidesPackage(pinNoRepo, img, "charly") {
 		t.Error("distroRepoProvidesPackage with a pinned package list but no repo = true, want false (no repo install)")
+	}
+}
+
+// TestCompileLocalPkgStep_CarriesNoDeadEffectiveVersion is sdk#315's regression guard. The
+// step's Version field lost its only writer when sdk#313 removed
+// deploykit.ComputeEffectiveVersions, and nothing READS it either: downloadLocalPkg
+// (deploykit/localpkg.go) obtains the distro repo's stable "latest" copy through the
+// format's download_template, never a versioned URL. The dead assignment is deleted, so a box
+// still carrying an EffectiveVersion must not leak it onto the step. This test FAILS before
+// that deletion (the fixture box's version lands on the step) and passes after it — the
+// removal is pinned so the vestige cannot be silently reinstated.
+func TestCompileLocalPkgStep_CarriesNoDeadEffectiveVersion(t *testing.T) {
+	img := &ResolvedBox{ResolvedBox: spec.ResolvedBox{
+		Name: "test-img", Pkg: "pac", Distro: []string{"arch"},
+		EffectiveVersion: "2026.268.1917",
+	}, DistroDef: &spec.ResolvedDistro{
+		Format: map[string]*spec.Format{
+			"pac": {LocalPkg: &spec.LocalPkg{
+				DownloadTemplate: "https://example.invalid/${ARCH}/charly-${ARCH}.pkg.tar.zst",
+				InstallTemplate:  "pacman -U --noconfirm {{.StageDir}}/{{.Glob}}",
+				Probe:            "command -v pacman",
+			}},
+		},
+	}}
+	candy := testCandy("charly", spec.CandyModel{
+		Packaging: &spec.Packaging{Name: "charly"},
+	}, spec.CandyView{})
+
+	step := CompileLocalPkgStep(candy, img, HostContext{})
+	if step == nil {
+		t.Fatal("CompileLocalPkgStep with packaging but no distro repo = nil, want a *LocalPkgInstallStep")
+	}
+	lps, ok := step.(*LocalPkgInstallStep)
+	if !ok {
+		t.Fatalf("step = %#v, want *LocalPkgInstallStep", step)
+	}
+	// The dead version field is GONE, not merely empty: opencharly/spec#208 removed
+	// spec.LocalPkgInstallStep.Version (and its view round-trip) as the spec half of the
+	// retirement tracked by ISSUE opencharly/sdk#315 — and the field's only writer was
+	// already lost before that, in sdk#313 (which removed config/schema versioning), so
+	// nothing had populated it since. Asserted STRUCTURALLY so this guard survives
+	// the removal it pins — a reinstated `Version:` assignment is now a compile error,
+	// which is the strongest form of the same guarantee, and this reflection check keeps
+	// the vestige from creeping back as a field without a writer.
+	if f, present := reflect.TypeOf(*lps).FieldByName("Version"); present {
+		t.Errorf("LocalPkgInstallStep regained a %s field (off=%d, type=%s) — ISSUE sdk#315 / spec#208 retired it: its writer was already lost in sdk#313 and downloadLocalPkg uses the format's stable-latest download_template, never a versioned URL", f.Name, f.Offset, f.Type)
 	}
 }
