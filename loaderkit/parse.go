@@ -138,7 +138,27 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 		memberPairs = append(memberPairs, kv{key, val})
 	}
 	if disc == "" {
-		return spec.ParsedNode{}, fmt.Errorf("node %q: no kind discriminator — collections and plan steps live INLINE in the kind value (the named child-node shape was removed); run: charly migrate", name)
+		// Name the keys that were treated as members, and state BOTH documented causes instead of
+		// asserting one. This parse cannot tell them apart, and asserting the wrong one is not
+		// hypothetical: an entity keyed on an out-of-process plugin kind (`examplestructkind`) whose
+		// provider had not been registered was reported as "the named child-node shape was removed;
+		// run: charly migrate" — a hint that cannot fix a missing provider — and that misdirection
+		// cost a full session (opencharly/opencharly#437).
+		var listed string
+		switch {
+		case len(memberPairs) == 0:
+			listed = "the node is empty"
+		default:
+			keys := make([]string, 0, len(memberPairs))
+			for _, p := range memberPairs {
+				keys = append(keys, fmt.Sprintf("%q", p.k.Value))
+			}
+			if len(keys) > 6 {
+				keys = append(keys[:6], fmt.Sprintf("+%d more", len(keys)-6))
+			}
+			listed = strings.Join(keys, ", ")
+		}
+		return spec.ParsedNode{}, fmt.Errorf("node %q: no kind discriminator — none of its keys (%s) is a recognized kind, so it declares no entity. Either a key names an OUT-OF-PROCESS plugin kind whose provider is not registered — loading a provider binary is not by itself enough, the kind word must reach the threaded kind set — or the node is a leftover named child whose collections and plan steps now live INLINE in the kind value; for the latter run: charly migrate", name, listed)
 	}
 	// Desugar the body in place (plan steps + instrument/pipeline entries — plugin sugar →
 	// plugin/plugin_input) BEFORE the body is serialized (and before any consumer — including
