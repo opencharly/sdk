@@ -72,20 +72,20 @@ func withoutNamespaces(uf *spec.UnifiedFile) *spec.UnifiedFile {
 	return &cp
 }
 
-// captureNamespaceLevels walks the namespace graph with a PATH-SCOPED ancestor guard and records
-// every reached level as {path, file-without-Namespaces}.
+// captureNamespaceLevels walks the namespace graph with the ONE path-scoped guard
+// (namespace_walk.go) and records every reached level as {path, file-without-Namespaces}.
 //
 // Every node reachable by a path is recorded at that path (so a diamond / multi-alias mount keeps
 // every alias), while a genuine BACK-EDGE — a namespace already on the current path — is skipped
 // entirely: it contributes nothing to any finite walk, since collectBeds returns the instant it
 // re-enters an ancestor. Recording a fabricated copy for the back-edge would instead make the
 // reconstructed tree enumerate beds the source never exposes.
-func captureNamespaceLevels(uf *spec.UnifiedFile, prefix string, out *[]materializedNamespace, ancestors map[*spec.UnifiedFile]bool) {
-	if uf == nil || ancestors[uf] {
+func captureNamespaceLevels(uf *spec.UnifiedFile, prefix string, out *[]materializedNamespace, ancestors NamespaceAncestors) {
+	leave, ok := ancestors.Enter(uf)
+	if !ok {
 		return
 	}
-	ancestors[uf] = true
-	defer delete(ancestors, uf)
+	defer leave()
 	for name, ns := range uf.Namespaces {
 		if ns == nil || ancestors[ns] {
 			continue
@@ -134,25 +134,18 @@ func attachNamespaceLevel(root *spec.UnifiedFile, path string, file *spec.Unifie
 // capturePluginKinds walks uf + its mounted namespaces, recording each level's PluginKinds under its
 // namespace path so the drop-on-marshal maps can be re-attached after the round-trip.
 func capturePluginKinds(uf *spec.UnifiedFile, prefix string, out pluginKindsByPath) {
-	capturePluginKindsSeen(uf, prefix, out, map[*spec.UnifiedFile]bool{})
+	capturePluginKindsSeen(uf, prefix, out, NamespaceAncestors{})
 }
 
-// capturePluginKindsSeen walks the namespace tree with a PATH-SCOPED ancestor guard.
-//
-// The guard MUST be path-scoped, not a global pointer-identity set: the SAME *UnifiedFile is mounted
-// at MULTIPLE namespace paths by design — a diamond import (`c` imported by both `a` and `b`, so
-// mounted at `a.c` AND `b.c` as ONE pointer via the REFERENCE-mount pointer identity) and a
-// multi-alias mount (one repo at `arch` + `cachyos.arch`). A global `seen[uf]` guard recorded the
-// maps at only the FIRST alias reachable in map-iteration order (nondeterministic), so every later
-// alias restored WITH EMPTY PluginKinds — a namespaced bed (`b.c.check-*`, `from: vm`) then
-// false-failed "not defined". The ancestor stack records the maps at EVERY path while still
-// terminating a genuine cycle (a namespace that contains itself up the stack, e.g. main<->sub).
-func capturePluginKindsSeen(uf *spec.UnifiedFile, prefix string, out pluginKindsByPath, ancestors map[*spec.UnifiedFile]bool) {
-	if uf == nil || ancestors[uf] {
+// capturePluginKindsSeen records the PluginKinds maps at EVERY namespace path, through the ONE
+// path-scoped guard (namespace_walk.go — which carries why it must be path-scoped rather than a
+// global pointer set, and the measured "not defined" failure a global guard produced here).
+func capturePluginKindsSeen(uf *spec.UnifiedFile, prefix string, out pluginKindsByPath, ancestors NamespaceAncestors) {
+	leave, ok := ancestors.Enter(uf)
+	if !ok {
 		return
 	}
-	ancestors[uf] = true
-	defer delete(ancestors, uf)
+	defer leave()
 	if len(uf.PluginKinds) > 0 {
 		out[prefix] = uf.PluginKinds
 	}
@@ -168,15 +161,15 @@ func capturePluginKindsSeen(uf *spec.UnifiedFile, prefix string, out pluginKinds
 // restorePluginKinds re-attaches the captured PluginKinds maps at each namespace level by the SAME
 // path capturePluginKinds used, so the reconstructed uf matches the source at every level.
 func restorePluginKinds(uf *spec.UnifiedFile, prefix string, in pluginKindsByPath) {
-	restorePluginKindsSeen(uf, prefix, in, map[*spec.UnifiedFile]bool{})
+	restorePluginKindsSeen(uf, prefix, in, NamespaceAncestors{})
 }
 
-func restorePluginKindsSeen(uf *spec.UnifiedFile, prefix string, in pluginKindsByPath, ancestors map[*spec.UnifiedFile]bool) {
-	if uf == nil || ancestors[uf] {
+func restorePluginKindsSeen(uf *spec.UnifiedFile, prefix string, in pluginKindsByPath, ancestors NamespaceAncestors) {
+	leave, ok := ancestors.Enter(uf)
+	if !ok {
 		return
 	}
-	ancestors[uf] = true
-	defer delete(ancestors, uf)
+	defer leave()
 	if pk, ok := in[prefix]; ok {
 		uf.PluginKinds = pk
 	}
@@ -196,7 +189,7 @@ func restorePluginKindsSeen(uf *spec.UnifiedFile, prefix string, in pluginKindsB
 func MarshalMaterialized(uf *spec.UnifiedFile) ([]byte, error) {
 	env := materializedEnvelope{UF: withoutNamespaces(uf), PluginKinds: pluginKindsByPath{}}
 	capturePluginKinds(uf, "", env.PluginKinds)
-	captureNamespaceLevels(uf, "", &env.Namespaces, map[*spec.UnifiedFile]bool{})
+	captureNamespaceLevels(uf, "", &env.Namespaces, NamespaceAncestors{})
 	return json.Marshal(env)
 }
 
