@@ -150,3 +150,44 @@ func TestChildForm_WrongKindChild(t *testing.T) {
 		t.Errorf("rejection must hint at `charly migrate`, got %v", err)
 	}
 }
+
+// TestChildForm_NoKindNamesTheOffendingKeys pins the DIAGNOSTIC contract of the no-kind rejection:
+// it must name the keys it could not classify, and it must state BOTH documented causes rather
+// than asserting one. An entity keyed on an out-of-process plugin kind whose provider is not
+// registered is NOT the same defect as a leftover named child, and the parse cannot tell them
+// apart — reporting the second for the first sends the reader to a command that cannot help
+// (opencharly/opencharly#437). This case is the real one, reduced: `examplestructkind` is an
+// out-of-process plugin kind, absent from candyThreaded's threaded kind set.
+func TestChildForm_NoKindNamesTheOffendingKeys(t *testing.T) {
+	err := parseDocNodesErr(t, "check-structkind:\n"+
+		"  examplestructkind:\n"+
+		"    disposable: true\n")
+	if err == nil {
+		t.Fatal("expected a no-kind-discriminator rejection")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "no kind discriminator") {
+		t.Errorf("must keep the phrase the sibling tests assert, got %v", msg)
+	}
+	if !strings.Contains(msg, `"examplestructkind"`) {
+		t.Errorf("must NAME the key it could not classify, got %v", msg)
+	}
+	if !strings.Contains(msg, "OUT-OF-PROCESS plugin kind") {
+		t.Errorf("must name the plugin-kind cause, got %v", msg)
+	}
+	if !strings.Contains(msg, "charly migrate") {
+		t.Errorf("must keep the migration remedy for the other cause, got %v", msg)
+	}
+}
+
+// TestChildForm_NoKindEmptyNode: a node with NO keys has no kind either — the message must still
+// read as a sentence rather than printing an empty key list.
+func TestChildForm_NoKindEmptyNode(t *testing.T) {
+	err := parseDocNodesErr(t, "empty-node: {}\n")
+	if err == nil {
+		t.Fatal("expected a no-kind-discriminator rejection for an empty node")
+	}
+	if !strings.Contains(err.Error(), "the node is empty") {
+		t.Errorf("empty node must be named as such, got %v", err)
+	}
+}
