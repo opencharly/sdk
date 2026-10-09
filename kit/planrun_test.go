@@ -2,6 +2,7 @@ package kit
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,6 +41,16 @@ type fakePlanContext struct {
 	verbs      VerbResolver
 	grader     StepGrader
 	scenario   *ScenarioContext
+	// classify is the host's answer to ClassifyUnresolved; nil ⇒ UnresolvedConditional, the
+	// behaviour every test had before charly#865.
+	classify func(op *spec.Op, name string) UnresolvedClass
+}
+
+func (c *fakePlanContext) ClassifyUnresolved(op *spec.Op, name string) UnresolvedClass {
+	if c.classify == nil {
+		return UnresolvedConditional
+	}
+	return c.classify(op, name)
 }
 
 func (c *fakePlanContext) Distros() []string                     { return c.distros }
@@ -87,6 +98,78 @@ func TestRunOne_UnknownVerbSkips(t *testing.T) {
 	pc := &fakePlanContext{env: map[string]string{}, verbs: &fakeVerbResolver{known: false}}
 	if r := RunOne(context.Background(), pc, pluginOp()); r.Status != StatusSkip {
 		t.Fatalf("unknown verb → %v %q, want StatusSkip", r.Status, r.Message)
+	}
+}
+
+// deadVarOp builds an op whose `http` field references ${name}, with name absent from the env —
+// i.e. expansion cannot resolve it.
+func deadVarOp(name, intentDo string) *spec.Op {
+	op := pluginOp()
+	op.IntentDo = intentDo
+	op.PluginInput = map[string]any{"http": "http://${" + name + "}/x"}
+	return op
+}
+
+// TestRunOne_DeadAssertionFailsNotSkips is the regression guard for opencharly/charly#865: an
+// unresolved name the HOST says no mode or scope can supply, on an ASSERT-ONLY step, is an
+// authoring error and must FAIL. Delivering it as a skip is how a plan that quietly stopped
+// asserting keeps reading green — and it is the exact case the issue measured (`CANDY_DIR`, a
+// candy var that a `check:`'s env can never carry by construction).
+func TestRunOne_DeadAssertionFailsNotSkips(t *testing.T) {
+	pc := &fakePlanContext{
+		env:      map[string]string{},
+		verbs:    &fakeVerbResolver{},
+		classify: func(*spec.Op, string) UnresolvedClass { return UnresolvedUnknown },
+	}
+	r := RunOne(context.Background(), pc, deadVarOp("CANDY_DIR", string(spec.DoAssert)))
+	if r.Status != StatusFail {
+		t.Fatalf("a dead assertion on an assert-only step → %v %q, want StatusFail", r.Status, r.Message)
+	}
+	if !strings.Contains(r.Message, "CANDY_DIR") {
+		t.Errorf("the failure must NAME the unresolvable variable; got %q", r.Message)
+	}
+}
+
+// TestRunOne_ConditionalUnresolvedStillSkips is the other half of the contract: a name the host
+// CAN supply in another mode or scope (a deploy-only var under build scope, an unmounted volume)
+// keeps skipping. Without this, the fix would have been "fail on any unresolvable var", which
+// would turn every legitimately-inapplicable step red.
+func TestRunOne_ConditionalUnresolvedStillSkips(t *testing.T) {
+	pc := &fakePlanContext{
+		env:      map[string]string{},
+		verbs:    &fakeVerbResolver{},
+		classify: func(*spec.Op, string) UnresolvedClass { return UnresolvedConditional },
+	}
+	if r := RunOne(context.Background(), pc, deadVarOp("DEPLOY_ONLY", string(spec.DoAssert))); r.Status != StatusSkip {
+		t.Fatalf("a var the host can supply elsewhere → %v %q, want StatusSkip", r.Status, r.Message)
+	}
+}
+
+// TestRunOne_UnknownUnresolvedOnMutatingStepStillSkips: even a name nothing declares stays a skip
+// on a MUTATING step, whose scope may legitimately supply it. The assert-only restriction is what
+// makes the classification decidable rather than a guess.
+func TestRunOne_UnknownUnresolvedOnMutatingStepStillSkips(t *testing.T) {
+	pc := &fakePlanContext{
+		env:      map[string]string{},
+		verbs:    &fakeVerbResolver{},
+		classify: func(*spec.Op, string) UnresolvedClass { return UnresolvedUnknown },
+	}
+	if r := RunOne(context.Background(), pc, deadVarOp("CANDY_DIR", string(spec.DoAct))); r.Status != StatusSkip {
+		t.Fatalf("a mutating step → %v %q, want StatusSkip", r.Status, r.Message)
+	}
+}
+
+// TestRunOne_HostVarStillFailsUnchanged pins that the ${HOST:…} arm — peer unreachable — is
+// untouched by the new classification and is still decided FIRST.
+func TestRunOne_HostVarStillFailsUnchanged(t *testing.T) {
+	pc := &fakePlanContext{
+		env:      map[string]string{},
+		verbs:    &fakeVerbResolver{},
+		classify: func(*spec.Op, string) UnresolvedClass { return UnresolvedConditional },
+	}
+	r := RunOne(context.Background(), pc, deadVarOp(HostVar+":peer", string(spec.DoAssert)))
+	if r.Status != StatusFail || !strings.Contains(r.Message, "peer unreachable") {
+		t.Fatalf("an unresolved ${HOST:…} → %v %q, want StatusFail naming the unreachable peer", r.Status, r.Message)
 	}
 }
 
