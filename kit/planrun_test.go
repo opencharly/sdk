@@ -130,6 +130,27 @@ func TestRunOne_DeadAssertionFailsNotSkips(t *testing.T) {
 	}
 }
 
+// TestRunOne_NoClassifierIsBehaviourPreserving pins the property that lets this land as a
+// PRODUCER without changing anyone's verdicts: a host that never installs a classifier keeps
+// exactly the pre-charly#865 behaviour. Without this test that claim is an assertion about a
+// default, which is the kind of thing a reviewer should not have to take on faith — and no bed in
+// the org can demonstrate it, because a bed runs through a runner that has not opted in.
+func TestRunOne_NoClassifierIsBehaviourPreserving(t *testing.T) {
+	pc := &fakePlanContext{env: map[string]string{}, verbs: &fakeVerbResolver{}} // no classifier
+	r := RunOne(context.Background(), pc, deadVarOp("CANDY_DIR", string(spec.DoAssert)))
+	if r.Status != StatusSkip {
+		t.Fatalf("with no classifier installed the verdict must be unchanged → %v %q, want StatusSkip", r.Status, r.Message)
+	}
+	if !strings.Contains(r.Message, "CANDY_DIR") {
+		t.Errorf("the skip must still name the unresolved variable; got %q", r.Message)
+	}
+	// The same op WITH a classifier that says the name can never resolve is the NEW behaviour.
+	pc.classify = func(*spec.Op, string) UnresolvedClass { return UnresolvedUnknown }
+	if r2 := RunOne(context.Background(), pc, deadVarOp("CANDY_DIR", string(spec.DoAssert))); r2.Status != StatusFail {
+		t.Fatalf("opt-in must change the verdict → %v %q, want StatusFail", r2.Status, r2.Message)
+	}
+}
+
 // TestRunOne_ConditionalUnresolvedStillSkips is the other half of the contract: a name the host
 // CAN supply in another mode or scope (a deploy-only var under build scope, an unmounted volume)
 // keeps skipping. Without this, the fix would have been "fail on any unresolvable var", which
