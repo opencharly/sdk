@@ -16,9 +16,11 @@ import "github.com/opencharly/spec/spec"
 // while still terminating a genuine back-edge — a namespace that contains itself up the CURRENT
 // path, e.g. the intentional `main<->sub` mutual import.
 //
-// It lives here ONCE because that subtlety was re-derived at six call sites, and a walk that
-// gets it wrong fails in ways nothing else notices: PluginKinds restored empty at a later alias
-// made a namespaced bed (`b.c.check-*`, `from: vm`) false-fail "not defined", and a walk with NO
+// It lives here ONCE because that subtlety had been re-derived as a LOCAL guard in FOUR functions —
+// stampDescents, captureNamespaceLevels, capturePluginKindsSeen, restorePluginKindsSeen (measured on
+// main: `git grep -n 'ancestors\[' loaderkit` returns exactly those four, and nothing else) — and a
+// walk that gets it wrong fails in ways nothing else notices: PluginKinds restored empty at a later
+// alias made a namespaced bed (`b.c.check-*`, `from: vm`) false-fail "not defined", and a walk with NO
 // guard at all — ProjectCandiesScanned before opencharly/sdk#352 — died with
 // `fatal error: stack overflow` on the same graph.
 type NamespaceAncestors map[*spec.UnifiedFile]bool
