@@ -6,6 +6,7 @@ package kit
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -15,16 +16,35 @@ import (
 // runEngineCommand runs an engine command bounded by ctx, killing the whole
 // process group on timeout (a shell wrapper's children must not survive and
 // hold the output pipe open).
+//
+// The bound is also where the kill can be DIAGNOSED: a local engine command has a pid,
+// so when the bound fires the message names what was absent — the process was still
+// alive and had produced no output, or it was already gone — instead of reporting only
+// that a bound fired (see never_hang_evidence.go). Liveness is read INSIDE Cancel, i.e.
+// at the instant the bound fired and before the kill, so the datum is about the probe
+// and not about our own SIGKILL.
 func runEngineCommand(ctx context.Context, engineBin string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, engineBin, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	start := time.Now()
+	var killedPid int
+	var killedAlive bool
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			killedPid = cmd.Process.Pid
+			killedAlive = syscall.Kill(killedPid, 0) == nil
+			_ = syscall.Kill(-killedPid, syscall.SIGKILL)
 		}
 		return nil
 	}
 	out, err := cmd.Output()
+	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		ev := ObserveLocalKill(killedPid, start, time.Now(), func(int) bool { return killedAlive })
+		if dl, ok := ctx.Deadline(); ok {
+			ev.Bound = dl.Sub(start)
+		}
+		return string(out), fmt.Errorf("%s", AnnotateNeverHangKillWithEvidence(err.Error(), ev))
+	}
 	return string(out), err
 }
 

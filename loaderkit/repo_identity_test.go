@@ -37,10 +37,17 @@ func TestNormalizeRepoSpec(t *testing.T) {
 }
 
 // TestRepoIdentity covers the repo-identity helper that drives the import-namespace cycle-break.
+//
+// The identity of a ref that carries a SUBPATH is the PROJECT identity (the full path), not the
+// enclosing repository: spec#202 fixed exactly that — naming the enclosing repo made a local
+// `import:` of a same-repo subdirectory collide with the root identity and resolve as a degenerate
+// reference mount (the false back-edge sdk#253 measured, three namespace failures). This module
+// adopts that fix by pinning spec v0.2026280.2244, so the subpath case asserts the PROJECT identity;
+// stripping to `github.com/o/r` is the pre-#202 behaviour and is deliberately NOT what this pins.
 func TestRepoIdentity(t *testing.T) {
 	cases := []struct{ ref, want string }{
 		{"@github.com/o/r:v1.2.3", "github.com/o/r"},
-		{"@github.com/o/r/candy/x:v1.2.3", "github.com/o/r"},
+		{"@github.com/o/r/candy/x:v1.2.3", "github.com/o/r/candy/x"},
 		{"@github.com/opencharly/charly:v2026.157.0650", "github.com/opencharly/charly"},
 	}
 	for _, c := range cases {
