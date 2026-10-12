@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/opencharly/spec/spec"
@@ -138,6 +137,12 @@ type Runner struct {
 	grammar        PlanGrammar
 	targetResolver VenueResolver
 
+	// classifyUnresolved is the HOST's answer to "could this unresolved name resolve in some
+	// other mode or scope?" — only the host knows its own variable vocabulary, so the SDK cannot
+	// derive it. nil means every unresolved name is treated as UnresolvedConditional, i.e. the
+	// pre-opencharly/charly#865 behaviour: the SDK never changes a host's verdicts behind its back.
+	classifyUnresolved func(op *spec.Op, name string) UnresolvedClass
+
 	httpClient   *http.Client
 	dialTimeout  time.Duration
 	probeTimeout time.Duration
@@ -249,6 +254,25 @@ func (r *Runner) EffectiveEnv() map[string]string {
 	return env
 }
 
+// SetUnresolvedClassifier installs the host's classification of an unresolved variable name. The
+// host is the only party that knows its own variable vocabulary — which names a deploy scope, a
+// mounted volume or the runner itself can supply in SOME mode — so the SDK asks rather than
+// guesses. Without one, every unresolved name is UnresolvedConditional, which is exactly the
+// behaviour that existed before opencharly/charly#865: a host that has not opted in keeps its
+// verdicts, so adopting the classifier is a deliberate cutover rather than a silent change.
+func (r *Runner) SetUnresolvedClassifier(f func(op *spec.Op, name string) UnresolvedClass) {
+	r.classifyUnresolved = f
+}
+
+// ClassifyUnresolved implements PlanContext. See SetUnresolvedClassifier for why the answer comes
+// from the host and what the unset default means.
+func (r *Runner) ClassifyUnresolved(op *spec.Op, name string) UnresolvedClass {
+	if r.classifyUnresolved == nil {
+		return UnresolvedConditional
+	}
+	return r.classifyUnresolved(op, name)
+}
+
 // ProbeNeverHang is the per-probe-attempt never-hang ceiling for op. It is NOT the probe's
 // semantic timeout (the http client, dial timeout, a verb's own timeout:, and the eventually:
 // retry all operate INSIDE it) — it is the kill-switch for a probe that wedges in its data phase.
@@ -350,8 +374,5 @@ func (r *Runner) Run(ctx context.Context, checks []spec.Op) []CheckResult {
 // A legitimately slow step raises the ceiling with `timeout:`, which ProbeNeverHang
 // honours over the floor — the mechanism's own parameter, not a workaround.
 func AnnotateNeverHangKill(msg string, bound time.Duration) string {
-	return strings.TrimSpace(fmt.Sprintf(
-		"%s\nkilled by the per-attempt never-hang bound of %s — the step ran longer than that, "+
-			"it did not crash. If it is legitimately this slow, declare `timeout:` on the step "+
-			"(a longer value is honoured over the bound).", msg, bound))
+	return AnnotateNeverHangKillWithEvidence(msg, KillEvidence{Bound: bound})
 }

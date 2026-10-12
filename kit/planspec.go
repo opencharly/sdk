@@ -43,20 +43,44 @@ func EffectiveStepID(s *spec.Step, origin string, stepIdx int) string {
 	return StepID(origin, stepIdx)
 }
 
+// unresolvedName strips an expansion key's scoping suffix (`HOST:peer` → `HOST`) so every
+// classifier compares the SAME name. One normaliser, one meaning (R3).
+func unresolvedName(key string) string {
+	if before, _, ok := strings.Cut(key, ":"); ok {
+		return before
+	}
+	return key
+}
+
 // FilterHostVars returns the ${HOST:…} cross-member references among the unresolved keys. An
 // unresolved ${HOST:…} means the member is unreachable — a real failure, never a SKIP (a skip
 // on an unreachable dependency is a fake pass). Other unresolved vars (a deploy-only var under
-// build scope, an unmounted volume) stay a legitimate skip.
+// build scope, an unmounted volume) stay a legitimate skip — this function does not decide that;
+// ClassifyUnresolved does.
 func FilterHostVars(missing []string) []string {
 	var out []string
 	for _, key := range missing {
-		name := key
-		if before, _, ok := strings.Cut(key, ":"); ok {
-			name = before
-		}
-		if name == HostVar {
+		if unresolvedName(key) == HostVar {
 			out = append(out, key)
 		}
 	}
 	return out
 }
+
+// UnresolvedClass says WHY a plan-step variable could not be resolved. The walk must not treat
+// every unresolved name alike: one class is an honest skip, the other is an authoring error that
+// would otherwise be handed to the operator as a PASS (opencharly/charly#865).
+type UnresolvedClass int
+
+const (
+	// UnresolvedConditional — the host CAN supply this name in some OTHER mode or scope: a
+	// deploy-scoped var under build scope, a var an unmounted volume would provide. The input
+	// genuinely does not apply to THIS run, so a skip is the honest verdict.
+	UnresolvedConditional UnresolvedClass = iota
+
+	// UnresolvedUnknown — no mode or scope of this runner can supply the name to a step of this
+	// kind. On an ASSERT-ONLY step that is an authoring error: a check's env is the runner's
+	// auto-exports BY CONSTRUCTION, so the name can never resolve in ANY run — the assertion is
+	// dead, and skipping it reads exactly like passing it.
+	UnresolvedUnknown
+)

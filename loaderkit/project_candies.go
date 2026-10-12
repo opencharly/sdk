@@ -28,11 +28,24 @@ import (
 // rootDir anchors a relative `from:` path and decides the outside-the-project Remote marking below.
 // parseDoc is the per-document manifest parse (ParseCandyManifest bound to the caller's Threaded
 // snapshot + build vocabulary).
+//
+// The namespace fold below walks a BY-DESIGN cyclic graph, so it descends through the ONE
+// path-scoped guard (namespace_walk.go). Before opencharly/sdk#352 it recursed unguarded and a
+// namespace that reaches itself up the current path — the intentional `main<->sub` mutual import,
+// or the pre-opencharly/spec#202 self-mount of a same-repo subdirectory import — died with
+// `fatal error: stack overflow` (measured: a project carrying a resolved pod target, whose leg
+// runs this scan).
 func ProjectCandiesScanned(uf *spec.UnifiedFile, rootDir string, parseDoc func(path string) (*spec.CandyYAML, error)) (map[string]spec.ScannedCandy, error) {
+	return projectCandiesScanned(uf, rootDir, parseDoc, NamespaceAncestors{})
+}
+
+func projectCandiesScanned(uf *spec.UnifiedFile, rootDir string, parseDoc func(path string) (*spec.CandyYAML, error), ancestors NamespaceAncestors) (map[string]spec.ScannedCandy, error) {
 	out := map[string]spec.ScannedCandy{}
-	if uf == nil {
+	leave, ok := ancestors.Enter(uf)
+	if !ok {
 		return out, nil
 	}
+	defer leave()
 	for name, raw := range uf.Candy {
 		il, ok := spec.DecodeInlineCandy(raw)
 		if !ok {
@@ -84,7 +97,10 @@ func ProjectCandiesScanned(uf *spec.UnifiedFile, rootDir string, parseDoc func(p
 	// nested-namespace handling; each namespace's RootDir anchors its own relative
 	// `from:` paths.
 	for alias, ns := range uf.Namespaces {
-		nsCandies, err := ProjectCandiesScanned(ns, ns.RootDir, parseDoc)
+		if ns == nil {
+			continue
+		}
+		nsCandies, err := projectCandiesScanned(ns, ns.RootDir, parseDoc, ancestors)
 		if err != nil {
 			return nil, fmt.Errorf("namespace %q candies: %w", alias, err)
 		}

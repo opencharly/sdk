@@ -82,6 +82,12 @@ type PlanContext interface {
 	// EffectiveEnv builds the variable-expansion env for the current step (the resolver base
 	// overlaid with cross-deployment ${HOST:…} addresses + the scenario captures).
 	EffectiveEnv() map[string]string
+	// ClassifyUnresolved reports whether `name` could be supplied to op in some OTHER mode or
+	// scope (UnresolvedConditional), or could never resolve for a step of this kind
+	// (UnresolvedUnknown). Only the host knows its own variable vocabulary, so only the host can
+	// answer this; the walk uses the answer to tell a legitimate skip from a dead assertion
+	// (opencharly/charly#865).
+	ClassifyUnresolved(op *spec.Op, name string) UnresolvedClass
 	// ProbeNeverHang is the per-probe-attempt never-hang ceiling for op.
 	ProbeNeverHang(op *spec.Op) time.Duration
 	// SwapVenue retargets the host executor/resolver to op's per-step venue for the duration
@@ -114,6 +120,36 @@ type flatStep struct {
 	desc   string
 	idx    int
 	step   spec.Step
+}
+
+// assertOnlyOp reports whether the walk stamped op as an ASSERT step. The stamp comes from the
+// STEP KEYWORD (StepDoMode: `run:` → act, `check:` → assert, `agent-*` → instruct), which is
+// exactly the distinction this needs. Deliberately the STAMP and not the resolved do-mode: the
+// resolved mode falls back to the verb catalog, which answers for the verb rather than for the
+// step the author wrote — and a `check:` may legitimately drive an act-natured verb.
+//
+// An empty stamp means the caller did not come through the walk, so the step kind is unknown:
+// the walk then does not change that caller's verdict.
+func assertOnlyOp(op *spec.Op) bool {
+	return op.IntentDo == string(spec.DoAssert)
+}
+
+// unresolvedOnAssertOnlyStep returns the unresolved names on an ASSERT-ONLY step that the host
+// says no mode or scope can supply. Those assertions can never run, and they must not be
+// delivered as a skip: a check that cannot run is not a check that passed (opencharly/charly#865).
+// A mutating step is exempt — its scope may legitimately supply the name elsewhere, which is the
+// skip the walk has always taken.
+func unresolvedOnAssertOnlyStep(pc PlanContext, op *spec.Op, missing []string) []string {
+	if !assertOnlyOp(op) {
+		return nil
+	}
+	var out []string
+	for _, key := range missing {
+		if pc.ClassifyUnresolved(op, unresolvedName(key)) == UnresolvedUnknown {
+			out = append(out, key)
+		}
+	}
+	return out
 }
 
 // RunOne handles all the per-check housekeeping (verb resolution, skip handling, variable
@@ -175,11 +211,18 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 	if len(missing) > 0 {
 		// An unresolved cross-deployment var (${HOST:…}) means the peer this probe targets is
 		// UNREACHABLE — the probe's premise failed, so it FAILS (a SKIP there would be a fake
-		// pass). Other unresolved vars stay a legitimate SKIP (a deploy-only var under build
-		// scope, an unmounted volume — inputs that genuinely don't apply to this run).
+		// pass). Other unresolved vars are a legitimate SKIP *when the host can supply them
+		// somewhere else* (a deploy-only var under build scope, an unmounted volume — inputs that
+		// genuinely don't apply to this run). But a name NO mode or scope can supply to an
+		// ASSERT-ONLY step is not an input that doesn't apply: it is an authoring error whose
+		// assertion can never run, and delivering it as a SKIP is how a plan that quietly stopped
+		// asserting keeps reading green (opencharly/charly#865).
 		if hostMissing := FilterHostVars(missing); len(hostMissing) > 0 {
 			result.Status = StatusFail
 			result.Message = fmt.Sprintf("peer unreachable — unresolved cross-deployment variable(s): %s", strings.Join(hostMissing, ", "))
+		} else if dead := unresolvedOnAssertOnlyStep(pc, c, missing); len(dead) > 0 {
+			result.Status = StatusFail
+			result.Message = fmt.Sprintf("assertion is DEAD — an assert-only step resolves only the runner's auto-exported variables, so these names can never resolve here: %s", strings.Join(dead, ", "))
 		} else {
 			result.Status = StatusSkip
 			result.Message = fmt.Sprintf("unresolved variables: %s", strings.Join(missing, ", "))

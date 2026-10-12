@@ -113,6 +113,30 @@ func ParseDoc(doc *yaml.Node, t spec.Threaded) (directives map[string]*yaml.Node
 	return directives, pp, nil
 }
 
+// nodeChildPair is one key/value pair of a node mapping (the value under `name:`). An alias, so the
+// two walkers that build such slices agree by construction rather than by a second declaration.
+type nodeChildPair = struct{ k, v *yaml.Node }
+
+// unclassifiedKeys renders the keys a node carried that parseNode could NOT classify as a kind, for
+// the no-kind rejection's message: at most maxListed of them, and a readable phrase when the node
+// has no keys at all. It lives outside parseNode to keep that function's cyclomatic complexity
+// inside the budget (.golangci.yml gocyclo min-complexity: 30) — the message is diagnostics, and
+// diagnostics must not be what tips a hot function over the lint gate.
+func unclassifiedKeys(pairs []nodeChildPair) string {
+	const maxListed = 6
+	if len(pairs) == 0 {
+		return "the node is empty"
+	}
+	keys := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		keys = append(keys, fmt.Sprintf("%q", p.k.Value))
+	}
+	if len(keys) > maxListed {
+		keys = append(keys[:maxListed], fmt.Sprintf("+%d more", len(keys)-maxListed))
+	}
+	return strings.Join(keys, ", ")
+}
+
 // parseNode builds a spec.ParsedNode from a node mapping (the value under `name:`). asChild is
 // true when the node is a member of another node (vs top-level).
 func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.ParsedNode, error) {
@@ -124,8 +148,7 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	}
 	var disc string
 	var discValue *yaml.Node
-	type kv struct{ k, v *yaml.Node }
-	var memberPairs []kv
+	var memberPairs []nodeChildPair
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		key, val := m.Content[i], m.Content[i+1]
 		if classifyKind(key.Value, asChild, t) {
@@ -135,10 +158,16 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 			disc, discValue = key.Value, val
 			continue
 		}
-		memberPairs = append(memberPairs, kv{key, val})
+		memberPairs = append(memberPairs, nodeChildPair{key, val})
 	}
 	if disc == "" {
-		return spec.ParsedNode{}, fmt.Errorf("node %q: no kind discriminator — collections and plan steps live INLINE in the kind value (the named child-node shape was removed); run: charly migrate", name)
+		// Name the keys that were treated as members, and state BOTH documented causes instead of
+		// asserting one. This parse cannot tell them apart, and asserting the wrong one is not
+		// hypothetical: an entity keyed on an out-of-process plugin kind (`examplestructkind`) whose
+		// provider had not been registered was reported as the retired named-child shape — a hint
+		// (`charly migrate`) that cannot fix a missing provider — and that misdirection cost a full
+		// session to see past (opencharly/opencharly#437).
+		return spec.ParsedNode{}, fmt.Errorf("node %q: no kind discriminator — none of its keys (%s) is a recognized kind, so it declares no entity. Either a key names an OUT-OF-PROCESS plugin kind whose provider is not registered — loading a provider binary is not by itself enough, the kind word must reach the threaded kind set — or the node is a leftover named child whose collections and plan steps now live INLINE in the kind value; for the latter run: charly migrate", name, unclassifiedKeys(memberPairs))
 	}
 	// Desugar the body in place (plan steps + instrument/pipeline entries — plugin sugar →
 	// plugin/plugin_input) BEFORE the body is serialized (and before any consumer — including
@@ -263,12 +292,11 @@ func discEntityPairs(discValue *yaml.Node, t spec.Threaded) []struct{ k, v *yaml
 	if discValue == nil || discValue.Kind != yaml.MappingNode {
 		return nil
 	}
-	type kv = struct{ k, v *yaml.Node }
-	var out []kv
+	var out []nodeChildPair
 	for i := 0; i+1 < len(discValue.Content); i += 2 {
 		k, v := discValue.Content[i], discValue.Content[i+1]
 		if isEntityValue(v, t) {
-			out = append(out, kv{k, v})
+			out = append(out, nodeChildPair{k, v})
 		}
 	}
 	return out

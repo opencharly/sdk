@@ -24,19 +24,19 @@ import (
 // pod (empty Image → `deploy add` fails). This was the roster defect: `charly.check-agentteams-vm`
 // resolved IsVM=false from the umbrella root while the SAME bed was IsVM=true run locally.
 //
-// The guard is a path-scoped ANCESTOR stack (mirroring Beds()), so a mutual import
-// (main↔sub) terminates while a shared namespace legitimately mounted at multiple alias paths is
-// still stamped at each path.
+// The guard is NamespaceAncestors — the ONE path-scoped ancestor stack (namespace_walk.go) — so a
+// mutual import (main↔sub) terminates while a shared namespace legitimately mounted at multiple
+// alias paths is still stamped at each path.
 func StampDeployDescents(uf *spec.UnifiedFile, t spec.Threaded) {
-	stampDescents(uf, t, map[*spec.UnifiedFile]bool{})
+	stampDescents(uf, t, NamespaceAncestors{})
 }
 
-func stampDescents(uf *spec.UnifiedFile, t spec.Threaded, ancestors map[*spec.UnifiedFile]bool) {
-	if uf == nil || ancestors[uf] {
+func stampDescents(uf *spec.UnifiedFile, t spec.Threaded, ancestors NamespaceAncestors) {
+	leave, ok := ancestors.Enter(uf)
+	if !ok {
 		return
 	}
-	ancestors[uf] = true
-	defer delete(ancestors, uf)
+	defer leave()
 	traitsFor := func(word string) *spec.DeployTraits { return t.DeployTraits[word] }
 	for name, node := range uf.Deploy {
 		n := node

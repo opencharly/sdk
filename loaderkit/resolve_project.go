@@ -42,7 +42,7 @@ type ResolveProjectSeams struct {
 	// deploykit.RawCandyPair + deploykit.FillNamespaceBoxViews per namespace). Its two predecessors —
 	// the in-proc host namespaced-box fill (resolved_project_host.go) and the `buildengine-namespaced`
 	// host leg that replaced it — are both deleted; nothing here crosses a process boundary.
-	FillNamespacedBoxes func(uf *spec.UnifiedFile, initCfg *buildkit.InitConfig, prefix, calver, dir string, rp *spec.ResolvedProject, visited map[*spec.UnifiedFile]bool)
+	FillNamespacedBoxes func(uf *spec.UnifiedFile, initCfg *buildkit.InitConfig, prefix, calver, dir string, rp *spec.ResolvedProject, ancestors NamespaceAncestors)
 	// ResolveResources projects uf's `resource:` kind entities. HOST (per-node registry resolve);
 	// becomes an InvokeProvider(ClassKind,"resource") leg at U5.
 	ResolveResources func(uf *spec.UnifiedFile) map[string]*spec.ResolvedResource
@@ -158,7 +158,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 	// rp.Candies/rp.CandyModels. HOST seam (embeds a per-namespace scan + render-prep). Runs AFTER the
 	// root-scope candy fill above; best-effort/additive (a qualified key never collides with a bare name).
 	if uf != nil {
-		seams.FillNamespacedBoxes(uf, initCfg, "", calver, dir, rp, map[*spec.UnifiedFile]bool{})
+		seams.FillNamespacedBoxes(uf, initCfg, "", calver, dir, rp, NamespaceAncestors{})
 	}
 
 	if uf != nil && len(uf.Deploy) > 0 {
