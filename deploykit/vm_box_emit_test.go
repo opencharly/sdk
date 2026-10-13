@@ -85,9 +85,7 @@ func TestVmBoxLabelCompleteness(t *testing.T) {
 // storage, read the contract back with VmCapabilitiesFromLabels, and assert equality.
 // Skips when podman is not available on the host.
 func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
-	if _, err := exec.LookPath("podman"); err != nil {
-		t.Skipf("podman not available on this host — skipping VM box emit/read-back integration test: %v", err)
-	}
+	requireUsableEngine(t, "podman")
 
 	diskPath := filepath.Join(t.TempDir(), "disk.qcow2")
 	if err := os.WriteFile(diskPath, []byte{0x01}, 0o644); err != nil {
@@ -151,9 +149,7 @@ func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 // OCI layout and the layer tar inspected directly (the scratch image has no shell to run
 // `find` in). Skips when podman is unavailable.
 func TestEmitVmBoxAtContainerDiskPathLive(t *testing.T) {
-	if _, err := exec.LookPath("podman"); err != nil {
-		t.Skipf("podman not available on this host — skipping the live ContainerDiskPath emit: %v", err)
-	}
+	requireUsableEngine(t, "podman")
 
 	diskPath := filepath.Join(t.TempDir(), "disk.qcow2")
 	if err := os.WriteFile(diskPath, []byte("qcow2-fixture-payload"), 0o644); err != nil {
