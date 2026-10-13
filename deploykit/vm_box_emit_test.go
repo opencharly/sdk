@@ -83,7 +83,7 @@ func TestVmBoxLabelCompleteness(t *testing.T) {
 // TestVmBoxEmitReadBackRoundTrip is the live integration test: EmitVmBox a tiny
 // fixture "disk" (a 1-byte file) with a populated metadata contract into local podman
 // storage, read the contract back with VmCapabilitiesFromLabels, and assert equality.
-// Skips when podman is not available on the host.
+// Skips when the engine is absent OR installed-but-unusable (see engineUsable).
 func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 	requireUsableEngine(t, "podman")
 
@@ -147,7 +147,7 @@ func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 // with ContainerDiskPath emits a real image whose single layer holds the disk at
 // /disk/disk.img — the KubeVirt containerDisk contract. The emitted image is saved to an
 // OCI layout and the layer tar inspected directly (the scratch image has no shell to run
-// `find` in). Skips when podman is unavailable.
+// `find` in). Skips when the engine is absent OR installed-but-unusable (see engineUsable).
 func TestEmitVmBoxAtContainerDiskPathLive(t *testing.T) {
 	requireUsableEngine(t, "podman")
 
