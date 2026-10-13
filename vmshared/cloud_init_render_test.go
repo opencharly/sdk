@@ -371,9 +371,23 @@ func TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded(t *testing.T) {
 			if len(rc) != 6 {
 				t.Fatalf("runcmd = %v, want 6 entries [pacman, sshd-resync, hardening-dropin, unmask, sshd-enable, user-cmd]", rc)
 			}
-			wantPacman := "pacman -Sy --needed --noconfirm openssh curl tar htop"
+			// charly#832: the install entry must INITIALIZE+POPULATE the pacman keyring BEFORE
+			// the transaction and VERIFY it committed AFTER it. Without the keyring half the
+			// whole transaction fails signature verification on an image that ships no populated
+			// keyring, cloud-init still reports `done`, and the guest silently loses every
+			// composed package; without the verify half the loss surfaces only later, as
+			// `exec: "git": executable file not found in $PATH` inside some unrelated step.
+			wantPacman := "pacman-key --init && pacman-key --populate && " +
+				"pacman -Sy --needed --noconfirm openssh curl tar htop && " +
+				"pacman -Q openssh curl tar htop"
 			if rc[0] != wantPacman {
 				t.Errorf("runcmd[0] = %q, want %q (must be FIRST — before sshd is ever enabled)", rc[0], wantPacman)
+			}
+			if !strings.HasPrefix(rc[0].(string), "pacman-key --init && pacman-key --populate && ") {
+				t.Errorf("runcmd[0] = %q, want the keyring init+populate chain FIRST (charly#832)", rc[0])
+			}
+			if !strings.HasSuffix(rc[0].(string), "&& pacman -Q openssh curl tar htop") {
+				t.Errorf("runcmd[0] = %q, want the trailing pacman -Q verification (charly#832)", rc[0])
 			}
 			if s, _ := rc[1].(string); !strings.Contains(s, "try-restart sshd") {
 				t.Errorf("runcmd[1] = %v, want the sshd try-restart resync (a live sshd must re-exec post-upgrade binaries — hostkeys-confused guard)", rc[1])
