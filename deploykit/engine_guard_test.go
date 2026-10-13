@@ -11,27 +11,15 @@ import (
 	"time"
 )
 
-// requireUsableEngine skips the calling test when the named container engine cannot be
-// used, and says why — with the engine's own output.
-//
-// Why not exec.LookPath: presence is not usability. A host whose engine is installed but
-// cannot initialise (a stale runtime dir, a socket the kernel refuses, a broken
-// configuration) passes a LookPath check and then fails three integration tests with an
-// error that has nothing to do with the code under test:
-//
-//	Failed to obtain podman configuration: set sticky bit on: chmod /run/user/1000/libpod: read-only file system
-//
-// That is opencharly/sdk#364. The probe below runs the engine's own `info` — the same call a
-// human would make — and skips VISIBLY with the engine's stderr, so a broken engine produces
-// an honest skip on every host instead of three red tests on one.
-//
-// Bounded, because a wedged engine must not hang the suite: the probe is given a ceiling and
-// a timeout is a skip too (the engine did not answer, which is not usability).
 // engineUsable reports whether the named engine can actually be used, with the reason when it
 // cannot. Presence alone is not usability (opencharly/sdk#364): a host whose engine is installed
 // but cannot initialise passes exec.LookPath and then fails engine-backed tests whose subject has
 // nothing to do with the engine. Bounded, because a wedged engine must not hang the suite - not
 // answering is not usability.
+//
+// The failure this replaces, measured on the host that filed opencharly/sdk#364:
+//
+//	Failed to obtain podman configuration: set sticky bit on: chmod /run/user/1000/libpod: read-only file system
 //
 // A predicate rather than an inline check so the SKIP path is testable: requireUsableEngine calls
 // it and skips; a test calls it and asserts, which is the half of R7 a bare skip cannot provide.
