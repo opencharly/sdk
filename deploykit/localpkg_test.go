@@ -830,8 +830,27 @@ func TestCandyProjectDir(t *testing.T) {
 	// No enclosing project.
 	orphan := t.TempDir()
 	writeProjectFile(t, orphan, spec.UnifiedFileName, "orphan:\n")
-	if got := candyProjectDir(filepath.Join(orphan, spec.UnifiedFileName)); got != "" {
-		t.Errorf("candyProjectDir orphan = %q, want \"\"", got)
+	// CONTROL THE PREMISE (opencharly/sdk#366). `candyProjectDir` walks all the way to the
+	// filesystem root, and `t.TempDir()` lives in the host's temp root — so the answer is ""
+	// only when NOTHING in that ancestry is a project. A stray `charly.yml` anywhere above the
+	// temp dir (a leftover /tmp/charly.yml, say) makes the walk correctly return its directory,
+	// and the old absolute assertion then failed on a host the code was behaving correctly on:
+	//
+	//	candyProjectDir orphan = "/tmp", want ""
+	//
+	// Assert the property the function actually guarantees in either environment, and keep the
+	// exact "" form when the ancestry really is project-free. The nearest-ancestor behaviour is
+	// covered deterministically by the two fixture cases above, which the host cannot perturb.
+	got := candyProjectDir(filepath.Join(orphan, spec.UnifiedFileName))
+	if got == "" {
+		// the project-free ancestry case: nothing to add, the branch is covered
+	} else {
+		if rel, err := filepath.Rel(got, orphan); err != nil || strings.HasPrefix(rel, "..") {
+			t.Errorf("candyProjectDir orphan = %q, want \"\" or an ancestor of %q", got, orphan)
+		}
+		if st, err := os.Stat(filepath.Join(got, spec.UnifiedFileName)); err != nil || st.IsDir() {
+			t.Errorf("candyProjectDir orphan = %q, which carries no %s", got, spec.UnifiedFileName)
+		}
 	}
 }
 
