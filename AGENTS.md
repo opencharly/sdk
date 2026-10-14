@@ -34,7 +34,9 @@ Canonical files:
 
 - `go build ./...` and `go test ./...` — the module's Go gates.
 - CI (`.github/workflows/ci.yml`) also runs `test -z "$(gofmt -l .)"`,
-  `go vet ./...`, and a cross-compile matrix (`GOOS=linux`, `GOARCH` in
+  `go vet ./...`, **`golangci-lint` v2.13.2** (the pin in that workflow — run it
+  locally before a push: its `errcheck` arm fails a gate on an unchecked
+  `Close()`), and a cross-compile matrix (`GOOS=linux`, `GOARCH` in
   `amd64`/`arm64`/`arm`/`386`, `CGO_ENABLED=0`).
 - The merge gate is the **org-wide** `charly/pr-validator` (required check
   `validate / validate`, defined in `opencharly/.github`); this repo carries no

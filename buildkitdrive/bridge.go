@@ -110,7 +110,7 @@ func readTarEntry(tarPath, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only open; the close error carries nothing
 	tr := tar.NewReader(f)
 	for {
 		hdr, err := tr.Next()

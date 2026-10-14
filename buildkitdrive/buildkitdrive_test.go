@@ -45,7 +45,7 @@ func writeLayout(t *testing.T, manifestDigest, configDigest string, canonicalSpe
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	tw := tar.NewWriter(f)
 	add := func(name string, body string) {
 		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body))}); err != nil {

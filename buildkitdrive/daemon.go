@@ -90,7 +90,7 @@ func Ensure(ctx context.Context, r Runner) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("buildkitdrive: daemon log %s: %w", logPath, err)
 	}
-	defer logFile.Close()
+	defer func() { _ = logFile.Close() }() // the child keeps its own descriptor
 	cmd := exec.CommandContext(ctx, RootlesskitBinary, args...)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	if err := cmd.Start(); err != nil {
