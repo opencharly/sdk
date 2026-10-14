@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,7 +249,7 @@ func TestPaths_ComeFromTheResolver(t *testing.T) {
 // native-vs-overlayfs measurement came from a doubly-nested user namespace, so writing
 // either value here would promote a venue result into a universal rule.
 func TestDaemonConfig_SetsOnlyTheMeasuredShape(t *testing.T) {
-	cfg := DaemonConfig()
+	cfg := DaemonConfig(DaemonOptions{})
 	if !strings.Contains(cfg, `process-mode = "sandbox"`) {
 		t.Errorf("the OCI worker must run in sandbox process mode:\n%s", cfg)
 	}
@@ -300,6 +301,61 @@ func TestDaemonArgs_AddressIsTheSocketNotItsDirectory(t *testing.T) {
 	for _, want := range []string{"--net=host", "buildkitd --rootless", "--root " + stateRoot, "--config " + cfg} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("argv missing %q:\n%s", want, joined)
+		}
+	}
+}
+
+// TestDaemonConfig_CarriesTheResolvedParallelism — THE 4-pre's control.
+//
+// `stage_parallelism` is a DAEMON-level setting under BuildKit (the client has no per-build
+// equivalent), so what makes this rename real rather than cosmetic is that the value reaches
+// the rendered config. This asserts it does, that an absent value stays absent, and that the
+// renderer and the reader agree — a round trip, so the restart comparison downstream cannot
+// compare against a value the config never carried.
+func TestDaemonConfig_CarriesTheResolvedParallelism(t *testing.T) {
+	for _, want := range []int{1, 4, 8, 64} {
+		cfg := DaemonConfig(DaemonOptions{MaxParallelism: want})
+		if !strings.Contains(cfg, fmt.Sprintf("max-parallelism = %d", want)) {
+			t.Errorf("rendered config must carry max-parallelism = %d:\n%s", want, cfg)
+		}
+		if got := ConfigMaxParallelism(cfg); got != want {
+			t.Errorf("round trip: rendered %d, read back %d", want, got)
+		}
+		if !strings.Contains(cfg, `process-mode = "sandbox"`) {
+			t.Errorf("adding the parallelism key must not drop the measured process mode:\n%s", cfg)
+		}
+	}
+	// No opinion (or an unresolved 0) leaves the key OUT, which is the daemon's own default.
+	for _, none := range []int{0, -1} {
+		cfg := DaemonConfig(DaemonOptions{MaxParallelism: none})
+		if strings.Contains(cfg, "max-parallelism") {
+			t.Errorf("MaxParallelism %d must render no key:\n%s", none, cfg)
+		}
+		if got := ConfigMaxParallelism(cfg); got != 0 {
+			t.Errorf("an absent key must read as 0, got %d", got)
+		}
+	}
+}
+
+// TestNeedsRestart_DistinguishesTheCases: a control that cannot tell "same" from "different"
+// would pass while restarting on every call (or never), so both arms are pinned — including
+// the no-opinion arm that keeps two callers from restarting each other's daemon.
+func TestNeedsRestart_DistinguishesTheCases(t *testing.T) {
+	cases := []struct {
+		configured, want int
+		restart          bool
+		why              string
+	}{
+		{8, 8, false, "same value: nothing to apply"},
+		{8, 4, true, "a different value: daemon-level, so it needs a restart"},
+		{4, 8, true, "a different value, the other direction"},
+		{0, 4, true, "a daemon running the default must adopt an explicit value"},
+		{8, 0, false, "0 expresses NO opinion, so it must not restart another caller's daemon"},
+		{0, 0, false, "no opinion on either side"},
+	}
+	for _, c := range cases {
+		if got := NeedsRestart(c.configured, c.want); got != c.restart {
+			t.Errorf("NeedsRestart(%d, %d) = %v, want %v (%s)", c.configured, c.want, got, c.restart, c.why)
 		}
 	}
 }
