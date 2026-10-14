@@ -59,15 +59,6 @@ func StateRoot() (string, error) {
 	return filepath.Join(cache, DirName), nil
 }
 
-// Socket returns the socket path and the path of the directory that must exist for it.
-func Socket() (sock, sockDir string, err error) {
-	sock, err = SocketPath()
-	if err != nil {
-		return "", "", err
-	}
-	return sock, filepath.Dir(sock), nil
-}
-
 // ConfigPath is the rendered buildkitd.toml beside the state root.
 func ConfigPath() (string, error) {
 	root, err := StateRoot()

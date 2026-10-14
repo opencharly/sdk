@@ -41,6 +41,11 @@ type Daemon struct {
 	// it may leave running (the persistent root makes a later start cheap) but did not
 	// inherit.
 	Started bool
+	// WorkerLabels is the daemon's own report of its workers, as returned by Workers. It is
+	// the evidence that the rendered config took effect (`oci.process-mode:SANDBOX` for the
+	// OCI worker), and it is recorded here rather than fetched by a dangling accessor,
+	// because the readiness probe already asks exactly this question.
+	WorkerLabels string
 }
 
 // Addr is the socket as a buildctl address.
@@ -136,15 +141,23 @@ func DaemonArgs(socketPath, stateRoot, configPath string) []string {
 	}
 }
 
-// ready reports whether a daemon answers on the socket.
+// ready reports whether a daemon answers on the socket, and records what it reports.
+//
+// It asks through Workers so the kit has exactly ONE place that knows how to interrogate a
+// daemon about its workers; the answer lands on the Daemon as evidence rather than being
+// discarded.
 func (d *Daemon) ready(ctx context.Context, r Runner) bool {
 	if _, err := os.Stat(d.Socket); err != nil {
 		return false
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, readinessInterval*5)
 	defer cancel()
-	_, err := r.Run(probeCtx, BuildctlBinary, "--addr", d.Addr(), "debug", "workers")
-	return err == nil
+	out, err := Workers(probeCtx, r, d)
+	if err != nil {
+		return false
+	}
+	d.WorkerLabels = out
+	return true
 }
 
 // writeIfChanged writes content to path only when it differs, so an ensure that changes
