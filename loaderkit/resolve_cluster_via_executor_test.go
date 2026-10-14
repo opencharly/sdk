@@ -164,3 +164,95 @@ func TestResolveClusterContextPassesTheProjectDirAndReturnsTheContext(t *testing
 		t.Fatalf("kctx = %q, want k3s-check", kctx)
 	}
 }
+
+// TestResolveClusterCarriesTheKubeconfigFileBesideTheContext pins the reason the full view
+// exists. A cluster template addresses a per-cluster kubeconfig FILE; a consumer that only ever
+// sees the context NAME is structurally unable to honour it, so the file must ride through the
+// same resolve, unchanged and un-truncated.
+func TestResolveClusterCarriesTheKubeconfigFileBesideTheContext(t *testing.T) {
+	ex := sdk.NewInProcExecutor(stubClusterExecutorClient{projectDir: "/proj"})
+	resolve := func(context.Context, *sdk.Executor, string, string) (*spec.ResolvedKubernetes, error) {
+		return &spec.ResolvedKubernetes{
+			Kubeconfig:        "/home/op/.kube/quant-dev.conf",
+			KubeconfigContext: "kubernetes-admin@quant-dev",
+		}, nil
+	}
+	view, err := resolveCluster(context.Background(), ex, "quant-dev", resolve)
+	if err != nil {
+		t.Fatalf("resolveCluster: %v", err)
+	}
+	if view == nil {
+		t.Fatal("a resolved cluster must not come back nil")
+	}
+	if view.Kubeconfig != "/home/op/.kube/quant-dev.conf" {
+		t.Fatalf("kubeconfig = %q, want the template's file", view.Kubeconfig)
+	}
+	if view.KubeconfigContext != "kubernetes-admin@quant-dev" {
+		t.Fatalf("context = %q, want the template's context", view.KubeconfigContext)
+	}
+}
+
+// TestResolveClusterNilViewIsAMissNotAFailure pins the miss semantics: a project that declares no
+// such entity yields (nil, nil), which the verbs read as "no cluster profile named".
+func TestResolveClusterNilViewIsAMissNotAFailure(t *testing.T) {
+	ex := sdk.NewInProcExecutor(stubClusterExecutorClient{projectDir: "/proj"})
+	resolve := func(context.Context, *sdk.Executor, string, string) (*spec.ResolvedKubernetes, error) {
+		return nil, nil
+	}
+	view, err := resolveCluster(context.Background(), ex, "nope", resolve)
+	if err != nil {
+		t.Fatalf("a miss must not be a failure, got: %v", err)
+	}
+	if view != nil {
+		t.Fatalf("want a nil view for a miss, got %+v", view)
+	}
+}
+
+// TestResolveClusterFailuresAreLoud pins the asymmetry the context-only wrapper also relies on:
+// every failure names the cluster and yields a nil view, so no caller can mistake it for a miss.
+func TestResolveClusterFailuresAreLoud(t *testing.T) {
+	if view, err := resolveCluster(context.Background(), nil, "quant-dev", nil); err == nil || view != nil {
+		t.Fatalf("nil executor -> (%+v, %v), want (nil, loud error)", view, err)
+	} else if !strings.Contains(err.Error(), "quant-dev") {
+		t.Fatalf("error must name the cluster, got: %v", err)
+	}
+
+	ex := sdk.NewInProcExecutor(stubClusterExecutorClient{connectErr: errors.New("host seam down")})
+	if view, err := resolveCluster(context.Background(), ex, "quant-dev", nil); err == nil || view != nil {
+		t.Fatalf("failing project-dir seam -> (%+v, %v), want (nil, loud error)", view, err)
+	}
+
+	ex = sdk.NewInProcExecutor(stubClusterExecutorClient{projectDir: "/proj"})
+	boom := func(context.Context, *sdk.Executor, string, string) (*spec.ResolvedKubernetes, error) {
+		return nil, errors.New("entity resolve boom")
+	}
+	if view, err := resolveCluster(context.Background(), ex, "quant-dev", boom); err == nil || view != nil {
+		t.Fatalf("failing entity resolve -> (%+v, %v), want (nil, loud error)", view, err)
+	} else if !strings.Contains(err.Error(), "quant-dev") || !strings.Contains(err.Error(), "entity resolve boom") {
+		t.Fatalf("error must name the cluster and carry the cause, got: %v", err)
+	}
+}
+
+// TestResolveClusterContextViewAgreesWithTheFullView proves the two views are ONE resolution: the
+// context-only wrapper reports exactly what the full view carries, so no caller's behaviour can
+// differ based on which of the two it was written against.
+func TestResolveClusterContextViewAgreesWithTheFullView(t *testing.T) {
+	ex := sdk.NewInProcExecutor(stubClusterExecutorClient{projectDir: "/proj"})
+	resolve := func(context.Context, *sdk.Executor, string, string) (*spec.ResolvedKubernetes, error) {
+		return &spec.ResolvedKubernetes{
+			Kubeconfig:        "/etc/kubernetes/admin.conf",
+			KubeconfigContext: "kubernetes-admin@quant-dev",
+		}, nil
+	}
+	kctx, err := resolveClusterContext(context.Background(), ex, "quant-dev", resolve)
+	if err != nil {
+		t.Fatalf("resolveClusterContext: %v", err)
+	}
+	view, err := resolveCluster(context.Background(), ex, "quant-dev", resolve)
+	if err != nil {
+		t.Fatalf("resolveCluster: %v", err)
+	}
+	if kctx != view.KubeconfigContext {
+		t.Fatalf("context-only view %q != full view's %q", kctx, view.KubeconfigContext)
+	}
+}
