@@ -132,6 +132,28 @@ func TestRenderDownloadScript_SubstitutesCandyVarsInDestination(t *testing.T) {
 	if !strings.Contains(archive, "-C /opt/firecracker") {
 		t.Fatalf("the archive did not unpack into the substituted directory:\n%s", archive)
 	}
+
+	// An INCLUDE FILTER entry carrying a var: the third field the substitution covers, and the one a
+	// reader is least likely to think of — a filter that keeps its unexpanded name selects nothing, so
+	// the archive extracts empty while every command in the script still "succeeds".
+	filtered := RenderDownloadScript(&spec.Op{
+		Download:       "https://example/x.tgz",
+		To:             "${FC_PREFIX}",
+		Extract:        "tar.gz",
+		ExtractInclude: []string{"${FC_PREFIX}/bin/firecracker", "jailer"},
+	}, vars)
+
+	if strings.Contains(filtered, "${FC_PREFIX}") {
+		t.Fatalf("an include-filter entry kept its unexpanded var, so it would match nothing:\n%s", filtered)
+	}
+
+	if !strings.Contains(filtered, "/opt/firecracker/bin/firecracker") {
+		t.Fatalf("the include filter was not emitted expanded:\n%s", filtered)
+	}
+
+	if !strings.Contains(filtered, " jailer") {
+		t.Fatalf("a filter entry with no var was rewritten:\n%s", filtered)
+	}
 }
 
 // TestSubstituteCandyVars_LongestNameFirst is the guard on the substitution itself: a shorter var name
