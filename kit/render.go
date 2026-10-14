@@ -190,9 +190,49 @@ func RenderOpCommand(op *spec.Op, ctxPath string, candyVars map[string]string) (
 // optionally extracts it into op.To, then cleans up — honoring the same flags the container
 // build path respects (extract format, strip_components, include, mode, env). candyVars are
 // exported alongside op.Env so a vars: key referenced in the URL resolves at deploy time.
+// substituteCandyVars replaces ${NAME} for every var the candy declares, longest name first so a
+// shorter name can never eat the head of a longer one (${FC_VERSION} must not match inside
+// ${FC_VERSION_SUFFIX}). Names it does not know are left alone: this is the candy's OWN var: map, not
+// the shell's environment — an unknown ${THING} stays for the shell (or for the caller) to resolve.
+func substituteCandyVars(v string, candyVars map[string]string) string {
+	if v == "" || len(candyVars) == 0 || !strings.Contains(v, "${") {
+		return v
+	}
+
+	names := make([]string, 0, len(candyVars))
+	for name := range candyVars {
+		names = append(names, name)
+	}
+
+	sort.Slice(names, func(i, j int) bool {
+		if len(names[i]) != len(names[j]) {
+			return len(names[i]) > len(names[j])
+		}
+
+		return names[i] < names[j]
+	})
+
+	for _, name := range names {
+		v = strings.ReplaceAll(v, "${"+name+"}", candyVars[name])
+	}
+
+	return v
+}
+
 func RenderDownloadScript(op *spec.Op, candyVars map[string]string) string {
-	url := op.Download
-	to := op.To
+	// The author's strings are substituted with the candy's own vars BEFORE they are quoted, because
+	// the two halves of this function quote differently: the URL goes through ShDoubleQuote (so a
+	// ${VAR} in it expands in the shell) while destinations go through ShQuoteArg, which SINGLE-quotes
+	// anything containing `$` — so an unsubstituted ${VAR} there becomes a file LITERALLY named
+	// "${VAR}" in the deploy's working directory. Measured: a `target: local` deploy of a candy whose
+	// download `to:` was "${FC_TARBALL}" created /home/<user>/${FC_TARBALL} and then failed at the next
+	// step with "Cannot open: No such file or directory" for the real path (ledger WI-6).
+	//
+	// The container build emitter expands these through the ENV it exports, so substituting here is
+	// also what makes the two placements agree — the promise `var:` makes is that its spelling works in
+	// every verb.
+	url := substituteCandyVars(op.Download, candyVars)
+	to := substituteCandyVars(op.To, candyVars)
 	extract := op.Extract
 	if extract == "" {
 		switch {
@@ -254,7 +294,7 @@ func RenderDownloadScript(op *spec.Op, candyVars map[string]string) string {
 	if len(op.ExtractInclude) > 0 {
 		quoted := make([]string, 0, len(op.ExtractInclude))
 		for _, p := range op.ExtractInclude {
-			quoted = append(quoted, ShQuoteArg(p))
+			quoted = append(quoted, ShQuoteArg(substituteCandyVars(p, candyVars)))
 		}
 		includeFilter = " " + strings.Join(quoted, " ")
 	}
