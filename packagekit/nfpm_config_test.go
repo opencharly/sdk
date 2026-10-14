@@ -101,10 +101,13 @@ func TestBuildInfoVariantRelationships(t *testing.T) {
 	delete(pkg.Variants, "broken")
 
 	// The variant family is mutually-exclusive over a shared file set, so each
-	// package must Provides the base name and Conflicts+Replaces every OTHER
-	// family member — otherwise `pacman -S charly-minimal` over `charly` aborts on
-	// the shared /usr/bin/charly + plugin paths (the defect this covers). The
-	// family is format-derived, so assert the contract against it directly.
+	// package must Provides the base name and Conflicts every OTHER family member —
+	// otherwise `pacman -S charly-minimal` over `charly` aborts on the shared
+	// /usr/bin/charly + plugin paths (the defect this covers). It must NOT declare
+	// Replaces: the replacer of an INSTALLED member has to be unique, or a routine
+	// `pacman -Syu` finds two candidates and dies inside the transaction
+	// (opencharly/charly-arch#13), and a flavour is meant to keep its flavour
+	// across upgrades. The family is format-derived, so assert it directly.
 	for _, format := range []string{"archlinux", "deb", "rpm", "apk", "ipk"} {
 		family := FamilyNames(pkg, format)
 		for _, variant := range VariantNames(pkg, format) {
@@ -127,8 +130,8 @@ func TestBuildInfoVariantRelationships(t *testing.T) {
 			if !reflect.DeepEqual(info.Conflicts, want) {
 				t.Errorf("%s/%s Conflicts = %v, want %v", format, variant, info.Conflicts, want)
 			}
-			if !reflect.DeepEqual(info.Replaces, want) {
-				t.Errorf("%s/%s Replaces = %v, want %v", format, variant, info.Replaces, want)
+			if len(info.Replaces) != 0 {
+				t.Errorf("%s/%s Replaces = %v, want none: a mutual replace makes `pacman -Syu` unresolvable for the installed member", format, variant, info.Replaces)
 			}
 			for _, n := range append(append([]string{}, info.Conflicts...), info.Replaces...) {
 				if n == info.Name {
