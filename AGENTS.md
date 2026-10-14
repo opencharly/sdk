@@ -43,10 +43,13 @@ Canonical files:
 ## Modify this repo
 
 - Schema and wire types are NOT here: edit them in `github.com/opencharly/spec`
-  (bump its `#SchemaVersion`, regenerate, tag), then bump the
-  `require github.com/opencharly/spec` version here and adopt. Follow
-  `/charly-internals:go` and the SDK-first landing order in
-  `/charly-internals:git-workflow`.
+  (regenerate there, then tag), and bump the `require github.com/opencharly/spec`
+  version here to adopt. There is **no `#SchemaVersion` to bump** — that stamp, the
+  `charly.yml` `version:` field and the equality gate were deleted by the contract
+  module (`opencharly/spec` `CHANGELOG/0.2026270.938.md`); compatibility is enforced
+  by unifying the authored document against the CLOSED CUE schema, where an unknown
+  or removed field is a hard `field not allowed` error. Follow `/charly-internals:go`
+  and the SDK-first landing order in `/charly-internals:git-workflow`.
 - This is a reusable MECHANISM library consumed by more than one plugin: keep it
   kind-blind and free of capability code (the placement test in
   `/charly-internals:plugin`).

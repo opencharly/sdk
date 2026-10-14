@@ -85,7 +85,7 @@ func TestVmBoxLabelCompleteness(t *testing.T) {
 // storage, read the contract back with VmCapabilitiesFromLabels, and assert equality.
 // Skips when the engine is absent OR installed-but-unusable (see engineUsable).
 func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
-	requireUsableEngine(t, "podman")
+	requireUsableEngine(t)
 
 	diskPath := filepath.Join(t.TempDir(), "disk.qcow2")
 	if err := os.WriteFile(diskPath, []byte{0x01}, 0o644); err != nil {
@@ -149,7 +149,7 @@ func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 // OCI layout and the layer tar inspected directly (the scratch image has no shell to run
 // `find` in). Skips when the engine is absent OR installed-but-unusable (see engineUsable).
 func TestEmitVmBoxAtContainerDiskPathLive(t *testing.T) {
-	requireUsableEngine(t, "podman")
+	requireUsableEngine(t)
 
 	diskPath := filepath.Join(t.TempDir(), "disk.qcow2")
 	if err := os.WriteFile(diskPath, []byte("qcow2-fixture-payload"), 0o644); err != nil {
@@ -266,7 +266,7 @@ func TestRenderVmBoxContainerfilePaths(t *testing.T) {
 	meta := &spec.VmBoxMetadata{Version: "0.2026269.0"}
 	j, _ := json.Marshal(meta)
 
-	vmBox := renderVmBoxContainerfile("disk.qcow2", VmBoxDiskPath, j, meta, "my-box")
+	vmBox := renderVmBoxContainerfile([]vmBoxCopy{{contextName: "disk.qcow2", inImage: VmBoxDiskPath}}, j, meta, "my-box")
 	if !strings.Contains(vmBox, "COPY disk.qcow2 /disk.qcow2\n") {
 		t.Errorf("the default VM-box render must COPY to %s; got:\n%s", VmBoxDiskPath, vmBox)
 	}
@@ -279,12 +279,57 @@ func TestRenderVmBoxContainerfilePaths(t *testing.T) {
 		t.Errorf("the VM-box render must stamp %s=<leaf> so retention can reclaim the tag:\n%s", spec.LabelBox, vmBox)
 	}
 
-	cd := renderVmBoxContainerfile("disk.img", ContainerDiskPath, j, meta, "my-box")
+	cd := renderVmBoxContainerfile([]vmBoxCopy{{contextName: "disk.img", inImage: ContainerDiskPath}}, j, meta, "my-box")
 	if !strings.Contains(cd, "COPY disk.img /disk/disk.img\n") {
 		t.Errorf("the containerDisk render must COPY to %s; got:\n%s", ContainerDiskPath, cd)
 	}
 	if strings.Contains(cd, VmBoxDiskPath) {
 		t.Errorf("the containerDisk render must NOT carry the VM-box path:\n%s", cd)
+	}
+
+	// The MICROVM shape: one COPY per artefact, at the shipped microVM paths, and neither of
+	// the single-disk paths — a box that carried the wrong destination would let the VMM boot
+	// a path that is not there.
+	micro := renderVmBoxContainerfile([]vmBoxCopy{
+		{contextName: "rootfs.img", inImage: MicroVMRootfsPath},
+		{contextName: "vmlinux", inImage: MicroVMKernelPath},
+	}, j, meta, "my-box")
+	if !strings.Contains(micro, "COPY rootfs.img /rootfs.img\n") {
+		t.Errorf("the microVM render must COPY the root drive to %s; got:\n%s", MicroVMRootfsPath, micro)
+	}
+	if !strings.Contains(micro, "COPY vmlinux /vmlinux\n") {
+		t.Errorf("the microVM render must COPY the kernel to %s; got:\n%s", MicroVMKernelPath, micro)
+	}
+	if strings.Contains(micro, VmBoxDiskPath) || strings.Contains(micro, ContainerDiskPath) {
+		t.Errorf("the microVM render must NOT carry either single-disk path:\n%s", micro)
+	}
+}
+
+// TestEmitVmBoxMicroVM_Guards — the microVM entry point's deterministic guards, with no engine:
+// nil metadata is refused, and an artefact that does not exist is refused BEFORE anything is
+// staged. The last assertion is the one that matters most: a FAILED emit must leave the caller's
+// metadata untouched, because the emitter records only the layout it actually wrote — a box that
+// was never built must not be described by a label.
+func TestEmitVmBoxMicroVM_Guards(t *testing.T) {
+	dir := t.TempDir()
+	rootfs := filepath.Join(dir, "rootfs.img")
+	if err := os.WriteFile(rootfs, []byte{1}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	missing := filepath.Join(dir, "not-there.vmlinux")
+	meta := &spec.VmBoxMetadata{Distro: "ubuntu"}
+
+	if err := EmitVmBoxMicroVM("podman", "localhost/x:t", nil, rootfs, rootfs); err == nil {
+		t.Error("EmitVmBoxMicroVM accepted nil metadata")
+	}
+
+	if err := EmitVmBoxMicroVM("podman", "localhost/x:t", meta, rootfs, missing); err == nil {
+		t.Error("EmitVmBoxMicroVM accepted a kernel artefact that does not exist")
+	}
+
+	if meta.Artifacts != (spec.VmBoxArtifacts{}) {
+		t.Errorf("a FAILED emit recorded a layout (%+v); the label must never describe a box that was not built", meta.Artifacts)
 	}
 }
 
