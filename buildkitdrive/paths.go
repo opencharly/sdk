@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/opencharly/sdk/storekit"
 )
@@ -27,6 +29,11 @@ const (
 	// LogName is the daemon's log, beside its state root. It exists because a daemon
 	// outlives whoever started it and so must not write to that caller's streams.
 	LogName = "buildkitd.log"
+	// PidName records the rootlesskit wrapper this kit started, inside the state root.
+	// It exists because the daemon is DETACHED: a later ensure that must restart it (a
+	// changed daemon-level setting) has no child handle to signal, and the wrapper is what
+	// reaps the whole tree when signalled.
+	PidName = "buildkitd.pid"
 	// LockName is the daemon's own one-instance-per-root lock, inside the state root.
 	// BuildKit enforces it: a second daemon on the same --root fails loudly (rc=1), which
 	// is the primitive that makes one-daemon-per-uid safe.
@@ -92,7 +99,21 @@ func EnsureDirs() (socketPath, stateRoot string, err error) {
 	return socketPath, stateRoot, nil
 }
 
-// DaemonConfig renders buildkitd.toml.
+// DaemonOptions are the daemon settings the drive resolves and this renderer writes.
+type DaemonOptions struct {
+	// MaxParallelism bounds how many build steps run concurrently, rendered as
+	// `[worker.oci] max-parallelism` — the config-file analogue of buildkitd's own
+	// `--oci-max-parallelism` ("limit the number of parallel build steps that can run at
+	// the same time"), and therefore the semantic successor of `podman build --jobs N`,
+	// which bounded the stages of one build.
+	//
+	// It is a DAEMON-level setting, not a per-build one, because BuildKit's client has no
+	// per-build equivalent. A zero or negative value leaves the key OUT and lets the
+	// daemon's own default stand (which is unbounded) — the same meaning as omitting it.
+	MaxParallelism int
+}
+
+// DaemonConfig renders buildkitd.toml for the resolved options.
 //
 // The ONE worker configuration this drive needs is the OCI worker's process mode: the
 // measured shape is `process-mode = "sandbox"` with NO added capability (CapEff=0) and
@@ -103,10 +124,50 @@ func EnsureDirs() (socketPath, stateRoot string, err error) {
 // was not tested — so forcing either one here would encode a venue-specific result as a
 // universal rule. GC is likewise left alone: it is expressible only in this file and is
 // UNPROVEN, so it is not invented.
-func DaemonConfig() string {
-	return `# Rendered by sdk/buildkitdrive. Do not hand-edit: the drive writes it from the
-# resolver's roots on every ensure.
-[worker.oci]
-  process-mode = "sandbox"
-`
+func DaemonConfig(opts DaemonOptions) string {
+	cfg := "# Rendered by sdk/buildkitdrive. Do not hand-edit: the drive writes it from the\n" +
+		"# resolver's roots on every ensure.\n" +
+		"[worker.oci]\n" +
+		"  process-mode = \"sandbox\"\n"
+	if opts.MaxParallelism > 0 {
+		cfg += fmt.Sprintf("  max-parallelism = %d\n", opts.MaxParallelism)
+	}
+	return cfg
+}
+
+// ConfigMaxParallelism reads the value this file records, so an ensure can tell whether a
+// RUNNING daemon was started with the settings now being asked for. It parses the rendered
+// form (this kit is the only writer); an absent key reads as 0, exactly as the daemon
+// treats it.
+func ConfigMaxParallelism(content string) int {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		rest, ok := strings.CutPrefix(line, "max-parallelism")
+		if !ok {
+			continue
+		}
+		rest = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rest), "="))
+		n, err := strconv.Atoi(strings.TrimSpace(rest))
+		if err != nil {
+			return 0
+		}
+		return n
+	}
+	return 0
+}
+
+// NeedsRestart reports whether a daemon configured with `configured` must be restarted to
+// honour `want`.
+//
+// ⚑ A `want` of 0 or less is NO OPINION, not "unbounded": it never restarts. That arm is
+// load-bearing. The value is daemon-level, so two callers with different opinions would
+// otherwise restart each other's daemon on every call — a ping-pong that is worse than
+// either setting. The drive resolves the authored `0 = auto` into a CONCRETE value before
+// this layer (`min(NCPU, cap)`), so a value that expresses a real intent always arrives as
+// > 0 and is compared; a caller that does not care passes 0 and leaves the daemon alone.
+func NeedsRestart(configured, want int) bool {
+	if want <= 0 {
+		return false
+	}
+	return configured != want
 }

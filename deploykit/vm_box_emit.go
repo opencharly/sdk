@@ -217,7 +217,9 @@ func emitVmBoxArtifacts(ctx context.Context, engine, ref string, meta *spec.VmBo
 		return err
 	}
 	dest := buildkitdrive.ExportFile(stageDir, ref)
-	daemon, err := buildkitdrive.Ensure(ctx, buildkitdrive.ExecRunner{})
+	// DaemonOptions{} is deliberate here: this path has no parallelism input of its own, so
+	// it expresses NO OPINION and never restarts a daemon the build drive configured.
+	daemon, err := buildkitdrive.Ensure(ctx, buildkitdrive.ExecRunner{}, buildkitdrive.DaemonOptions{})
 	if err != nil {
 		return fmt.Errorf("EmitVmBox: buildkit daemon: %w", err)
 	}

@@ -41,6 +41,8 @@ type Daemon struct {
 	// it may leave running (the persistent root makes a later start cheap) but did not
 	// inherit.
 	Started bool
+	// MaxParallelism is the value the drive asked for and this daemon was ensured with.
+	MaxParallelism int
 	// WorkerLabels is the daemon's own report of its workers, as returned by Workers. It is
 	// the evidence that the rendered config took effect (`oci.process-mode:SANDBOX` for the
 	// OCI worker), and it is recorded here rather than fetched by a dangling accessor,
@@ -63,7 +65,7 @@ func (d *Daemon) Addr() string { return "unix://" + d.Socket }
 // involved. The wrapper does not daemonize — it stays in the foreground of the process the
 // drive starts — which is why Ensure releases the child rather than waiting on it: the
 // daemon must outlive the call for the builds that follow.
-func Ensure(ctx context.Context, r Runner) (*Daemon, error) {
+func Ensure(ctx context.Context, r Runner, opts DaemonOptions) (*Daemon, error) {
 	if r == nil {
 		return nil, fmt.Errorf("buildkitdrive: Ensure: no runner")
 	}
@@ -75,12 +77,40 @@ func Ensure(ctx context.Context, r Runner) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Daemon{Socket: sock, StateRoot: stateRoot, Config: cfg}
+	d := &Daemon{Socket: sock, StateRoot: stateRoot, Config: cfg, MaxParallelism: opts.MaxParallelism}
 	if d.ready(ctx, r) {
+		// A daemon is already listening, so its settings are FIXED for its lifetime: the
+		// config file is read back and compared, and a differing value is reported as a
+		// named mismatch rather than silently ignored or force-applied.
+		//
+		// ⚑ WHY NO RESTART, measured rather than preferred: the daemon is a detached
+		// `rootlesskit` tree that RE-EXECS itself, so there is no single pid to record, probe
+		// or signal — a liveness probe on the recorded parent reports a LIVE daemon as dead
+		// (observed), and every restart variant tried here failed on that identity problem in
+		// one form or another (a stale rootlesskit state-dir lock, a socket file left behind
+		// by a killed daemon, an unowned daemon answering for the one we thought we replaced).
+		// Applying a changed daemon-level setting reliably therefore needs a SUPERVISOR (a
+		// user unit), which is a design decision this package does not take on its own.
+		configured := 0
+		if raw, rerr := os.ReadFile(cfg); rerr == nil {
+			configured = ConfigMaxParallelism(string(raw))
+		}
+		if NeedsRestart(configured, opts.MaxParallelism) {
+			return nil, fmt.Errorf("buildkitdrive: the running daemon was configured with max-parallelism=%d but %d was requested; the value is set at daemon start, so stop the daemon (%s) and this drive will start it with the new value", configured, opts.MaxParallelism, d.Socket)
+		}
 		return d, nil
 	}
-	if err := writeIfChanged(cfg, DaemonConfig()); err != nil {
-		return nil, err
+	// No daemon is listening. A caller WITH an opinion writes the config; a caller WITHOUT
+	// one adopts whatever is on disk (the drive's value, or the daemon's own defaults) and
+	// never overwrites it — that is what keeps two callers from fighting over the file.
+	if opts.MaxParallelism > 0 {
+		if err := writeIfChanged(cfg, DaemonConfig(opts)); err != nil {
+			return nil, err
+		}
+	} else if _, err := os.Stat(cfg); err != nil {
+		if err := os.WriteFile(cfg, []byte(DaemonConfig(DaemonOptions{})), 0o644); err != nil {
+			return nil, fmt.Errorf("buildkitdrive: write %s: %w", cfg, err)
+		}
 	}
 	args := DaemonArgs(sock, stateRoot, cfg)
 	// ⚑ The daemon OUTLIVES the caller, so it must NOT inherit the caller's streams. A
@@ -113,7 +143,7 @@ func Ensure(ctx context.Context, r Runner) (*Daemon, error) {
 			return d, nil
 		}
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("buildkitdrive: the daemon did not answer on %s within %s (state root %s)", sock, ReadinessTimeout, stateRoot)
+			return nil, fmt.Errorf("buildkitdrive: the daemon did not answer on %s within %s (state root %s); %s", sock, ReadinessTimeout, stateRoot, logTail(logPath, 6))
 		}
 		select {
 		case <-ctx.Done():
@@ -139,6 +169,23 @@ func DaemonArgs(socketPath, stateRoot, configPath string) []string {
 		"--addr", "unix://" + socketPath,
 		"--config", configPath,
 	}
+}
+
+// logTail returns the last n lines of the daemon log, so a start failure carries its REASON
+// rather than only the fact that nothing answered.
+func logTail(path string, n int) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Sprintf("daemon log %s: %v", path, err)
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	if len(lines) == 1 && lines[0] == "" {
+		return fmt.Sprintf("daemon log %s: (empty)", path)
+	}
+	return "daemon log: " + strings.Join(lines, " | ")
 }
 
 // ready reports whether a daemon answers on the socket, and records what it reports.
