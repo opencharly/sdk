@@ -64,18 +64,34 @@ func BuildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Inf
 	// identical binary + plugin paths (buildContents), so pacman/dpkg/rpm refuse to
 	// overwrite one variant with another unless the packages declare it. Derive the
 	// family from (name, variants) and declare the relationships the canonical Arch
-	// family pattern requires (nvidia / nvidia-dkms / nvidia-open):
+	// family pattern actually uses (nvidia / nvidia-dkms / nvidia-open):
 	//   - Provides the BASE name on every variant, so `Depends: charly` is satisfied
 	//     by whichever variant is installed;
-	//   - Conflicts + Replaces every OTHER family member, so a variant SWAP is a
-	//     first-class package-manager operation (replaces covers the upgrade/swap,
-	//     conflicts the co-install refusal).
+	//   - Conflicts every OTHER family member, so two variants can never co-install
+	//     over the shared paths.
+	// NO Replaces, and that is load-bearing. The canonical pattern's replace is a
+	// VERSION-BOUNDED migration one (`nvidia-open` declares `replaces: nvidia<=580.119.02-2`),
+	// not an unconditional mutual one: an upgrade asks, for each INSTALLED member,
+	// which packages declare `Replaces` on it, and it must find at most one. Declaring
+	// every variant a replacer of every other gives each installed member TWO
+	// candidates, so a routine `pacman -Syu` — not an explicit swap — dies inside the
+	// transaction:
+	//     :: Replace charly with charly/charly-full? [Y/n]
+	//     :: Replace charly with charly/charly-minimal? [Y/n]
+	//     error: unresolvable package conflicts detected
+	//     :: charly-full-<ver> and charly-minimal-<ver> are in conflict
+	// measured when a consumer image installed `charly` and a later build step
+	// upgraded (opencharly/charly-arch#13). A SWAP stays supported and explicit: the
+	// Conflicts entry makes `pacman -S <other-variant>` prompt to remove the installed
+	// one, and remove-then-install works unconditionally. The consequence — a variant
+	// keeps its flavour across upgrades instead of being silently swapped for the
+	// default — is the point of a flavour: `charly-minimal` exists to ship fewer
+	// plugins, and an upgrade must not quietly undo that choice.
 	// msix (Windows) has no package-relationship concept and ignores these.
-	var conflicts, replaces []string
+	var conflicts []string
 	for _, fam := range FamilyNames(pkg, format) {
 		if fam != name {
 			conflicts = append(conflicts, fam)
-			replaces = append(replaces, fam)
 		}
 	}
 
@@ -86,7 +102,6 @@ func BuildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Inf
 			Suggests:   f.Suggests,
 			Provides:   []string{pkg.Name},
 			Conflicts:  conflicts,
-			Replaces:   replaces,
 			Contents:   contents,
 		},
 		Name:        name,
