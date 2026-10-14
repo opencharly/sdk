@@ -146,7 +146,10 @@ func TestVerifyRefusesAWrongPlatformAndNamesTheAlternatives(t *testing.T) {
 func TestVerifyRefusesATamperedBlob(t *testing.T) {
 	st := writeArtifactStore(t, fixtureMetadata(nil))
 	sum := sha256.Sum256([]byte(fixtureBinary))
-	blob := filepath.Join(st.Dir(), "blobs", "sha256", hex.EncodeToString(sum[:]))
+	blob, err := st.BlobPath("sha256:" + hex.EncodeToString(sum[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
 	raw, err := os.ReadFile(blob)
 	if err != nil {
 		t.Fatal(err)
@@ -518,4 +521,60 @@ func TestDescriptorMatchesNeverAcceptsAHigherLevelSilently(t *testing.T) {
 	if len(platforms) != 1 || platforms[0] != "linux/amd64/v9" {
 		t.Errorf("refusal must enumerate the platforms it does carry, got %v", platforms)
 	}
+}
+
+// TestArtifactsAndOpenStoreDir proves the two exported pieces of the reader that had no test that
+// could fail: Artifacts() enumerating the index, and OpenStoreDir() reopening a store from a path so a
+// caller can ReadTree/Materialize through it without knowing the cache root.
+func TestArtifactsAndOpenStoreDir(t *testing.T) {
+	st := writeArtifactStore(t, fixtureMetadata(nil))
+	arts, err := Artifacts(st)
+	if err != nil {
+		t.Fatalf("Artifacts: %v", err)
+	}
+	if len(arts) != 1 {
+		t.Fatalf("Artifacts returned %d entries, want 1", len(arts))
+	}
+	if arts[0].Tag != "test" {
+		t.Errorf("Tag = %q, want the index annotation's tag", arts[0].Tag)
+	}
+	if arts[0].Platform != "linux/amd64" {
+		t.Errorf("Platform = %q, want linux/amd64", arts[0].Platform)
+	}
+	if arts[0].Digest == "" {
+		t.Error("Digest is empty: Artifacts must report the manifest digest, which is the selector a caller uses")
+	}
+
+	// OpenStoreDir reopens the SAME tree by path — the caller-side route that does not resolve roots.
+	reopened := storekit.OpenStoreDir(st.Dir())
+	if reopened.Dir() != st.Dir() {
+		t.Fatalf("OpenStoreDir().Dir() = %q, want %q", reopened.Dir(), st.Dir())
+	}
+	idx, err := ReadIndex(reopened)
+	if err != nil {
+		t.Fatalf("ReadIndex via the reopened store: %v", err)
+	}
+	if len(idx.Manifests) != 1 || idx.Manifests[0].Digest != arts[0].Digest {
+		t.Fatalf("the reopened store sees a different index: %v", idx.Manifests)
+	}
+	v, err := Verify(reopened, arts[0].Digest, "linux/amd64", "glibc")
+	if err != nil {
+		t.Fatalf("Verify by the digest Artifacts reported must work end to end: %v", err)
+	}
+	if v.Metadata.Module == "" {
+		t.Fatal("verification through the reopened store decoded no metadata")
+	}
+}
+
+// TestExportedTypesExist pins the three exported DATA types of this package at COMPILE time, which is
+// the pairing the export enumeration asks for: a composite literal of the named type cannot be
+// inferred away, so renaming or removing ArtifactRef, Verified or View fails this test's build rather
+// than passing silently. Their FIELDS are asserted behaviourally elsewhere (Tag/Platform/Digest in
+// TestArtifactsAndOpenStoreDir, Metadata in TestVerifyAcceptsAWellFormedArtifact, Name/Dir/Binary in
+// TestMaterializeCreatesAHardlinkedView); this is only the surface pin, deliberately not dressed up as
+// behavioural coverage.
+func TestExportedTypesExist(t *testing.T) {
+	_ = ArtifactRef{}
+	_ = Verified{}
+	_ = View{}
 }

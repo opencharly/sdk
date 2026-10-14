@@ -481,3 +481,46 @@ func TestPutEntryRefusesAnUnstoredPayload(t *testing.T) {
 		t.Fatal("PutEntry accepted an entry with neither payload nor tree")
 	}
 }
+
+// TestExportedConstantsAndRootsAreContract pins the three exported VALUES that are contracts rather
+// than implementation details, so a rename cannot pass unnoticed: the cache-key annotation is shared
+// with spec/cache's store (one key vocabulary across every store, which is what lets a reader that
+// knows one store read them all), the entry media type is what a consumer dispatches on, and the four
+// root names are the D-STORE-1 vocabulary. It also exercises the Root enum through Dir, so the type is
+// not merely declared.
+func TestExportedConstantsAndRootsAreContract(t *testing.T) {
+	if AnnotationCacheKey != "ai.opencharly.cache.key" {
+		t.Errorf("AnnotationCacheKey = %q: renaming it breaks every store that reads spec/cache's entries", AnnotationCacheKey)
+	}
+	if MediaTypeStoreEntry != "application/vnd.opencharly.store.entry.v1+json" {
+		t.Errorf("MediaTypeStoreEntry = %q: a consumer dispatches on this value", MediaTypeStoreEntry)
+	}
+	want := map[Root]string{RootConfig: "config", RootCache: "cache", RootState: "state", RootRuntime: "runtime"}
+	for r, name := range want {
+		if string(r) != name {
+			t.Errorf("Root %q has value %q, want %q", name, string(r), name)
+		}
+	}
+	// Every root resolves, and the runtime root falls back to state rather than to /tmp when
+	// XDG_RUNTIME_DIR is unset — a shared world-writable fallback would be the wrong default.
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	rt, err := Dir(RootRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := Dir(RootState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt != st {
+		t.Fatalf("Dir(RootRuntime) = %q with no XDG_RUNTIME_DIR, want the state root %q", rt, st)
+	}
+	for _, r := range []Root{RootConfig, RootCache} {
+		if _, err := Dir(r); err != nil {
+			t.Errorf("Dir(%s): %v", r, err)
+		}
+	}
+	if _, err := Dir("bogus"); err == nil {
+		t.Error("Dir accepted an unknown root name")
+	}
+}
