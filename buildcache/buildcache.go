@@ -1,12 +1,14 @@
 // Package buildcache is the ONE store-backed cache of host-built plugin provider binaries.
 //
 // WHY THIS PACKAGE EXISTS (R2). Before it, the plugin build cache had TWO live sibling
-// implementations of one concept: charly/charly/plugin_loader.go's buildPluginBinary cluster and
-// a copy in sdk/deploykit/bake_plugins.go. The sdk copy is LOAD-BEARING, not vestigial — the
-// deferred render closure runs OUT-OF-PROCESS in candy/plugin-build, imports only the sdk, and
-// therefore cannot call the package-main copy — which is exactly why the unification is
-// add-before-delete: this package becomes the one home, BOTH callers repoint at it, and only
-// then do the two duplicates go (R5 by sequence, not by a gap).
+// implementations of one concept: charly/charly/plugin_loader.go's cluster and a copy in
+// sdk/deploykit/bake_plugins.go. Both are removed across the two ordered PRs of ONE cutover
+// (producer-first, since a PR cannot span repos): the sdk cluster is deleted in the SAME PR that
+// adds this package, and the loader cluster with it. The sdk copy was LOAD-BEARING until then, not
+// vestigial — its caller runs OUT-OF-PROCESS in candy/plugin-build, imports only the sdk, and
+// therefore cannot call the package-main copy — which is why the replacement had to PUBLISH first
+// and why it is this package, not a repoint, that is the one home. See "WHAT THIS PACKAGE
+// REPLACES" below for the per-PR split.
 //
 // THE KEY IS D-STORE-4's KEY (the phase's whole claim). D-STORE-4: "A plugin binary's key covers
 // its module source, go.sum, the toolchain and the platform." That input set IS the store key,
@@ -30,11 +32,25 @@
 // keeps answering a question the new composition no longer asks — entries stranded as
 // permanently-valid-but-wrong. Nothing else belongs in the key without that consequence in mind.
 //
-// WHAT DIES WITH THIS CHANGE (R5, claim-keyed grep in the PR): pluginBuildCacheDir,
-// pluginSourceTag, pluginBinaryIsFresh, pluginStampPath, writePluginStamp, pluginBuildStamp,
-// pluginSourceRoots, localReplaceDirs, hashDirContent, envValue, all of plugin_build_stamp.go,
-// the ".stamp" and ".lock" sidecars, and — after the repoint is proven live — the two duplicate
-// clusters.
+// WHAT THIS PACKAGE REPLACES, and WHERE EACH HALF DIES (R5, claim-keyed grep in each PR). The
+// plugin build cache had two sibling clusters for one concept; this cutover is delivered as TWO
+// ORDERED PRs (producer-first, since a PR cannot span repos), and each PR is complete for its repo:
+//
+//   - THIS PR (sdk, producer) DELETES sdk/deploykit/bake_plugins.go's cluster —
+//     pluginBuildCacheDir, pluginSourceTag, buildPluginBinary, safePluginBinName (deduped onto
+//     SafePluginBinName here) and the five helpers that existed only to serve the deleted build —
+//     and repoints EmitBakedPlugins at Build. sdk's main therefore never carries two
+//     implementations.
+//   - THE PAIR'S SECOND PR (charly, consumer) DELETES the package-main cluster in
+//     charly/charly/plugin_loader.go, including all of plugin_build_stamp.go with
+//     pluginBuildStamp/pluginStampPath/pluginBinaryIsFresh/writePluginStamp and the
+//     pluginSourceRoots/localReplaceDirs/hashDirContent/envValue helpers that served the STAMP —
+//     and with it the ".stamp" and ".lock" sidecars, which this package makes unnecessary by
+//     construction.
+//
+// hashDirContent, localReplaceDirs and envValue are NOT deleted: they LIVE HERE now, carried over
+// because a content key over the module source needs exactly that traversal. Only the loader's
+// copies of them die, with the cluster they served.
 //
 // THE LOCK MOVED OUT OF THE CACHE (the homes rule). A store tree contains NO locks: a lock is
 // transient runtime state with no content address, and a digest-keyed lock could even be shared

@@ -16,16 +16,21 @@ import (
 // bakedPluginDir (/usr/lib/charly/plugins/), so a DEPLOYED container (which has neither the candy
 // source nor a go toolchain) can run an external plugin its in-container charly needs at runtime.
 //
-// Relocated from charly/generate.go's (*Generator).emitBakedPlugins + charly/plugin_loader.go's
-// BUILD CLUSTER (now DELETED — the build moved to sdk/buildcache, the one implementation; this
-// privilege, proven by the ALREADY-moved ensureCharlyBinaryFresh, which execs `go build` directly
-// from candy/plugin-build with zero host round-trip). The former "bake-plugins" HostBuild round-trip
-// (charly/host_build_bake_plugins.go, DELETED) is now unnecessary: EmitBakedPlugins runs this
-// file keeps only the constants and the EMIT logic, wired by NewRenderGeneratorFromProject.
-// The former local buildPluginBinary/safePluginBinName/pluginBuildCacheDir/pluginSourceTag copies
-// needs them for the runtime plugin LOADER's own bakedPluginBinary fallback — a genuinely different
-// consumer, core-only) — the two modules cannot share private code (R3 cross-module precedent:
-// candyByName, resolveUserContextPlugin, collectOverlayCandies all duplicate the same way).
+// Relocated from charly/generate.go's (*Generator).emitBakedPlugins. THIS FILE NOW HOLDS ONLY THE
+// CONSTANTS AND THE EMIT LOGIC, wired by NewRenderGeneratorFromProject; the BUILD it used to carry
+// lives in sdk/buildcache, the one implementation both the bake path and the runtime plugin loader
+// call.
+//
+// DELETED FROM HERE (this cutover, sdk PR): the local buildPluginBinary copy and its
+// safePluginBinName/pluginBuildCacheDir/pluginSourceTag helpers, plus the five helpers that existed
+// only to serve that build. The former "bake-plugins" HostBuild round-trip
+// (charly/host_build_bake_plugins.go) was already deleted earlier: EmitBakedPlugins runs
+// in-process, with zero host round-trip.
+//
+// The package-main cluster in charly/charly/plugin_loader.go (which the old comment here called a
+// necessary duplicate, because the two modules cannot share private code and the runtime plugin
+// LOADER needs its own bakedPluginBinary fallback) is deleted in the pair's SECOND PR, together
+// with the repoint of its two build arms onto buildcache.Build.
 
 // bakedPluginDir is the FHS system path a candy's `bake_plugin:` step copies a pre-built provider
 // binary to at image-build time. Byte-identical to charly/plugin_loader.go's constant.
@@ -63,17 +68,16 @@ func bakedPluginFileName(name string) string {
 	return buildcache.SafePluginBinName(filepath.Base(name))
 }
 
-// buildPluginBinary go-builds an out-of-tree plugin's provider binary (never in a venue — the
-// caller owns the toolchain; the built binary is delivered into a venue by the in-venue transport).
-// srcDir is the plugin candy's resolved dir, which is its own Go module.
+// FORMERLY HERE: a local `buildPluginBinary` copy, DELETED. It was a duplicate of
+// charly/charly/plugin_loader.go's function of the same name and was NOT byte-identical to it —
+// this file's comment claimed it was, and the claim was measurably false: the package-main copy
+// grew CONTENT-STAMP REUSE (a stamp over the candy's source tree plus its transitive local
+// `replace` targets, the toolchain and the build env, letting an unchanged plugin skip its
+// rebuild) and this copy never did. Two live clusters for one concept, differing in exactly the
+// freshness behaviour that matters, is the R2 duplication the one canonical home removes.
 //
-// THIS IS A DUPLICATE OF charly/charly/plugin_loader.go's function of the same name, and it is NOT
-// byte-identical to it — an earlier comment here claimed it was, and the claim was measurably false:
-// the package-main copy grew CONTENT-STAMP REUSE (a stamp over the candy's source tree plus its
-// transitive local `replace` targets, the toolchain and the build env, letting an unchanged plugin
-// skip its rebuild) and this copy never did. Two live clusters for one concept, differing in exactly
-// the freshness behaviour that matters, is the R2 duplication a single canonical home removes.
-//
+// EmitBakedPlugins now calls sdk/buildcache — the single implementation — so the bake path and the
+// loader path share ONE key, ONE build and ONE set of freshness rules.
 
 // EmitBakedPlugins bakes each composing candy's `bake_plugin:` out-of-tree plugin binaries into the
 // FINAL image, staging under .build/<boxName>/.plugins/ and writing the COPY + chmod Containerfile
