@@ -89,3 +89,91 @@ func TestRenderDownloadScript_EmptyToNoInstallD(t *testing.T) {
 		t.Fatalf("a declared to must still create its dir; got:\n%s", withTo)
 	}
 }
+
+// TestRenderDownloadScript_SubstitutesCandyVarsInDestination asserts the author's OWN `var:` spelling
+// works in a download DESTINATION, exactly as it already did in the URL. Without the substitution the
+// destination is single-quoted and the shell never expands it, so the download lands at a path
+// LITERALLY named "${VAR}" — measured on a `target: local` deploy (ledger WI-6): the file appeared as
+// /home/<user>/${FC_TARBALL} and the next step then failed with "Cannot open: No such file or
+// directory" for the real path.
+func TestRenderDownloadScript_SubstitutesCandyVarsInDestination(t *testing.T) {
+	vars := map[string]string{"FC_TARBALL": "/var/cache/charly/fc.tgz", "FC_PREFIX": "/opt/firecracker"}
+
+	// extract: none — a fetched file at a named destination.
+	fetched := RenderDownloadScript(&spec.Op{
+		Download: "https://example/fc.tgz",
+		To:       "${FC_TARBALL}",
+		Extract:  "none",
+	}, vars)
+
+	if strings.Contains(fetched, "${FC_TARBALL}") {
+		t.Fatalf("the destination kept its unexpanded ${VAR}, so the shell writes a file literally named that:\n%s", fetched)
+	}
+
+	if !strings.Contains(fetched, "install -d -m0755 /var/cache/charly") {
+		t.Fatalf("the destination's directory was not created from the substituted value:\n%s", fetched)
+	}
+
+	if !strings.Contains(fetched, "-o /var/cache/charly/fc.tgz") {
+		t.Fatalf("the download did not target the substituted file path:\n%s", fetched)
+	}
+
+	// An archive into a named directory, with the URL carrying a var of its own.
+	archive := RenderDownloadScript(&spec.Op{
+		Download: "https://example/${FC_VERSION}/x.tgz",
+		To:       "${FC_PREFIX}",
+		Extract:  "tar.gz",
+	}, map[string]string{"FC_PREFIX": "/opt/firecracker", "FC_VERSION": "v1.17.0"})
+
+	if strings.Contains(archive, "${FC_PREFIX}") || strings.Contains(archive, "${FC_VERSION}") {
+		t.Fatalf("an archive destination or URL kept an unexpanded var:\n%s", archive)
+	}
+
+	if !strings.Contains(archive, "-C /opt/firecracker") {
+		t.Fatalf("the archive did not unpack into the substituted directory:\n%s", archive)
+	}
+
+	// An INCLUDE FILTER entry carrying a var: the third field the substitution covers, and the one a
+	// reader is least likely to think of — a filter that keeps its unexpanded name selects nothing, so
+	// the archive extracts empty while every command in the script still "succeeds".
+	filtered := RenderDownloadScript(&spec.Op{
+		Download:       "https://example/x.tgz",
+		To:             "${FC_PREFIX}",
+		Extract:        "tar.gz",
+		ExtractInclude: []string{"${FC_PREFIX}/bin/firecracker", "jailer"},
+	}, vars)
+
+	if strings.Contains(filtered, "${FC_PREFIX}") {
+		t.Fatalf("an include-filter entry kept its unexpanded var, so it would match nothing:\n%s", filtered)
+	}
+
+	if !strings.Contains(filtered, "/opt/firecracker/bin/firecracker") {
+		t.Fatalf("the include filter was not emitted expanded:\n%s", filtered)
+	}
+
+	if !strings.Contains(filtered, " jailer") {
+		t.Fatalf("a filter entry with no var was rewritten:\n%s", filtered)
+	}
+}
+
+// TestSubstituteCandyVars_LongestNameFirst is the guard on the substitution itself: a shorter var name
+// must never eat the head of a longer one, or ${FC_VERSION} would rewrite the first characters of
+// ${FC_VERSION_DIR} and silently send the download somewhere that does not exist.
+func TestSubstituteCandyVars_LongestNameFirst(t *testing.T) {
+	vars := map[string]string{"FC_VERSION": "v1.17.0", "FC_VERSION_DIR": "/opt/fc-1.17.0"}
+
+	if got := substituteCandyVars("${FC_VERSION_DIR}/vmlinux", vars); got != "/opt/fc-1.17.0/vmlinux" {
+		t.Errorf("substituteCandyVars = %q, want the longer name to win", got)
+	}
+
+	// An unknown name is left for the shell (or the caller) — this is the candy's var: map, not the
+	// process environment.
+	if got := substituteCandyVars("${NOT_MINE}/x", vars); got != "${NOT_MINE}/x" {
+		t.Errorf("an unknown name was rewritten: %q", got)
+	}
+
+	// Nothing to do must be a no-op.
+	if got := substituteCandyVars("/plain/path", vars); got != "/plain/path" {
+		t.Errorf("a plain path was rewritten: %q", got)
+	}
+}
