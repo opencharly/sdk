@@ -13,6 +13,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -118,7 +119,7 @@ func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 		_ = exec.Command("podman", "rmi", "-f", ref).Run()
 	})
 
-	if err := EmitVmBox("podman", ref, meta, diskPath); err != nil {
+	if err := EmitVmBox(context.Background(), "podman", ref, meta, diskPath); err != nil {
 		t.Fatalf("EmitVmBox: %v", err)
 	}
 
@@ -159,8 +160,8 @@ func TestEmitVmBoxAtContainerDiskPathLive(t *testing.T) {
 	ref := "localhost/vm-box-containerdisk-live:" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	t.Cleanup(func() { _ = exec.Command("podman", "rmi", "-f", ref).Run() })
 
-	if err := EmitVmBoxAt("podman", ref, meta, diskPath, ContainerDiskPath); err != nil {
-		t.Fatalf("EmitVmBoxAt(ContainerDiskPath): %v", err)
+	if err := EmitVmBoxAt(context.Background(), "podman", ref, meta, diskPath, ContainerDiskPath); err != nil {
+		t.Fatalf("EmitVmBoxAt(context.Background(), ContainerDiskPath): %v", err)
 	}
 
 	// Save the emitted image as an OCI layout and read the layer tar's entry names.
@@ -320,11 +321,11 @@ func TestEmitVmBoxMicroVM_Guards(t *testing.T) {
 	missing := filepath.Join(dir, "not-there.vmlinux")
 	meta := &spec.VmBoxMetadata{Distro: "ubuntu"}
 
-	if err := EmitVmBoxMicroVM("podman", "localhost/x:t", nil, rootfs, rootfs); err == nil {
+	if err := EmitVmBoxMicroVM(context.Background(), "podman", "localhost/x:t", nil, rootfs, rootfs); err == nil {
 		t.Error("EmitVmBoxMicroVM accepted nil metadata")
 	}
 
-	if err := EmitVmBoxMicroVM("podman", "localhost/x:t", meta, rootfs, missing); err == nil {
+	if err := EmitVmBoxMicroVM(context.Background(), "podman", "localhost/x:t", meta, rootfs, missing); err == nil {
 		t.Error("EmitVmBoxMicroVM accepted a kernel artefact that does not exist")
 	}
 
@@ -341,7 +342,7 @@ func TestEmitVmBoxAtRejectsRelativePath(t *testing.T) {
 	if err := os.WriteFile(disk, []byte{1}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := EmitVmBoxAt("podman", "localhost/x:t", meta, disk, "disk/disk.img"); err == nil {
+	if err := EmitVmBoxAt(context.Background(), "podman", "localhost/x:t", meta, disk, "disk/disk.img"); err == nil {
 		t.Error("EmitVmBoxAt accepted a relative in-image path; it must be absolute")
 	}
 }
@@ -365,7 +366,7 @@ func TestEmitVmBoxAtRejectsUnsafePath(t *testing.T) {
 		"/disk/disk.img\"",        // quote
 		"/disk/disk.img;rm -rf /", // semicolon
 	} {
-		if err := EmitVmBoxAt("podman", "localhost/x:t", meta, disk, bad); err == nil {
+		if err := EmitVmBoxAt(context.Background(), "podman", "localhost/x:t", meta, disk, bad); err == nil {
 			t.Errorf("EmitVmBoxAt accepted unsafe in-image path %q", bad)
 		}
 	}

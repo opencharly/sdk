@@ -7,6 +7,7 @@ package deploykit
 // mocked (R8).
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +52,7 @@ func TestEmitVmBoxMicroVM_Live(t *testing.T) {
 	ref := "localhost/oc-vmbox-microvm-e2e:test"
 	defer exec.Command("podman", "rmi", "-f", ref).Run() //nolint:errcheck
 
-	if err := EmitVmBoxMicroVM("podman", ref, meta, rootfs, kernel); err != nil {
+	if err := EmitVmBoxMicroVM(context.Background(), "podman", ref, meta, rootfs, kernel); err != nil {
 		t.Fatalf("EmitVmBoxMicroVM: %v", err)
 	}
 

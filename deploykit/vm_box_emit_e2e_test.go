@@ -7,6 +7,7 @@ package deploykit
 // backing file (self-contained). Skips cleanly when podman/qemu-img are absent.
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +40,7 @@ func TestEmitVmBoxAt_OverlayIsFlattenedIntoSelfContainedBox(t *testing.T) {
 	ref := "localhost/oc-vmboxe2e:test"
 	defer exec.Command("podman", "rmi", "-f", ref).Run() //nolint:errcheck
 
-	if err := EmitVmBoxAt("podman", ref, &spec.VmBoxMetadata{Description: "e2e"}, overlay, VmBoxDiskPath); err != nil {
+	if err := EmitVmBoxAt(context.Background(), "podman", ref, &spec.VmBoxMetadata{Description: "e2e"}, overlay, VmBoxDiskPath); err != nil {
 		t.Fatalf("EmitVmBoxAt: %v", err)
 	}
 

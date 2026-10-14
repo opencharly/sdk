@@ -19,6 +19,7 @@ package deploykit
 // label → unmarshal, the VM analog of CapabilitiesFromLabels' ExtractMetadata path.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/opencharly/sdk/buildkitdrive"
 	"github.com/opencharly/spec/container"
 	"github.com/opencharly/spec/shellquote"
 	"github.com/opencharly/spec/spec"
@@ -70,8 +72,8 @@ const (
 // The build context is the disk's own parent directory and the Containerfile is staged
 // in a temp dir (passed via -f): the disk is never copied, buildah streams the file
 // into the layer directly. The temp Containerfile is removed on return.
-func EmitVmBox(engine, ref string, meta *spec.VmBoxMetadata, diskPath string) error {
-	return EmitVmBoxAt(engine, ref, meta, diskPath, VmBoxDiskPath)
+func EmitVmBox(ctx context.Context, engine, ref string, meta *spec.VmBoxMetadata, diskPath string) error {
+	return EmitVmBoxAt(ctx, engine, ref, meta, diskPath, VmBoxDiskPath)
 }
 
 // validInImagePath reports whether p is a safe container-absolute path for the generated
@@ -101,8 +103,8 @@ func validInImagePath(p string) bool {
 // shipped callers; any other layout is the author's choice. The path must be a safe
 // container-absolute path (see validInImagePath) — it is written UNQUOTED into the
 // Containerfile, so an unvalidated value is a build-instruction injection surface.
-func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImagePath string) error {
-	return emitVmBoxArtifacts(engine, ref, meta, []vmBoxArtifact{{src: diskPath, inImage: inImagePath}})
+func EmitVmBoxAt(ctx context.Context, engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImagePath string) error {
+	return emitVmBoxArtifacts(ctx, engine, ref, meta, []vmBoxArtifact{{src: diskPath, inImage: inImagePath}})
 }
 
 // EmitVmBoxMicroVM emits the MICROVM shape: the root drive the VMM attaches AND the
@@ -112,7 +114,7 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 // provenance (#VmBoxSource: the `rootfs` arm with its origin ref and built size, the
 // `kernel` arm with its digest and command line) is the CALLER's to fill, because only
 // the caller knows where the artefacts came from.
-func EmitVmBoxMicroVM(engine, ref string, meta *spec.VmBoxMetadata, rootfsPath, kernelPath string) error {
+func EmitVmBoxMicroVM(ctx context.Context, engine, ref string, meta *spec.VmBoxMetadata, rootfsPath, kernelPath string) error {
 	if meta == nil {
 		return fmt.Errorf("EmitVmBoxMicroVM: nil metadata")
 	}
@@ -120,7 +122,7 @@ func EmitVmBoxMicroVM(engine, ref string, meta *spec.VmBoxMetadata, rootfsPath, 
 	emit := *meta
 	emit.Artifacts = spec.VmBoxArtifacts{RootfsPath: MicroVMRootfsPath, KernelPath: MicroVMKernelPath}
 
-	if err := emitVmBoxArtifacts(engine, ref, &emit, []vmBoxArtifact{
+	if err := emitVmBoxArtifacts(ctx, engine, ref, &emit, []vmBoxArtifact{
 		{src: rootfsPath, inImage: MicroVMRootfsPath},
 		{src: kernelPath, inImage: MicroVMKernelPath},
 	}); err != nil {
@@ -157,7 +159,7 @@ type vmBoxCopy struct {
 // Otherwise the context is a staging directory in which any qcow2 overlay has been
 // flattened and every other artefact LINKED into it, so a multi-gigabyte rootfs is still
 // copied; only a link the filesystem refuses falls back to a byte copy.
-func emitVmBoxArtifacts(engine, ref string, meta *spec.VmBoxMetadata, arts []vmBoxArtifact) error {
+func emitVmBoxArtifacts(ctx context.Context, engine, ref string, meta *spec.VmBoxMetadata, arts []vmBoxArtifact) error {
 	if meta == nil {
 		return fmt.Errorf("EmitVmBox: nil metadata")
 	}
@@ -206,15 +208,45 @@ func emitVmBoxArtifacts(engine, ref string, meta *spec.VmBoxMetadata, arts []vmB
 		return fmt.Errorf("EmitVmBox: writing Containerfile: %w", err)
 	}
 
-	binary := container.EngineBinary(engine)
-	build := exec.Command(binary, "build", "-t", ref, "-f", cfPath, ctxDir)
-	out, err := build.CombinedOutput()
+	// ⚑ BuildKit is the builder (the cutover's ONE builder), and the image has to be
+	// BRIDGED into the run engine's store: the daemon writes into its OWN content store,
+	// and every later read of this image — its capability labels, its deploy, its status,
+	// `charly clean` — resolves it through the RUN engine. The two stores are not shared.
+	stageDir, err := buildkitdrive.StageDir()
 	if err != nil {
-		msg := strings.TrimSpace(string(out))
+		return err
+	}
+	dest := buildkitdrive.ExportFile(stageDir, ref)
+	daemon, err := buildkitdrive.Ensure(ctx, buildkitdrive.ExecRunner{})
+	if err != nil {
+		return fmt.Errorf("EmitVmBox: buildkit daemon: %w", err)
+	}
+	args, err := buildkitdrive.Build{
+		Containerfile: cfPath,
+		Context:       ctxDir,
+		Ref:           ref,
+		Addr:          daemon.Addr(),
+	}.Args(dest)
+	if err != nil {
+		return fmt.Errorf("EmitVmBox: %w", err)
+	}
+	if out, err := (buildkitdrive.ExecRunner{}).Run(ctx, buildkitdrive.BuildctlBinary, args...); err != nil {
+		msg := strings.TrimSpace(out)
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("EmitVmBox: %s build -t %s: %w: %s", binary, ref, err, msg)
+		return fmt.Errorf("EmitVmBox: buildctl build -t %s: %w: %s", ref, err, msg)
+	}
+	// The tag re-application is LoadExport's duty, not the caller's: a load returns
+	// success while landing the image UNTAGGED, so without it `ref` resolves to nothing.
+	if err := buildkitdrive.LoadExport(ctx, buildkitdrive.ExecRunner{}, container.EngineBinary(engine), dest, ref); err != nil {
+		return fmt.Errorf("EmitVmBox: bridging %s into the %s store: %w", ref, engine, err)
+	}
+	// The export is a full copy of the image. Keeping it would double the storage of every
+	// VM box on a persistent root, where GC is not yet proven, so it is removed once the
+	// bridge has succeeded — and a failure to remove it is reported, not swallowed.
+	if err := os.Remove(dest); err != nil {
+		return fmt.Errorf("EmitVmBox: removing the export %s: %w", dest, err)
 	}
 	return nil
 }
