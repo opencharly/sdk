@@ -256,3 +256,19 @@ func TestResolveClusterContextViewAgreesWithTheFullView(t *testing.T) {
 		t.Fatalf("context-only view %q != full view's %q", kctx, view.KubeconfigContext)
 	}
 }
+
+// TestResolveClusterViaExecutorIsTheExportedContract calls the EXPORTED resolver directly, so the
+// public surface itself is covered and not only the seam behind it: the nil-executor arm through
+// the exported path must be loud and name the cluster, never a silent empty resolution.
+func TestResolveClusterViaExecutorIsTheExportedContract(t *testing.T) {
+	view, err := ResolveClusterViaExecutor(context.Background(), nil, "quant-dev")
+	if err == nil {
+		t.Fatal("want an error from the exported resolver for a nil executor, got nil")
+	}
+	if view != nil {
+		t.Fatalf("want a nil view on failure, got %+v", view)
+	}
+	if !strings.Contains(err.Error(), "quant-dev") {
+		t.Fatalf("error must name the cluster, got: %v", err)
+	}
+}
