@@ -310,3 +310,212 @@ func treeBytes(t *testing.T, dir string) (int64, int64) {
 	}
 	return naive, unique
 }
+
+// --- the CONSERVATIVE VARIANT RULE and the multi-artifact SELECTOR, which the single-manifest
+// fixtures above could not exercise: every earlier fixture writes ONE manifest with no variant and
+// every earlier test passes selector == "", so deleting the preference loop, the selector filter or
+// the multi-artifact refusal would leave the whole suite green. The three tests below are written to
+// FAIL on exactly that mutation, which is the only thing that makes them coverage.
+
+// writeTaggedMultiPlatformStore writes a store holding several platform entries that share ONE tag —
+// the normal multi-platform artifact shape, and the only shape in which the variant-preference loop
+// is reachable: an unqualified request then matches more than one descriptor.
+func writeTaggedMultiPlatformStore(t *testing.T, variants ...string) (*storekit.Store, map[string]string) {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("CHARLY_CACHE_DIR", root)
+	st, err := storekit.OpenStore("artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(st.Dir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(st.Dir(), storekit.LayoutFile), []byte(`{"imageLayoutVersion":"1.0.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	put := func(b []byte) string {
+		dgst, err := st.PutBlob(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return dgst
+	}
+	byVariant := map[string]string{}
+	descs := make([]map[string]any, 0, len(variants))
+	for _, v := range variants {
+		md := fixtureMetadata(func(m map[string]any) {
+			p := m["platform"].(map[string]any)
+			if v == "" {
+				delete(p, "variant")
+			} else {
+				p["variant"] = v
+			}
+		})
+		cfg := put(md)
+		bin := put([]byte(fixtureBinary + v))
+		mf := put([]byte(fixtureCandyYML))
+		pv := put([]byte(fixtureProviders))
+		man := map[string]any{
+			"schemaVersion": 2,
+			"mediaType":     spec.MediaTypePluginArtifactManifest,
+			"artifactType":  spec.ArtifactTypePlugin,
+			"config":        map[string]any{"mediaType": spec.MediaTypePluginConfig, "digest": cfg},
+			"layers": []map[string]any{
+				{"mediaType": spec.MediaTypePluginBinary, "digest": bin},
+				{"mediaType": spec.MediaTypePluginManifest, "digest": mf},
+				{"mediaType": spec.MediaTypePluginProviders, "digest": pv},
+			},
+		}
+		raw, err := json.Marshal(man)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manDigest := put(raw)
+		byVariant[v] = manDigest
+		platform := map[string]any{"os": "linux", "architecture": "amd64"}
+		if v != "" {
+			platform["variant"] = v
+		}
+		descs = append(descs, map[string]any{
+			"mediaType": spec.MediaTypePluginArtifactManifest,
+			"digest":    manDigest,
+			"platform":  platform,
+			// ONE tag for every platform entry, as a multi-platform artifact is published.
+			"annotations": map[string]string{"org.opencontainers.image.ref.name": "test"},
+		})
+	}
+	idx := map[string]any{
+		"schemaVersion": 2,
+		"mediaType":     spec.MediaTypePluginArtifactIndex,
+		"artifactType":  spec.ArtifactTypePlugin,
+		"manifests":     descs,
+	}
+	raw, err := json.Marshal(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(st.Dir(), "index.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return st, byVariant
+}
+
+// TestSelectArtifactTakesTheBaselineForAnUnqualifiedRequest pins the DOCUMENTED rule for the common
+// case: an unqualified request that matches both a baseline entry and the host's declared level is
+// answered by the BASELINE — always safe, and the reason the exact-variant branch is keyed on the
+// REQUEST rather than on the resolved host platform. If someone "improves" this by resolving the
+// request through HostPlatform and preferring the tuned entry, this test fails: that is a design
+// decision, not an accident, and it is now pinned.
+func TestSelectArtifactTakesTheBaselineForAnUnqualifiedRequest(t *testing.T) {
+	t.Setenv("GOAMD64", "v4")
+	st, byVariant := writeTaggedMultiPlatformStore(t, "", "v4")
+	idx, err := ReadIndex(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx.Manifests) != 2 || platformString(idx.Manifests[0].Platform) != "linux/amd64" {
+		t.Fatalf("fixture must list the baseline first among two manifests, got %v", idx.Manifests)
+	}
+	sel, _, err := SelectArtifact(idx, "test", "linux/amd64")
+	if err != nil {
+		t.Fatalf("SelectArtifact: %v", err)
+	}
+	if got := idx.Manifests[sel].Digest; got != byVariant[""] {
+		t.Fatalf("unqualified request selected %s, want the BASELINE %s", got, byVariant[""])
+	}
+}
+
+// TestSelectArtifactPrefersTheExactVariantForAQualifiedRequest kills the exact-variant branch: this is
+// the ONLY reachable path for it, because an unqualified request matches the baseline too and the rule
+// above answers the baseline. Here the caller asks for linux/amd64/v4 explicitly, both entries match,
+// the baseline is listed FIRST, and the exact-variant entry must win — delete the branch and the first
+// match (the baseline) is returned instead.
+func TestSelectArtifactPrefersTheExactVariantForAQualifiedRequest(t *testing.T) {
+	st, byVariant := writeTaggedMultiPlatformStore(t, "", "v4")
+	idx, err := ReadIndex(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if platformString(idx.Manifests[0].Platform) != "linux/amd64" {
+		t.Fatalf("fixture must list the baseline first, got %s", platformString(idx.Manifests[0].Platform))
+	}
+	sel, _, err := SelectArtifact(idx, "test", "linux/amd64/v4")
+	if err != nil {
+		t.Fatalf("SelectArtifact(qualified): %v", err)
+	}
+	if got := idx.Manifests[sel].Digest; got != byVariant["v4"] {
+		t.Fatalf("qualified v4 request selected %s (the first match), want the exact-variant entry %s — the exact-variant branch is not deciding",
+			got, byVariant["v4"])
+	}
+}
+
+// TestSelectArtifactByDigestSelectsExactlyOnePlatform kills the SELECTOR filter: with the same tag on
+// both entries, a digest selector must resolve to that one platform, not to the variant-preferred one.
+func TestSelectArtifactByDigestSelectsExactlyOnePlatform(t *testing.T) {
+	t.Setenv("GOAMD64", "v4")
+	st, byVariant := writeTaggedMultiPlatformStore(t, "", "v4")
+	idx, err := ReadIndex(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sel, _, err := SelectArtifact(idx, byVariant[""], "linux/amd64")
+	if err != nil {
+		t.Fatalf("SelectArtifact by digest: %v", err)
+	}
+	if got := idx.Manifests[sel].Digest; got != byVariant[""] {
+		t.Fatalf("digest selector %s resolved to %s — the selector is not filtering", byVariant[""], got)
+	}
+}
+
+// TestSelectArtifactRefusesAnUnqualifiedMultiArtifactStore kills the refusal in SelectArtifact: with
+// no selector and more than one artifact, "the first match" could serve a DIFFERENT plugin's bytes.
+func TestSelectArtifactRefusesAnUnqualifiedMultiArtifactStore(t *testing.T) {
+	t.Setenv("GOAMD64", "v4")
+	st, _ := writeTaggedMultiPlatformStore(t, "", "v4")
+	idx, err := ReadIndex(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = SelectArtifact(idx, "", "linux/amd64")
+	if err == nil {
+		t.Fatal("an unqualified request was accepted against a 2-artifact store: the refusal is gone and 'the first match' can serve another plugin's bytes")
+	}
+	if !strings.Contains(err.Error(), "2 artifacts") {
+		t.Errorf("refusal %q must name the artifact count", err)
+	}
+}
+
+// TestDescriptorMatchesNeverAcceptsAHigherLevelSilently kills the host-level branch of
+// descriptorMatches: v9 is a level GOAMD64 CANNOT declare, so an unqualified request against a store
+// holding only v9 must be refused rather than picking bytes built for a higher level — that is a
+// SIGILL, strictly worse than a refusal. (GOAMD64 is cleared here so "host level" is empty.)
+func TestDescriptorMatchesNeverAcceptsAHigherLevelSilently(t *testing.T) {
+	t.Setenv("GOAMD64", "")
+	v9 := &struct {
+		OS           string `json:"os"`
+		Architecture string `json:"architecture"`
+		Variant      string `json:"variant"`
+	}{OS: "linux", Architecture: "amd64", Variant: "v9"}
+	if descriptorMatches(v9, "linux/amd64") {
+		t.Fatal("an unqualified request accepted a v9 entry on a host with no declared level — that is the silent-SIGILL path")
+	}
+	if !descriptorMatches(v9, "linux/amd64/v9") {
+		t.Fatal("an explicit v9 request must accept the v9 entry")
+	}
+	if descriptorMatches(v9, "linux/amd64/v2") {
+		t.Fatal("an explicit v2 request must not accept a v9 entry")
+	}
+	st, _ := writeTaggedMultiPlatformStore(t, "v9")
+	idx, err := ReadIndex(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, platforms, err := SelectArtifact(idx, "test", "linux/amd64")
+	if err == nil {
+		t.Fatal("a store holding only a v9 entry served an unqualified request")
+	}
+	if len(platforms) != 1 || platforms[0] != "linux/amd64/v9" {
+		t.Errorf("refusal must enumerate the platforms it does carry, got %v", platforms)
+	}
+}

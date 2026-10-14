@@ -103,7 +103,11 @@ func TestStoreIsContentAddressedAndSingleInstance(t *testing.T) {
 	if err := st.LinkBlob(dgst, view); err != nil {
 		t.Fatalf("LinkBlob: %v", err)
 	}
-	same, err := SameFile(viewBlobPathForTest(st, dgst), view)
+	blobPath, err := st.BlobPath(dgst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same, err := SameFile(blobPath, view)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,22 +182,6 @@ func TestNamedStoresSeesOnlyLayouts(t *testing.T) {
 	if len(names) != 1 || names[0] != "artifacts" {
 		t.Fatalf("NamedStores() = %v, want exactly [artifacts] (locks is not a store)", names)
 	}
-}
-
-// viewBlobPathForTest builds the store's blob path (the unexported helper is package-private, so
-// the test names it here rather than duplicating the layout in an assertion).
-func viewBlobPathForTest(st *Store, dgst string) string {
-	alg, hexPart, _ := cutDigest(dgst)
-	return filepath.Join(st.Dir(), blobDir, alg, hexPart)
-}
-
-func cutDigest(dgst string) (string, string, bool) {
-	for i := 0; i < len(dgst); i++ {
-		if dgst[i] == ':' {
-			return dgst[:i], dgst[i+1:], true
-		}
-	}
-	return dgst, "", false
 }
 
 // treeBytes returns (naive total, unique total) over a tree: the naive total counts every
@@ -420,7 +408,11 @@ func TestEntryIsKeyAddressable(t *testing.T) {
 	if err := st.LinkBlob(got.Payload, view); err != nil {
 		t.Fatal(err)
 	}
-	if same, err := SameFile(viewBlobPathForTest(st, payload), view); err != nil || !same {
+	blobPath, err := st.BlobPath(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same, err := SameFile(blobPath, view); err != nil || !same {
 		t.Fatalf("view is not the payload blob (same=%v err=%v)", same, err)
 	}
 

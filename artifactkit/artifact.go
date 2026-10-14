@@ -421,7 +421,11 @@ func Materialize(store *storekit.Store, selector, want, venueLibc string) (*View
 		out.Providers: spec.PluginArtifactLayerProviders,
 		out.Manifest:  spec.PluginArtifactLayerManifest,
 	} {
-		same, err := storekit.SameFile(viewBlobPath(store, v.LayerDigests[role]), path)
+		blobPath, err := store.BlobPath(v.LayerDigests[role])
+		if err != nil {
+			return nil, err
+		}
+		same, err := storekit.SameFile(blobPath, path)
 		if err != nil {
 			return nil, err
 		}
@@ -430,12 +434,6 @@ func Materialize(store *storekit.Store, selector, want, venueLibc string) (*View
 		}
 	}
 	return out, nil
-}
-
-// viewBlobPath is the store's path for a digest, resolved for the hardlink assertion.
-func viewBlobPath(store *storekit.Store, dgst string) string {
-	alg, hexPart, _ := strings.Cut(dgst, ":")
-	return filepath.Join(store.Dir(), "blobs", alg, hexPart)
 }
 
 func layerRoles(m map[string]string) string {
