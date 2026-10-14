@@ -20,7 +20,7 @@ func TestEmitVmBoxAt_OverlayIsFlattenedIntoSelfContainedBox(t *testing.T) {
 	if _, err := exec.LookPath("qemu-img"); err != nil {
 		t.Skip("qemu-img not installed — live tool required")
 	}
-	requireUsableEngine(t, "podman")
+	requireUsableEngine(t)
 	dir := t.TempDir()
 
 	base := filepath.Join(dir, "base.qcow2")

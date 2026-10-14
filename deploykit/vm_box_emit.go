@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/opencharly/spec/container"
 	"github.com/opencharly/spec/shellquote"
@@ -46,6 +47,14 @@ const (
 	// EmitVmBoxAt writes here for a payload a KubeVirt cluster (or a Cua Fleet pool)
 	// boots — the same path the published cua-omarchy-workspace artifact carries.
 	ContainerDiskPath = "/disk/disk.img"
+
+	// MicroVMRootfsPath / MicroVMKernelPath are the MICROVM contract: the root drive the
+	// VMM attaches and the kernel it boots with, delivered TOGETHER in one box (the
+	// `rootfs`/`kernel` provenance arms and the #VmBoxArtifacts layout record, opencharly/spec#229).
+	// The emitter records exactly these paths in spec.VmBoxMetadata.Artifacts, so a reader
+	// is TOLD where the layer carries each file instead of inferring it from one constant.
+	MicroVMRootfsPath = "/rootfs.img"
+	MicroVMKernelPath = "/vmlinux"
 )
 
 // EmitVmBox builds a VM box image in the local engine's storage from a materialized
@@ -93,18 +102,78 @@ func validInImagePath(p string) bool {
 // container-absolute path (see validInImagePath) — it is written UNQUOTED into the
 // Containerfile, so an unvalidated value is a build-instruction injection surface.
 func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImagePath string) error {
+	return emitVmBoxArtifacts(engine, ref, meta, []vmBoxArtifact{{src: diskPath, inImage: inImagePath}})
+}
+
+// EmitVmBoxMicroVM emits the MICROVM shape: the root drive the VMM attaches AND the
+// kernel it boots with, delivered together in one box at the shipped microVM paths. The
+// layout it WROTE is recorded in spec.VmBoxMetadata.Artifacts only AFTER the build
+// succeeds — the label must never claim a path the layer does not carry — and the
+// provenance (#VmBoxSource: the `rootfs` arm with its origin ref and built size, the
+// `kernel` arm with its digest and command line) is the CALLER's to fill, because only
+// the caller knows where the artefacts came from.
+func EmitVmBoxMicroVM(engine, ref string, meta *spec.VmBoxMetadata, rootfsPath, kernelPath string) error {
+	if meta == nil {
+		return fmt.Errorf("EmitVmBoxMicroVM: nil metadata")
+	}
+
+	emit := *meta
+	emit.Artifacts = spec.VmBoxArtifacts{RootfsPath: MicroVMRootfsPath, KernelPath: MicroVMKernelPath}
+
+	if err := emitVmBoxArtifacts(engine, ref, &emit, []vmBoxArtifact{
+		{src: rootfsPath, inImage: MicroVMRootfsPath},
+		{src: kernelPath, inImage: MicroVMKernelPath},
+	}); err != nil {
+		return err
+	}
+
+	meta.Artifacts = emit.Artifacts
+
+	return nil
+}
+
+// vmBoxArtifact is one file a box delivers: its host path and its destination in the image.
+type vmBoxArtifact struct {
+	src     string
+	inImage string
+}
+
+// vmBoxCopy is one COPY instruction: the artefact's name IN THE BUILD CONTEXT and its
+// destination in the image.
+type vmBoxCopy struct {
+	contextName string
+	inImage     string
+}
+
+// emitVmBoxArtifacts is the ONE emitter both shapes share (R2) — one validation, one
+// staging rule, one render, one build. It validates every in-image path BEFORE touching
+// the filesystem (each is written UNQUOTED into the Containerfile, so an unsafe value is
+// a build-instruction injection surface), resolves and stats every source, and stages a
+// build context that carries all of them.
+//
+// The context is the artefacts' OWN directory whenever they share one and nothing had to
+// be rewritten — exactly the behaviour the single-disk callers have always had, where the
+// file is never copied because buildah streams it into the layer from its own directory.
+// Otherwise the context is a staging directory in which any qcow2 overlay has been
+// flattened and every other artefact LINKED into it, so a multi-gigabyte rootfs is still
+// copied; only a link the filesystem refuses falls back to a byte copy.
+func emitVmBoxArtifacts(engine, ref string, meta *spec.VmBoxMetadata, arts []vmBoxArtifact) error {
 	if meta == nil {
 		return fmt.Errorf("EmitVmBox: nil metadata")
 	}
-	if !validInImagePath(inImagePath) {
-		return fmt.Errorf("EmitVmBox: in-image disk path %q must be a container-absolute path of [A-Za-z0-9._/+-] (no whitespace or control characters)", inImagePath)
+	if len(arts) == 0 {
+		return fmt.Errorf("EmitVmBox: no artefacts to deliver")
 	}
-	absDisk, err := filepath.Abs(diskPath)
+
+	for _, a := range arts {
+		if !validInImagePath(a.inImage) {
+			return fmt.Errorf("EmitVmBox: in-image path %q must be a container-absolute path of [A-Za-z0-9._/+-] (no whitespace or control characters)", a.inImage)
+		}
+	}
+
+	resolved, err := resolveVmBoxArtifacts(arts)
 	if err != nil {
-		return fmt.Errorf("EmitVmBox: resolving disk path %q: %w", diskPath, err)
-	}
-	if _, err := os.Stat(absDisk); err != nil {
-		return fmt.Errorf("EmitVmBox: disk %q: %w", absDisk, err)
+		return err
 	}
 
 	metaJSON, err := json.Marshal(meta)
@@ -125,26 +194,12 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
-	// The disk the box carries MUST be SELF-CONTAINED. `charly vm build` produces a
-	// copy-on-write overlay whose BACKING FILE is a host-absolute path under the
-	// build cache; a `FROM scratch` + COPY box carries only the overlay, so on any
-	// other host (a KubeVirt node's containerd) the backing file is absent and the
-	// guest cannot open the disk. Flatten the overlay into a standalone qcow2 first
-	// (qemu-img convert), so the COPY is the whole artifact.
-	diskBase := filepath.Base(absDisk)
-	overlay, err := isQcow2Overlay(absDisk)
+	ctxDir, copies, err := stageVmBoxArtifacts(dir, resolved)
 	if err != nil {
-		return fmt.Errorf("EmitVmBox: inspecting disk %q: %w", absDisk, err)
-	}
-	if overlay {
-		flat := filepath.Join(dir, diskBase)
-		if err := flattenQcow2(absDisk, flat); err != nil {
-			return fmt.Errorf("EmitVmBox: flattening disk %q: %w", absDisk, err)
-		}
-		absDisk = flat
+		return err
 	}
 
-	cf := renderVmBoxContainerfile(diskBase, inImagePath, metaJSON, meta, boxLabel)
+	cf := renderVmBoxContainerfile(copies, metaJSON, meta, boxLabel)
 
 	cfPath := filepath.Join(dir, "Containerfile")
 	if err := os.WriteFile(cfPath, []byte(cf), 0o644); err != nil {
@@ -152,7 +207,7 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 	}
 
 	binary := container.EngineBinary(engine)
-	build := exec.Command(binary, "build", "-t", ref, "-f", cfPath, filepath.Dir(absDisk))
+	build := exec.Command(binary, "build", "-t", ref, "-f", cfPath, ctxDir)
 	out, err := build.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
@@ -162,6 +217,143 @@ func EmitVmBoxAt(engine, ref string, meta *spec.VmBoxMetadata, diskPath, inImage
 		return fmt.Errorf("EmitVmBox: %s build -t %s: %w: %s", binary, ref, err, msg)
 	}
 	return nil
+}
+
+// resolveVmBoxArtifacts makes every artefact's host path absolute and stats it, so a
+// missing or unreadable artefact fails BEFORE anything is staged or built.
+func resolveVmBoxArtifacts(arts []vmBoxArtifact) ([]vmBoxArtifact, error) {
+	resolved := make([]vmBoxArtifact, 0, len(arts))
+
+	for _, a := range arts {
+		abs, err := filepath.Abs(a.src)
+		if err != nil {
+			return nil, fmt.Errorf("EmitVmBox: resolving artifact %q: %w", a.src, err)
+		}
+		if _, err := os.Stat(abs); err != nil {
+			return nil, fmt.Errorf("EmitVmBox: artifact %q: %w", abs, err)
+		}
+		resolved = append(resolved, vmBoxArtifact{src: abs, inImage: a.inImage})
+	}
+
+	return resolved, nil
+}
+
+// stageVmBoxArtifacts decides the build context and the COPY list. An artefact the box
+// must not carry verbatim — a copy-on-write qcow2 overlay, whose BACKING FILE is a
+// host-absolute path under the build cache, so the guest cannot open it on any other host
+// (the CrashLoop this emitter exists to prevent) — is FLATTENED into stageDir, and the
+// context is then stageDir. When nothing needed rewriting and the artefacts all share one
+// directory, the context IS that directory and nothing is copied or linked: the behaviour
+// the single-disk callers have always had.
+func stageVmBoxArtifacts(stageDir string, arts []vmBoxArtifact) (string, []vmBoxCopy, error) {
+	staged := make([]vmBoxArtifact, len(arts))
+	rewritten := false
+
+	for i, a := range arts {
+		overlay, err := isQcow2Overlay(a.src)
+		if err != nil {
+			return "", nil, fmt.Errorf("EmitVmBox: inspecting artifact %q: %w", a.src, err)
+		}
+		if !overlay {
+			staged[i] = a
+
+			continue
+		}
+
+		dst := filepath.Join(stageDir, artefactStageName(i, a.src))
+		if err := flattenQcow2(a.src, dst); err != nil {
+			return "", nil, fmt.Errorf("EmitVmBox: flattening artifact %q: %w", a.src, err)
+		}
+
+		staged[i] = vmBoxArtifact{src: dst, inImage: a.inImage}
+		rewritten = true
+	}
+
+	ctxDir := stageDir
+	if !rewritten && sameDir(staged) {
+		ctxDir = filepath.Dir(staged[0].src)
+	} else {
+		for i := range staged {
+			if filepath.Dir(staged[i].src) == stageDir {
+				continue // already inside the context (a flattened overlay)
+			}
+
+			dst := filepath.Join(stageDir, artefactStageName(i, staged[i].src))
+			if err := linkOrCopy(staged[i].src, dst); err != nil {
+				return "", nil, fmt.Errorf("EmitVmBox: staging artifact %q: %w", staged[i].src, err)
+			}
+
+			staged[i].src = dst
+		}
+	}
+
+	copies := make([]vmBoxCopy, 0, len(staged))
+	for _, a := range staged {
+		copies = append(copies, vmBoxCopy{contextName: filepath.Base(a.src), inImage: a.inImage})
+	}
+
+	return ctxDir, copies, nil
+}
+
+// artefactStageName is the name an artefact takes inside the staging directory: its index
+// plus its own basename, because two artefacts of one box may share a basename and a COPY
+// source collision would silently deliver the same file twice.
+func artefactStageName(index int, src string) string {
+	return fmt.Sprintf("%d-%s", index, filepath.Base(src))
+}
+
+// sameDir reports whether every artefact lives in one directory.
+func sameDir(arts []vmBoxArtifact) bool {
+	if len(arts) == 0 {
+		return true
+	}
+
+	dir := filepath.Dir(arts[0].src)
+	for _, a := range arts[1:] {
+		if filepath.Dir(a.src) != dir {
+			return false
+		}
+	}
+
+	return true
+}
+
+// linkOrCopy hardlinks src to dst, falling back to a byte copy ONLY when the filesystem
+// refuses the link across the two paths (EXDEV — a rootfs on another mount). The fallback
+// is what lets such a rootfs emit at all; it is the one case in which an artefact is copied.
+func linkOrCopy(src, dst string) error {
+	err := os.Link(src, dst)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+
+	return copyFile(src, dst)
+}
+
+// copyFile is the link fallback.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = in.Close() }()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+
+		return err
+	}
+
+	return out.Close()
 }
 
 // isQcow2Overlay reports whether path is a qcow2 image that carries a BACKING
@@ -252,13 +444,16 @@ func repoLeaf(ref string) string {
 // COPY at the requested in-image path, and the metadata LABELs. Split out so the
 // in-image path contract (the VM-box /disk.qcow2 vs the KubeVirt containerDisk
 // /disk/disk.img) is unit-testable with no container engine.
-func renderVmBoxContainerfile(diskBase, inImagePath string, metaJSON []byte, meta *spec.VmBoxMetadata, boxLabel string) string {
+func renderVmBoxContainerfile(copies []vmBoxCopy, metaJSON []byte, meta *spec.VmBoxMetadata, boxLabel string) string {
 	var cf strings.Builder
 	cf.WriteString("# VM box image - generated by deploykit.EmitVmBox (do not edit)\n")
 	cf.WriteString("FROM scratch\n")
-	// The disk COPY is the artifact layer. Double-quote the source only when the
-	// basename needs it (Dockerfile COPY strips matching double quotes).
-	fmt.Fprintf(&cf, "COPY %s %s\n", copyQuote(diskBase), inImagePath)
+	// Each COPY is one artefact layer: the disk for the single-file shapes, the root drive
+	// AND the kernel for the microVM shape. Double-quote a source only when its name needs
+	// it (Dockerfile COPY strips matching double quotes).
+	for _, c := range copies {
+		fmt.Fprintf(&cf, "COPY %s %s\n", copyQuote(c.contextName), c.inImage)
+	}
 	// The labels are the contract. ai.opencharly.box is the RETENTION GROUP KEY (the value
 	// the pod-side WriteLabels stamps, so local-image retention can find and reclaim the
 	// tag); ai.opencharly.vm.box always; description is conditional (omitted when empty),

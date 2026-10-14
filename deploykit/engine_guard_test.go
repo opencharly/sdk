@@ -35,10 +35,16 @@ func engineUsable(engine string) (bool, string) {
 	return true, ""
 }
 
-// requireUsableEngine skips the calling test when the named container engine cannot be used, and
-// says why - with the engine's own output. See engineUsable for the reasoning.
-func requireUsableEngine(t *testing.T, engine string) {
+// requireUsableEngine skips the calling test when the container engine these integration tests
+// drive cannot be used, and says why - with the engine's own output. See engineUsable for the
+// reasoning. It names NO engine parameter: every caller in this package drives podman, and a
+// parameter that is always one constant is dead surface (it is added back with the second engine,
+// not kept for a hypothetical one).
+func requireUsableEngine(t *testing.T) {
 	t.Helper()
+
+	const engine = "podman"
+
 	if ok, why := engineUsable(engine); !ok {
 		t.Skipf("%s — skipping engine-backed integration test: %s", engine, why)
 	}
