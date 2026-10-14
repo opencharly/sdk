@@ -535,10 +535,14 @@ func TestKey_GOWORKIsContentNotPath(t *testing.T) {
 	// a false green. The instrument must exercise the same path the claim is about (the composition),
 	// not merely the helper the claim names.
 	//
-	// NOTE for a reader: the key this test observes for the RUNNING tree is not the production shape
-	// — today's environment carries a local, uncommitted throwaway `go.work` created only to compile
-	// against an unpublished sibling package, and it is deleted before any commit. What is asserted
-	// here is the normalization rule, which is what survives into production.
+	// NOTE for a reader, CORRECTED in round 2: an earlier version of this comment said the running
+	// environment carried a local, uncommitted throwaway `go.work` "created only to compile against an
+	// unpublished sibling package". That was TRUE while this change was developed — `storekit` lived on
+	// a sibling branch and a workspace bridged it — and it is now FALSE and misleading: the bridge is
+	// gone, `storekit` is a package of THIS module, and the committed tree compiles with the committed
+	// `go.mod` alone. Verified: no `go.work` in the tree, `GOWORK=off go build ./...` → rc=0, and
+	// `github.com/opencharly/spec v0.2026287.1529` is the only spec dependency. No workspace is needed
+	// to build or test this package, so the note is replaced rather than left implying one is.
 	wsA, wsB := t.TempDir(), t.TempDir()
 	write(t, filepath.Join(wsA, "go.work"), "go 1.26.4\n\nuse ./a\n")
 	write(t, filepath.Join(wsB, "go.work"), "go 1.26.4\n\nuse ./a\n")
