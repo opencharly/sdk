@@ -22,6 +22,7 @@ func TestEmitVmBoxAt_OverlayIsFlattenedIntoSelfContainedBox(t *testing.T) {
 		t.Skip("qemu-img not installed — live tool required")
 	}
 	requireUsableEngine(t)
+	requireBuildkitDrive(t)
 	dir := t.TempDir()
 
 	base := filepath.Join(dir, "base.qcow2")

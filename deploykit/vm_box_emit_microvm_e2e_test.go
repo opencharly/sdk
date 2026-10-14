@@ -18,6 +18,7 @@ import (
 
 func TestEmitVmBoxMicroVM_Live(t *testing.T) {
 	requireUsableEngine(t)
+	requireBuildkitDrive(t)
 
 	dir := t.TempDir()
 	rootfs := filepath.Join(dir, "rootfs.img")

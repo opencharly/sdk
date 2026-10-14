@@ -87,6 +87,7 @@ func TestVmBoxLabelCompleteness(t *testing.T) {
 // Skips when the engine is absent OR installed-but-unusable (see engineUsable).
 func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 	requireUsableEngine(t)
+	requireBuildkitDrive(t)
 
 	diskPath := filepath.Join(t.TempDir(), "disk.qcow2")
 	if err := os.WriteFile(diskPath, []byte{0x01}, 0o644); err != nil {
@@ -151,6 +152,7 @@ func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 // `find` in). Skips when the engine is absent OR installed-but-unusable (see engineUsable).
 func TestEmitVmBoxAtContainerDiskPathLive(t *testing.T) {
 	requireUsableEngine(t)
+	requireBuildkitDrive(t)
 
 	diskPath := filepath.Join(t.TempDir(), "disk.qcow2")
 	if err := os.WriteFile(diskPath, []byte("qcow2-fixture-payload"), 0o644); err != nil {
