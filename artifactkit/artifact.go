@@ -199,10 +199,11 @@ func SelectArtifact(idx index, selector, want string) (int, []string, error) {
 		}
 		candidates = append(candidates, i)
 	}
+	// An empty candidate set is reachable ONLY through a selector that matched nothing: the guard
+	// above guarantees exactly one manifest when selector == "" and the loop above appends it
+	// unconditionally, so the `selector == ""` arm that used to sit here could never execute. It is
+	// deleted rather than left as a branch no test can reach.
 	if len(candidates) == 0 {
-		if selector == "" {
-			return 0, platforms, fmt.Errorf("artifact index carries no manifests (want %s)", want)
-		}
 		return 0, platforms, fmt.Errorf("store holds no artifact %q (carries %d)", selector, len(idx.Manifests))
 	}
 	matches := make([]int, 0, len(candidates))
