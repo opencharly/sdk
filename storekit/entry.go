@@ -7,7 +7,27 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/opencharly/spec/lock"
 )
+
+// indexLockWait bounds the wait for the store's index lock. A wait that long means a writer died
+// holding it; failing loudly beats hanging a loader or a cache command forever.
+const indexLockWait = 30 * time.Second
+
+// indexLockPath is the lock that serializes the store INDEX's read-modify-write. It lives OUTSIDE the
+// store tree, under the runtime root, keyed by the store name — because a store tree contains no locks
+// (see store.go, which tests exactly that) — and it is a FILE lock rather than an in-process mutex
+// because the store is shared across PROCESSES (the loader, the cache commands, the plugin host), so a
+// mutex would serialize only the writers inside one process.
+func (s *Store) indexLockPath() (string, error) {
+	root, err := Dir(RootRuntime)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "store-index", filepath.Base(s.dir)+".lock"), nil
+}
 
 // entry.go — KEY-ADDRESSABLE entries: the one thing a pure content-addressed store cannot do
 // by itself.
@@ -212,6 +232,21 @@ func (s *Store) readIndex() (*storeIndex, error) {
 // indexEntry upserts an entry's descriptor in the store's index.json, writing atomically (tmp +
 // rename) so a concurrent reader sees either the whole old index or the whole new one.
 func (s *Store) indexEntry(key, manifestDigest string, size int64) error {
+	// The whole read-modify-write is serialized, not just the write. writeFileAtomic makes the WRITE
+	// atomic; it does nothing for the OPERATION — atomicity of a step is not atomicity of the
+	// operation. Two PutEntry calls for DIFFERENT keys both read the same snapshot, each append their
+	// descriptor, and the last rename silently DROPS the other's entry: a data-loss bug, not a
+	// spurious error, and one that a single-key test cannot see.
+	lockPath, err := s.indexLockPath()
+	if err != nil {
+		return err
+	}
+	release, err := lock.AcquireFileLockWithin(lockPath, true, indexLockWait)
+	if err != nil {
+		return fmt.Errorf("lock the store index: %w", err)
+	}
+	defer func() { _ = release() }()
+
 	idx, err := s.readIndex()
 	if err != nil {
 		return err

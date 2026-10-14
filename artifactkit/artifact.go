@@ -305,9 +305,11 @@ func Verify(store *storekit.Store, selector, want, venueLibc string) (*Verified,
 		}
 		layerDigests[role] = l.Digest
 	}
-	for _, want := range []string{spec.PluginArtifactLayerBinary, spec.PluginArtifactLayerManifest, spec.PluginArtifactLayerProviders} {
-		if _, ok := layerDigests[want]; !ok {
-			return nil, fmt.Errorf("manifest %s carries no %s layer (carries: %s)", descr.Digest, want, layerRoles(layerDigests))
+	// The loop variable is named `role`, not `want`: `want` is the PLATFORM parameter of this function,
+	// and shadowing it inside the verification path is how a comparison silently reads the wrong value.
+	for _, role := range []string{spec.PluginArtifactLayerBinary, spec.PluginArtifactLayerManifest, spec.PluginArtifactLayerProviders} {
+		if _, ok := layerDigests[role]; !ok {
+			return nil, fmt.Errorf("manifest %s carries no %s layer (carries: %s)", descr.Digest, role, layerRoles(layerDigests))
 		}
 	}
 	rawConfig, err := store.ReadBlob(mf.Config.Digest)

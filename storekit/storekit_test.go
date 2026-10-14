@@ -2,8 +2,10 @@ package storekit
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -628,5 +630,64 @@ func TestConcurrentPutEntryOfTheSameKeySucceeds(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(st.Dir(), "index.json.tmp")); err == nil {
 		t.Fatal("a fixed temp file survived the race: index.json.tmp")
+	}
+}
+
+// TestConcurrentPutEntryOfDistinctKeysKeepsEveryEntry is the proof for the store index's DATA-LOSS bug:
+// with the unserialized read-modify-write, N goroutines writing DISTINCT keys all read the same
+// snapshot, each appends its descriptor, and the last rename silently drops every other entry. A
+// single-key test cannot observe that — the entries are identical, so losing one loses nothing.
+func TestConcurrentPutEntryOfDistinctKeysKeepsEveryEntry(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHARLY_CACHE_DIR", root)
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(root, "run"))
+	st, err := OpenStore("artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 12
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			payload, err := st.PutBlob([]byte(fmt.Sprintf("payload %d", i)))
+			if err != nil {
+				errs <- err
+				return
+			}
+			_, err = st.PutEntry(Entry{
+				Key:       fmt.Sprintf("key-%d", i),
+				MediaType: "application/vnd.opencharly.test.v1",
+				Payload:   payload,
+			})
+			errs <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("a concurrent PutEntry of a distinct key failed: %v", err)
+		}
+	}
+	entries, err := st.Entries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != n {
+		keys := make([]string, 0, len(entries))
+		for _, e := range entries {
+			keys = append(keys, e.Key)
+		}
+		sort.Strings(keys)
+		t.Fatalf("store holds %d entries after %d concurrent distinct-key puts — entries were LOST: %v", len(entries), n, keys)
+	}
+	// And every key must be individually resolvable, not merely counted.
+	for i := 0; i < n; i++ {
+		if _, err := st.ReadEntry(fmt.Sprintf("key-%d", i)); err != nil {
+			t.Fatalf("key-%d is missing from the index: %v", i, err)
+		}
 	}
 }
