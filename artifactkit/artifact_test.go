@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -577,4 +578,67 @@ func TestExportedTypesExist(t *testing.T) {
 	_ = ArtifactRef{}
 	_ = Verified{}
 	_ = View{}
+}
+
+// TestSelectArtifactKeepsTheBaselineWhenItIsNotFirst kills the BASELINE-PREFERENCE LOOP, which the
+// earlier fixture could not: there the baseline was listed first, so deleting the loop still returned
+// it and the test passed without covering anything. Here the baseline is SECOND and the host declares
+// v4, so both entries match an unqualified request and only the loop can pick the baseline — remove
+// the loop and matches[0] (the v4 entry) is returned instead.
+func TestSelectArtifactKeepsTheBaselineWhenItIsNotFirst(t *testing.T) {
+	t.Setenv("GOAMD64", "v4")
+	st, byVariant := writeTaggedMultiPlatformStore(t, "v4", "")
+	idx, err := ReadIndex(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if platformString(idx.Manifests[0].Platform) != "linux/amd64/v4" {
+		t.Fatalf("fixture must list the VARIANT entry first, got %s", platformString(idx.Manifests[0].Platform))
+	}
+	sel, _, err := SelectArtifact(idx, "test", "linux/amd64")
+	if err != nil {
+		t.Fatalf("SelectArtifact: %v", err)
+	}
+	if got := idx.Manifests[sel].Digest; got != byVariant[""] {
+		t.Fatalf("selected %s (the first match), want the BASELINE %s — the baseline-preference loop is not deciding",
+			got, byVariant[""])
+	}
+}
+
+// TestSelectArtifactResolvesAnEmptyPlatformRequest exercises the want == "" default, which every other
+// test bypassed by passing an explicit platform: the request is resolved through HostPlatform(), so on
+// a v4-declaring host the empty request becomes linux/amd64/v4 and the exact-variant branch answers it.
+// Remove the default and want stays "", descriptorMatches refuses every entry, and this test fails.
+func TestSelectArtifactResolvesAnEmptyPlatformRequest(t *testing.T) {
+	t.Setenv("GOAMD64", "v4")
+	st, byVariant := writeTaggedMultiPlatformStore(t, "", "v4")
+	idx, err := ReadIndex(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sel, platforms, err := SelectArtifact(idx, "test", "")
+	if err != nil {
+		t.Fatalf("an empty platform request must resolve through HostPlatform(), got: %v", err)
+	}
+	if got := idx.Manifests[sel].Digest; got != byVariant["v4"] {
+		t.Fatalf("empty request selected %s, want the host-level entry %s (platforms=%v)", got, byVariant["v4"], platforms)
+	}
+}
+
+// TestHostPlatformCarriesTheDeclaredLevel pins HostPlatform()'s variant logic, which had no test that
+// could fail: with GOAMD64 set the platform must carry the suffix, and without it there must be none.
+// The suffix branch is keyed on runtime.GOARCH, so on a non-amd64 host this skips VISIBLY rather than
+// asserting something it cannot exercise.
+func TestHostPlatformCarriesTheDeclaredLevel(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		t.Skipf("the GOAMD64 suffix branch is keyed on runtime.GOARCH=amd64; this host is %s", runtime.GOARCH)
+	}
+	t.Setenv("GOAMD64", "v4")
+	if got := HostPlatform(); got != "linux/amd64/v4" {
+		t.Fatalf("HostPlatform() = %q with GOAMD64=v4, want linux/amd64/v4", got)
+	}
+	t.Setenv("GOAMD64", "")
+	if got := HostPlatform(); got != "linux/amd64" {
+		t.Fatalf("HostPlatform() = %q with no declared level, want linux/amd64", got)
+	}
 }
