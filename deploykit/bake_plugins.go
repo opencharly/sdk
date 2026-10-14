@@ -153,8 +153,21 @@ func pluginGitProbe(srcDir string, env []string, args ...string) (string, bool) 
 
 // buildPluginBinary go-builds an out-of-tree plugin's provider binary (never in a venue — the
 // caller owns the toolchain; the built binary is delivered into a venue by the in-venue transport).
-// srcDir is the plugin candy's resolved dir, which is its own Go module. Byte-identical logic to
-// charly/plugin_loader.go's function of the same name.
+// srcDir is the plugin candy's resolved dir, which is its own Go module.
+//
+// THIS IS A DUPLICATE OF charly/charly/plugin_loader.go's function of the same name, and it is NOT
+// byte-identical to it — an earlier comment here claimed it was, and the claim was measurably false:
+// the package-main copy grew CONTENT-STAMP REUSE (a stamp over the candy's source tree plus its
+// transitive local `replace` targets, the toolchain and the build env, letting an unchanged plugin
+// skip its rebuild) and this copy never did. Two live clusters for one concept, differing in exactly
+// the freshness behaviour that matters, is the R2 duplication a single canonical home removes.
+//
+// THIS COPY IS LOAD-BEARING IN THE MEANTIME, which is why it is KEEP-UNTIL-REHOMED rather than
+// deletable here: this function runs OUT-OF-PROCESS, inside candy/plugin-build's deferred render
+// closure, which imports the sdk and therefore CANNOT call the package-main implementation. The
+// unification is ADD-BEFORE-DELETE: sdk/buildcache becomes the one home, BOTH callers repoint at it
+// (this closure and plugin_loader.go's), the `bake_plugin:` path is proven live (the omarchy
+// charly-mise-consumer chain), and only THEN does this cluster go.
 func buildPluginBinary(ctx context.Context, srcDir, name string) (string, error) {
 	cacheDir := pluginBuildCacheDir()
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
