@@ -382,7 +382,7 @@ func TestRenderCloudInit_PacmanFamily_RunsPacmanNeeded(t *testing.T) {
 				t.Errorf("runcmd[1] = %q, want %q (before sshd is ever enabled)", rc[1], wantPacman)
 			}
 			if s, _ := rc[2].(string); !strings.Contains(s, "try-restart sshd") {
-				t.Errorf("runcmd[2] = %v, want the sshd try-restart resync (a live sshd must re-exec post-upgrade binaries — hostkeys-confused guard)", rc[1])
+				t.Errorf("runcmd[2] = %v, want the sshd try-restart resync (a live sshd must re-exec post-upgrade binaries — hostkeys-confused guard)", rc[2])
 			}
 			if rc[3] != sshHardeningDropInCmd {
 				t.Errorf("runcmd[3] = %v, want the sshd hardening drop-in command", rc[3])
