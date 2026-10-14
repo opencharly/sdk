@@ -463,12 +463,18 @@ func TestSelectArtifactByDigestSelectsExactlyOnePlatform(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sel, _, err := SelectArtifact(idx, byVariant[""], "linux/amd64")
+	// Select by the VARIANT entry's digest with an unqualified want. This is what makes the filter
+	// load-bearing: with it, candidates=[v4] and the v4 entry is returned; without it, candidates=[baseline, v4],
+	// both match, the exact-variant branch is skipped for an unqualified request, and the
+	// baseline-preference loop returns the BASELINE — a different index. Selecting by the baseline's
+	// digest instead made the assertion INVARIANT under filter removal (the loop returned the same
+	// index either way), which is why the earlier version of this test could not fail.
+	sel, _, err := SelectArtifact(idx, byVariant["v4"], "linux/amd64")
 	if err != nil {
 		t.Fatalf("SelectArtifact by digest: %v", err)
 	}
-	if got := idx.Manifests[sel].Digest; got != byVariant[""] {
-		t.Fatalf("digest selector %s resolved to %s — the selector is not filtering", byVariant[""], got)
+	if got := idx.Manifests[sel].Digest; got != byVariant["v4"] {
+		t.Fatalf("digest selector %s resolved to %s — the selector is not filtering", byVariant["v4"], got)
 	}
 }
 

@@ -143,7 +143,7 @@ func NamedStores() ([]string, error) {
 		if !e.IsDir() {
 			continue
 		}
-		if _, lerr := os.Stat(filepath.Join(root, e.Name(), "oci-layout")); lerr != nil {
+		if _, lerr := os.Stat(filepath.Join(root, e.Name(), LayoutFile)); lerr != nil {
 			continue
 		}
 		names = append(names, e.Name())
