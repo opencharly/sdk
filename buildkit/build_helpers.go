@@ -34,27 +34,37 @@ func NormalizeBoxArgs(boxes []string) []string {
 	return boxes
 }
 
-// PodmanJobsCapFallback is the ceiling on the auto-computed `podman build --jobs` value, used
-// ONLY when defaults.podman_jobs_cap is absent from project config. The operative ceiling is
-// charly.yml `defaults.podman_jobs_cap`; this conservative constant just keeps configs that
-// don't declare the key on a safe value. The per-build override is --podman-jobs /
-// CHARLY_PODMAN_JOBS. (See CHANGELOG/ for the podman-5.7.x blob-reuse SIGABRT race that
-// originally motivated a hard cap.)
-const PodmanJobsCapFallback = 4
+// StageParallelismCapFallback is the ceiling on the auto-computed inner-concurrency value (the
+// knob the contract renamed from `podman_jobs` to `stage_parallelism`), used ONLY when
+// `defaults.stage_parallelism_cap` is absent from project config. The operative ceiling is that
+// key; this conservative constant just keeps configs that do not declare it on a safe value. The
+// per-build override is `--stage-parallelism` / `CHARLY_STAGE_PARALLELISM`.
+//
+// ⚑ What the value now DRIVES changed with the builder: it was `podman build --jobs N` (the
+// concurrent stages of one build), and it is now the BuildKit daemon's `[worker.oci]
+// max-parallelism` — the same "limit the number of parallel build steps that can run at the same
+// time", applied when the daemon starts rather than per build. The cap's provenance is unchanged:
+// it was introduced by the podman-5.7.x blob-reuse SIGABRT race (see CHANGELOG/).
+const StageParallelismCapFallback = 4
 
 // NumCPU is a package-level override point for runtime.NumCPU so tests can inject a fixed value.
 var NumCPU = runtime.NumCPU
 
-// ResolvePodmanJobs returns the --jobs value to pass to `podman build`. An explicit override
-// (>0, from --podman-jobs / CHARLY_PODMAN_JOBS / defaults.podman_jobs) wins. Otherwise the value
-// is CPU-proportional, capped at `jobsCap` (defaults.podman_jobs_cap, else PodmanJobsCapFallback):
-// min(NumCPU(), jobsCap). A jobsCap < 1 falls back to PodmanJobsCapFallback.
-func ResolvePodmanJobs(override, jobsCap int) int {
+// ResolveStageParallelism returns the INNER concurrency for one build — the stages of a single
+// build, distinct from the OUTER `jobs` (images per DAG level). An explicit override (>0, from
+// `--stage-parallelism` / `CHARLY_STAGE_PARALLELISM` / `defaults.stage_parallelism`) wins.
+// Otherwise the value is CPU-proportional, capped at `jobsCap` (`defaults.stage_parallelism_cap`,
+// else StageParallelismCapFallback): min(NumCPU(), jobsCap). A jobsCap < 1 falls back to
+// StageParallelismCapFallback.
+//
+// The value reaches the builder through the daemon's `[worker.oci] max-parallelism`, which is
+// where BuildKit's equivalent of `podman build --jobs` lives (see the constant above).
+func ResolveStageParallelism(override, jobsCap int) int {
 	if override > 0 {
 		return override
 	}
 	if jobsCap < 1 {
-		jobsCap = PodmanJobsCapFallback
+		jobsCap = StageParallelismCapFallback
 	}
 	n := NumCPU()
 	if n < jobsCap {
