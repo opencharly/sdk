@@ -35,6 +35,31 @@ func engineUsable(engine string) (bool, string) {
 	return true, ""
 }
 
+// createContainer creates a container OBJECT from ref so a test can read the image's LAYER
+// contents (podman cp cid:<path> …). Nothing is started: create only builds the object.
+//
+// The placeholder command is REQUIRED, and it is never executed — a `FROM scratch` image carries no
+// CMD and no ENTRYPOINT, and a runner whose podman enforces the image config refuses such an image
+// outright. Measured on a CI runner, on an image this package's own emitter builds:
+//
+//	podman create …: exit status 125: Error: no command or entrypoint provided, and no CMD or
+//	ENTRYPOINT from image
+//
+// The engine's own output is returned on failure: a test that discards it turns one read into a
+// guessing game, which is exactly how that failure first presented (nothing but the exit status).
+func createContainer(t *testing.T, ref string) string {
+	t.Helper()
+
+	const placeholder = "true" // never executed; create only builds the container object
+
+	out, err := exec.Command("podman", "create", ref, placeholder).CombinedOutput()
+	if err != nil {
+		t.Fatalf("podman create %s: %v: %s", ref, err, out)
+	}
+
+	return strings.TrimSpace(string(out))
+}
+
 // requireUsableEngine skips the calling test when the container engine these integration tests
 // drive cannot be used, and says why - with the engine's own output. See engineUsable for the
 // reasoning. It names NO engine parameter: every caller in this package drives podman, and a
