@@ -124,13 +124,14 @@ type Key struct {
 // Components returns the key's components in a STABLE, deterministic order, so the canonical key
 // string is reproducible and can be audited against the design without recomputing anything.
 func (k Key) Components() []string {
-	comps := []string{
-		"key_version=" + keyVersion,
-		"plugin=" + k.Plugin,
-		"module_source=" + k.ModuleSource,
-		"go_sum=" + k.GoSum,
-		"toolchain=" + k.Toolchain,
-	}
+	comps := make([]string, 0, 5+len(buildEnvKeys))
+	comps = append(comps,
+		"key_version="+keyVersion,
+		"plugin="+k.Plugin,
+		"module_source="+k.ModuleSource,
+		"go_sum="+k.GoSum,
+		"toolchain="+k.Toolchain,
+	)
 	for _, name := range buildEnvKeys {
 		comps = append(comps, "env_"+strings.ToLower(name)+"="+k.BuildEnv[name])
 	}

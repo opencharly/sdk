@@ -161,135 +161,6 @@ func TestKey_CoversItsInputs(t *testing.T) {
 		t.Fatal("a go.sum change did NOT change the key's go_sum component")
 	}
 
-	// GOWORK must be a CONTENT identity, never a path: the same workspace content at two different
-	// paths must key IDENTICALLY (otherwise "cached once" degrades to "cached once per path"), while
-	// different workspace content must key differently (a workspace changes dependency resolution).
-	//
-	// ⚑ These assertions go through envComponents with an EXPLICIT environment, and they have to:
-	// an earlier version of this block called goworkIdentity directly while the claim was about what
-	// the KEY records, and a mutation that reverted the wiring to the raw env value did NOT fail it —
-	// a false green. The instrument must exercise the same path the claim is about (the composition),
-	// not merely the helper the claim names.
-	//
-	// NOTE for a reader: the key this test observes for the RUNNING tree is not the production shape
-	// — today's environment carries a local, uncommitted throwaway `go.work` created only to compile
-	// against an unpublished sibling package, and it is deleted before any commit. What is asserted
-	// here is the normalization rule, which is what survives into production.
-	wsA, wsB := t.TempDir(), t.TempDir()
-	write(t, filepath.Join(wsA, "go.work"), "go 1.26.4\n\nuse ./a\n")
-	write(t, filepath.Join(wsB, "go.work"), "go 1.26.4\n\nuse ./a\n")
-	composed := func(gowork string) string {
-		return envComponents([]string{"GOWORK=" + gowork})["GOWORK"]
-	}
-	if a, b := composed(wsA), composed(wsB); a != b {
-		t.Fatalf("the SAME workspace content at two paths composed differently (%q vs %q) — the key embeds a path", a, b)
-	}
-	if strings.Contains(composed(wsA), wsA) {
-		t.Fatalf("the composed GOWORK component contains its path (%q) — a machine-specific key", composed(wsA))
-	}
-	write(t, filepath.Join(wsB, "go.work"), "go 1.26.4\n\nuse ./a\n./different\n")
-	if composed(wsA) == composed(wsB) {
-		t.Fatal("DIFFERENT workspace content composed identically — a workspace change would serve a stale binary")
-	}
-	// A directory-valued GOWORK resolves to the go.work inside it.
-	if composed(wsA) != composed(filepath.Join(wsA, "go.work")) {
-		t.Fatal("a directory-valued GOWORK and its go.work file composed differently — the same workspace keyed twice")
-	}
-	// "off" and an unset value are the same input, and both must differ from a real workspace.
-	if composed("") != "off" || composed("off") != "off" {
-		t.Fatal(`an unset/off workspace must compose to the literal "off"`)
-	}
-	if composed(wsA) == "off" {
-		t.Fatal(`a real workspace composed to "off" — its input would be silently dropped`)
-	}
-	if !strings.HasPrefix(composed(filepath.Join(wsA, "missing-go.work")), "unreadable:") {
-		t.Fatal("an unreadable workspace was silently dropped rather than named")
-	}
-
-	// GOFLAGS is the SAME problem and gets the SAME rule: a path-valued input contributes its CONTENT,
-	// never its location — applied mechanically to ANY `-flag=<existing path>`, not to a list of the
-	// flags we happen to know. Proved by composition with an EXPLICIT environment, like GOWORK (a
-	// direct call to the helper would not exercise the wiring the claim is about — the false green
-	// this block's GOWORK sibling was corrected for).
-	flagA, flagB := t.TempDir(), t.TempDir()
-	write(t, filepath.Join(flagA, "modfile"), "module m\n")
-	write(t, filepath.Join(flagB, "modfile"), "module m\n")
-	composedFlags := func(goflags string) string {
-		return envComponents([]string{"GOFLAGS=" + goflags})["GOFLAGS"]
-	}
-	fa := composedFlags("-modfile=" + filepath.Join(flagA, "modfile") + " -trimpath")
-	fb := composedFlags("-modfile=" + filepath.Join(flagB, "modfile") + " -trimpath")
-	if fa != fb {
-		t.Fatalf("the SAME GOFLAGS content at two paths composed differently (%q vs %q) — the key embeds a path", fa, fb)
-	}
-	if strings.Contains(fa, flagA) {
-		t.Fatalf("the composed GOFLAGS contains a path (%q) — a machine-specific key", fa)
-	}
-	if !strings.Contains(fa, "-trimpath") {
-		t.Fatalf("a non-path flag was dropped from the identity (%q) — GOFLAGS is an input and must be kept", fa)
-	}
-	// The rule is mechanical, so a flag nobody listed behaves the same way.
-	write(t, filepath.Join(flagA, "overlay.json"), "{}\n")
-	if strings.Contains(composedFlags("-overlay="+filepath.Join(flagA, "overlay.json")), flagA) {
-		t.Fatal("an unlisted path-valued flag kept its path — the rule is not mechanical")
-	}
-	// A DIRECTORY-valued flag is the same defect one step out: `go build` accepts flags that point at
-	// a directory and change the build (`-pkgdir` holds compiled packages), so a directory left
-	// verbatim would re-embed a path THROUGH the rule meant to remove them. A directory contributes a
-	// tree digest: the same content at two paths composes identically, and no path is in it.
-	pkgA, pkgB := filepath.Join(flagA, "pkg"), filepath.Join(flagB, "pkg")
-	write(t, filepath.Join(pkgA, "example.com", "dep", "dep.a"), "compiled-v1")
-	write(t, filepath.Join(pkgB, "example.com", "dep", "dep.a"), "compiled-v1")
-	da := composedFlags("-pkgdir=" + pkgA)
-	db := composedFlags("-pkgdir=" + pkgB)
-	if da != db {
-		t.Fatalf("the SAME directory content at two paths composed differently (%q vs %q) — a directory path is in the key", da, db)
-	}
-	if strings.Contains(da, pkgA) {
-		t.Fatalf("the composed GOFLAGS contains a directory path (%q)", da)
-	}
-	if !strings.Contains(da, "tree:") {
-		t.Fatalf("a directory value did not compose to a tree identity (%q)", da)
-	}
-	// Different directory CONTENT must still rekey.
-	write(t, filepath.Join(pkgB, "example.com", "dep", "dep.a"), "compiled-v2")
-	if composedFlags("-pkgdir="+pkgA) == composedFlags("-pkgdir="+pkgB) {
-		t.Fatal("DIFFERENT directory content composed identically — a real change would serve a stale binary")
-	}
-	// And a directory's internal STRUCTURE is part of its identity, not just its bytes.
-	write(t, filepath.Join(pkgA, "extra", "x.a"), "extra")
-	if composedFlags("-pkgdir="+pkgA) == da {
-		t.Fatal("adding an entry to a directory did not change its tree identity — the structure is not covered")
-	}
-	// The THIRD axis, and the one the identity's shape can silently leave open: the NAME must not
-	// participate. Identical trees under DIFFERENT basenames must compose identically — otherwise a
-	// name, which is location and not content, is in the key, and `goworkIdentity` (content-only) and
-	// this rule would disagree on whether a non-content name may enter the identity.
-	nameX, nameY := filepath.Join(t.TempDir(), "foo"), filepath.Join(t.TempDir(), "bar")
-	write(t, filepath.Join(nameX, "example.com", "dep", "dep.a"), "same")
-	write(t, filepath.Join(nameY, "example.com", "dep", "dep.a"), "same")
-	nx, ny := composedFlags("-pkgdir="+nameX), composedFlags("-pkgdir="+nameY)
-	if nx != ny {
-		t.Fatalf("identical trees under DIFFERENT basenames composed differently (%q vs %q) — a NAME is in the key, which is location not content", nx, ny)
-	}
-	if strings.Contains(nx, "foo") || strings.Contains(nx, "bar") {
-		t.Fatalf("a basename is in the composed identity (%q) — it must be diagnostics-only", nx)
-	}
-	// Different CONTENT at the same kind of flag must still rekey.
-	write(t, filepath.Join(flagB, "modfile"), "module m\n\nrequire x v1.0.0\n")
-	if composedFlags("-modfile="+filepath.Join(flagA, "modfile")) == composedFlags("-modfile="+filepath.Join(flagB, "modfile")) {
-		t.Fatal("DIFFERENT modfile content composed identically — a real change would serve a stale binary")
-	}
-	// A path that does not exist is left verbatim (it cannot differ by location), and an empty value
-	// composes empty rather than inventing a component.
-	missing := filepath.Join(flagA, "does-not-exist")
-	if got := composedFlags("-modfile=" + missing); !strings.Contains(got, missing) {
-		t.Fatalf("a non-existent path value was rewritten (%q) — it is not a location-dependent input", got)
-	}
-	if composedFlags("") != "" {
-		t.Fatal("an empty GOFLAGS composed to something — the component must stay empty")
-	}
-
 	// A build-env change must rekey (the platform axis). Asserted on the composition rather than by
 	// rebuilding, because the env is read from the process.
 	k := plain
@@ -647,5 +518,142 @@ func TestBuild_ConcurrentSameKeySerializes(t *testing.T) {
 	}
 	if _, serr := store.ReadBlob(entries[0].Payload); serr != nil {
 		t.Fatalf("the single entry's payload is unreadable: %v", serr)
+	}
+}
+
+// TestKey_GOWORKIsContentNotPath — the GOWORK axis, split out so each key axis is its own
+// test (a single 300-line assertion chain is both unreadable and, as CI found, over the
+// complexity gate).
+func TestKey_GOWORKIsContentNotPath(t *testing.T) {
+	// GOWORK must be a CONTENT identity, never a path: the same workspace content at two different
+	// paths must key IDENTICALLY (otherwise "cached once" degrades to "cached once per path"), while
+	// different workspace content must key differently (a workspace changes dependency resolution).
+	//
+	// ⚑ These assertions go through envComponents with an EXPLICIT environment, and they have to:
+	// an earlier version of this block called goworkIdentity directly while the claim was about what
+	// the KEY records, and a mutation that reverted the wiring to the raw env value did NOT fail it —
+	// a false green. The instrument must exercise the same path the claim is about (the composition),
+	// not merely the helper the claim names.
+	//
+	// NOTE for a reader: the key this test observes for the RUNNING tree is not the production shape
+	// — today's environment carries a local, uncommitted throwaway `go.work` created only to compile
+	// against an unpublished sibling package, and it is deleted before any commit. What is asserted
+	// here is the normalization rule, which is what survives into production.
+	wsA, wsB := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(wsA, "go.work"), "go 1.26.4\n\nuse ./a\n")
+	write(t, filepath.Join(wsB, "go.work"), "go 1.26.4\n\nuse ./a\n")
+	composed := func(gowork string) string {
+		return envComponents([]string{"GOWORK=" + gowork})["GOWORK"]
+	}
+	if a, b := composed(wsA), composed(wsB); a != b {
+		t.Fatalf("the SAME workspace content at two paths composed differently (%q vs %q) — the key embeds a path", a, b)
+	}
+	if strings.Contains(composed(wsA), wsA) {
+		t.Fatalf("the composed GOWORK component contains its path (%q) — a machine-specific key", composed(wsA))
+	}
+	write(t, filepath.Join(wsB, "go.work"), "go 1.26.4\n\nuse ./a\n./different\n")
+	if composed(wsA) == composed(wsB) {
+		t.Fatal("DIFFERENT workspace content composed identically — a workspace change would serve a stale binary")
+	}
+	// A directory-valued GOWORK resolves to the go.work inside it.
+	if composed(wsA) != composed(filepath.Join(wsA, "go.work")) {
+		t.Fatal("a directory-valued GOWORK and its go.work file composed differently — the same workspace keyed twice")
+	}
+	// "off" and an unset value are the same input, and both must differ from a real workspace.
+	if composed("") != "off" || composed("off") != "off" {
+		t.Fatal(`an unset/off workspace must compose to the literal "off"`)
+	}
+	if composed(wsA) == "off" {
+		t.Fatal(`a real workspace composed to "off" — its input would be silently dropped`)
+	}
+	if !strings.HasPrefix(composed(filepath.Join(wsA, "missing-go.work")), "unreadable:") {
+		t.Fatal("an unreadable workspace was silently dropped rather than named")
+	}
+}
+
+// TestKey_GOFLAGSIsMechanical — the GOFLAGS axis: the rule must be a RULE, not a list.
+func TestKey_GOFLAGSIsMechanical(t *testing.T) {
+	// GOFLAGS is the SAME problem and gets the SAME rule: a path-valued input contributes its CONTENT,
+	// never its location — applied mechanically to ANY `-flag=<existing path>`, not to a list of the
+	// flags we happen to know. Proved by composition with an EXPLICIT environment, like GOWORK (a
+	// direct call to the helper would not exercise the wiring the claim is about — the false green
+	// this block's GOWORK sibling was corrected for).
+	flagA, flagB := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(flagA, "modfile"), "module m\n")
+	write(t, filepath.Join(flagB, "modfile"), "module m\n")
+	composedFlags := func(goflags string) string {
+		return envComponents([]string{"GOFLAGS=" + goflags})["GOFLAGS"]
+	}
+	fa := composedFlags("-modfile=" + filepath.Join(flagA, "modfile") + " -trimpath")
+	fb := composedFlags("-modfile=" + filepath.Join(flagB, "modfile") + " -trimpath")
+	if fa != fb {
+		t.Fatalf("the SAME GOFLAGS content at two paths composed differently (%q vs %q) — the key embeds a path", fa, fb)
+	}
+	if strings.Contains(fa, flagA) {
+		t.Fatalf("the composed GOFLAGS contains a path (%q) — a machine-specific key", fa)
+	}
+	if !strings.Contains(fa, "-trimpath") {
+		t.Fatalf("a non-path flag was dropped from the identity (%q) — GOFLAGS is an input and must be kept", fa)
+	}
+	// The rule is mechanical, so a flag nobody listed behaves the same way.
+	write(t, filepath.Join(flagA, "overlay.json"), "{}\n")
+	if strings.Contains(composedFlags("-overlay="+filepath.Join(flagA, "overlay.json")), flagA) {
+		t.Fatal("an unlisted path-valued flag kept its path — the rule is not mechanical")
+	}
+	// A DIRECTORY-valued flag is the same defect one step out: `go build` accepts flags that point at
+	// a directory and change the build (`-pkgdir` holds compiled packages), so a directory left
+	// verbatim would re-embed a path THROUGH the rule meant to remove them. A directory contributes a
+	// tree digest: the same content at two paths composes identically, and no path is in it.
+	pkgA, pkgB := filepath.Join(flagA, "pkg"), filepath.Join(flagB, "pkg")
+	write(t, filepath.Join(pkgA, "example.com", "dep", "dep.a"), "compiled-v1")
+	write(t, filepath.Join(pkgB, "example.com", "dep", "dep.a"), "compiled-v1")
+	da := composedFlags("-pkgdir=" + pkgA)
+	db := composedFlags("-pkgdir=" + pkgB)
+	if da != db {
+		t.Fatalf("the SAME directory content at two paths composed differently (%q vs %q) — a directory path is in the key", da, db)
+	}
+	if strings.Contains(da, pkgA) {
+		t.Fatalf("the composed GOFLAGS contains a directory path (%q)", da)
+	}
+	if !strings.Contains(da, "tree:") {
+		t.Fatalf("a directory value did not compose to a tree identity (%q)", da)
+	}
+	// Different directory CONTENT must still rekey.
+	write(t, filepath.Join(pkgB, "example.com", "dep", "dep.a"), "compiled-v2")
+	if composedFlags("-pkgdir="+pkgA) == composedFlags("-pkgdir="+pkgB) {
+		t.Fatal("DIFFERENT directory content composed identically — a real change would serve a stale binary")
+	}
+	// And a directory's internal STRUCTURE is part of its identity, not just its bytes.
+	write(t, filepath.Join(pkgA, "extra", "x.a"), "extra")
+	if composedFlags("-pkgdir="+pkgA) == da {
+		t.Fatal("adding an entry to a directory did not change its tree identity — the structure is not covered")
+	}
+	// The THIRD axis, and the one the identity's shape can silently leave open: the NAME must not
+	// participate. Identical trees under DIFFERENT basenames must compose identically — otherwise a
+	// name, which is location and not content, is in the key, and `goworkIdentity` (content-only) and
+	// this rule would disagree on whether a non-content name may enter the identity.
+	nameX, nameY := filepath.Join(t.TempDir(), "foo"), filepath.Join(t.TempDir(), "bar")
+	write(t, filepath.Join(nameX, "example.com", "dep", "dep.a"), "same")
+	write(t, filepath.Join(nameY, "example.com", "dep", "dep.a"), "same")
+	nx, ny := composedFlags("-pkgdir="+nameX), composedFlags("-pkgdir="+nameY)
+	if nx != ny {
+		t.Fatalf("identical trees under DIFFERENT basenames composed differently (%q vs %q) — a NAME is in the key, which is location not content", nx, ny)
+	}
+	if strings.Contains(nx, "foo") || strings.Contains(nx, "bar") {
+		t.Fatalf("a basename is in the composed identity (%q) — it must be diagnostics-only", nx)
+	}
+	// Different CONTENT at the same kind of flag must still rekey.
+	write(t, filepath.Join(flagB, "modfile"), "module m\n\nrequire x v1.0.0\n")
+	if composedFlags("-modfile="+filepath.Join(flagA, "modfile")) == composedFlags("-modfile="+filepath.Join(flagB, "modfile")) {
+		t.Fatal("DIFFERENT modfile content composed identically — a real change would serve a stale binary")
+	}
+	// A path that does not exist is left verbatim (it cannot differ by location), and an empty value
+	// composes empty rather than inventing a component.
+	missing := filepath.Join(flagA, "does-not-exist")
+	if got := composedFlags("-modfile=" + missing); !strings.Contains(got, missing) {
+		t.Fatalf("a non-existent path value was rewritten (%q) — it is not a location-dependent input", got)
+	}
+	if composedFlags("") != "" {
+		t.Fatal("an empty GOFLAGS composed to something — the component must stay empty")
 	}
 }
