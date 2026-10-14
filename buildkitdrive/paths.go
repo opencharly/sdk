@@ -29,11 +29,6 @@ const (
 	// LogName is the daemon's log, beside its state root. It exists because a daemon
 	// outlives whoever started it and so must not write to that caller's streams.
 	LogName = "buildkitd.log"
-	// PidName records the rootlesskit wrapper this kit started, inside the state root.
-	// It exists because the daemon is DETACHED: a later ensure that must restart it (a
-	// changed daemon-level setting) has no child handle to signal, and the wrapper is what
-	// reaps the whole tree when signalled.
-	PidName = "buildkitd.pid"
 	// LockName is the daemon's own one-instance-per-root lock, inside the state root.
 	// BuildKit enforces it: a second daemon on the same --root fails loudly (rc=1), which
 	// is the primitive that makes one-daemon-per-uid safe.
