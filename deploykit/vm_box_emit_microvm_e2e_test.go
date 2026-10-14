@@ -61,9 +61,12 @@ func TestEmitVmBoxMicroVM_Live(t *testing.T) {
 			meta.Artifacts, MicroVMRootfsPath, MicroVMKernelPath)
 	}
 
-	cidOut, err := exec.Command("podman", "create", ref).Output()
+	// CombinedOutput, not Output: when this fails, the engine's OWN stderr is the only thing that
+	// says why. A test that discards it turns one read into a guessing game — measured on a
+	// CI-only failure here, which printed nothing but the exit status.
+	cidOut, err := exec.Command("podman", "create", ref).CombinedOutput()
 	if err != nil {
-		t.Fatalf("podman create: %v", err)
+		t.Fatalf("podman create %s: %v: %s", ref, err, cidOut)
 	}
 
 	cid := strings.TrimSpace(string(cidOut))
