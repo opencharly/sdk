@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -522,5 +523,64 @@ func TestExportedConstantsAndRootsAreContract(t *testing.T) {
 	}
 	if _, err := Dir("bogus"); err == nil {
 		t.Error("Dir accepted an unknown root name")
+	}
+}
+
+// TestConcurrentPutBlobOfTheSameBytesSucceeds is the deterministic proof for the temp-file race: two
+// goroutines publish the SAME bytes at once. With the old digest-derived temp path (`p + ".tmp"`) they
+// shared one file and the loser's rename could fail with ENOENT — a spurious error under concurrency,
+// which is a real fault in the store rather than an acceptable race. Deterministic, no load, no sleep:
+// both puts must return the same digest with no error, and the store must hold exactly one blob.
+func TestConcurrentPutBlobOfTheSameBytesSucceeds(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHARLY_CACHE_DIR", root)
+	st, err := OpenStore("artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("the same bytes, published twice at once")
+	const n = 8
+	errs := make(chan error, n)
+	digests := make(chan string, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dgst, err := st.PutBlob(payload)
+			errs <- err
+			digests <- dgst
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	close(digests)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("a concurrent PutBlob of identical bytes failed: %v", err)
+		}
+	}
+	want, _ := DigestOf(payload)
+	for dgst := range digests {
+		if dgst != want {
+			t.Fatalf("concurrent PutBlob returned %q, want %q", dgst, want)
+		}
+	}
+	blobs, err := st.Blobs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blobs) != 1 {
+		t.Fatalf("store holds %d blobs after %d concurrent puts of the same bytes, want 1: %v", len(blobs), n, blobs)
+	}
+	// No temp files may survive the race.
+	ents, err := os.ReadDir(filepath.Join(st.Dir(), "blobs", "sha256"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Fatalf("a temp file survived the race: %s", e.Name())
+		}
 	}
 }

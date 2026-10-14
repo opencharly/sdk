@@ -124,8 +124,21 @@ func (s *Store) PutBlob(data []byte) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
 	}
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// A UNIQUE temp name per call. The earlier version wrote `p + ".tmp"`, a digest-derived path, so
+	// two concurrent puts of the same bytes shared one temp file and the loser's os.Rename could fail
+	// with ENOENT — a spurious failure, which R3/R7 say is root-fixed rather than dismissed as a race.
+	f, err := os.CreateTemp(filepath.Dir(p), filepath.Base(p)+".*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return "", err
 	}
 	if err := os.Rename(tmp, p); err != nil {
