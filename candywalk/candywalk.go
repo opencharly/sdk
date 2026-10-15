@@ -261,7 +261,44 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 // ref that cannot exist (measured: `could not resolve ref "v"`). Every real version is at least two
 // characters — a CalVer tag, a branch, a SHA — so requiring two rejects the stub without narrowing
 // any legitimate form. See opencharly/sdk#408.
-var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:<>]+:[^\s'"\],}#<>]{2,}`)
+var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:<>` + "`" + `]+:[^\s'"\],}#:<>` + "`" + `]{2,}`)
+
+// acceptableVersion reports whether a candidate's VERSION is one of the closed set of REAL ref
+// forms. The scanner (remoteRefRe) FINDS; this DECIDES. That split is the point: a character class
+// can only guess, while an allowlist decides. opencharly/sdk#405 excluded two characters, #408/#409
+// imposed a length, and each was derived from one observed prose instance — `vTAG` is four
+// characters, so no length constant can ever reach it, which is the proof that the constant was
+// never the defect.
+//
+// A version that CLAIMS the tag namespace (`v` followed by a digit) must be tag-shaped, and that one
+// rule kills the whole `v2026.xxx.yyyy` family: it claims `v<digit>` and is not CalVer, so it is
+// prose. Anything else is accepted only as a branch or a commit — which keeps opencharly/sdk#322
+// fixed, because a branch or a SHA is exactly what a fail-closed pattern used to drop.
+func acceptableVersion(v string) bool {
+	if len(v) > 1 && v[0] == 'v' && v[1] >= '0' && v[1] <= '9' {
+		return calVerRe.MatchString(v)
+	}
+	// The same rule one `v` to the left: a token SHAPED like CalVer (a four-digit year, then a dot)
+	// must BE CalVer. The `v`-less placeholder `2026.xxx.yyyy` is the same prose in the same notation
+	// minus its `v`, and the branch arm below would otherwise wave it through.
+	if plainCalShapeRe.MatchString(v) {
+		return plainCalRe.MatchString(v)
+	}
+	return branchRe.MatchString(v) || shaRe.MatchString(v)
+}
+
+var (
+	// CalVer, the Go-module CalVer and semver are one shape with a differing segment count.
+	calVerRe = regexp.MustCompile(`^v\d+(\.\d+){1,2}(-[A-Za-z0-9.]+)?$`)
+	// A branch is lowercase by convention; `feat/x`, `main`, `latest`, and a plain `2026.108.56`
+	// tag all pass, while `vTAG` and a lone `v` do not.
+	branchRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]+$`)
+	shaRe    = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+	// A plain CalVer tag, and the SHAPE that claims it (four digits then a dot) — the `v`-less
+	// placeholder `2026.xxx.yyyy` matches the shape and must therefore be rejected.
+	plainCalRe      = regexp.MustCompile(`^\d{4}\.\d+\.\d+$`)
+	plainCalShapeRe = regexp.MustCompile(`^\d{4}\.`)
+)
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy
 // refs only — package names and bare candy names are never remote refs). Refs that point INTO
@@ -284,7 +321,8 @@ var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:<>]+:[
 // `@github.com/opencharly/…` tokens living in PROSE (a `layer-nodejs` mention in a comment, a
 // `distro-*` glob, a trailing-backtick example). Failing closed on those would break every tree
 // that documents a repo path. A versionless token is therefore not evidence of a declared ref;
-// only a token carrying a `:version` is, and every such form is now collected.
+// only a token carrying a `:version` is, and every such form is collected — provided its version is
+// one of the real shapes, which acceptableVersion decides (opencharly/sdk#410).
 func collectRefs(path string) []string {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -292,9 +330,16 @@ func collectRefs(path string) []string {
 	}
 	var out []string
 	for _, ref := range remoteRefRe.FindAllString(string(raw), -1) {
-		if pr := parseRemoteRef(ref); pr.RepoPath != "" && pr.RepoPath != "github.com/opencharly/charly" {
-			out = append(out, ref)
+		pr := parseRemoteRef(ref)
+		if pr.RepoPath == "" || pr.RepoPath == "github.com/opencharly/charly" {
+			continue
 		}
+		// Prose notation is dropped here, at the scan, rather than left for the resolver to choke on
+		// (`could not resolve ref "v2026.xxx.yyyy"`). See acceptableVersion.
+		if !acceptableVersion(pr.Version) {
+			continue
+		}
+		out = append(out, ref)
 	}
 	return out
 }
