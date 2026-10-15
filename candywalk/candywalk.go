@@ -293,6 +293,21 @@ func acceptableVersion(v string) bool {
 	if plainCalShapeRe.MatchString(v) {
 		return plainCalRe.MatchString(v)
 	}
+	// A version whose components are all one or two characters AND whose FIRST component is letters is
+	// placeholder-shaped, not a ref: `vx.y.z` is the residual filed as opencharly/sdk#412. The
+	// letter-first requirement is the whole of this rule's precision, and it came from a review round:
+	// without it the pattern also swallowed `1.2.3`, an ordinary version-shaped token that is real and
+	// must resolve. Digits where the placeholder has a letter stub is the difference — and it is a real
+	// cost, not a free win: a token made only of letters (`a.b.c`) is indistinguishable from the stub
+	// and IS rejected, which the fixture records where such a row would have been. Note what this is NOT — a context rule.
+	// "Inside a code span means prose" was the obvious fix and it is wrong: this project's own fixture
+	// requires a backticked REAL ref to be collected clean, so rejecting spans would drop live refs and
+	// re-open opencharly/sdk#322. The shape is what tells them apart: a real version's components are
+	// digits (a tag) or words (a branch), never one- or two-character letter stubs — so `ab.cd.ef` is
+	// rejected too, which is the accepted cost of this rule and is stated rather than glossed.
+	if stubVersionRe.MatchString(v) {
+		return false
+	}
 	return branchRe.MatchString(v) || shaRe.MatchString(v)
 }
 
@@ -307,6 +322,8 @@ var (
 	// placeholder `2026.xxx.yyyy` matches the shape and must therefore be rejected.
 	plainCalRe      = regexp.MustCompile(`^\d{4}\.\d+\.\d+$`)
 	plainCalShapeRe = regexp.MustCompile(`^\d{4}\.`)
+	// `vx.y.z` — two or more dot-separated components of one or two characters each (opencharly/sdk#412).
+	stubVersionRe = regexp.MustCompile(`^[A-Za-z]{1,2}(\.[A-Za-z0-9]{1,2}){2,}$`)
 )
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy

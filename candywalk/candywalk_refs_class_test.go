@@ -19,6 +19,9 @@ func TestAcceptableVersion_RejectsEveryProseFormAndKeepsEveryRealOne(t *testing.
 		"vTAG",           // `charly:vTAG` — four characters, so NO length constant can reach it
 		"v",              // the truncated `…/candy/omarchy-base:v` form
 		"2026.xxx.yyyy",  // the v-less form of the SAME placeholder: it claims CalVer shape, so it must BE CalVer
+		"vx.y.z",         // opencharly/sdk#412: every component one or two characters — placeholder-shaped,
+		// not a ref. Context cannot decide this (a backticked REAL ref must stay accepted,
+		// which is why "inside a code span means prose" was rejected), so the shape does.
 	}
 	// A REAL ref written inside markdown backticks must still be collected — and collected CLEAN, with
 	// the delimiter removed by the scanner rather than left for the validator to reject. This is the
@@ -33,12 +36,6 @@ func TestAcceptableVersion_RejectsEveryProseFormAndKeepsEveryRealOne(t *testing.
 		t.Errorf("a backticked real ref must be collected clean; got %v", bt)
 	}
 
-	// KNOWN RESIDUAL, deliberately not "fixed": `vx.y.z` is accepted, because every rule that rejects
-	// it also rejects real branches — `v2-feature`, or `vue-migration` under a broad `^v[A-Za-z]` —
-	// and dropping a real mutable ref silently is the opencharly/sdk#322 defect this repo already
-	// paid for. `vx.y.z` appears nowhere in the scanned corpus; the placeholder forms that DO appear
-	// are all in the reject list below. A residual that is written down is a decision; one that is
-	// discovered later is a bug.
 	accept := []string{
 		"v2026.288.1718",     // CalVer
 		"v0.2026288.1718",    // the Go-module CalVer
@@ -47,6 +44,11 @@ func TestAcceptableVersion_RejectsEveryProseFormAndKeepsEveryRealOne(t *testing.
 		"main",               // a branch
 		"latest",             //
 		"v2-feature",         // a branch that STARTS v<digit> — the review round's finding:
+		// version-shaped tokens that are REAL and must keep resolving — a review round
+		// rejected the first, over-broad form of this rule, which is why these are rows:
+		"1.2.3", // semver without the v
+		// (no row for `a.b.c`: letters-only components make it indistinguishable from the stub by
+		//  design — that is the accepted cost of this rule, recorded here rather than hidden.)
 		// rejecting this is sdk#322, and it is now a fixture row rather than a sentence
 		// in a PR body.
 		"feat/kubevirt-marketplace-family-2", // a branch with a slash — the sdk#322 case
