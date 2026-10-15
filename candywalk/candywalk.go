@@ -303,7 +303,8 @@ func acceptableVersion(v string) bool {
 	// "Inside a code span means prose" was the obvious fix and it is wrong: this project's own fixture
 	// requires a backticked REAL ref to be collected clean, so rejecting spans would drop live refs and
 	// re-open opencharly/sdk#322. The shape is what tells them apart: a real version's components are
-	// digits (a tag) or words (a branch), never single letters.
+	// digits (a tag) or words (a branch), never one- or two-character letter stubs — so `ab.cd.ef` is
+	// rejected too, which is the accepted cost of this rule and is stated rather than glossed.
 	if stubVersionRe.MatchString(v) {
 		return false
 	}
