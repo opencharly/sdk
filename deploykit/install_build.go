@@ -27,6 +27,7 @@ import (
 
 	"github.com/opencharly/sdk"
 	"github.com/opencharly/sdk/buildkit"
+	specexec "github.com/opencharly/spec/exec"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -391,12 +392,11 @@ func PrimaryDistroTag(img *ResolvedBox, hostCtx HostContext) string {
 // pointed at a delivered plugin tree (charly/plugin_loader.go).
 const PluginsEnvVar = "CHARLY_PLUGIN_DIR"
 
-// StablePluginsPath is the version-independent name a deploy's plugin tree is reachable at. The
-// DELIVERY names its replica by content digest (spec/exec/charly_plugins.go, so an unchanged tree
-// is reused and a changed one re-delivered), and a PLAN cannot know a digest because it is compiled
-// host-side before any delivery happens. The two meet here: the plan points every venue shell at
-// this stable path, and the delivery publishes it as a symlink to whatever digest it landed.
-const StablePluginsPath = "/tmp/charly-plugins"
+// StablePluginsPath is the name a deploy's plugin tree is reachable at, declared ONCE in
+// spec/exec (which this module already depends on) and re-exported here so a plan compiler and the
+// delivery cannot drift: the delivery publishes the symlink, the plan emits the variable, and both
+// spell the path from the same constant.
+const StablePluginsPath = specexec.StablePluginsPath
 
 func CompileShellHookStep(layer CandyModel, _ *ResolvedBox) *ShellHookStep {
 	envCfg, _ := layer.EnvConfig()
