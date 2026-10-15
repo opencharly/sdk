@@ -36,12 +36,6 @@ func TestAcceptableVersion_RejectsEveryProseFormAndKeepsEveryRealOne(t *testing.
 		t.Errorf("a backticked real ref must be collected clean; got %v", bt)
 	}
 
-	// KNOWN RESIDUAL, deliberately not "fixed": `vx.y.z` is accepted, because every rule that rejects
-	// it also rejects real branches — `v2-feature`, or `vue-migration` under a broad `^v[A-Za-z]` —
-	// and dropping a real mutable ref silently is the opencharly/sdk#322 defect this repo already
-	// paid for. `vx.y.z` appears nowhere in the scanned corpus; the placeholder forms that DO appear
-	// are all in the reject list below. A residual that is written down is a decision; one that is
-	// discovered later is a bug.
 	accept := []string{
 		"v2026.288.1718",     // CalVer
 		"v0.2026288.1718",    // the Go-module CalVer
