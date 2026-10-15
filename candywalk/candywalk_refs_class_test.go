@@ -19,6 +19,9 @@ func TestAcceptableVersion_RejectsEveryProseFormAndKeepsEveryRealOne(t *testing.
 		"vTAG",           // `charly:vTAG` — four characters, so NO length constant can reach it
 		"v",              // the truncated `…/candy/omarchy-base:v` form
 		"2026.xxx.yyyy",  // the v-less form of the SAME placeholder: it claims CalVer shape, so it must BE CalVer
+		"vx.y.z",         // opencharly/sdk#412: every component one or two characters — placeholder-shaped,
+		// not a ref. Context cannot decide this (a backticked REAL ref must stay accepted,
+		// which is why "inside a code span means prose" was rejected), so the shape does.
 	}
 	// A REAL ref written inside markdown backticks must still be collected — and collected CLEAN, with
 	// the delimiter removed by the scanner rather than left for the validator to reject. This is the

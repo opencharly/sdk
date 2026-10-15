@@ -293,6 +293,15 @@ func acceptableVersion(v string) bool {
 	if plainCalShapeRe.MatchString(v) {
 		return plainCalRe.MatchString(v)
 	}
+	// A version whose every component is one or two characters is placeholder-shaped, not a ref:
+	// `vx.y.z` is the residual filed as opencharly/sdk#412. Note what this is NOT — a context rule.
+	// "Inside a code span means prose" was the obvious fix and it is wrong: this project's own fixture
+	// requires a backticked REAL ref to be collected clean, so rejecting spans would drop live refs and
+	// re-open opencharly/sdk#322. The shape is what tells them apart: a real version's components are
+	// digits (a tag) or words (a branch), never single letters.
+	if stubVersionRe.MatchString(v) {
+		return false
+	}
 	return branchRe.MatchString(v) || shaRe.MatchString(v)
 }
 
@@ -307,6 +316,8 @@ var (
 	// placeholder `2026.xxx.yyyy` matches the shape and must therefore be rejected.
 	plainCalRe      = regexp.MustCompile(`^\d{4}\.\d+\.\d+$`)
 	plainCalShapeRe = regexp.MustCompile(`^\d{4}\.`)
+	// `vx.y.z` — two or more dot-separated components of one or two characters each (opencharly/sdk#412).
+	stubVersionRe = regexp.MustCompile(`^[A-Za-z0-9]{1,2}(\.[A-Za-z0-9]{1,2}){2,}$`)
 )
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy
