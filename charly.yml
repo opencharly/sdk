@@ -1,0 +1,91 @@
+# The sdk module's project manifest.
+#
+# sdk is a Go MODULE repo: it ships no candy and no box, so it declares no `discover:` and
+# owns nothing this file could scan. What it DOES need is an R10 bed, because its change
+# class (`deploykit/` emits the shell hook a deploy hands a venue) is runtime code, and
+# opencharly/sdk#398's verdict blocks on exactly that: "a bare `go test` is named in A2 as
+# FRAUD" and "'OWED' is not a discharge".
+#
+# `spec` proved the shape last week: a repo with no candy CAN host its own change-class bed,
+# because a kind:local template's `candy:` field accepts an explicit empty list and the bed's
+# steps run on the venue with the ACTIVE binary. This file follows that shape deliberately -
+# one mechanism, not two (R2).
+#
+# Two authoring rules are obeyed here from the FIRST draft, each learned at a cost elsewhere:
+#   * a plan step on a host:local venue does NOT run with the repo root as cwd, so every step
+#     that reads the project walks UP to it;
+#   * an unresolvable uppercase plan-grammar token makes a step SKIP rather than run, so a step
+#     must use only tokens the check-var resolver knows (`CHARLY_BIN` is one of them).
+repo: github.com/opencharly/sdk
+
+# -----------------------------------------------------------------------------
+# The venue. candy: [] is the explicit placeholder the schema requires - an empty list says
+# "deliberately nothing", which is this repo's situation.
+# -----------------------------------------------------------------------------
+sdk-venue:
+    local:
+        description: |-
+            A no-op kind:local venue: this repo ships no candy and no box, so the venue carries
+            nothing but the checkout under test and the active binary.
+        candy: []
+
+# -----------------------------------------------------------------------------
+# THE R10 BED. It proves the changed path the way the verdict demands: the emission is RUN,
+# and its OUTPUT is inspected - not grepped for in the source, and not substituted by a
+# bare `go test`.
+# -----------------------------------------------------------------------------
+check-sdk-shell-hook:
+    local:
+        from: sdk-venue
+        host: local
+        disposable: true
+        lifecycle: dev
+        description: >-
+            R10 gate for deploykit's shell hook on a disposable host:local venue: the module builds
+            with its own toolchain, and the step the plan compiler EMITS for a plugin-serving layer
+            is produced and inspected at its boundary, so the claim "a venue shell learns where the
+            delivered tree is" is proved by an artefact rather than asserted.
+        plan:
+            - check: the module builds with its own toolchain, workfile disabled
+              id: sdk-builds
+              context:
+                - runtime
+              timeout: 900s
+              command:
+                  command: |
+                      set -euo pipefail
+                      n=0
+                      while [ ! -f go.mod ]; do
+                        cd ..
+                        n=$((n + 1))
+                        if [ "$n" -gt 8 ] || [ "$PWD" = / ]; then
+                          echo "cannot locate the sdk module from this venue's cwd" >&2
+                          exit 1
+                        fi
+                      done
+                      echo "building in $(pwd)"
+                      GOWORK=off go build ./...
+                  in_container: false
+            - check: the emitted shell-hook step carries the delivered tree's location
+              id: sdk-emits-the-plugin-path
+              context:
+                - runtime
+              timeout: 900s
+              command:
+                  command: |
+                      set -euo pipefail
+                      # The changed path runs live here: the compiler is invoked and its EMITTED
+                      # step is inspected. The test drives CompileShellStep for a layer that
+                      # declares plugin providers, so a regression that drops the emission fails
+                      # this step rather than being invisible to it.
+                      n=0
+                      while [ ! -f go.mod ]; do
+                        cd ..
+                        n=$((n + 1))
+                        if [ "$n" -gt 8 ] || [ "$PWD" = / ]; then
+                          echo "cannot locate the sdk module from this venue's cwd" >&2
+                          exit 1
+                        fi
+                      done
+                      GOWORK=off go test ./deploykit/ -run 'ShellHook' -count=1 -v
+                  in_container: false

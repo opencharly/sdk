@@ -391,13 +391,17 @@ func PrimaryDistroTag(img *ResolvedBox, hostCtx HostContext) string {
 // pointed at a delivered plugin tree (charly/plugin_loader.go).
 const PluginsEnvVar = "CHARLY_PLUGIN_DIR"
 
-// StablePluginsPath is the name a deploy's plugin tree is reachable at, declared ONCE in
-// spec/exec (which this module already depends on) and re-exported here so a plan compiler and the
-// delivery cannot drift: the delivery publishes the symlink, the plan emits the variable, and both
-// spell the path from the same constant.
-// It is duplicated here ONLY until this module spec pin advances: the canonical constant is
-// spec/exec.StablePluginsPath, and the follow-up pin bump replaces this literal with a re-export
-// of it (R2, one spelling). The value is identical today, and this comment is the debt.
+// StablePluginsPath is the name a deploy's plugin tree is reachable at. The CANONICAL constant
+// lives in spec/exec (spec/exec/charly_plugins.go). This literal is therefore a SECOND spelling
+// of one value - R2 debt, filed as opencharly/sdk#399 and swept in the same change that advances
+// this module's spec pin.
+//
+// Do NOT conflate the two imports this package uses, which an earlier version of this comment
+// did: `spec/spec` (the root package) is imported for spec.CandyModel and spec.CandyView, which
+// this compiler needs TODAY; `spec/exec` is where the canonical constant lives TOMORROW, once
+// the pin advances. The constant is not in the pinned spec release at all - this module pins
+// spec v0.2026287.1529 - so the literal is not a choice but the only possible spelling today.
+// The debt is the PIN, not the constant.
 const StablePluginsPath = "/tmp/charly-plugins"
 
 func CompileShellHookStep(layer CandyModel, _ *ResolvedBox) *ShellHookStep {
