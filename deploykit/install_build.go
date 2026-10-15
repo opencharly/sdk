@@ -27,7 +27,6 @@ import (
 
 	"github.com/opencharly/sdk"
 	"github.com/opencharly/sdk/buildkit"
-	specexec "github.com/opencharly/spec/exec"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -396,7 +395,10 @@ const PluginsEnvVar = "CHARLY_PLUGIN_DIR"
 // spec/exec (which this module already depends on) and re-exported here so a plan compiler and the
 // delivery cannot drift: the delivery publishes the symlink, the plan emits the variable, and both
 // spell the path from the same constant.
-const StablePluginsPath = specexec.StablePluginsPath
+// It is duplicated here ONLY until this module spec pin advances: the canonical constant is
+// spec/exec.StablePluginsPath, and the follow-up pin bump replaces this literal with a re-export
+// of it (R2, one spelling). The value is identical today, and this comment is the debt.
+const StablePluginsPath = "/tmp/charly-plugins"
 
 func CompileShellHookStep(layer CandyModel, _ *ResolvedBox) *ShellHookStep {
 	envCfg, _ := layer.EnvConfig()
