@@ -252,7 +252,16 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 // `git ls-remote`d as a URL — measured: `charly marketplace generate|drift` died in `collect entities`
 // on exactly such a line, taken from a marketplace CHANGELOG. Excluding them keeps every real form,
 // including the branch and SHA cases the anchor above was dropped for.
-var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:<>]+:[^\s'"\],}#<>]+`)
+//
+// The VERSION class additionally requires two characters, and that is not cosmetic: excluding `<>`
+// alone TRUNCATES a placeholder rather than rejecting it. In
+// `@github.com/opencharly/layer-omarchy-base/candy/omarchy-base:v<version>` — the same notation with
+// the placeholder in the version instead of the repo name — the repo path is real, so the match stops
+// just before `<` and survives with a one-character version `v`, which then reaches the resolver as a
+// ref that cannot exist (measured: `could not resolve ref "v"`). Every real version is at least two
+// characters — a CalVer tag, a branch, a SHA — so requiring two rejects the stub without narrowing
+// any legitimate form. See opencharly/sdk#408.
+var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:<>]+:[^\s'"\],}#<>]{2,}`)
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy
 // refs only — package names and bare candy names are never remote refs). Refs that point INTO
