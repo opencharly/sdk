@@ -212,7 +212,7 @@ func (s *Store) DeleteEntry(key string) (bool, error) {
 	kept := idx.Manifests[:0]
 	removed := false
 	for _, d := range idx.Manifests {
-		if !removed && (d.Annotations[AnnotationCacheKey] == key || d.Annotations["org.opencontainers.image.ref.name"] == tag) {
+		if !removed && (d.Annotations[AnnotationCacheKey] == key || d.Annotations[AnnotationRefName] == tag) {
 			removed = true
 			continue
 		}
