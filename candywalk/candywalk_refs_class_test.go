@@ -44,6 +44,10 @@ func TestAcceptableVersion_RejectsEveryProseFormAndKeepsEveryRealOne(t *testing.
 		"main",               // a branch
 		"latest",             //
 		"v2-feature",         // a branch that STARTS v<digit> — the review round's finding:
+		// version-shaped tokens that are REAL and must keep resolving — a review round
+		// rejected the first, over-broad form of this rule, which is why these are rows:
+		"1.2.3", // semver without the v
+		"a.b.c", // letters and digits: a real token shape, not a placeholder
 		// rejecting this is sdk#322, and it is now a fixture row rather than a sentence
 		// in a PR body.
 		"feat/kubevirt-marketplace-family-2", // a branch with a slash — the sdk#322 case
