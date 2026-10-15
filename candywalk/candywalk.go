@@ -244,7 +244,15 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 // `:v[0-9]+\.[0-9]+\.[0-9]+` anchor was used, and exactly why branches and SHAs were dropped).
 // The ref class stops at the delimiters that end a YAML scalar, so a quoted (`'…'`) or
 // flow-sequence (`[…, …]`) entry yields the bare token.
-var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:]+:[^\s'"\],}#]+`)
+//
+// `<` and `>` are excluded from BOTH classes because they appear in no repository name and no
+// version: they exist only in the notation the docs use to DESCRIBE a ref
+// (`@github.com/opencharly/<kind>-<name>:<tag>`), and prose about refs is not a ref. Without the
+// exclusion that token parses as a repo path plus a version, reaches the resolver, and is
+// `git ls-remote`d as a URL — measured: `charly marketplace generate|drift` died in `collect entities`
+// on exactly such a line, taken from a marketplace CHANGELOG. Excluding them keeps every real form,
+// including the branch and SHA cases the anchor above was dropped for.
+var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:<>]+:[^\s'"\],}#<>]+`)
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy
 // refs only — package names and bare candy names are never remote refs). Refs that point INTO
