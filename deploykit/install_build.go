@@ -386,21 +386,57 @@ func PrimaryDistroTag(img *ResolvedBox, hostCtx HostContext) string {
 // synthetic plan's Home was the host operator's home, so env.d on the guest
 // pointed at /home/<operator> instead of /home/<guest-user>. See
 // InstallPlan.ResolveHome.
+// PluginsEnvVar is the variable charly's loader reads first: `CHARLY_PLUGIN_DIR` PREPENDS a
+// directory ahead of the FHS packaged dir, so a venue whose charly is a delivered binary can be
+// pointed at a delivered plugin tree (charly/plugin_loader.go).
+const PluginsEnvVar = "CHARLY_PLUGIN_DIR"
+
+// StablePluginsPath is the version-independent name a deploy's plugin tree is reachable at. The
+// DELIVERY names its replica by content digest (spec/exec/charly_plugins.go, so an unchanged tree
+// is reused and a changed one re-delivered), and a PLAN cannot know a digest because it is compiled
+// host-side before any delivery happens. The two meet here: the plan points every venue shell at
+// this stable path, and the delivery publishes it as a symlink to whatever digest it landed.
+const StablePluginsPath = "/tmp/charly-plugins"
+
 func CompileShellHookStep(layer CandyModel, _ *ResolvedBox) *ShellHookStep {
 	envCfg, _ := layer.EnvConfig()
-	if envCfg == nil {
+	// A layer that SERVES PLUGINS needs the hook even when it declares no env at all — otherwise
+	// the venue's shell never learns where the delivered tree is, and a plugin verb in a plan step
+	// fails as an unknown command. The guard below is the one that used to veto that silently: it
+	// was written when env was this function's only subject.
+	providers := layer.GetPluginProviders()
+	if envCfg == nil && len(providers) == 0 {
 		return nil
 	}
-	if len(envCfg.Vars) == 0 && len(envCfg.PathAppend) == 0 {
+	if envCfg != nil && len(envCfg.Vars) == 0 && len(envCfg.PathAppend) == 0 && len(providers) == 0 {
 		return nil
 	}
-	vars := make(map[string]string, len(envCfg.Vars))
-	for k, v := range envCfg.Vars {
-		vars[k] = ExpandPath(v, HomeToken)
+
+	// Capacity is computed from a possibly-NIL envCfg: reading envCfg.Vars before the guard would
+	// panic on the very case this change exists for (a plugin-serving candy with no env at all).
+	size := 1
+	if envCfg != nil {
+		size = len(envCfg.Vars) + 1
 	}
-	paths := make([]string, 0, len(envCfg.PathAppend))
-	for _, p := range envCfg.PathAppend {
-		paths = append(paths, ExpandPath(p, HomeToken))
+	vars := make(map[string]string, size)
+	if envCfg != nil {
+		for k, v := range envCfg.Vars {
+			vars[k] = ExpandPath(v, HomeToken)
+		}
+	}
+	// The plugin tree is a CAPABILITY this layer delivers, so the variable is emitted with it and
+	// only with it: pointing the loader at a path no deploy filled would claim a capability the
+	// deployment does not have.
+	if len(providers) > 0 {
+		vars[PluginsEnvVar] = StablePluginsPath
+	}
+
+	var paths []string
+	if envCfg != nil {
+		paths = make([]string, 0, len(envCfg.PathAppend))
+		for _, p := range envCfg.PathAppend {
+			paths = append(paths, ExpandPath(p, HomeToken))
+		}
 	}
 	return &ShellHookStep{
 		CandyName: layer.GetName(),
