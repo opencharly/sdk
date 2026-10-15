@@ -296,8 +296,10 @@ func acceptableVersion(v string) bool {
 	// A version whose components are all one or two characters AND whose FIRST component is letters is
 	// placeholder-shaped, not a ref: `vx.y.z` is the residual filed as opencharly/sdk#412. The
 	// letter-first requirement is the whole of this rule's precision, and it came from a review round:
-	// without it the pattern also swallowed ordinary version-shaped tokens — `1.2.3`, `a.b.c` — which
-	// are real and must resolve. Digits where the placeholder has a letter stub is the difference. Note what this is NOT — a context rule.
+	// without it the pattern also swallowed `1.2.3`, an ordinary version-shaped token that is real and
+	// must resolve. Digits where the placeholder has a letter stub is the difference — and it is a real
+	// cost, not a free win: a token made only of letters (`a.b.c`) is indistinguishable from the stub
+	// and IS rejected, which the fixture records where such a row would have been. Note what this is NOT — a context rule.
 	// "Inside a code span means prose" was the obvious fix and it is wrong: this project's own fixture
 	// requires a backticked REAL ref to be collected clean, so rejecting spans would drop live refs and
 	// re-open opencharly/sdk#322. The shape is what tells them apart: a real version's components are
