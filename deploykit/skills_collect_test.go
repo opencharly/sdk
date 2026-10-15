@@ -98,7 +98,7 @@ func TestCollectSkills_UnionOfComposedOnly(t *testing.T) {
 // silently.
 func TestCollectSkills_ProseComesFromTheFile(t *testing.T) {
 	root := t.TempDir()
-	writeSkillFile(t, root, "postgresql",
+	writeSkillFile(t, root,
 		"name: postgresql\ndescription: Use when working with postgresql.\n",
 		"\n# Postgresql\nbody from the file\n",
 		map[string]string{"config": "config body from the file\n"})
@@ -211,7 +211,7 @@ func TestCollectSkills_ReferenceLessEntryWireForm(t *testing.T) {
 	// Arm 2: file-sourced, reference-less on the node AND in the file — the entry must stay exactly
 	// as wide as it was before the read-back.
 	plainRoot := t.TempDir()
-	writeSkillFile(t, plainRoot, "postgresql",
+	writeSkillFile(t, plainRoot,
 		"name: postgresql\ndescription: Use when working with postgresql.\n",
 		"\n# Postgresql\nbody from the file\n", nil)
 	cfg := &spec.Config{
@@ -242,7 +242,7 @@ func TestCollectSkills_ReferenceLessEntryWireForm(t *testing.T) {
 
 	// Arm 3: the file's references/ files DO reach the wire when the node declares none.
 	refRoot := t.TempDir()
-	writeSkillFile(t, refRoot, "postgresql",
+	writeSkillFile(t, refRoot,
 		"name: postgresql\ndescription: Use when working with postgresql.\n",
 		"\n# Postgresql\nbody from the file\n",
 		map[string]string{"config": "config body from the file\n"})
@@ -269,7 +269,7 @@ func TestCollectSkills_ReferenceLessEntryWireForm(t *testing.T) {
 // the directory, which IS the skill id.
 func TestCollectSkills_MalformedFileFailsLoud(t *testing.T) {
 	root := t.TempDir()
-	writeSkillFile(t, root, "postgresql",
+	writeSkillFile(t, root,
 		"name: not-postgresql\ndescription: something else entirely.\n",
 		"\n# Wrong skill\n", nil)
 
@@ -295,11 +295,16 @@ func TestCollectSkills_MalformedFileFailsLoud(t *testing.T) {
 	}
 }
 
+// skillFixtureID is the skill id every fixture here authors. It is a constant, not a parameter,
+// because the directory IS the id: a file is only found when the node's resolved name and the
+// directory agree, and every arm of these tests exercises that same skill.
+const skillFixtureID = "postgresql"
+
 // writeSkillFile lays down the authored shape the relocation produces — the two-key frontmatter,
 // the body, and references/<stem>.md — under the Agent-Skills standard location.
-func writeSkillFile(t *testing.T, root, name, frontmatter, body string, refs map[string]string) {
+func writeSkillFile(t *testing.T, root, frontmatter, body string, refs map[string]string) {
 	t.Helper()
-	dir := filepath.Join(root, candywalk.AgentsSkillsDir, name)
+	dir := filepath.Join(root, candywalk.AgentsSkillsDir, skillFixtureID)
 	if err := os.MkdirAll(filepath.Join(dir, "references"), 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
