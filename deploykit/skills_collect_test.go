@@ -178,6 +178,92 @@ func TestCollectSkills_BodylessSkillFailsLoud(t *testing.T) {
 	}
 }
 
+// TestCollectSkills_ReferenceLessEntryWireForm pins the WHOLE label entry's wire shape, not just
+// its prose fields — the entry is what the image carries, and every field on it is part of the
+// contract. Three arms:
+//
+//   - a NIL `References` and an EMPTY-NON-NIL one (`[]spec.LabelSkillReference{}`) marshal
+//     IDENTICALLY: the field is `json:"references,omitempty"`, so the wire omits it either way.
+//     That is the property a reference-less skill's entry rests on — the read-back hands the wire a
+//     nil slice where the pre-read-back projection handed it a zero-length one, and the two must be
+//     indistinguishable in the emitted label;
+//   - a file-sourced reference-less skill's entry carries no `references` key at all;
+//   - a skill whose file HAS `references/<stem>.md` still ships them, by name and by content.
+func TestCollectSkills_ReferenceLessEntryWireForm(t *testing.T) {
+	base := spec.LabelSkillEntry{Family: "f", Name: "n", Owner: "o", Content: "c"}
+	nilRefs, err := json.Marshal(base)
+	if err != nil {
+		t.Fatalf("marshal nil refs: %v", err)
+	}
+	empty := base
+	empty.References = []spec.LabelSkillReference{} // the shape the pre-read-back projection produced
+	emptyRefs, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatalf("marshal empty refs: %v", err)
+	}
+	if string(nilRefs) != string(emptyRefs) {
+		t.Fatalf("nil and empty references marshal differently — the field is not omitempty:\nnil   = %s\nempty = %s", nilRefs, emptyRefs)
+	}
+	if strings.Contains(string(nilRefs), "references") {
+		t.Fatalf("a reference-less entry carries a `references` key on the wire: %s", nilRefs)
+	}
+
+	// Arm 2: file-sourced, reference-less on the node AND in the file — the entry must stay exactly
+	// as wide as it was before the read-back.
+	plainRoot := t.TempDir()
+	writeSkillFile(t, plainRoot, "postgresql",
+		"name: postgresql\ndescription: Use when working with postgresql.\n",
+		"\n# Postgresql\nbody from the file\n", nil)
+	cfg := &spec.Config{
+		Box: spec.BoxMap{"app": spec.EncodeBox(spec.BoxConfig{Candy: []string{"postgresql"}})},
+		Skills: map[string]json.RawMessage{
+			"postgresql": mustSkillJSON(t, spec.Skill{Family: "f", Owner: "postgresql"}),
+		},
+	}
+	gotNoRefs, err := CollectSkills(cfg, map[string]spec.CandyReader{
+		"postgresql": NewSpecCandyModel(
+			spec.CandyModel{Name: "postgresql", SourceDir: plainRoot},
+			spec.CandyView{Name: "postgresql"},
+		),
+	}, "app")
+	if err != nil {
+		t.Fatalf("CollectSkills (reference-less): %v", err)
+	}
+	wire, err := json.Marshal(gotNoRefs[0])
+	if err != nil {
+		t.Fatalf("marshal entry: %v", err)
+	}
+	if strings.Contains(string(wire), "references") {
+		t.Fatalf("file-sourced reference-less entry grew a `references` key: %s", wire)
+	}
+	if !strings.Contains(string(wire), `"description":"Use when working with postgresql."`) {
+		t.Fatalf("entry lost its prose: %s", wire)
+	}
+
+	// Arm 3: the file's references/ files DO reach the wire when the node declares none.
+	refRoot := t.TempDir()
+	writeSkillFile(t, refRoot, "postgresql",
+		"name: postgresql\ndescription: Use when working with postgresql.\n",
+		"\n# Postgresql\nbody from the file\n",
+		map[string]string{"config": "config body from the file\n"})
+	gotRefs, err := CollectSkills(cfg, map[string]spec.CandyReader{
+		"postgresql": NewSpecCandyModel(
+			spec.CandyModel{Name: "postgresql", SourceDir: refRoot},
+			spec.CandyView{Name: "postgresql"},
+		),
+	}, "app")
+	if err != nil {
+		t.Fatalf("CollectSkills (with references): %v", err)
+	}
+	wireRefs, err := json.Marshal(gotRefs[0])
+	if err != nil {
+		t.Fatalf("marshal entry with refs: %v", err)
+	}
+	if !strings.Contains(string(wireRefs), `"references":[{"name":"config","content":"config body from the file\n"}]`) {
+		t.Fatalf("the file's references did not reach the wire: %s", wireRefs)
+	}
+}
+
 // TestCollectSkills_MalformedFileFailsLoud proves a file that would publish the WRONG prose under
 // the right name is refused rather than silently projected: the frontmatter `name` must agree with
 // the directory, which IS the skill id.
