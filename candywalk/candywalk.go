@@ -36,6 +36,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
@@ -276,7 +277,15 @@ var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:<>` + 
 // fixed, because a branch or a SHA is exactly what a fail-closed pattern used to drop.
 func acceptableVersion(v string) bool {
 	if len(v) > 1 && v[0] == 'v' && v[1] >= '0' && v[1] <= '9' {
-		return calVerRe.MatchString(v)
+		if calVerRe.MatchString(v) {
+			return true
+		}
+		// A dot means the token is CLAIMING the CalVer/semver form, and failing that claim makes it
+		// prose (`v2026.xxx.yyyy`). Without a dot it is a branch that merely happens to start with
+		// `v<digit>` — `v2-feature` — and rejecting that is the opencharly/sdk#322 defect, where a live
+		// branch was dropped with no error. Both are pinned in the fixture; neither is asserted in
+		// prose only, which is what the review round taught.
+		return !strings.Contains(v, ".") && branchRe.MatchString(v)
 	}
 	// The same rule one `v` to the left: a token SHAPED like CalVer (a four-digit year, then a dot)
 	// must BE CalVer. The `v`-less placeholder `2026.xxx.yyyy` is the same prose in the same notation

@@ -40,12 +40,15 @@ func TestAcceptableVersion_RejectsEveryProseFormAndKeepsEveryRealOne(t *testing.
 	// are all in the reject list below. A residual that is written down is a decision; one that is
 	// discovered later is a bug.
 	accept := []string{
-		"v2026.288.1718",                     // CalVer
-		"v0.2026288.1718",                    // the Go-module CalVer
-		"v1.2.3",                             // semver
-		"v2026.288.1254-rc1",                 // semver pre-release
-		"main",                               // a branch
-		"latest",                             //
+		"v2026.288.1718",     // CalVer
+		"v0.2026288.1718",    // the Go-module CalVer
+		"v1.2.3",             // semver
+		"v2026.288.1254-rc1", // semver pre-release
+		"main",               // a branch
+		"latest",             //
+		"v2-feature",         // a branch that STARTS v<digit> — the review round's finding:
+		// rejecting this is sdk#322, and it is now a fixture row rather than a sentence
+		// in a PR body.
 		"feat/kubevirt-marketplace-family-2", // a branch with a slash — the sdk#322 case
 		"a0401d7",                            // a commit SHA
 		"2026.108.56",                        // a plain CalVer tag
