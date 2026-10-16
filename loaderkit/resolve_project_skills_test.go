@@ -24,9 +24,12 @@ func skillNode(owner string) json.RawMessage {
 	return b
 }
 
-// inertSeams is the minimal seam set ProjectResolvedProject needs to assemble a one-box project
-// without touching a host: no namespace fill, no resources, the real box resolver.
-func inertSeams() ResolveProjectSeams {
+// projectTestSeams is the ONE seam set the resolve-project tests share — extracted when a second
+// test needed it (R2), rather than copied. It is the minimal set ProjectResolvedProject needs to
+// assemble a one-box project without touching a host: no namespace fill, no resources, and the
+// REAL box resolver, exactly as the host closure wraps it — so a test exercises the genuine
+// resolve -> inject -> project chain rather than a hand-built box.
+func projectTestSeams() ResolveProjectSeams {
 	return ResolveProjectSeams{
 		ResolveBox: func(c *spec.Config, name, calver, d string) (*buildkit.ResolvedBox, error) {
 			return buildkit.ResolveBox(c, name, calver, d, buildkit.ResolveOpts{
@@ -82,7 +85,7 @@ func TestProjectResolvedProject_FillsOwnedSkillsOntoTheWireModel(t *testing.T) {
 
 	dir := t.TempDir()
 	initCfg := &buildkit.InitConfig{}
-	seams := inertSeams()
+	seams := projectTestSeams()
 
 	rp, err := ProjectResolvedProject(cfg, layers, uf, &buildkit.DistroConfig{}, &buildkit.BuilderConfig{}, initCfg, dir, "2026.1.1", "2026.1.1", seams, nil, nil)
 	if err != nil {
