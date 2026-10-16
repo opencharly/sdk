@@ -69,7 +69,11 @@ func (g *Generator) RenderPrepBox(boxName string) error {
 	}
 
 	// 6. BakedMetadata — the fully-baked OCI-label wire set.
-	img.BakedMetadata = g.buildBakedMetadata(boxName, candyOrder)
+	meta, err := g.buildBakedMetadata(boxName, candyOrder)
+	if err != nil {
+		return fmt.Errorf("render-prep %s: %w", boxName, err)
+	}
+	img.BakedMetadata = meta
 
 	return nil
 }
@@ -93,8 +97,12 @@ func (g *Generator) RenderPrepAll() error {
 // the two render-gating booleans (PreserveUser/NeedsRootAfterInit) ride img.CandyCaps separately via the
 // #AggregatedCandyCapsView for generateContainerfile's final-USER directive.
 //
+// It returns an error for the ONE collector whose failure must not be silent: the skills
+// aggregator reads a moved skill's prose off disk, and a label entry that lost its body is
+// indistinguishable from a skill that never had one (see CollectSkills).
+//
 //nolint:gocyclo // linear OCI-label gather — one branch per label field (the former writeLabels data half); no shared abstraction across the ~40 independent labels.
-func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spec.BakedLabelSet {
+func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) (*spec.BakedLabelSet, error) {
 	img := g.Boxes[boxName]
 	meta := &spec.BakedLabelSet{}
 
@@ -189,8 +197,12 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 	// Shell-init manifest.
 	meta.Shell = CollectShell(g.Config, g.Candies, boxName)
 
-	// Skills: the composed candies' skill definitions (ai.opencharly.skills).
-	meta.Skills = CollectSkills(g.Config, g.Candies, boxName)
+	// Skills: the composed candies' skill definitions (ai.opencharly.skill).
+	skills, err := CollectSkills(g.Config, g.Candies, boxName)
+	if err != nil {
+		return nil, err
+	}
+	meta.Skills = skills
 
 	// Init system label: active init system name + per-init service list.
 	if g.InitConfig != nil {
@@ -430,7 +442,7 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spe
 		meta.DataImage = true
 	}
 
-	return meta
+	return meta, nil
 }
 
 // collectChainDataEntries walks the full image chain collecting data entries from candies in
