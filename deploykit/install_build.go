@@ -374,19 +374,6 @@ func PrimaryDistroTag(img *ResolvedBox, hostCtx HostContext) string {
 // Shell hook compilation
 // ---------------------------------------------------------------------------
 
-// CompileShellHookStep returns a ShellHookStep for the candy's env: and
-// path_append: fields, or nil if the candy contributes neither.
-//
-// Home resolution is DEFERRED: `~`/`$HOME` are rewritten to the literal
-// `{{.Home}}` token rather than expanded against img.Home. Each EmitTarget
-// resolves the token at emit time against the home of the actual deploy
-// destination — img.Home for the OCI/pod-overlay build, the host home for
-// the local deploy target, and the GUEST home (via the SSH executor's ResolveHome)
-// for the vm deploy. Baking img.Home here was wrong for VM deploys: the
-// synthetic plan's Home was the host operator's home, so env.d on the guest
-// pointed at /home/<operator> instead of /home/<guest-user>. See
-// InstallPlan.ResolveHome.
-
 // PluginsEnvVar is the variable charly's loader reads first: `CHARLY_PLUGIN_DIR` PREPENDS a
 // directory ahead of the FHS packaged dir, so a venue whose charly is a delivered binary can be
 // pointed at a delivered plugin tree (charly/plugin_loader.go).
@@ -405,6 +392,18 @@ const PluginsEnvVar = "CHARLY_PLUGIN_DIR"
 // The debt is the PIN, not the constant.
 const StablePluginsPath = "/tmp/charly-plugins"
 
+// CompileShellHookStep returns a ShellHookStep for the candy's env: and
+// path_append: fields, or nil if the candy contributes neither.
+//
+// Home resolution is DEFERRED: `~`/`$HOME` are rewritten to the literal
+// `{{.Home}}` token rather than expanded against img.Home. Each EmitTarget
+// resolves the token at emit time against the home of the actual deploy
+// destination — img.Home for the OCI/pod-overlay build, the host home for
+// the local deploy target, and the GUEST home (via the SSH executor's ResolveHome)
+// for the vm deploy. Baking img.Home here was wrong for VM deploys: the
+// synthetic plan's Home was the host operator's home, so env.d on the guest
+// pointed at /home/<operator> instead of /home/<guest-user>. See
+// InstallPlan.ResolveHome.
 func CompileShellHookStep(layer CandyModel, _ *ResolvedBox) *ShellHookStep {
 	envCfg, _ := layer.EnvConfig()
 	// A layer that SERVES PLUGINS needs the hook even when it declares no env at all — otherwise
