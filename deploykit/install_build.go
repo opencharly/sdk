@@ -386,6 +386,7 @@ func PrimaryDistroTag(img *ResolvedBox, hostCtx HostContext) string {
 // synthetic plan's Home was the host operator's home, so env.d on the guest
 // pointed at /home/<operator> instead of /home/<guest-user>. See
 // InstallPlan.ResolveHome.
+//
 // PluginsEnvVar is the variable charly's loader reads first: `CHARLY_PLUGIN_DIR` PREPENDS a
 // directory ahead of the FHS packaged dir, so a venue whose charly is a delivered binary can be
 // pointed at a delivered plugin tree (charly/plugin_loader.go).
