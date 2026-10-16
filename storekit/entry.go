@@ -69,6 +69,13 @@ func (s *Store) indexLockPath() (string, error) {
 // knows one store knows them all.
 const AnnotationCacheKey = "ai.opencharly.cache.key"
 
+// AnnotationRefName is the OCI index descriptor's ref-name annotation, and it is the SAME name the
+// image spec and `spec/cache` use. Named rather than spelled out at each use site because there
+// are four — LookupEntry's match, indexEntry's write, indexEntry's replace test, and the sweep's
+// delete — and a vocabulary that must agree across three packages may not be four string
+// literals that happen to be equal today.
+const AnnotationRefName = "org.opencontainers.image.ref.name"
+
 // MediaTypeStoreEntry is the media type of a store entry manifest.
 const MediaTypeStoreEntry = "application/vnd.opencharly.store.entry.v1+json"
 
@@ -138,7 +145,7 @@ func (s *Store) LookupEntry(key string) (*Entry, bool, error) {
 	}
 	wantTag := entryTag(key)
 	for _, d := range idx.Manifests {
-		if d.Annotations[AnnotationCacheKey] != key && d.Annotations["org.opencontainers.image.ref.name"] != wantTag {
+		if d.Annotations[AnnotationCacheKey] != key && d.Annotations[AnnotationRefName] != wantTag {
 			continue
 		}
 		raw, err := s.ReadBlob(d.Digest)
@@ -256,11 +263,11 @@ func (s *Store) indexEntry(key, manifestDigest string, size int64) error {
 		MediaType:   MediaTypeStoreEntry,
 		Digest:      manifestDigest,
 		Size:        size,
-		Annotations: map[string]string{AnnotationCacheKey: key, "org.opencontainers.image.ref.name": tag},
+		Annotations: map[string]string{AnnotationCacheKey: key, AnnotationRefName: tag},
 	}
 	replaced := false
 	for i, d := range idx.Manifests {
-		if d.Annotations[AnnotationCacheKey] == key || d.Annotations["org.opencontainers.image.ref.name"] == tag {
+		if d.Annotations[AnnotationCacheKey] == key || d.Annotations[AnnotationRefName] == tag {
 			idx.Manifests[i] = desc
 			replaced = true
 			break
