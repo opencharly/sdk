@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// skillfile.go — the `.agents/skills` FILE source: the ONE reader of a skill's prose.
+// skillfile.go — the authored FILE sources: the ONE reader of a `skill:` node's prose.
 //
 // A skill's body lives in the repository that owns it, not in its `skill:` entity:
 //
@@ -23,6 +23,16 @@ import (
 // entity keeps the routing (family/owner/triggers/category); the file keeps the prose. The version
 // of record is the github ref that fetched the repo — the marketplace refs list's pin, or a
 // consumer's `candy:` list — so nothing here fetches anything.
+//
+// An `agent`-type node is a SUB-AGENT DEFINITION, not a skill, so it has its own SHAPE at its own
+// tree — ONE markdown file, with no entry directory and no split references:
+//
+//	<AgentsAgentsDir>/<name>.md            frontmatter (name + description) + the markdown body
+//
+// A candy's `skills:` list is a list of SKILL trees and does NOT govern that path, so a mixed repo
+// — skills under a declared tree, agents under `.agents/agents` — is the legal shape, not a
+// half-move. The two shapes differ ONLY in their paths: both go through the one parse
+// (readAuthoredEntry), so a skill and an agent carrying the same bytes read back identically.
 //
 // The shape read here is BOTH the marketplace corpus's (banner included) and the bare shape a repo
 // authors after extraction: the generator's DO-NOT-EDIT marker is stripped either way. That is what
@@ -37,6 +47,12 @@ const (
 	// AgentsSkillsDir is the Agent-Skills standard location: what a candy's `skills:` list means
 	// when it declares none.
 	AgentsSkillsDir = ".agents/skills"
+
+	// AgentsAgentsDir is the Agent-Skills standard location for sub-agent DEFINITIONS — the SIBLING
+	// of AgentsSkillsDir, never a child of it. An `agent`-type node is authored at
+	// <AgentsAgentsDir>/<name>.md: a sub-agent definition is not a skill, and a `skills:` list of
+	// SKILL trees does not govern it (see the `skill` kind's own schema comment).
+	AgentsAgentsDir = ".agents/agents"
 
 	// skillEntryName is the one file name carrying a skill's frontmatter and body.
 	skillEntryName = "SKILL.md"
@@ -74,6 +90,75 @@ type SkillFile struct {
 	References []SkillReferenceFile
 }
 
+// AgentFile is the prose half of an `agent`-type skill node, read from its file.
+//
+// It is a SEPARATE type from SkillFile on purpose: the agent shape has no `references/` half and no
+// entry DIRECTORY, so carrying SkillFile's `References`/`Dir` fields here would be two fields that
+// can only ever be nil/empty — a shape pretending to be another shape.
+type AgentFile struct {
+	// Name is the resolved agent id — the `.md` file STEM, which the frontmatter `name` must agree
+	// with when it states one.
+	Name string
+	// Description is the frontmatter `description`: the sub-agent's dispatch keyword.
+	Description string
+	// Content is the markdown body VERBATIM — marker stripped, and deliberately NOT trimmed, for the
+	// same reason SkillFile.Content is: the corpus emitter writes TrimSuffix(content, "\n") + "\n".
+	Content string
+}
+
+// authoredEntry is one authored markdown file's two prose halves, after the frontmatter fence has
+// been split and the generator's marker stripped. It is the ONE parse both authored shapes share.
+type authoredEntry struct {
+	description string
+	content     string
+}
+
+// readAuthoredEntry reads ONE authored markdown file and returns its prose. found is false — with a
+// nil error — when the file does not exist, because whether a missing entry is legal is the
+// caller's call.
+//
+// Everything else is an ERROR, because each case would otherwise publish the wrong prose under the
+// right name: an unreadable file, malformed frontmatter, or a frontmatter `name` that disagrees with
+// the name the file is filed under. Both shapes (`<tree>/<name>/SKILL.md` and
+// `<AgentsAgentsDir>/<name>.md`) resolve to this one read, so they cannot drift apart.
+func readAuthoredEntry(entry, name string) (authoredEntry, bool, error) {
+	raw, err := os.ReadFile(entry)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return authoredEntry{}, false, nil
+		}
+		return authoredEntry{}, false, fmt.Errorf("read %s: %w", entry, err)
+	}
+	front, body := splitFrontmatter(string(raw))
+	var fm struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
+	}
+	if front != "" {
+		if err := yaml.Unmarshal([]byte(front), &fm); err != nil {
+			return authoredEntry{}, false, fmt.Errorf("parse frontmatter of %s: %w", entry, err)
+		}
+	}
+	if fm.Name != "" && fm.Name != name {
+		return authoredEntry{}, false, fmt.Errorf("%s: frontmatter name %q disagrees with the name it is filed under %q — the file's own name IS the id", entry, fm.Name, name)
+	}
+	return authoredEntry{description: fm.Description, content: stripGeneratedHeader(body)}, true, nil
+}
+
+// ReadAgentFile reads ONE sub-agent definition: <agentsDir>/<name>.md.
+//
+// A missing file is (nil, nil), not an error — the same contract as ReadSkillFile's: whether an
+// `agent` node MUST have a file is the caller's call, and the marketplace generator is the caller
+// that hard-errors on a node with neither a file nor an in-line body, because publishing nothing
+// there would silently drop a published sub-agent.
+func ReadAgentFile(agentsDir, name string) (*AgentFile, error) {
+	e, found, err := readAuthoredEntry(filepath.Join(agentsDir, name+".md"), name)
+	if err != nil || !found {
+		return nil, err
+	}
+	return &AgentFile{Name: name, Description: e.description, Content: e.content}, nil
+}
+
 // ReadSkillFile reads ONE skill's files: <treeDir>/<name>/SKILL.md, plus every
 // <treeDir>/<name>/references/<stem>.md beside it.
 //
@@ -84,26 +169,9 @@ type SkillFile struct {
 // unreadable file, malformed frontmatter, or a frontmatter `name` that disagrees with its directory.
 func ReadSkillFile(treeDir, name string) (*SkillFile, error) {
 	dir := filepath.Join(treeDir, name)
-	entry := filepath.Join(dir, skillEntryName)
-	raw, err := os.ReadFile(entry)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read %s: %w", entry, err)
-	}
-	front, body := splitFrontmatter(string(raw))
-	var fm struct {
-		Name        string `yaml:"name"`
-		Description string `yaml:"description"`
-	}
-	if front != "" {
-		if err := yaml.Unmarshal([]byte(front), &fm); err != nil {
-			return nil, fmt.Errorf("parse frontmatter of %s: %w", entry, err)
-		}
-	}
-	if fm.Name != "" && fm.Name != name {
-		return nil, fmt.Errorf("%s: frontmatter name %q disagrees with its directory %q — the directory name IS the skill id", entry, fm.Name, name)
+	e, found, err := readAuthoredEntry(filepath.Join(dir, skillEntryName), name)
+	if err != nil || !found {
+		return nil, err
 	}
 	refs, err := readSkillReferences(filepath.Join(dir, skillReferencesDir))
 	if err != nil {
@@ -112,8 +180,8 @@ func ReadSkillFile(treeDir, name string) (*SkillFile, error) {
 	return &SkillFile{
 		Name:        name,
 		Dir:         name,
-		Description: fm.Description,
-		Content:     stripGeneratedHeader(body),
+		Description: e.description,
+		Content:     e.content,
 		References:  refs,
 	}, nil
 }
