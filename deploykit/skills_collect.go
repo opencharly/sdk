@@ -1,7 +1,6 @@
 package deploykit
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -46,19 +45,18 @@ func CollectSkills(cfg *spec.Config, layers map[string]CandyModel, boxName strin
 		composed[n] = true
 	}
 
-	// Decode every authored skill body once; project the ones owned by a composed candy.
-	// The map KEY is the node name, which IS the skill id when the node declares no `name:`
-	// (spec#247) — the same default the generator applies, and the directory the file lives in.
+	// Decode every authored skill body ONCE, through the shared decoder (decodeSkillNodes) rather than
+	// a second inline json.Unmarshal — the SAME decode also feeds CandyModelOwnedSkills' per-candy
+	// ownership projection, so there is one decoder for one wire shape. The map KEY is the node name,
+	// which IS the skill id when the node declares no `name:` (spec#247) — the same default the
+	// generator applies, and the directory the file lives in.
+	nodes, err := decodeSkillNodes(cfg.Skills)
+	if err != nil {
+		return nil, err
+	}
 	byKey := map[string]spec.LabelSkillEntry{}
 	var order []string
-	for node, raw := range cfg.Skills {
-		if len(raw) == 0 {
-			continue
-		}
-		var s spec.Skill
-		if err := json.Unmarshal(raw, &s); err != nil {
-			return nil, fmt.Errorf("skill %q: decode: %w", node, err)
-		}
+	for node, s := range nodes {
 		if !composed[s.Owner] {
 			continue
 		}
