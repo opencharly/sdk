@@ -184,6 +184,7 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 	// Pass 2: remote fix-point. Resolve each new ref, walk the fetched repo's candy/ + root
 	// manifest, union the entities, and queue any refs the fetched files surface.
 	if resolve != nil {
+		var resolved int
 		for len(queue) > 0 {
 			ref := queue[0]
 			queue = queue[1:]
@@ -196,6 +197,16 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 				continue
 			}
 			seenRefs[key] = true
+
+			// Progress BEFORE the work, not after. The line names the ref about to be
+			// resolved, so a slow or stalled resolve is attributable to a specific repo
+			// rather than appearing as silence — and the caller can see the frontier
+			// shrinking. The download half already prints one line per repo (spec/refs'
+			// "Downloading %s:%s..."); without a matching line here, a corpus walk over
+			// a thousand refs reports nothing for its entire duration, which is what
+			// made a 20-35 minute walk read as a hang (opencharly/docs#162).
+			fmt.Fprintf(os.Stderr, "charly: resolving %s (%d resolved, %d queued)\n", key, resolved, len(queue))
+			resolved++
 
 			fetched, err := resolve(pr.RepoPath, pr.Version)
 			if err != nil {
