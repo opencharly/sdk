@@ -1,15 +1,19 @@
 package buildkitdrive
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-// writeOCILayoutDir creates a minimal but structurally real OCI image layout:
-// the `oci-layout` marker, an `index.json`, and one blob. local.NewStore validates
-// the layout on open, so this fails if the layout is not well-formed.
+// writeOCILayoutDir creates the skeleton of an OCI image layout: the `oci-layout`
+// marker, an `index.json`, and an (empty) `blobs/sha256/` tree. The blobs tree is
+// deliberately empty — a layout's structure is the marker plus the index; blobs are
+// content, and a layout with none is valid, just empty.
+//
+// Note that local.NewStore does NOT validate this: given an empty directory it
+// initialises a fresh, empty layout. The structure below is what `Store()` checks
+// for, which is why the rejection test passes a bare temp dir instead.
 func writeOCILayoutDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -51,6 +55,11 @@ func TestStoreOpensARealLayout(t *testing.T) {
 	}
 }
 
+// TestStoreOpensARealLayout asserts that a directory carrying the layout marker and
+// index opens as a content store. It does NOT assert that a malformed layout is
+// rejected — local.NewStore would accept one; that guarantee comes from Store()'s
+// own checks and is covered by TestStoreRejectsANonLayout.
+
 func TestStoreRejectsANonLayout(t *testing.T) {
 	if _, err := (OCILayout{ID: "ctx", Dir: t.TempDir()}).Store(); err == nil {
 		t.Fatal("expected an error opening a directory that is not an OCI layout")
@@ -67,5 +76,3 @@ func TestContentStoresRejectsDuplicateIDs(t *testing.T) {
 		t.Fatalf("distinct ids: %v", err)
 	}
 }
-
-var _ = json.Valid

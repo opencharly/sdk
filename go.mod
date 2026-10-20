@@ -5,7 +5,7 @@ go 1.26.8
 require (
 	cuelang.org/go v0.16.1
 	github.com/alecthomas/kong v1.15.0
-	github.com/containerd/containerd/v2 v2.4.2
+	github.com/containerd/containerd/v2 v2.4.1
 	github.com/emicklei/dot v1.11.0
 	github.com/expr-lang/expr v1.17.8
 	github.com/fsnotify/fsnotify v1.10.1
