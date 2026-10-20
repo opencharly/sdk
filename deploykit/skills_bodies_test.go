@@ -61,9 +61,11 @@ func TestCollectSkillBodies_BesideTheCandy(t *testing.T) {
 
 func TestCollectSkillBodies_AtTheRepoRootFails(t *testing.T) {
 	cfg, layers := skillBodiesFixture(t, true)
-	if _, err := CollectSkillBodies(cfg, layers); err == nil {
+	_, err := CollectSkillBodies(cfg, layers)
+	if err == nil {
 		t.Fatal("body at the repo root must be an error — the loader reads beside the candy, not at the root")
 	}
+	t.Logf("negative control refused the root layout: %v", err)
 }
 
 func TestCollectSkills_StillEmptyWithoutABox(t *testing.T) {
