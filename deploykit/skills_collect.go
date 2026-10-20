@@ -44,12 +44,13 @@ func CollectSkills(cfg *spec.Config, layers map[string]CandyModel, boxName strin
 	for _, n := range allCandyNames {
 		composed[n] = true
 	}
+	return collectSkillsFiltered(cfg, layers, func(s spec.Skill) bool { return composed[s.Owner] })
+}
 
-	// Decode every authored skill body ONCE, through the shared decoder (decodeSkillNodes) rather than
-	// a second inline json.Unmarshal — the SAME decode also feeds CandyModelOwnedSkills' per-candy
-	// ownership projection, so there is one decoder for one wire shape. The map KEY is the node name,
-	// which IS the skill id when the node declares no `name:` (spec#247) — the same default the
-	// generator applies, and the directory the file lives in.
+// collectSkillsFiltered is the ONE decode → project → dedup → sort → assemble loop. `keep` selects which
+// authored nodes are projected; nil keeps all of them. CollectSkills passes a composition predicate
+// (label-size policy); CollectSkillBodies passes nil (a body must exist regardless of composition).
+func collectSkillsFiltered(cfg *spec.Config, layers map[string]CandyModel, keep func(spec.Skill) bool) ([]spec.LabelSkillEntry, error) {
 	nodes, err := decodeSkillNodes(cfg.Skills)
 	if err != nil {
 		return nil, err
@@ -57,7 +58,7 @@ func CollectSkills(cfg *spec.Config, layers map[string]CandyModel, boxName strin
 	byKey := map[string]spec.LabelSkillEntry{}
 	var order []string
 	for node, s := range nodes {
-		if !composed[s.Owner] {
+		if keep != nil && !keep(s) {
 			continue
 		}
 		entry, err := projectSkill(layers, s, node)
@@ -80,6 +81,20 @@ func CollectSkills(cfg *spec.Config, layers map[string]CandyModel, boxName strin
 		out = append(out, byKey[k])
 	}
 	return out, nil
+}
+
+// CollectSkillBodies resolves the body of EVERY authored skill node, independent of box composition.
+//
+// CollectSkills gates on BoxCandyChain — a label-size policy, "union-of-composed-only, which bounds the
+// label size". Whether a body EXISTS is not a label question, so that gate must not decide it: a repo
+// that authors skill nodes but composes no box has no call site that ever reads a body, which is why
+// `charly box validate` returned "0 warnings, 0 errors" on a tree whose body sat at a path nothing reads
+// (opencharly/opencharly#530, measured on opencharly/plugin-review at 3e82898).
+//
+// This is CollectSkills minus the composition filter: the same decodeSkillNodes, the same projectSkill,
+// the same readSkillFile. An absent or misnamed body is an error here, which is the point.
+func CollectSkillBodies(cfg *spec.Config, layers map[string]CandyModel) ([]spec.LabelSkillEntry, error) {
+	return collectSkillsFiltered(cfg, layers, nil)
 }
 
 // skillTree is the tree a composed candy's skill files are looked under: the Agent-Skills
