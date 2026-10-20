@@ -71,3 +71,79 @@ func TestContentStoresRejectsDuplicateIDs(t *testing.T) {
 		t.Fatalf("distinct ids: %v", err)
 	}
 }
+
+// TestBuildArgsRendersOCILayout is the flag the drive actually needs: buildctl parses
+// `--oci-layout id=path` into SolveOpt.OCIStores itself, so rendering it correctly is the
+// whole feature — there is no session code to write on this side.
+func TestBuildArgsRendersOCILayout(t *testing.T) {
+	dir := writeOCILayoutDir(t)
+	cf := filepath.Join(t.TempDir(), "Containerfile")
+	if err := os.WriteFile(cf, []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args, err := Build{
+		Containerfile: cf,
+		Context:       t.TempDir(),
+		Ref:           "example:v1",
+		OCILayouts:    []OCILayout{{ID: "src", Dir: dir}},
+	}.Args("/tmp/out.oci.tar")
+	if err != nil {
+		t.Fatalf("Args: %v", err)
+	}
+	want := false
+	for i, a := range args {
+		if a == "--oci-layout" && i+1 < len(args) && args[i+1] == "src="+dir {
+			want = true
+		}
+	}
+	if !want {
+		t.Fatalf("--oci-layout src=%s not rendered; args=%v", dir, args)
+	}
+}
+
+// TestBuildArgsRejectsANonLayout keeps the bridge.go standard: a layout the solve cannot
+// actually read must fail at the boundary, not inside a build with a confusing frontend
+// error. A bare directory is exactly what local.NewStore would silently accept.
+func TestBuildArgsRejectsANonLayout(t *testing.T) {
+	cf := filepath.Join(t.TempDir(), "Containerfile")
+	if err := os.WriteFile(cf, []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Build{
+		Containerfile: cf,
+		Context:       t.TempDir(),
+		Ref:           "example:v1",
+		OCILayouts:    []OCILayout{{ID: "src", Dir: t.TempDir()}},
+	}.Args("/tmp/out.oci.tar")
+	if err == nil {
+		t.Fatal("expected an error for a directory that is not an OCI layout")
+	}
+}
+
+// TestBuildArgsRejectsALayoutWithoutAnID: a solve addresses a layout as oci-layout://<id>,
+// so an id-less layout is unaddressable even if the directory is well-formed.
+func TestBuildArgsRejectsALayoutWithoutAnID(t *testing.T) {
+	cf := filepath.Join(t.TempDir(), "Containerfile")
+	if err := os.WriteFile(cf, []byte("FROM scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Build{
+		Containerfile: cf,
+		Context:       t.TempDir(),
+		Ref:           "example:v1",
+		OCILayouts:    []OCILayout{{Dir: writeOCILayoutDir(t)}},
+	}.Args("/tmp/out.oci.tar")
+	if err == nil {
+		t.Fatal("expected an error for a layout with no id")
+	}
+}
+
+// TestStoreRejectsAnEmptyID pins the behaviour the shared validate() added to Store(): a
+// layout is addressed by a solve as oci-layout://<id>, so a well-formed directory with no
+// id is unusable through Store() just as it is through Args(). Without this the caller
+// discovers it inside the solve rather than at the boundary.
+func TestStoreRejectsAnEmptyID(t *testing.T) {
+	if _, err := (OCILayout{Dir: writeOCILayoutDir(t)}).Store(); err == nil {
+		t.Fatal("expected an error opening a layout with no id")
+	}
+}
