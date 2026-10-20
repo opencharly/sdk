@@ -279,7 +279,9 @@ func TestDaemonConfig_CarriesTheRegistryMirror(t *testing.T) {
 	if !strings.Contains(cfg, `mirrors = ["127.0.0.1:5000"]`) {
 		t.Errorf("the mirror must be rendered:\n%s", cfg)
 	}
-	if !strings.Contains(cfg, `[registry."127.0.0.1:5000"]`) || !strings.Contains(cfg, "http = true") {
+	// Scoped to the stanza, not the whole rendered file: a stray "http = true" elsewhere
+	// must not satisfy this. The requirement is that the MIRROR HOST's own stanza carries it.
+	if !strings.Contains(cfg, "[registry.\"127.0.0.1:5000\"]\n  http = true") {
 		t.Errorf("a plain-HTTP mirror needs its own http = true stanza:\n%s", cfg)
 	}
 	if strings.Contains(cfg, "ghcr.io/opencharly") {
