@@ -57,7 +57,13 @@ func collectSkillsFiltered(cfg *spec.Config, layers map[string]CandyModel, keep 
 	}
 	byKey := map[string]spec.LabelSkillEntry{}
 	var order []string
-	for node, s := range nodes {
+	// SORTED node iteration, because this loop RETURNS on the first error: walking the decode map
+	// directly made the reported skill depend on Go's per-run map order, so a repo with several
+	// unresolved bodies named a different one on every run (measured: 5 distinct names over 34 runs
+	// of one tree, opencharly/sdk#434). A failure a migration gate has to act on must name the same
+	// node twice, and node-name order is the one an author reads in the manifest.
+	for _, node := range sortedSkillNodes(nodes) {
+		s := nodes[node]
 		if keep != nil && !keep(s) {
 			continue
 		}
@@ -109,6 +115,19 @@ func CollectSkillBodies(cfg *spec.Config, layers map[string]CandyModel) ([]spec.
 // errors naming the tree it looked in, rather than shipping an entry with its prose missing.
 const skillTree = candywalk.AgentsSkillsDir
 
+// sortedSkillNodes returns the decode map's node names in ascending order — the iteration order the
+// project loop uses so that a first-error abort is reproducible (see the loop's comment). One helper,
+// not an inline `make+sort+append`, because the ordering is a property of the FAILURE contract and
+// every future caller of the decode map that aborts on the first finding needs the same order.
+func sortedSkillNodes(nodes map[string]spec.Skill) []string {
+	names := make([]string, 0, len(nodes))
+	for node := range nodes {
+		names = append(names, node)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // projectSkill maps the authored spec.Skill (the authoring kind shape) onto the wire
 // spec.LabelSkillEntry (the label shape) — the authoring → wire projection — with the prose half
 // read back from the file the owning repo owns.
@@ -134,8 +153,17 @@ func projectSkill(layers map[string]CandyModel, s spec.Skill, node string) (spec
 		return spec.LabelSkillEntry{}, err
 	}
 	if sf == nil {
-		// No file: the transitional in-line form, or no body at all.
+		// No file: the transitional in-line form, or no body at all. The two causes of "no file"
+		// decide the message, and the difference is not cosmetic: an owner ABSENT from the candy set
+		// is never looked up at all, so a message promising "no SKILL.md exists under <tree> beside
+		// the owning candy" would name a search that never ran and send the author moving a file
+		// that no placement can make reachable (opencharly/sdk#434).
 		if s.Content == "" {
+			if _, ok := layers[s.Owner]; !ok {
+				return spec.LabelSkillEntry{}, fmt.Errorf(
+					"skill %q: owner %q is not a candy of this project, so its prose cannot be located: a `candy:` node carrying `base:` or `from:` is an IMAGE (routed to the box set), and only a candy has a source directory to read %s from",
+					name, s.Owner, skillTree)
+			}
 			return spec.LabelSkillEntry{}, fmt.Errorf(
 				"skill %q: no body — the node carries no in-line `content:` and no SKILL.md exists under %s beside the owning candy %q",
 				name, skillTree, s.Owner)
