@@ -53,16 +53,29 @@ func ParseOCILayoutSpec(spec string) (OCILayout, error) {
 // content.Store is what makes an `oci-layout://` source resolvable inside a solve;
 // nothing here mutates the layout.
 func (l OCILayout) Store() (content.Store, error) {
-	// local.NewStore does NOT validate: pointed at an empty directory it happily
-	// initialises a fresh, empty layout, so a typo'd path yields a solve that reads
-	// no content and reports no error. Check the layout marker and the index first,
-	// so a wrong path fails here rather than inside a build.
-	for _, required := range []string{storekit.LayoutFile, "index.json"} {
-		if _, err := os.Stat(filepath.Join(l.Dir, required)); err != nil {
-			return nil, &OcilayoutSpecError{Spec: l.Dir, Reason: "not an OCI image layout (missing " + required + ")"}
-		}
+	if err := l.validate(); err != nil {
+		return nil, err
 	}
 	return local.NewStore(l.Dir)
+}
+
+// validate checks that the directory really is an OCI image layout.
+//
+// local.NewStore does NOT validate: pointed at an empty directory it happily initialises
+// a fresh, empty layout, so a typo'd path yields a solve that reads no content and reports
+// no error. Both consumers of a layout need the same check — Store() before opening it as
+// a content store, and Build.Args before handing the path to buildctl — so it lives here
+// once rather than in each of them.
+func (l OCILayout) validate() error {
+	if l.ID == "" {
+		return &OcilayoutSpecError{Spec: l.Dir, Reason: "layout has no id (a solve addresses it as oci-layout://<id>)"}
+	}
+	for _, required := range []string{storekit.LayoutFile, "index.json"} {
+		if _, err := os.Stat(filepath.Join(l.Dir, required)); err != nil {
+			return &OcilayoutSpecError{Spec: l.Dir, Reason: "not an OCI image layout (missing " + required + ")"}
+		}
+	}
+	return nil
 }
 
 // ContentStores opens every layout and returns the id -> store map a buildkit session

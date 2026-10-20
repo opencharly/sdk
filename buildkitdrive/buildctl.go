@@ -31,6 +31,14 @@ type Build struct {
 	BuildArgs map[string]string
 	// NoCache bypasses the daemon's cache lookup for this build.
 	NoCache bool
+	// OCILayouts are local OCI image layouts the build may read, each addressed from a
+	// Containerfile or a `FROM` as `oci-layout://<id>`. They are rendered as
+	// `--oci-layout <id>=<dir>`, the same `id=path` grammar ParseOCILayoutSpec accepts and
+	// the same form buildctl documents ("Allow build access to the local OCI layout").
+	//
+	// Rendering the flag is the whole job: buildctl parses it into SolveOpt.OCIStores
+	// itself (cmd/buildctl/build.go), so a drive that shells out needs no session code.
+	OCILayouts []OCILayout
 }
 
 // Validate reports whether the build can be expressed at all. Every failure here is a
@@ -87,6 +95,12 @@ func (b Build) Args(dest string) ([]string, error) {
 	}
 	if b.NoCache {
 		args = append(args, "--no-cache")
+	}
+	for _, l := range b.OCILayouts {
+		if err := l.validate(); err != nil {
+			return nil, err
+		}
+		args = append(args, "--oci-layout", l.ID+"="+l.Dir)
 	}
 	return append(args, "--output", "type=oci,dest="+dest), nil
 }
