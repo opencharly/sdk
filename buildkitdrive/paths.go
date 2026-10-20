@@ -106,6 +106,12 @@ type DaemonOptions struct {
 	// per-build equivalent. A zero or negative value leaves the key OUT and lets the
 	// daemon's own default stand (which is unbounded) — the same meaning as omitting it.
 	MaxParallelism int
+
+	// RegistryMirror is the local charly OCI registry the daemon mirrors
+	// ghcr.io/opencharly to, so a base image built earlier in the same run resolves
+	// locally instead of through the upstream registry. Empty leaves the daemon's own
+	// resolution.
+	RegistryMirror string
 }
 
 // DaemonConfig renders buildkitd.toml for the resolved options.
@@ -126,6 +132,14 @@ func DaemonConfig(opts DaemonOptions) string {
 		"  process-mode = \"sandbox\"\n"
 	if opts.MaxParallelism > 0 {
 		cfg += fmt.Sprintf("  max-parallelism = %d\n", opts.MaxParallelism)
+	}
+	if opts.RegistryMirror != "" {
+		// MEASURED (spike, buildkitd 0.34.0): the mirror key is the registry HOST, not a
+		// host+namespace — `[registry."ghcr.io/opencharly"]` is silently ignored and the
+		// resolve still goes upstream. A plain-HTTP local mirror also needs `http = true`
+		// on its own stanza, or the daemon refuses the mirror rather than falling back.
+		cfg += fmt.Sprintf("\n[registry.\"ghcr.io\"]\n  mirrors = [%q]\n", opts.RegistryMirror)
+		cfg += fmt.Sprintf("\n[registry.%q]\n  http = true\n", opts.RegistryMirror)
 	}
 	return cfg
 }
