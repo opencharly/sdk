@@ -260,6 +260,36 @@ func TestDaemonConfig_SetsOnlyTheMeasuredShape(t *testing.T) {
 	}
 }
 
+// TestDaemonConfig_CarriesTheRegistryMirror — the base-input half of the local-build bridge.
+//
+// MEASURED (spike, buildkitd 0.34.0, a registry:2 mirror on 127.0.0.1:5000):
+//   - the mirror key must be the registry HOST (`[registry."ghcr.io"]`); a host+namespace
+//     key (`[registry."ghcr.io/opencharly"]`) is SILENTLY IGNORED and the resolve still
+//     goes upstream to ghcr and 403s;
+//   - a plain-HTTP local mirror needs its own `[registry."<mirror>"] http = true` stanza,
+//     or the daemon refuses the mirror instead of using it.
+//
+// With both rendered, `FROM ghcr.io/opencharly/spike-base:test` resolved from the local
+// registry and the build completed with no ghcr query (spike rc=0).
+func TestDaemonConfig_CarriesTheRegistryMirror(t *testing.T) {
+	cfg := DaemonConfig(DaemonOptions{RegistryMirror: "127.0.0.1:5000"})
+	if !strings.Contains(cfg, `[registry."ghcr.io"]`) {
+		t.Errorf("the mirror must be keyed by registry HOST, not host+namespace:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `mirrors = ["127.0.0.1:5000"]`) {
+		t.Errorf("the mirror must be rendered:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `[registry."127.0.0.1:5000"]`) || !strings.Contains(cfg, "http = true") {
+		t.Errorf("a plain-HTTP mirror needs its own http = true stanza:\n%s", cfg)
+	}
+	if strings.Contains(cfg, "ghcr.io/opencharly") {
+		t.Errorf("a host+namespace mirror key is silently ignored and must not be rendered:\n%s", cfg)
+	}
+	if cfgNo := DaemonConfig(DaemonOptions{}); strings.Contains(cfgNo, "[registry.") {
+		t.Errorf("an empty mirror must render no registry stanza:\n%s", cfgNo)
+	}
+}
+
 // TestDaemonArgs_AddressIsTheSocketNotItsDirectory — THE WIRING CONTROL, and it exists
 // because its absence cost a red gate.
 //
