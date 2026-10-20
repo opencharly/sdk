@@ -137,3 +137,13 @@ func TestBuildArgsRejectsALayoutWithoutAnID(t *testing.T) {
 		t.Fatal("expected an error for a layout with no id")
 	}
 }
+
+// TestStoreRejectsAnEmptyID pins the behaviour the shared validate() added to Store(): a
+// layout is addressed by a solve as oci-layout://<id>, so a well-formed directory with no
+// id is unusable through Store() just as it is through Args(). Without this the caller
+// discovers it inside the solve rather than at the boundary.
+func TestStoreRejectsAnEmptyID(t *testing.T) {
+	if _, err := (OCILayout{Dir: writeOCILayoutDir(t)}).Store(); err == nil {
+		t.Fatal("expected an error opening a layout with no id")
+	}
+}
