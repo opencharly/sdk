@@ -44,7 +44,7 @@ type OCILayout struct {
 func ParseOCILayoutSpec(spec string) (OCILayout, error) {
 	id, dir, ok := strings.Cut(spec, "=")
 	if !ok || id == "" || dir == "" {
-		return OCILayout{}, &OcilayoutSpecError{Spec: spec}
+		return OCILayout{}, &OCILayoutSpecError{Spec: spec}
 	}
 	return OCILayout{ID: id, Dir: dir}, nil
 }
@@ -68,11 +68,11 @@ func (l OCILayout) Store() (content.Store, error) {
 // once rather than in each of them.
 func (l OCILayout) validate() error {
 	if l.ID == "" {
-		return &OcilayoutSpecError{Spec: l.Dir, Reason: "layout has no id (a solve addresses it as oci-layout://<id>)"}
+		return &OCILayoutSpecError{Spec: l.Dir, Reason: "layout has no id (a solve addresses it as oci-layout://<id>)"}
 	}
 	for _, required := range []string{storekit.LayoutFile, "index.json"} {
 		if _, err := os.Stat(filepath.Join(l.Dir, required)); err != nil {
-			return &OcilayoutSpecError{Spec: l.Dir, Reason: "not an OCI image layout (missing " + required + ")"}
+			return &OCILayoutSpecError{Spec: l.Dir, Reason: "not an OCI image layout (missing " + required + ")"}
 		}
 	}
 	return nil
@@ -85,7 +85,7 @@ func ContentStores(layouts ...OCILayout) (map[string]content.Store, error) {
 	out := make(map[string]content.Store, len(layouts))
 	for _, l := range layouts {
 		if _, dup := out[l.ID]; dup {
-			return nil, &OcilayoutSpecError{Spec: l.ID, Reason: "duplicate layout id"}
+			return nil, &OCILayoutSpecError{Spec: l.ID, Reason: "duplicate layout id"}
 		}
 		cs, err := l.Store()
 		if err != nil {
@@ -96,13 +96,13 @@ func ContentStores(layouts ...OCILayout) (map[string]content.Store, error) {
 	return out, nil
 }
 
-// OcilayoutSpecError reports a malformed `id=path` layout specification.
-type OcilayoutSpecError struct {
+// OCILayoutSpecError reports a malformed `id=path` layout specification.
+type OCILayoutSpecError struct {
 	Spec   string
 	Reason string
 }
 
-func (e *OcilayoutSpecError) Error() string {
+func (e *OCILayoutSpecError) Error() string {
 	reason := e.Reason
 	if reason == "" {
 		reason = "want 'id=path/to/layout'"
