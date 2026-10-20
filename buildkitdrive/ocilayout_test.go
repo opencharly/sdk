@@ -55,7 +55,6 @@ func TestStoreOpensARealLayout(t *testing.T) {
 	}
 }
 
-
 func TestStoreRejectsANonLayout(t *testing.T) {
 	if _, err := (OCILayout{ID: "ctx", Dir: t.TempDir()}).Store(); err == nil {
 		t.Fatal("expected an error opening a directory that is not an OCI layout")
