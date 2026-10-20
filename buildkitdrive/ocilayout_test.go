@@ -55,10 +55,6 @@ func TestStoreOpensARealLayout(t *testing.T) {
 	}
 }
 
-// TestStoreOpensARealLayout asserts that a directory carrying the layout marker and
-// index opens as a content store. It does NOT assert that a malformed layout is
-// rejected — local.NewStore would accept one; that guarantee comes from Store()'s
-// own checks and is covered by TestStoreRejectsANonLayout.
 
 func TestStoreRejectsANonLayout(t *testing.T) {
 	if _, err := (OCILayout{ID: "ctx", Dir: t.TempDir()}).Store(); err == nil {
