@@ -10,6 +10,7 @@ import (
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
+	"gopkg.in/yaml.v3"
 )
 
 // lower_test.go — the Lower golden tests. They assert the generated TEXT only, so the
@@ -43,6 +44,48 @@ func e2ePipeline() *spec.Pipeline {
 			{Id: "confirm", Approval: "Proceed with ${who}?"},
 			{Id: "final", When: "$confirm.approved", Run: `echo '{"done":true}'`},
 		},
+	}
+}
+
+// TestLowerCarriesLanesStep pins that the CONCURRENT loop arm survives the lowering with
+// the keys that make it an arm: `Lower` copies lobster-native step keys verbatim, so the
+// collection expression, the pool width and the item binding must arrive untouched. A
+// dropped key would be a lowering regression the validator cannot see (it runs on the
+// authored body, not on the emitted file), so this asserts the EMITTED YAML, not prose.
+func TestLowerCarriesLanesStep(t *testing.T) {
+	p := &spec.Pipeline{
+		Description: "lanes lowering fixture",
+		Steps: []spec.PipelineStep{
+			{Id: "seed", Run: `printf '{"items":["a","b","c"]}'`},
+			{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2, ItemVar: "it",
+				Steps: []spec.PipelineSubStep{{Id: "s", Run: `echo "$it"`}}},
+		},
+	}
+	lobster, _, err := Lower(p, "/proj", "/proj/.opencharly/pipelines/lanes", "/usr/local/bin/charly")
+	if err != nil {
+		t.Fatalf("Lower: %v", err)
+	}
+	var flow struct {
+		Steps []map[string]any `yaml:"steps"`
+	}
+	if err := yaml.Unmarshal(lobster, &flow); err != nil {
+		t.Fatalf("the lowered workflow is not YAML: %v", err)
+	}
+	if len(flow.Steps) != 2 {
+		t.Fatalf("lowered steps = %d, want 2", len(flow.Steps))
+	}
+	lane := flow.Steps[1]
+	if got := lane["lanes"]; got != "$seed.json.items" {
+		t.Errorf("lowered lanes = %v, want the collection expression $seed.json.items", got)
+	}
+	if got := lane["batch_size"]; got != 2 {
+		t.Errorf("lowered batch_size = %v, want 2 (the pool width)", got)
+	}
+	if got := lane["item_var"]; got != "it" {
+		t.Errorf("lowered item_var = %v, want it", got)
+	}
+	if subs, ok := lane["steps"].([]any); !ok || len(subs) != 1 {
+		t.Errorf("lowered steps body = %v, want one sub-step", lane["steps"])
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/opencharly/spec/spec"
+	"gopkg.in/yaml.v3"
 )
 
 func TestValidatePipelineAcceptsAValidPipeline(t *testing.T) {
@@ -64,6 +65,76 @@ func TestValidatePipelineAcceptsForEach(t *testing.T) {
 	}
 }
 
+// TestValidatePipelineDecodesAuthoredLanesStep pins the AUTHORED boundary, which is the
+// boundary the issue measured: the YAML a `kind: pipeline` author writes must decode onto
+// the arm through the spec-pinned `lanes:` key AND pass the gate. A test that only builds
+// Go structs would pass while the authored key was dropped on decode.
+func TestValidatePipelineDecodesAuthoredLanesStep(t *testing.T) {
+	const authored = `
+description: pooled fan-out
+steps:
+  - id: seed
+    run: printf '{"items":["a","b"]}'
+  - id: lane
+    lanes: $seed.json.items
+    batch_size: 2
+    item_var: it
+    steps:
+      - id: s
+        run: echo "$it"
+`
+	var p spec.Pipeline
+	if err := yaml.Unmarshal([]byte(authored), &p); err != nil {
+		t.Fatalf("decoding the authored pipeline: %v", err)
+	}
+	if len(p.Steps) != 2 {
+		t.Fatalf("decoded steps = %d, want 2", len(p.Steps))
+	}
+	lane := p.Steps[1]
+	if lane.Lanes != "$seed.json.items" || lane.BatchSize != 2 || lane.ItemVar != "it" {
+		t.Fatalf("decoded lanes step = %+v, want lanes/batch_size/item_var intact", lane)
+	}
+	if err := ValidatePipeline(&p); err != nil {
+		t.Fatalf("ValidatePipeline rejected the authored lanes step: %v", err)
+	}
+}
+
+// TestValidatePipelineAcceptsLanes is the lanes twin of TestValidatePipelineAcceptsForEach,
+// and it is an EXACT-EMPTINESS check for the same reason: a substring assertion would pass
+// while a stray-companion error still rejected the pipeline. `lanes` is the CONCURRENT loop
+// arm — it shares for_each's body/item_var/index_var shape and additionally REQUIRES the
+// pool width (`batch_size`), so every accepted case below carries a positive one.
+func TestValidatePipelineAcceptsLanes(t *testing.T) {
+	cases := []struct {
+		name string
+		p    *spec.Pipeline
+	}{
+		{
+			name: "lanes with the required width and a body",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '{"items":["a","b"]}'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+			}},
+		},
+		{
+			name: "lanes with every companion",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '{"items":["a","b"]}'`},
+				{Id: "lane", Lanes: "$seed.json.items", ItemVar: "it", IndexVar: "i", BatchSize: 3,
+					Steps: []spec.PipelineSubStep{{Id: "s", Run: `echo "$it"`}}},
+			}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidatePipeline(tc.p); err != nil {
+				t.Fatalf("ValidatePipeline rejected a valid %s pipeline: %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestValidatePipelineRules(t *testing.T) {
 	cases := []struct {
 		name string
@@ -83,7 +154,47 @@ func TestValidatePipelineRules(t *testing.T) {
 		{
 			name: "for_each without steps",
 			p:    &spec.Pipeline{Steps: []spec.PipelineStep{{Id: "a", ForEach: "$x.y"}}},
-			want: "for_each requires a non-empty steps list",
+			want: "for_each/lanes requires a non-empty steps list",
+		},
+		{
+			name: "lanes without steps",
+			p:    &spec.Pipeline{Steps: []spec.PipelineStep{{Id: "a", Lanes: "$x.y", BatchSize: 2}}},
+			want: "for_each/lanes requires a non-empty steps list",
+		},
+		{
+			name: "lanes without the pool width",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: "true"},
+				{Id: "a", Lanes: "$seed.json.items", Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+			}},
+			want: "lanes requires batch_size >= 1 (the pool width)",
+		},
+		{
+			name: "lanes with a pause",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: "true"},
+				{Id: "a", Lanes: "$seed.json.items", BatchSize: 2, PauseMs: 100,
+					Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+			}},
+			want: "lanes cannot define pause_ms",
+		},
+		{
+			name: "for_each and lanes are two arms",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: "true"},
+				{Id: "a", ForEach: "$seed.json.items", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+			}},
+			want: "2 execution arms set (for_each, lanes)",
+		},
+		{
+			name: "lanes collection names a later step",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "a", Lanes: "$later.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+				{Id: "later", Run: "true"},
+			}},
+			want: `.lanes: reference $later.* names a step that is not declared earlier`,
 		},
 		{
 			name: "steps without for_each",
