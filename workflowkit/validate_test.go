@@ -290,3 +290,188 @@ func TestValidateWorkflowCycles(t *testing.T) {
 		t.Fatalf("ValidateWorkflowCycles = %v, want a workflow cycle naming the chain", err)
 	}
 }
+
+// TestValidatePipelineLoopBodyRefScope pins the SCOPE a loop body is validated against:
+// the body's OWN earlier sub-steps, on top of the enclosing earlier-step set — which is
+// the scope the engine already gives it at run time. plugin-lobster's `runSubSteps` runs
+// a body against a per-item COPY of the enclosing result set and does `scope[sub.Id] = res`
+// after each sub-step, so sub-step N reads every sub-step before it. Validating a body
+// against the pipeline's TOP-LEVEL ids only made the gate STRICTER than the engine and
+// refused every multi-stage loop body (opencharly/sdk#441).
+//
+// The accepted cases are one per way a body chains: `when:`, a desugared `plan:` element,
+// and a read of the ENCLOSING scope (which must not be lost by the narrower namespace).
+func TestValidatePipelineLoopBodyRefScope(t *testing.T) {
+	accepted := []struct {
+		name string
+		p    *spec.Pipeline
+	}{
+		{
+			name: "lanes body chains a when across three sub-steps",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a","b"]'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2, ItemVar: "pr",
+					Steps: []spec.PipelineSubStep{
+						{Id: "a", Run: `echo "$pr"`},
+						{Id: "b", When: "$a.ok", Run: "echo b"},
+						{Id: "c", When: "$b.ok", Run: "echo c"},
+					}},
+			}},
+		},
+		{
+			name: "for_each body chains a when",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a","b"]'`},
+				{Id: "fan", ForEach: "$seed.json.items", ItemVar: "pr",
+					Steps: []spec.PipelineSubStep{
+						{Id: "a", Run: `echo "$pr"`},
+						{Id: "b", When: "$a.ok", Run: "echo b"},
+					}},
+			}},
+		},
+		{
+			name: "lanes body chains a desugared plan ref",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a"]'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{
+						{Id: "oracle", Run: "echo oracle"},
+						{Id: "render", Plan: []spec.Step{{Run: "render", Op: spec.Op{Command: "echo $oracle.stdout"}}}},
+						{Id: "gate", Plan: []spec.Step{{Run: "gate", Op: spec.Op{Command: "echo $render.stdout"}}}},
+					}},
+			}},
+		},
+		{
+			name: "body still sees the ENCLOSING earlier step",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a"]'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{
+						{Id: "s", When: "$seed.ok", Run: "true"},
+					}},
+			}},
+		},
+	}
+	for _, tc := range accepted {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidatePipeline(tc.p); err != nil {
+				t.Fatalf("ValidatePipeline rejected a chained loop body (%s): %v", tc.name, err)
+			}
+			// Lower validates first, so a green Lower proves the WHOLE load path a
+			// `kind: pipeline` author hits — the gate plus the emitted .lobster pair.
+			if _, _, err := Lower(tc.p, "/proj", "/proj/.opencharly/pipelines/lane", "/usr/local/bin/charly"); err != nil {
+				t.Fatalf("Lower rejected a validated chained loop body (%s): %v", tc.name, err)
+			}
+		})
+	}
+
+	// The AUTHORED boundary: the YAML a `kind: pipeline` author writes must decode onto the
+	// body and validate — a Go-struct-only test would pass while the authored `steps:` body
+	// was dropped on decode.
+	t.Run("authored chained body decodes and validates", func(t *testing.T) {
+		const authored = `
+description: chained lane body
+steps:
+  - id: seed
+    run: printf '["a","b"]'
+  - id: lane
+    lanes: $seed.json.items
+    batch_size: 16
+    item_var: pr
+    steps:
+      - id: oracle
+        run: echo "$pr"
+      - id: render
+        when: $oracle.ok
+        run: echo render
+`
+		var p spec.Pipeline
+		if err := yaml.Unmarshal([]byte(authored), &p); err != nil {
+			t.Fatalf("decoding the authored pipeline: %v", err)
+		}
+		if len(p.Steps) != 2 || len(p.Steps[1].Steps) != 2 {
+			t.Fatalf("decoded %d steps / %d sub-steps, want 2 / 2", len(p.Steps), len(p.Steps[1].Steps))
+		}
+		if err := ValidatePipeline(&p); err != nil {
+			t.Fatalf("ValidatePipeline rejected the authored chained body: %v", err)
+		}
+	})
+
+	// The CONTROLS: widening the scope must widen ONLY the scope. The earlier-step-only
+	// rule still refuses a body reference to nothing, to a LATER sibling, to itself, and a
+	// top-level read of a sub-step (the per-item scope never merges back into the run's).
+	rejected := []struct {
+		name string
+		p    *spec.Pipeline
+		want string
+	}{
+		{
+			name: "body references a step that does not exist",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a"]'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{
+						{Id: "a", Run: "true"},
+						{Id: "b", When: "$nope.ok", Run: "true"},
+					}},
+			}},
+			want: `step "lane" sub-step "b".when: reference $nope.* names a step that is not declared earlier`,
+		},
+		{
+			name: "body references a LATER sibling",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a"]'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{
+						{Id: "a", When: "$b.ok", Run: "true"},
+						{Id: "b", Run: "true"},
+					}},
+			}},
+			want: `step "lane" sub-step "a".when: reference $b.* names a step that is not declared earlier`,
+		},
+		{
+			name: "body references itself",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a"]'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{
+						{Id: "a", When: "$a.ok", Run: "true"},
+					}},
+			}},
+			want: `step "lane" sub-step "a".when: reference $a.* names a step that is not declared earlier`,
+		},
+		{
+			name: "sub-step plan references a later sibling",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a"]'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{
+						{Id: "a", Plan: []spec.Step{{Run: "x", Op: spec.Op{Command: "echo $b.stdout"}}}},
+						{Id: "b", Run: "true"},
+					}},
+			}},
+			want: `step "lane" sub-step "a".plan: reference $b.* names a step that is not declared earlier`,
+		},
+		{
+			name: "a TOP-LEVEL step references a sub-step",
+			p: &spec.Pipeline{Steps: []spec.PipelineStep{
+				{Id: "seed", Run: `printf '["a"]'`},
+				{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+					Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+				{Id: "after", When: "$s.ok", Run: "true"},
+			}},
+			want: `step "after".when: reference $s.* names a step that is not declared earlier`,
+		},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidatePipeline(tc.p)
+			if err == nil {
+				t.Fatalf("ValidatePipeline accepted an invalid loop body (%s)", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ValidatePipeline error = %q, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
