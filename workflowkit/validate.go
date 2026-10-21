@@ -16,12 +16,18 @@ import (
 // execArms are the mutually exclusive execution arms of a step/sub-step. Exactly one
 // must be set: a step that sets none does nothing, a step that sets two is ambiguous.
 //
-// `steps:` is deliberately NOT here: it is the for_each BODY, not an arm — `spec` groups
-// it with the other for_each companions ("--- for_each companions (meaningful only
-// alongside for_each) ---", PipelineStepBase). Counting it as an arm made every valid
-// for_each step set TWO arms and be rejected. A `steps:` with no `for_each` is caught by
-// the stray-companion rule below instead.
-var execArms = []string{"run", "pipeline", "workflow", "parallel", "for_each", "input", "plan", "charly", "approval"}
+// `for_each` and `lanes` are the two LOOP arms, listed together: `for_each` walks its
+// collection IN ORDER (upstream's own semantics), while `lanes` runs the same body
+// through a pool of `batch_size` CONCURRENT lanes. They are distinct arms, never
+// aliases — a step cannot be sequential and concurrent at once — so both are listed
+// here and the XOR refuses a step that sets both.
+//
+// `steps:` is deliberately NOT here: it is the loop BODY, not an arm — `spec` groups
+// it with the other loop companions ("--- for_each / lanes companions (meaningful only
+// alongside for_each or lanes) ---", PipelineStepBase). Counting it as an arm made every
+// valid for_each step set TWO arms and be rejected. A `steps:` with neither loop arm is
+// caught by the stray-companion rule below instead.
+var execArms = []string{"run", "pipeline", "workflow", "parallel", "for_each", "lanes", "input", "plan", "charly", "approval"}
 
 // waitModes is the closed `parallel.wait` vocabulary (upstream lobster).
 var waitModes = []string{"", "all", "any"}
@@ -53,7 +59,7 @@ func ValidatePipeline(p *spec.Pipeline) error {
 			}
 		}
 		errs = append(errs, validateStepBase(stepView{
-			id: s.Id, when: s.When, stdin: s.Stdin, forEach: s.ForEach,
+			id: s.Id, when: s.When, stdin: s.Stdin, forEach: s.ForEach, lanes: s.Lanes,
 			itemVar: s.ItemVar, indexVar: s.IndexVar, batchSize: s.BatchSize, pauseMs: s.PauseMs,
 			run: s.Run, pipeline: s.Pipeline, workflow: s.Workflow, charly: len(s.Charly) > 0,
 			plan: len(s.Plan) > 0, planRefs: planRefNames(s.Plan), steps: len(s.Steps) > 0, input: nonZeroInput(s.Input),
@@ -112,16 +118,16 @@ func ValidatePipeline(p *spec.Pipeline) error {
 // stepView is the common shape of PipelineStep / PipelineSubStep for validation, so
 // the rules live once (R3) instead of being copy-pasted per type.
 type stepView struct {
-	id, when, stdin, forEach     string
-	itemVar, indexVar            string
-	batchSize, pauseMs           int64
-	run, pipeline, workflow      string
-	charly                       bool
-	plan, steps, input, approval bool
-	planRefs                     []string
-	parallelBranches             int
-	parallelWait                 string
-	refsAmong                    map[string]bool
+	id, when, stdin, forEach, lanes string
+	itemVar, indexVar               string
+	batchSize, pauseMs              int64
+	run, pipeline, workflow         string
+	charly                          bool
+	plan, steps, input, approval    bool
+	planRefs                        []string
+	parallelBranches                int
+	parallelWait                    string
+	refsAmong                       map[string]bool
 }
 
 func validateStepBase(v stepView, where string) []error {
@@ -134,6 +140,7 @@ func validateStepBase(v stepView, where string) []error {
 		"workflow": v.workflow != "",
 		"parallel": v.parallelBranches > 0,
 		"for_each": v.forEach != "",
+		"lanes":    v.lanes != "",
 		"input":    v.input,
 		"plan":     v.plan,
 		"charly":   v.charly,
@@ -153,34 +160,8 @@ func validateStepBase(v stepView, where string) []error {
 		errs = append(errs, fmt.Errorf("%s: %d execution arms set (%s) — set exactly one of %s", where, len(set), strings.Join(set, ", "), strings.Join(execArms, "/")))
 	}
 
-	// co-fields.
-	if v.forEach != "" && !v.steps {
-		errs = append(errs, fmt.Errorf("%s: for_each requires a non-empty steps list", where))
-	}
-	if v.forEach == "" {
-		var strays []string
-		if v.steps {
-			strays = append(strays, "steps")
-		}
-		if v.itemVar != "" {
-			strays = append(strays, "item_var")
-		}
-		if v.indexVar != "" {
-			strays = append(strays, "index_var")
-		}
-		if v.batchSize != 0 {
-			strays = append(strays, "batch_size")
-		}
-		if v.pauseMs != 0 {
-			strays = append(strays, "pause_ms")
-		}
-		if len(strays) > 0 {
-			errs = append(errs, fmt.Errorf("%s: %s only apply alongside for_each", where, strings.Join(strays, "/")))
-		}
-	}
-	if v.itemVar != "" && v.itemVar == v.indexVar {
-		errs = append(errs, fmt.Errorf("%s: item_var and index_var must differ (both %q)", where, v.itemVar))
-	}
+	// co-fields: the loop arms' shared body/binding and their distinct pacing knobs.
+	errs = append(errs, validateLoopCoFields(v, where)...)
 	if v.parallelBranches == 0 && v.parallelWait != "" {
 		errs = append(errs, fmt.Errorf("%s: parallel.wait is only meaningful with non-empty parallel branches", where))
 	}
@@ -208,6 +189,64 @@ func validateStepBase(v stepView, where string) []error {
 	errs = append(errs, checkEarlierRefs(where+".stdin", v.stdin, v.refsAmong)...)
 	if v.forEach != "" {
 		errs = append(errs, checkEarlierRefs(where+".for_each", v.forEach, v.refsAmong)...)
+	}
+	// The lanes collection is the same kind of expression as for_each's — a runtime
+	// collection naming an EARLIER step — so it gets the same rule. Without it the gate
+	// would admit `lanes: $later.items` and the engine would fail at run time.
+	if v.lanes != "" {
+		errs = append(errs, checkEarlierRefs(where+".lanes", v.lanes, v.refsAmong)...)
+	}
+	return errs
+}
+
+// validateLoopCoFields enforces the shape the two LOOP arms share and the pacing knobs
+// they do NOT share. `for_each` and `lanes` both carry a `steps:` body, `item_var` and
+// `index_var` — the rules for those live once here (R2), so a rule added to one arm
+// cannot fork from the other. Only the PACING differs, and each pacing rule names the
+// arm it belongs to: `batch_size` is `lanes`' REQUIRED pool width (`for_each` may carry
+// it as upstream's hint and ignores it), and `pause_ms` is `for_each`'s pause BETWEEN
+// sequential iterations, which a lane pool does not have.
+func validateLoopCoFields(v stepView, where string) []error {
+	var errs []error
+
+	if (v.forEach != "" || v.lanes != "") && !v.steps {
+		errs = append(errs, fmt.Errorf("%s: for_each/lanes requires a non-empty steps list", where))
+	}
+	if v.forEach == "" && v.lanes == "" {
+		var strays []string
+		if v.steps {
+			strays = append(strays, "steps")
+		}
+		if v.itemVar != "" {
+			strays = append(strays, "item_var")
+		}
+		if v.indexVar != "" {
+			strays = append(strays, "index_var")
+		}
+		if v.batchSize != 0 {
+			strays = append(strays, "batch_size")
+		}
+		if len(strays) > 0 {
+			errs = append(errs, fmt.Errorf("%s: %s only apply alongside for_each/lanes", where, strings.Join(strays, "/")))
+		}
+	}
+	if v.lanes != "" {
+		// The width is the WHOLE point of this arm, and a default would be a number the
+		// author never wrote (an unbounded pool is the spawn-per-item `lanes` replaces),
+		// so it is required rather than defaulted.
+		if v.batchSize < 1 {
+			errs = append(errs, fmt.Errorf("%s: lanes requires batch_size >= 1 (the pool width)", where))
+		}
+		// A pause BETWEEN sequential iterations is `for_each`'s pacing knob. A lane pool
+		// paces by width, so honouring a pause here would mean silently doing neither.
+		if v.pauseMs != 0 {
+			errs = append(errs, fmt.Errorf("%s: lanes cannot define pause_ms — a lane pool paces by batch_size, not by a pause between iterations", where))
+		}
+	} else if v.pauseMs != 0 && v.forEach == "" {
+		errs = append(errs, fmt.Errorf("%s: pause_ms only applies alongside for_each", where))
+	}
+	if v.itemVar != "" && v.itemVar == v.indexVar {
+		errs = append(errs, fmt.Errorf("%s: item_var and index_var must differ (both %q)", where, v.itemVar))
 	}
 	return errs
 }

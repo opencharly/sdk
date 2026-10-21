@@ -60,6 +60,23 @@ func TestGraphRenderings(t *testing.T) {
 	}
 }
 
+// TestGraphEdgesKnowLanes pins that the CONCURRENT loop arm's collection expression is a
+// dataflow dependency, exactly like for_each's: `lanes: $seed.items` consumes seed, so a
+// graph that omits the edge draws a step whose input it cannot show.
+func TestGraphEdgesKnowLanes(t *testing.T) {
+	p := &spec.Pipeline{Steps: []spec.PipelineStep{
+		{Id: "seed", Run: "true"},
+		{Id: "lane", Lanes: "$seed.json.items", BatchSize: 2,
+			Steps: []spec.PipelineSubStep{{Id: "s", Run: "true"}}},
+	}}
+	for _, e := range GraphEdges(p) {
+		if e.From == "seed" && e.To == "lane" && e.Relation == "lanes" {
+			return
+		}
+	}
+	t.Errorf("GraphEdges is missing seed->lane(lanes); got %v", GraphEdges(p))
+}
+
 func TestGraphNodesIncludeBranches(t *testing.T) {
 	p := &spec.Pipeline{Steps: []spec.PipelineStep{
 		{Id: "a", Run: "true"},

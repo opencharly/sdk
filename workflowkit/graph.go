@@ -17,16 +17,17 @@ import (
 var GraphFormat = []string{"mermaid", "dot", "ascii"}
 
 // GraphEdge is one dataflow edge: `To` consumes the result of `From` via `Relation`
-// (when / stdin / for_each / branch).
+// (when / stdin / for_each / lanes / branch).
 type GraphEdge struct {
 	From     string
 	To       string
 	Relation string
 }
 
-// GraphEdges derives the pipeline's dataflow edges. A reference in `when:`, `stdin:`
-// or `for_each:` is a dependency (lobster resolves a `$ref` from a FINISHED step, so
-// the edge is the real scheduling constraint). Parallel branches and for_each
+// GraphEdges derives the pipeline's dataflow edges. A reference in `when:`, `stdin:`,
+// `for_each:` or `lanes:` is a dependency (lobster resolves a `$ref` from a FINISHED
+// step, so the edge is the real scheduling constraint) — the two loop arms carry the
+// same kind of collection expression, so both are edges. Parallel branches and loop
 // sub-steps are attached to their parent with a `branch` edge.
 func GraphEdges(p *spec.Pipeline) []GraphEdge {
 	var edges []GraphEdge
@@ -35,7 +36,7 @@ func GraphEdges(p *spec.Pipeline) []GraphEdge {
 	}
 	for i := range p.Steps {
 		s := &p.Steps[i]
-		for _, rel := range [][2]string{{"when", s.When}, {"stdin", s.Stdin}, {"for_each", s.ForEach}} {
+		for _, rel := range [][2]string{{"when", s.When}, {"stdin", s.Stdin}, {"for_each", s.ForEach}, {"lanes", s.Lanes}} {
 			for _, name := range RefNames(rel[1]) {
 				edges = append(edges, GraphEdge{From: name, To: s.Id, Relation: rel[0]})
 			}
