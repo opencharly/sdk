@@ -1,6 +1,6 @@
 // Package workflowkit holds the engine-agnostic workflow IR helpers: the lobster
 // expression grammar (expr-lang plus a grammar-enforcing AST patcher), the
-// `${arg}` template + LOBSTER_ARG_* naming, task-arg resolution, the dependency
+// `${arg}` template expansion, task-arg resolution, the dependency
 // closure, pipeline validation, the charly.yml / .lobster LOWERING, the
 // cron→OnCalendar conversion, and the workflow graph renderers.
 //
