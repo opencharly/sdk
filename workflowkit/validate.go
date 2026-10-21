@@ -34,9 +34,15 @@ var waitModes = []string{"", "all", "any"}
 
 // ValidatePipeline validates ONE authored pipeline: the exec-arm XOR, the co-field
 // rules, unique step ids (parallel branches and for_each `steps:` included), step
-// references to EARLIER steps only, the lobster expression grammar on every `when:`,
-// and `item_var` ≠ `index_var`. It returns a joined error naming every problem found
-// (never just the first), so an author fixes one round.
+// references to EARLIER steps only IN THE SCOPE THAT HOLDS THEM, the lobster
+// expression grammar on every `when:`, and `item_var` ≠ `index_var`. It returns a joined
+// error naming every problem found (never just the first), so an author fixes one round.
+//
+// "In the scope that holds them" is the whole point of this gate being a model of the
+// engine rather than a stricter cousin: a top-level step reads the pipeline's earlier
+// steps, a `parallel:` branch reads the pipeline's earlier steps (its siblings are
+// CONCURRENT, so none of them has run yet), and a LOOP BODY reads its own earlier
+// sub-steps on top of the enclosing set (validateLoopBody).
 func ValidatePipeline(p *spec.Pipeline) error {
 	if p == nil {
 		return errors.New("pipeline is nil")
@@ -80,6 +86,9 @@ func ValidatePipeline(p *spec.Pipeline) error {
 					seen[b.Id] = bwhere
 				}
 			}
+			// A branch keeps the TOP-LEVEL rule: `parallel:` branches are CONCURRENT, so no
+			// branch has observed a sibling when it is validated, and the engine evaluates
+			// each branch's `when:` against the scope as it stood before the fork.
 			errs = append(errs, validateStepBase(stepView{
 				id: b.Id, when: b.When, stdin: b.Stdin,
 				run: b.Run, pipeline: b.Pipeline, plan: len(b.Plan) > 0, planRefs: planRefNames(b.Plan), charly: len(b.Charly) > 0,
@@ -87,25 +96,8 @@ func ValidatePipeline(p *spec.Pipeline) error {
 			}, bwhere)...)
 		}
 
-		for j := range s.Steps {
-			b := &s.Steps[j]
-			bwhere := fmt.Sprintf("%s.steps[%d]", where, j)
-			if b.Id == "" {
-				errs = append(errs, fmt.Errorf("%s: id is required", bwhere))
-			} else {
-				bwhere = fmt.Sprintf("%s sub-step %q", where, b.Id)
-				if prev, dup := seen[b.Id]; dup {
-					errs = append(errs, fmt.Errorf("%s: duplicate step id (already declared at %s)", bwhere, prev))
-				} else {
-					seen[b.Id] = bwhere
-				}
-			}
-			errs = append(errs, validateStepBase(stepView{
-				id: b.Id, when: b.When, stdin: b.Stdin,
-				run: b.Run, pipeline: b.Pipeline, plan: len(b.Plan) > 0, planRefs: planRefNames(b.Plan), charly: len(b.Charly) > 0,
-				steps: false, input: false, approval: false, refsAmong: defined,
-			}, bwhere)...)
-		}
+		// The loop BODY gets its OWN namespace — the one the engine gives it (validateLoopBody).
+		errs = append(errs, validateLoopBody(s.Steps, where, defined, seen)...)
 
 		if s.Id != "" {
 			defined[s.Id] = true
@@ -113,6 +105,60 @@ func ValidatePipeline(p *spec.Pipeline) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// validateLoopBody validates a loop arm's `steps:` body (for_each's and lanes' ONE body
+// shape, spec's #PipelineSubStep) against the body's OWN namespace: a COPY of the
+// enclosing earlier-step set, extended with each sub-step as it is validated, in document
+// order.
+//
+// That is not a relaxation — it is the scope the engine already runs the body under.
+// plugin-lobster's `runSubSteps` runs a body against a per-item COPY of the enclosing
+// result set (`results.scoped`) and does `scope[sub.Id] = res` after each sub-step, so
+// sub-step N reads every sub-step before it. Validating the body against the PIPELINE's
+// top-level ids only made the gate stricter than the engine and refused every multi-stage
+// loop body — the shape every faithful migration of a pipeline-level `lanes:` fan-out
+// produces (opencharly/sdk#441).
+//
+// The rule is unchanged, earlier-only, and it stops at the body's edge on purpose: the
+// per-item scope never merges back into the run's, so a sub-step id stays invisible to the
+// top level (a later `$sub.*` is still an error), and a sub-step naming ITSELF or a LATER
+// sibling is still an error. `seen` is the document-wide id-uniqueness map, shared with
+// the top level exactly as before.
+func validateLoopBody(subs []spec.PipelineSubStep, where string, enclosing map[string]bool, seen map[string]string) []error {
+	if len(subs) == 0 {
+		return nil
+	}
+	// A COPY: a sub-step id must not leak into the pipeline's scope.
+	body := make(map[string]bool, len(enclosing)+len(subs))
+	for id := range enclosing {
+		body[id] = true
+	}
+	var errs []error
+	for j := range subs {
+		b := &subs[j]
+		bwhere := fmt.Sprintf("%s.steps[%d]", where, j)
+		if b.Id == "" {
+			errs = append(errs, fmt.Errorf("%s: id is required", bwhere))
+		} else {
+			bwhere = fmt.Sprintf("%s sub-step %q", where, b.Id)
+			if prev, dup := seen[b.Id]; dup {
+				errs = append(errs, fmt.Errorf("%s: duplicate step id (already declared at %s)", bwhere, prev))
+			} else {
+				seen[b.Id] = bwhere
+			}
+		}
+		errs = append(errs, validateStepBase(stepView{
+			id: b.Id, when: b.When, stdin: b.Stdin,
+			run: b.Run, pipeline: b.Pipeline, plan: len(b.Plan) > 0, planRefs: planRefNames(b.Plan), charly: len(b.Charly) > 0,
+			steps: false, input: false, approval: false, refsAmong: body,
+		}, bwhere)...)
+		// AFTER its own validation: a self-reference (`$b.*` inside `b`) stays an error.
+		if b.Id != "" {
+			body[b.Id] = true
+		}
+	}
+	return errs
 }
 
 // stepView is the common shape of PipelineStep / PipelineSubStep for validation, so
