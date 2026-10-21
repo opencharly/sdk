@@ -50,6 +50,7 @@ func ValidatePipeline(p *spec.Pipeline) error {
 	var errs []error
 	seen := map[string]string{} // id -> where declared, for the uniqueness diagnostic
 	defined := map[string]bool{}
+	knobs := knobNames(p.Config)
 
 	for i := range p.Steps {
 		s := &p.Steps[i]
@@ -70,7 +71,7 @@ func ValidatePipeline(p *spec.Pipeline) error {
 			run: s.Run, pipeline: s.Pipeline, workflow: s.Workflow, charly: len(s.Charly) > 0,
 			plan: len(s.Plan) > 0, planRefs: planRefNames(s.Plan), steps: len(s.Steps) > 0, input: nonZeroInput(s.Input),
 			approval: s.Approval != nil, parallelBranches: len(s.Parallel.Branches),
-			parallelWait: s.Parallel.Wait, refsAmong: defined,
+			parallelWait: s.Parallel.Wait, refsAmong: defined, knobs: knobs,
 		}, where)...)
 
 		for j := range s.Parallel.Branches {
@@ -92,12 +93,12 @@ func ValidatePipeline(p *spec.Pipeline) error {
 			errs = append(errs, validateStepBase(stepView{
 				id: b.Id, when: b.When, stdin: b.Stdin,
 				run: b.Run, pipeline: b.Pipeline, plan: len(b.Plan) > 0, planRefs: planRefNames(b.Plan), charly: len(b.Charly) > 0,
-				steps: false, input: false, approval: false, refsAmong: defined,
+				steps: false, input: false, approval: false, refsAmong: defined, knobs: knobs,
 			}, bwhere)...)
 		}
 
 		// The loop BODY gets its OWN namespace — the one the engine gives it (validateLoopBody).
-		errs = append(errs, validateLoopBody(s.Steps, where, defined, seen)...)
+		errs = append(errs, validateLoopBody(s.Steps, where, defined, knobs, seen)...)
 
 		if s.Id != "" {
 			defined[s.Id] = true
@@ -125,7 +126,7 @@ func ValidatePipeline(p *spec.Pipeline) error {
 // top level (a later `$sub.*` is still an error), and a sub-step naming ITSELF or a LATER
 // sibling is still an error. `seen` is the document-wide id-uniqueness map, shared with
 // the top level exactly as before.
-func validateLoopBody(subs []spec.PipelineSubStep, where string, enclosing map[string]bool, seen map[string]string) []error {
+func validateLoopBody(subs []spec.PipelineSubStep, where string, enclosing map[string]bool, knobs map[string]bool, seen map[string]string) []error {
 	if len(subs) == 0 {
 		return nil
 	}
@@ -151,7 +152,7 @@ func validateLoopBody(subs []spec.PipelineSubStep, where string, enclosing map[s
 		errs = append(errs, validateStepBase(stepView{
 			id: b.Id, when: b.When, stdin: b.Stdin,
 			run: b.Run, pipeline: b.Pipeline, plan: len(b.Plan) > 0, planRefs: planRefNames(b.Plan), charly: len(b.Charly) > 0,
-			steps: false, input: false, approval: false, refsAmong: body,
+			steps: false, input: false, approval: false, refsAmong: body, knobs: knobs,
 		}, bwhere)...)
 		// AFTER its own validation: a self-reference (`$b.*` inside `b`) stays an error.
 		if b.Id != "" {
@@ -174,6 +175,7 @@ type stepView struct {
 	parallelBranches                int
 	parallelWait                    string
 	refsAmong                       map[string]bool
+	knobs                           map[string]bool
 }
 
 func validateStepBase(v stepView, where string) []error {
@@ -218,29 +220,28 @@ func validateStepBase(v stepView, where string) []error {
 		errs = append(errs, fmt.Errorf("%s: input and approval are mutually exclusive", where))
 	}
 
-	// a plan: step's own `$ref`s are the SAME earlier-step-only rule.
-	for _, name := range v.planRefs {
-		if !v.refsAmong[name] {
-			errs = append(errs, fmt.Errorf("%s.plan: reference $%s.* names a step that is not declared earlier", where, name))
-		}
-	}
+	// a plan: step's own `$ref`s are the SAME earlier-step-only rule. The plan is a
+	// TEMPLATE, not an expression, so no expression replacement is offered here.
+	errs = append(errs, checkRefNames(where+".plan", v.planRefs, v.refsAmong, v.knobs, false)...)
 
 	// the lobster expression grammar + earlier-step-only references.
 	if v.when != "" {
 		if err := Validate(v.when); err != nil {
 			errs = append(errs, fmt.Errorf("%s: when: %w", where, err))
 		}
-		errs = append(errs, checkEarlierRefs(where+".when", v.when, v.refsAmong)...)
+		// `when:` is the ONE expression site, so it is the one place the `${env.NAME}`
+		// replacement is offered (see refReplacement).
+		errs = append(errs, checkEarlierRefs(where+".when", v.when, v.refsAmong, v.knobs, true)...)
 	}
-	errs = append(errs, checkEarlierRefs(where+".stdin", v.stdin, v.refsAmong)...)
+	errs = append(errs, checkEarlierRefs(where+".stdin", v.stdin, v.refsAmong, v.knobs, false)...)
 	if v.forEach != "" {
-		errs = append(errs, checkEarlierRefs(where+".for_each", v.forEach, v.refsAmong)...)
+		errs = append(errs, checkEarlierRefs(where+".for_each", v.forEach, v.refsAmong, v.knobs, false)...)
 	}
 	// The lanes collection is the same kind of expression as for_each's — a runtime
 	// collection naming an EARLIER step — so it gets the same rule. Without it the gate
 	// would admit `lanes: $later.items` and the engine would fail at run time.
 	if v.lanes != "" {
-		errs = append(errs, checkEarlierRefs(where+".lanes", v.lanes, v.refsAmong)...)
+		errs = append(errs, checkEarlierRefs(where+".lanes", v.lanes, v.refsAmong, v.knobs, false)...)
 	}
 	return errs
 }
@@ -300,14 +301,79 @@ func validateLoopCoFields(v stepView, where string) []error {
 // checkEarlierRefs enforces that every step reference in s names a step declared
 // EARLIER in the pipeline — lobster resolves a `$ref` from already-finished steps
 // only, so a forward (or self) reference is a load-time error, not a runtime one.
-func checkEarlierRefs(where, s string, defined map[string]bool) []error {
+func checkEarlierRefs(where, s string, defined, knobs map[string]bool, expression bool) []error {
+	return checkRefNames(where, RefNames(s), defined, knobs, expression)
+}
+
+// checkRefNames is the ONE earlier-step rule, for a list of reference ids. It is shared by
+// the expression/template sites (`when:`, `stdin:`, `for_each:`, `lanes:`) and the `plan:`
+// walker, so a rule added to one cannot fork from the other (R2).
+func checkRefNames(where string, names []string, defined, knobs map[string]bool, expression bool) []error {
 	var errs []error
-	for _, name := range RefNames(s) {
-		if !defined[name] {
-			errs = append(errs, fmt.Errorf("%s: reference $%s.* names a step that is not declared earlier", where, name))
+	for _, name := range names {
+		if defined[name] {
+			continue
 		}
+		if hint := refReplacement(name, knobs, expression); hint != "" {
+			errs = append(errs, fmt.Errorf("%s: reference $%s.* %s", where, name, hint))
+			continue
+		}
+		errs = append(errs, fmt.Errorf("%s: reference $%s.* names a step that is not declared earlier", where, name))
 	}
 	return errs
+}
+
+// refReplacement names the REPLACEMENT for a `$<name>.*` reference whose name is not a step,
+// or returns "" when the reference is simply an undeclared step. Two retired namespaces
+// still survive in reshaped documents (opencharly/sdk#437) and each has a DIFFERENT
+// disposition, so the gate must not answer both with the one message that sends the author
+// looking for a step to declare:
+//
+//   - an entity-level KNOB block (`report`, `media`, `skills`, …) is now `config:` DATA.
+//     The cutover deleted the POPULATOR that made a knob readable from a step (it was
+//     `rc.report = mm(mapOf(p.Report))` in plugin-pipeline's retired executor.go) and kept
+//     the readers, so there is NOTHING to restore: a `$<knob>.<field>` that got past this
+//     gate would render the LITERAL TEXT at run time, since the reader it feeds is a dead
+//     arm with a nil map — trading a load error for a run-time emptiness, which is worse.
+//     The message therefore names the replacement: author the field's VALUE where it is
+//     used. (plugin-pipeline#37 records the mechanism.)
+//   - `env` is the RETIRED entity-env spelling. Its replacement `${env.NAME}` IS in the
+//     lobster grammar (expr.go), so the message names it — the old spelling is refused (its
+//     value would have to be spliced into the expression as text) while the reader is
+//     pointed at the form that works.
+//
+// `expression` gates the env hint: `${env.NAME}` is readable only where an EXPRESSION is
+// evaluated, so it is not offered at the template sites (`plan:`, `stdin:`, `for_each:`,
+// `lanes:`), where pointing at it would be the same kind of half-truth this gate exists to
+// avoid.
+func refReplacement(name string, knobs map[string]bool, expression bool) string {
+	if knobs[name] {
+		return fmt.Sprintf("reads the entity-level config knob %q, not a step — config: is authored data "+
+			"with no expression form, and the reader that once made a knob visible to a step was retired "+
+			"with the populator, so nothing would resolve this at run time. Author the knob's field VALUE "+
+			"where it is used instead", name)
+	}
+	if name == "env" && expression {
+		return "is the retired entity-env spelling — write ${env.NAME}, the form the lobster grammar " +
+			"accepts, to read the process environment"
+	}
+	return ""
+}
+
+// knobNames is the set of entity-level KNOB blocks a pipeline carries. They live in
+// `config:` — spec's own comment names them ("the former pipeline knobs
+// (llm/media/report/skills/channels/gates/repo/redo/agent), carried opaquely") — so the set
+// is read off the document rather than hard-coded, and a knob a future engine does not know
+// is still classified correctly.
+func knobNames(cfg map[string]any) map[string]bool {
+	if len(cfg) == 0 {
+		return nil
+	}
+	names := make(map[string]bool, len(cfg))
+	for name := range cfg {
+		names[name] = true
+	}
+	return names
 }
 
 // ValidateWorkflowCycles detects a cycle in a workflow→workflow reference graph
