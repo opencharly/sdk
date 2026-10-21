@@ -475,3 +475,105 @@ steps:
 		})
 	}
 }
+
+// TestValidatePipelineNamesTheConfigKnobReplacement pins defect 1 of opencharly/sdk#437: a
+// `$<knob>.*` reference inside a step is answered with the MISLEADING "names a step that is
+// not declared earlier", which sends the author looking for a step to declare. There is no
+// such step to declare, and there is nothing to restore: the cutover moved the former
+// pipeline knob blocks into `config:` as opaque DATA and deleted the POPULATOR that made a
+// knob readable (plugin-pipeline's retired executor.go), leaving readers with a nil map —
+// so a reference that got past this gate would render LITERAL TEXT at run time. The honest
+// answer is a refusal that NAMES THE REPLACEMENT — this test asserts the MESSAGE TEXT, not
+// merely a non-nil error, because a gate that refuses with the wrong reason costs the author
+// a whole round in the wrong direction.
+func TestValidatePipelineNamesTheConfigKnobReplacement(t *testing.T) {
+	p := &spec.Pipeline{
+		// `report:` is the consumer's real knob block, carried under `config:` by the
+		// reshape exactly as plugin-migrate emits it.
+		Config: map[string]any{"report": map[string]any{"bed_template": "bed-$pr:\n  gate:\n"}},
+		Steps: []spec.PipelineStep{
+			{Id: "render", Plan: []spec.Step{{
+				Run: "render the bed",
+				Op:  spec.Op{Command: "charly box build -f $report.bed_template"},
+			}}},
+		},
+	}
+	err := ValidatePipeline(p)
+	if err == nil {
+		t.Fatal("ValidatePipeline accepted a config-knob reference inside a step")
+	}
+	got := err.Error()
+	for _, want := range []string{
+		`step "render".plan: reference $report.* reads the entity-level config knob "report"`,
+		"config: is authored data with no expression form",
+		"Author the knob's field VALUE where it is used instead",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ValidatePipeline error = %q, want it to contain %q", got, want)
+		}
+	}
+	// The displaced message must be GONE, not merely accompanied: a reader who sees both
+	// would still be told to go and declare a step.
+	if strings.Contains(got, "names a step that is not declared earlier") {
+		t.Errorf("ValidatePipeline answered a knob reference with the step message: %q", got)
+	}
+}
+
+// TestValidatePipelineKnobNameAsAnEarlierStepIsAStepRef is the CONTROL for the classifier
+// above: the SAME reference with the SAME config key is a plain step reference once a step
+// of that id is declared earlier. Without this arm, a validator that hard-coded the knob
+// names (or one that simply refused every unknown name with the knob message) would pass.
+func TestValidatePipelineKnobNameAsAnEarlierStepIsAStepRef(t *testing.T) {
+	p := &spec.Pipeline{
+		Config: map[string]any{"report": map[string]any{"bed_template": "x"}},
+		Steps: []spec.PipelineStep{
+			{Id: "report", Run: "true"},
+			{Id: "render", Plan: []spec.Step{{
+				Run: "render the bed",
+				Op:  spec.Op{Command: "charly box build -f $report.bed_template"},
+			}}},
+		},
+	}
+	if err := ValidatePipeline(p); err != nil {
+		t.Fatalf("ValidatePipeline rejected a reference to a DECLARED step named like a config knob: %v", err)
+	}
+}
+
+// TestValidatePipelineNamesTheEnvReplacement pins the OTHER half of the retired-grammar
+// boundary: the bare `$env.NAME` spelling is NOT accepted (its value would have to be spliced
+// into the expression as text), but it now refuses with the form that IS in the grammar —
+// `${env.NAME}` — instead of "names a step that is not declared earlier".
+func TestValidatePipelineNamesTheEnvReplacement(t *testing.T) {
+	p := &spec.Pipeline{Steps: []spec.PipelineStep{
+		{Id: "publish", When: "$env.EVAL_PUBLISH != true", Run: "true"},
+	}}
+	err := ValidatePipeline(p)
+	if err == nil {
+		t.Fatal("ValidatePipeline accepted the retired $env.NAME spelling in a when:")
+	}
+	got := err.Error()
+	for _, want := range []string{
+		`step "publish".when: reference $env.* is the retired entity-env spelling`,
+		"write ${env.NAME}",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ValidatePipeline error = %q, want it to contain %q", got, want)
+		}
+	}
+	if strings.Contains(got, "names a step that is not declared earlier") {
+		t.Errorf("ValidatePipeline answered the retired env spelling with the step message: %q", got)
+	}
+}
+
+// TestValidatePipelineAcceptsTheRestoredEnvGuard is the END-TO-END arm for the restored
+// expression: the consumer's exact migrated guard must produce ZERO errors (exact emptiness,
+// not a substring — a stray second error would still reject the entity).
+func TestValidatePipelineAcceptsTheRestoredEnvGuard(t *testing.T) {
+	p := &spec.Pipeline{Steps: []spec.PipelineStep{
+		{Id: "oracle", Run: "true"},
+		{Id: "publish", When: "!(${env.EVAL_PUBLISH} != true)", Run: "true"},
+	}}
+	if err := ValidatePipeline(p); err != nil {
+		t.Fatalf("ValidatePipeline rejected the migrated env guard: %v", err)
+	}
+}
