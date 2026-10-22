@@ -17,13 +17,15 @@ import (
 
 // BuildStartArgs constructs the container run argument list for a DETACHED service
 // (`-d`), for a direct-mode `charly start`.
+// rootful selects the engine's mode-specific capability facts (the workload user
+// for host-identical bind-mount sharing); pass false for a rootless target.
 // entrypoint is the init system command (e.g., ["supervisord", "-n", "-c", "/etc/supervisord.conf"])
 // or the fallback (e.g., ["sleep", "infinity"]).
 //
 // For a systemd-unit ExecStart (which must run in the FOREGROUND so systemd
 // supervises the CLI), use BuildForegroundRunArgs — same body, no `-d`.
-func BuildStartArgs(engine, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
-	return buildRunArgs(true, engine, imageRef, uid, gid, ports, name, volumes, bindMounts, gpu, bindAddr, envVars, security, entrypoint, workingDir, network...)
+func BuildStartArgs(engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
+	return buildRunArgs(true, engine, rootful, imageRef, uid, gid, ports, name, volumes, bindMounts, gpu, bindAddr, envVars, security, entrypoint, workingDir, network...)
 }
 
 // BuildForegroundRunArgs is BuildStartArgs for a FOREGROUND launch (no `-d`),
@@ -31,8 +33,8 @@ func BuildStartArgs(engine, imageRef string, uid, gid int, ports []string, name 
 // foreground for the container's lifetime, so systemd supervises it directly and
 // the unit does not go inactive the instant the CLI returns. Shares the ONE argv
 // body with BuildStartArgs (R3).
-func BuildForegroundRunArgs(engine, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
-	return buildRunArgs(false, engine, imageRef, uid, gid, ports, name, volumes, bindMounts, gpu, bindAddr, envVars, security, entrypoint, workingDir, network...)
+func BuildForegroundRunArgs(engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
+	return buildRunArgs(false, engine, rootful, imageRef, uid, gid, ports, name, volumes, bindMounts, gpu, bindAddr, envVars, security, entrypoint, workingDir, network...)
 }
 
 // buildRunArgs is the ONE run-argv builder, detached or foreground. The
@@ -45,9 +47,10 @@ func BuildForegroundRunArgs(engine, imageRef string, uid, gid int, ports []strin
 //     launch may always use `--rm` (auto-remove on exit);
 //   - host-identical bind-mount sharing uses the engine's own keep-id flag when
 //     it has one (podman --userns=keep-id:uid=…,gid=…), and otherwise launches the
-//     workload as WorkloadUser — container-uid 0 for rootless nerdctl, where
-//     container-uid 0 IS the invoking host user in the rootless userns.
-func buildRunArgs(detach bool, engine, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
+//     workload as the mode-specific workload user — container-uid 0 for rootless
+//     containerd (driven through nerdctl), where container-uid 0 IS the invoking
+//     host user in the rootless userns; a rootful launch forces no user.
+func buildRunArgs(detach bool, engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
 	binary := kit.EngineBinary(engine)
 	capability, hasCapability := kit.EngineCapabilityFor(engine)
 	args := []string{binary, "run"}
@@ -87,15 +90,20 @@ func buildRunArgs(detach bool, engine, imageRef string, uid, gid int, ports []st
 		}
 	}
 	if len(bindMounts) > 0 {
+		// The workload user is a MODE-SPECIFIC capability fact. WorkloadUserFor
+		// selects the ROOTLESS or ROOTFUL field for THIS launch — never assume
+		// rootless. Rootless containerd (nerdctl) runs as container-uid 0 because
+		// uid 0 IS the invoking host user in the rootless userns; rootful forces
+		// no user, so the image's declared user applies.
+		workloadUser := kit.WorkloadUserFor(capability, rootful)
 		switch {
 		case hasCapability && capability.SupportsUsernsKeepID && capability.UsernsKeepIDArg != "":
 			// podman: map the invoking user in, so host files stay the caller's.
 			args = append(args, fmt.Sprintf("%s:uid=%d,gid=%d", capability.UsernsKeepIDArg, uid, gid))
-		case hasCapability && capability.WorkloadUser != "":
-			// nerdctl rootless: no keep-id, so run the workload as the user that
-			// maps to the invoking host user (container-uid 0) and host bind-mount
-			// files keep the host uid identity.
-			args = append(args, "--user", capability.WorkloadUser)
+		case hasCapability && workloadUser != "":
+			// no keep-id: run the workload as the mode-specific user and host
+			// bind-mount files keep the host uid identity.
+			args = append(args, "--user", workloadUser)
 		}
 	}
 	for _, e := range envVars {

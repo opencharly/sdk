@@ -58,25 +58,40 @@ func TestSystemdUnitFilename(t *testing.T) {
 	}
 }
 
-// TestBuildStartArgs_NerdctlSharesViaWorkloadUser is the behavioural gate for the
-// uid-sharing fix: with no keep-id, the engine must launch the workload as the
-// configured WorkloadUser (container-uid 0 == host user rootless) instead of a
-// keep-id flag it does not have.
-func TestBuildStartArgs_NerdctlSharesViaWorkloadUser(t *testing.T) {
+// TestBuildStartArgs_ContainerdSelectsWorkloadUserByMode is the behavioural gate
+// for the mode-split capability. containerd is driven through the nerdctl CLI and
+// has no keep-id, so a ROOTLESS launch must run the workload as
+// WorkloadUserRootless (container-uid 0 == the invoking host user in the rootless
+// userns). A ROOTFUL launch must NOT force a user (WorkloadUserRootful is empty):
+// uid 0 there is host root, not the invoking user, so the image's declared user
+// applies.
+func TestBuildStartArgs_ContainerdSelectsWorkloadUserByMode(t *testing.T) {
 	bind := []ResolvedBindMount{{HostPath: "/home/u/data", ContPath: "/data"}}
-	args := BuildStartArgs(
-		"nerdctl", "img:latest", 1000, 1000, nil, "svc",
+	rootless := strings.Join(BuildStartArgs(
+		"containerd", false, "img:latest", 1000, 1000, nil, "svc",
 		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work",
-	)
-	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "--user 0") {
-		t.Errorf("nerdctl bind-mount start args must set --user 0 for host-identical sharing, got: %s", joined)
+	), " ")
+	if !strings.Contains(rootless, "--user 0") {
+		t.Errorf("containerd rootless bind-mount args must set --user 0 for host-identical sharing, got: %s", rootless)
 	}
-	if strings.Contains(joined, "--userns=keep-id") {
-		t.Errorf("nerdctl has no keep-id; it must not be emitted: %s", joined)
+	if strings.Contains(rootless, "--userns=keep-id") {
+		t.Errorf("containerd has no keep-id; it must not be emitted: %s", rootless)
 	}
-	if args[0] != "nerdctl" {
-		t.Errorf("argv[0] = %q, want nerdctl", args[0])
+	if !strings.HasPrefix(rootless, "nerdctl run ") {
+		t.Errorf("containerd is driven through nerdctl; argv[0] must be nerdctl: %s", rootless)
+	}
+	rootful := strings.Join(BuildStartArgs(
+		"containerd", true, "img:latest", 1000, 1000, nil, "svc",
+		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work",
+	), " ")
+	if strings.Contains(rootful, "--user") {
+		t.Errorf("containerd rootful must not force a user; the image's user applies: %s", rootful)
+	}
+	if strings.Contains(rootful, "--userns=keep-id") {
+		t.Errorf("containerd has no keep-id; it must not be emitted: %s", rootful)
+	}
+	if !strings.HasPrefix(rootful, "nerdctl run ") {
+		t.Errorf("containerd is driven through nerdctl; argv[0] must be nerdctl: %s", rootful)
 	}
 }
 
@@ -85,7 +100,7 @@ func TestBuildStartArgs_NerdctlSharesViaWorkloadUser(t *testing.T) {
 func TestBuildStartArgs_PodmanKeepsKeepID(t *testing.T) {
 	bind := []ResolvedBindMount{{HostPath: "/home/u/data", ContPath: "/data"}}
 	args := BuildStartArgs(
-		"podman", "img:latest", 1000, 1000, nil, "svc",
+		"podman", false, "img:latest", 1000, 1000, nil, "svc",
 		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work",
 	)
 	joined := strings.Join(args, " ")
@@ -143,18 +158,19 @@ func TestGenerateSystemdUnit_EscapesSystemdSpecifier(t *testing.T) {
 	}
 }
 
-// TestBuildStartArgs_NerdctlDropsRemoveWithDetach is the live-found gate: nerdctl
-// REJECTS `-d --rm` ("flags -d and --rm cannot be specified together"), so the
-// detached argv must NOT carry --rm for nerdctl; podman/docker must keep it.
-func TestBuildStartArgs_NerdctlDropsRemoveWithDetach(t *testing.T) {
-	nerd := strings.Join(BuildStartArgs("nerdctl", "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+// TestBuildStartArgs_ContainerdDropsRemoveWithDetach is the live-found gate:
+// containerd is driven through the nerdctl CLI, which REJECTS `-d --rm` ("flags
+// -d and --rm cannot be specified together"), so the detached argv must NOT carry
+// --rm for containerd; podman/docker must keep it.
+func TestBuildStartArgs_ContainerdDropsRemoveWithDetach(t *testing.T) {
+	nerd := strings.Join(BuildStartArgs("containerd", false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
 	if strings.Contains(nerd, "--rm") {
 		t.Errorf("nerdctl rejects -d --rm; the detached argv must drop --rm: %s", nerd)
 	}
 	if !strings.HasPrefix(nerd, "nerdctl run -d --name svc") {
 		t.Errorf("nerdctl argv shape unexpected: %s", nerd)
 	}
-	pod := strings.Join(BuildStartArgs("podman", "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+	pod := strings.Join(BuildStartArgs("podman", false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
 	if !strings.Contains(pod, "--rm") {
 		t.Errorf("podman accepts -d --rm; it must keep --rm: %s", pod)
 	}
@@ -162,18 +178,24 @@ func TestBuildStartArgs_NerdctlDropsRemoveWithDetach(t *testing.T) {
 
 // TestBuildForegroundRunArgs_NoDetach_WithRemove pins the unit's ExecStart argv
 // contract: BuildForegroundRunArgs emits NO `-d` and DOES emit `--rm` (foreground
-// --rm is always legal, including nerdctl, where `-d --rm` is rejected).
+// --rm is always legal, including containerd's nerdctl CLI, where `-d --rm` is
+// rejected). The engine word is containerd; the binary it is driven through is
+// nerdctl.
 func TestBuildForegroundRunArgs_NoDetach_WithRemove(t *testing.T) {
-	for _, engine := range []string{"podman", "docker", "nerdctl"} {
-		joined := strings.Join(BuildForegroundRunArgs(engine, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+	for _, tc := range []struct{ engine, binary string }{
+		{"podman", "podman"},
+		{"docker", "docker"},
+		{"containerd", "nerdctl"},
+	} {
+		joined := strings.Join(BuildForegroundRunArgs(tc.engine, false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
 		if strings.Contains(joined, " -d ") {
-			t.Errorf("%s foreground argv must NOT detach: %s", engine, joined)
+			t.Errorf("%s foreground argv must NOT detach: %s", tc.engine, joined)
 		}
 		if !strings.Contains(joined, " --rm ") {
-			t.Errorf("%s foreground argv must keep --rm: %s", engine, joined)
+			t.Errorf("%s foreground argv must keep --rm: %s", tc.engine, joined)
 		}
-		if !strings.HasPrefix(joined, engine+" run --rm --name svc") {
-			t.Errorf("%s foreground argv shape unexpected: %s", engine, joined)
+		if !strings.HasPrefix(joined, tc.binary+" run --rm --name svc") {
+			t.Errorf("%s foreground argv shape unexpected: %s", tc.engine, joined)
 		}
 	}
 }
