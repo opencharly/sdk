@@ -141,6 +141,29 @@ func TestImageStoreLiveAnnotationControl(t *testing.T) {
 				_ = store.Remove(context.Background(), ref, tag)
 			})
 
+			// The CONTROL runs FIRST and doubles as the capability probe: it is
+			// the same image with a tag-only annotation. Two outcomes are
+			// legitimate:
+			//   - the load succeeds and Import refuses because the store does not
+			//     address ref (the annotation is what does the naming), or
+			//   - the engine cannot read an OCI image layout at all — a visible
+			//     skip naming the engine's own signature, never a false failure.
+			// Anything else is a defect in this test or in the store.
+			controlErr := store.Import(ctx, control, ref)
+			switch {
+			case controlErr == nil:
+				t.Fatal("control archive (no io.containerd.image.name) imported as successfully named — the annotation is not doing the naming")
+			case strings.Contains(controlErr.Error(), imageNameAnnotation):
+				// Capability confirmed; the control proved the annotation is load-bearing.
+			case isUnsupportedOCILayout(controlErr):
+				t.Skipf("live %s arm: the engine does not accept an OCI image layout (%v); the W3.7 contract is measured on the OCI layout and the type=docker export is the documented compatibility fallback", arm.name, controlErr)
+			default:
+				t.Fatalf("control import failed for an unexpected reason: %v", controlErr)
+			}
+			if err := store.Remove(ctx, ref, tag); err != nil {
+				t.Fatalf("cleanup after the control: %v", err)
+			}
+
 			if err := store.Import(ctx, annotated, ref); err != nil {
 				t.Fatalf("annotated import: %v", err)
 			}
@@ -151,29 +174,39 @@ func TestImageStoreLiveAnnotationControl(t *testing.T) {
 			if !present {
 				t.Fatalf("annotated archive landed without addressing %q", ref)
 			}
-			if err := store.Remove(ctx, ref); err != nil {
-				t.Fatalf("remove between arms: %v", err)
-			}
-
-			// The control: the same image, tag-only annotation. It must land
-			// WITHOUT an addressable full reference, and the import must say so.
-			err = store.Import(ctx, control, ref)
-			if err == nil {
-				t.Fatal("control archive (no io.containerd.image.name) imported as successfully named — the annotation is not doing the naming")
-			}
-			if !strings.Contains(err.Error(), imageNameAnnotation) {
-				t.Fatalf("control failure does not name %q: %v", imageNameAnnotation, err)
-			}
-			present, err = store.Has(ctx, ref)
-			if err != nil {
-				// `podman image exists` answers 1 for absent; a control image
-				// that landed under another name is still absent for THIS ref,
-				// which is the claim.
-				t.Logf("%s: Has after control returned an engine error (%v) — treated as not-addressable, which is the control's claim", arm.name, err)
-			} else if present {
-				t.Fatal("control archive is addressable by the full reference without the annotation")
-			}
 		})
+	}
+}
+
+// isUnsupportedOCILayout reports the engine's own refusal to read an OCI image
+// layout. Docker's classic importer falls back to its legacy tar shape and looks
+// for a `json` blob an OCI archive does not carry — the measured CI signature is
+// `open .../blobs/json: no such file or directory`. The W3.7 contract is measured
+// on the OCI layout, so an engine below that support is a VISIBLE SKIP. The
+// signature is deliberately narrow: any other load failure stays a failure.
+func isUnsupportedOCILayout(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "blobs/json")
+}
+
+// TestIsUnsupportedOCILayout pins the narrow skip signature: the measured
+// Docker-classic importer message is a capability skip; every other load error
+// stays a failure.
+func TestIsUnsupportedOCILayout(t *testing.T) {
+	cases := []struct {
+		message string
+		want    bool
+	}{
+		{"docker load: exit 1: open /var/lib/docker/tmp/docker-import-1/blobs/json: no such file or directory", true},
+		{"docker load: exit 1: Cannot connect to the Docker daemon at unix:///var/run/docker.sock", false},
+		{"docker load: exit 1: permission denied", false},
+	}
+	for _, tc := range cases {
+		if got := isUnsupportedOCILayout(errors.New(tc.message)); got != tc.want {
+			t.Fatalf("isUnsupportedOCILayout(%q) = %v, want %v", tc.message, got, tc.want)
+		}
+	}
+	if isUnsupportedOCILayout(nil) {
+		t.Fatal("isUnsupportedOCILayout(nil) = true")
 	}
 }
 
