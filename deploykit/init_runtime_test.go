@@ -65,9 +65,10 @@ func TestBuildStartArgs_EngineWithoutSystemdModeStillStops(t *testing.T) {
 	}
 }
 
-// TestGenerateQuadlet_EmitsDeclaredInitRuntime pins the quadlet surface. Quadlet's
-// Systemd=/StopSignal= keys take the same values as podman's --systemd=/
-// --stop-signal=, so the same declaration must appear as unit keys.
+// TestGenerateQuadlet_EmitsDeclaredInitRuntime pins the quadlet surface. There
+// is NO quadlet `Systemd=` key (the generator skips the whole unit on an unknown
+// key, measured), so the engine flag rides `PodmanArgs=` exactly as the argv path
+// spells it, and the stop signal uses the supported `StopSignal=` key.
 func TestGenerateQuadlet_EmitsDeclaredInitRuntime(t *testing.T) {
 	base := QuadletConfig{
 		BoxName:    "systemd-box",
