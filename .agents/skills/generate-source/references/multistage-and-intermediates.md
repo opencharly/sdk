@@ -191,9 +191,9 @@ USER <UID>
 
 The create branch uses the `if !` form (rather than a `getent passwd <UID> >/dev/null 2>&1 ||` short-circuit) because it composes better with the adopt branch — no risk of silently short-circuiting on an unexpectedly-pre-existing user.
 
-### Fallback path: `registry.go:InspectImageUser`
+### Fallback path: the external-base probe (`oci_op=inspect-user`)
 
-Pulls the base image via go-containerregistry and extracts `/etc/passwd` to auto-detect the home dir. The declarative `base_user:` approach is preferred (simpler, no network round-trip, explicit intent); `InspectImageUser` remains as a fallback for bases without a `base_user:` declaration.
+Pulls the base image via go-containerregistry and extracts `/etc/passwd` to auto-detect the home dir. The declarative `base_user:` approach is preferred (simpler, no network round-trip, explicit intent); for an EXTERNAL base image that declares no `base_user:`, the probe runs OUT-OF-PROCESS and is still live: `plugin-build`'s `inspectUserLeg` (`candy/plugin-build/resolve_legs.go`) calls `InvokeProvider("verb","oci", sdk.OpRun, …)` with `env {"oci_op": "inspect-user"}`, served by `candy/plugin-oci/inspect_user.go` over the `spec.ImageUserInput` → `spec.UserInfo` contract in `spec/spec/cue_types_gen.go`. The former host-side `charly/registry.go:InspectImageUser` is DELETED (K-wave 2) — the probe moved out of core with the rest of the engine.
 
-Source: `sdk/buildkit/config_resolve.go:ResolveBox` (policy reconciliation, relocated out of `charly/config.go`), `sdk/deploykit/bootstrap.go:WriteBootstrap` (emission, relocated in #67), `sdk/vmshared/spec_aliases.go:BaseUserDef` (struct, an alias of `spec.BaseUser`; `charly/format_config.go` is DELETED, and with it the `charly/registry.go` `InspectImageUser` fallback — the adopted user is read off the resolved box, not inspected from an image).
+Source: `sdk/buildkit/config_resolve.go:ResolveBox` (policy reconciliation, relocated out of `charly/config.go`), `sdk/deploykit/bootstrap.go:WriteBootstrap` (emission, relocated in #67), `sdk/vmshared/spec_aliases.go:BaseUserDef` (struct, an alias of `spec.BaseUser`; `charly/format_config.go` is DELETED, and the `charly/registry.go` `InspectImageUser` host-side probe went with it — the adopted user is read off the resolved box, and the external-base probe now runs out-of-process, see "Fallback path" above).
 
