@@ -327,3 +327,141 @@ func mustSkillJSON(t *testing.T, s spec.Skill) json.RawMessage {
 	}
 	return b
 }
+
+// agentFixtureID is the id the agent-shaped fixtures author. Deliberately a DIFFERENT constant from
+// skillFixtureID: the two shapes' files sit in different trees, so a fixture that shared one id
+// could pass while the collector read the wrong tree.
+const agentFixtureID = "pr-validator"
+
+// writeAgentFile lays down the authored sub-agent shape: ONE file directly under
+// .agents/agents, two-key frontmatter, no entry directory and no references/ half.
+func writeAgentFile(t *testing.T, root, frontmatter, body string) {
+	t.Helper()
+	dir := filepath.Join(root, candywalk.AgentsAgentsDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	entry := "---\n" + frontmatter + "---\n" + body
+	if err := os.WriteFile(filepath.Join(dir, agentFixtureID+".md"), []byte(entry), 0o644); err != nil {
+		t.Fatalf("write %s.md: %v", agentFixtureID, err)
+	}
+}
+
+// TestCollectSkills_AgentBodyComesFromTheAgentsTree is opencharly/sdk#456's discriminator at the
+// collector's own boundary: a `type: agent` node whose body is exactly where the contract files it
+// (`.agents/agents/<name>.md`) must project WHOLE. Before the fix this arm failed with
+// `skill "pr-validator": no body — … no SKILL.md exists under .agents/skills …`, which is the red
+// `charly box validate` every project declaring an agent node has carried since sdk#420.
+func TestCollectSkills_AgentBodyComesFromTheAgentsTree(t *testing.T) {
+	root := t.TempDir()
+	writeAgentFile(t, root, "name: "+agentFixtureID+"\ndescription: the fresh PR evaluator.\n",
+		"\n# "+agentFixtureID+"\n\nAgent body from the file.\n")
+
+	layers := map[string]spec.CandyReader{
+		agentFixtureID: NewSpecCandyModel(
+			spec.CandyModel{Name: agentFixtureID, SourceDir: root},
+			spec.CandyView{Name: agentFixtureID},
+		),
+	}
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"app": spec.EncodeBox(spec.BoxConfig{Candy: []string{agentFixtureID}}),
+		},
+		Skills: map[string]json.RawMessage{
+			"pr-validator-agent": mustSkillJSON(t, spec.Skill{
+				Type: "agent", Name: agentFixtureID, Family: "internals", Owner: agentFixtureID,
+				Triggers: []string{"the fresh PR evaluator"},
+			}),
+		},
+	}
+
+	got, err := CollectSkills(cfg, layers, "app")
+	if err != nil {
+		t.Fatalf("CollectSkills on an agent node whose body is at %s/%s.md: %v — the body is exactly where the shape files it", candywalk.AgentsAgentsDir, agentFixtureID, err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("CollectSkills = %d entries, want 1; got %+v", len(got), got)
+	}
+	e := got[0]
+	if e.Name != agentFixtureID {
+		t.Errorf("entry name = %q, want %q", e.Name, agentFixtureID)
+	}
+	if e.Description != "the fresh PR evaluator." {
+		t.Errorf("description = %q, want the agent file's frontmatter description", e.Description)
+	}
+	if want := "# " + agentFixtureID + "\n\nAgent body from the file.\n"; e.Content != want {
+		t.Errorf("content = %q, want %q (the agent file's body)", e.Content, want)
+	}
+	if e.Owner != agentFixtureID {
+		t.Errorf("owner = %q, want the node's routing metadata", e.Owner)
+	}
+}
+
+// TestCollectSkills_AgentBodylessFailsLoud pins the gate's other arm: with the body REMOVED the
+// collector must fail, naming the node, its owning candy, AND the file the SHAPE would have read.
+// A message that names the skills tree here is the #456 defect in prose — it sends the author to
+// move a file into a tree that no agent read ever looks in.
+func TestCollectSkills_AgentBodylessFailsLoud(t *testing.T) {
+	root := t.TempDir() // a repo root with NO .agents/agents file at all
+
+	layers := map[string]spec.CandyReader{
+		agentFixtureID: NewSpecCandyModel(
+			spec.CandyModel{Name: agentFixtureID, SourceDir: root},
+			spec.CandyView{Name: agentFixtureID},
+		),
+	}
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"app": spec.EncodeBox(spec.BoxConfig{Candy: []string{agentFixtureID}}),
+		},
+		Skills: map[string]json.RawMessage{
+			"pr-validator-agent": mustSkillJSON(t, spec.Skill{
+				Type: "agent", Name: agentFixtureID, Family: "internals", Owner: agentFixtureID,
+			}),
+		},
+	}
+
+	_, err := CollectSkills(cfg, layers, "app")
+	if err == nil {
+		t.Fatal("CollectSkills accepted an agent node with no body and no file — the gate would pass a node whose prose is missing")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, agentFixtureID) {
+		t.Errorf("error %q does not name the node", msg)
+	}
+	if want := filepath.Join(candywalk.AgentsAgentsDir, agentFixtureID+".md"); !strings.Contains(msg, want) {
+		t.Errorf("error %q does not name %q — the message must point at the file the AGENT shape reads", msg, want)
+	}
+	if strings.Contains(msg, candywalk.AgentsSkillsDir) {
+		t.Errorf("error %q names the SKILLS tree for an agent node — that is the #456 misdirection", msg)
+	}
+}
+
+// TestCollectSkills_AgentBodyInTheWrongTreeIsNotFound — the shapes must not accept each other's
+// layout. A body written into the skills tree is what the pre-D8 `extract` produced, and treating
+// it as an agent body would publish a definition no harness reads.
+func TestCollectSkills_AgentBodyInTheWrongTreeIsNotFound(t *testing.T) {
+	root := t.TempDir()
+	writeSkillFile(t, root, "name: "+skillFixtureID+"\ndescription: a skill.\n", "\n# a skill\n", nil)
+
+	layers := map[string]spec.CandyReader{
+		skillFixtureID: NewSpecCandyModel(
+			spec.CandyModel{Name: skillFixtureID, SourceDir: root},
+			spec.CandyView{Name: skillFixtureID},
+		),
+	}
+	cfg := &spec.Config{
+		Box: spec.BoxMap{
+			"app": spec.EncodeBox(spec.BoxConfig{Candy: []string{skillFixtureID}}),
+		},
+		Skills: map[string]json.RawMessage{
+			"pr-validator-agent": mustSkillJSON(t, spec.Skill{
+				Type: "agent", Name: skillFixtureID, Family: "internals", Owner: skillFixtureID,
+			}),
+		},
+	}
+
+	if got, err := CollectSkills(cfg, layers, "app"); err == nil {
+		t.Fatalf("CollectSkills read a body from the SKILLS tree for an agent node: %+v", got)
+	}
+}

@@ -2,7 +2,6 @@ package deploykit
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 
 	"github.com/opencharly/sdk/candywalk"
@@ -19,19 +18,22 @@ import (
 // doc-pointer URL).
 //
 // THE PROSE HALF COMES FROM THE FILE, NOT THE NODE. A skill's body (description/content/
-// references) lives in the repository that owns it — `<REPO ROOT>/<tree>/<name>/SKILL.md`,
-// `<tree>` being the Agent-Skills location (see skillTree) and `<name>` the skill id (spec#247).
-// The base is the REPO ROOT, never the owning candy's directory: the repo root is the directory a
-// harness rooted at that repo discovers natively, and it is the base the marketplace corpus reads.
-// For a candy under `candy/<name>/` those are different directories, and resolving against the
-// candy dir put 48 bodies outside the corpus reader's base (opencharly/marketplace#522);
-// `candyRepoRoot` (candy_repo_root.go) is the ONE derivation of the base both readers use.
+// references) lives in the repository that owns it, at the location its `type:` selects — a
+// skill's `<REPO ROOT>/<tree>/<name>/SKILL.md`, an `agent`-type node's
+// `<REPO ROOT>/.agents/agents/<name>.md` (opencharly/sdk#456). The base is the REPO ROOT, never the
+// owning candy's directory: the repo root is the directory a harness rooted at that repo discovers
+// natively, and it is the base the marketplace corpus reads. For a candy under `candy/<name>/`
+// those are different directories, and resolving against the candy dir put 48 bodies outside the
+// corpus reader's base (opencharly/marketplace#522); `candyRepoRoot` (candy_repo_root.go) is the
+// ONE derivation of the base both readers use.
 // The node keeps only the ROUTING metadata (family/owner/triggers/category). This collector reads
-// that file through candywalk.ReadSkillFile — the ONE reader the marketplace generator also uses
-// — so an image's label keeps carrying the skill WHOLE after a repo has moved its prose out. A
-// node that still carries an in-line `content:` and has no file is the transitional form and is
-// projected exactly as authored; the generator owns the stricter rule (a node whose in-line body
-// DISAGREES with its file is an authoring error there, and such a repo cannot land a corpus).
+// that file through candywalk.ReadNodeBody — the ONE resolution the marketplace generator also
+// uses, which dispatches on the node's `type:` in candywalk and NOT here — so an image's label
+// keeps carrying the skill WHOLE after a repo has moved its prose out, and the gate that validates
+// a body reads the same tree the corpus publishes it from. A node that still carries an in-line
+// `content:` and has no file is the transitional form and is projected exactly as authored; the
+// generator owns the stricter rule (a node whose in-line body DISAGREES with its file is an
+// authoring error there, and such a repo cannot land a corpus).
 //
 // Ownership: a skill's `owner` field names the candy that owns it. Only skills owned by a candy
 // IN the composed chain (BoxCandyChain) ride the image's label — union-of-composed-only, which
@@ -108,18 +110,6 @@ func CollectSkillBodies(cfg *spec.Config, layers map[string]CandyModel) ([]spec.
 	return collectSkillsFiltered(cfg, layers, nil)
 }
 
-// skillTree is the tree a composed candy's skill files are looked under: the Agent-Skills
-// standard location, which is what a candy's `skills:` list means when it declares none.
-//
-// A candy that declares a NON-default tree is not resolvable from here, and that is a stated
-// limit rather than an oversight: the authored `skills:` list lives on #Candy (spec.Candy, read
-// by the marketplace generator off the authored entity), and the resolved-project envelope this
-// collector walks carries no such field — spec.CandyModel has SourceDir but not Skills, and
-// spec.CandyView does not either. So the standard location is used. The failure mode is LOUD, not
-// silent: a routing-only skill node under a non-default tree finds no file here and CollectSkills
-// errors naming the tree it looked in, rather than shipping an entry with its prose missing.
-const skillTree = candywalk.AgentsSkillsDir
-
 // sortedSkillNodes returns the decode map's node names in ascending order — the iteration order the
 // project loop uses so that a first-error abort is reproducible (see the loop's comment). One helper,
 // not an inline `make+sort+append`, because the ordering is a property of the FAILURE contract and
@@ -153,34 +143,39 @@ func projectSkill(layers map[string]CandyModel, s spec.Skill, node string) (spec
 		entry.References = append(entry.References, spec.LabelSkillReference(r)) // S1016 — convertible field-identical types
 	}
 
-	sf, err := readSkillFile(layers, s, name)
+	body, err := readSkillFile(layers, s, name)
 	if err != nil {
 		return spec.LabelSkillEntry{}, err
 	}
-	if sf == nil {
+	if body == nil {
 		// No file: the transitional in-line form, or no body at all. The two causes of "no file"
 		// decide the message, and the difference is not cosmetic: an owner ABSENT from the candy set
-		// is never looked up at all, so a message promising "no SKILL.md exists under <tree>" would
+		// is never looked up at all, so a message promising "no file exists at <location>" would
 		// name a search that never ran and send the author moving a file that no placement can make
 		// reachable (opencharly/sdk#434).
+		//
+		// The location named is the one the node's SHAPE uses (candywalk.NodeBodyLocation), never a
+		// tree this collector picked: that is what keeps the message actionable for a `type: agent`
+		// node, whose body is filed at .agents/agents/<name>.md rather than under a skills tree
+		// (opencharly/sdk#456).
 		if s.Content == "" {
 			if _, ok := layers[s.Owner]; !ok {
 				return spec.LabelSkillEntry{}, fmt.Errorf(
 					"skill %q: owner %q is not a candy of this project, so its prose cannot be located: a `candy:` node carrying `base:` or `from:` is an IMAGE (routed to the box set), and only a candy has a source directory to read %s from",
-					name, s.Owner, skillTree)
+					name, s.Owner, candywalk.NodeBodyLocation(s.Type, name, nil))
 			}
 			return spec.LabelSkillEntry{}, fmt.Errorf(
-				"skill %q: no body — the node carries no in-line `content:` and no SKILL.md exists under %s at the repo root of the owning candy %q",
-				name, skillTree, s.Owner)
+				"skill %q: no body — the node carries no in-line `content:` and no %s exists at the repo root of the owning candy %q",
+				name, candywalk.NodeBodyLocation(s.Type, name, nil), s.Owner)
 		}
 		entry.Description = s.Description
 		entry.Content = s.Content
 		return entry, nil
 	}
-	entry.Description = sf.Description
-	entry.Content = sf.Content
+	entry.Description = body.Description
+	entry.Content = body.Content
 	if len(entry.References) == 0 {
-		for _, r := range sf.References {
+		for _, r := range body.References {
 			entry.References = append(entry.References, spec.LabelSkillReference{Name: r.Stem, Content: r.Content})
 		}
 	}
@@ -189,12 +184,24 @@ func projectSkill(layers map[string]CandyModel, s spec.Skill, node string) (spec
 
 // readSkillFile reads ONE composed skill's prose from the file its repository owns, resolved
 // against the owning candy's REPO ROOT (candyRepoRoot) — the base the marketplace corpus reader
-// uses, so the label and the corpus name the same file. (nil, nil) means "no file here" — the
-// in-line form's case, never an error; every other failure (an unreadable file, malformed
-// frontmatter, a frontmatter name that disagrees with its directory, a resolved candy whose path
-// disagrees with its repo) is an error, because each would otherwise be published under the right
-// name with the wrong prose.
-func readSkillFile(layers map[string]CandyModel, s spec.Skill, name string) (*candywalk.SkillFile, error) {
+// uses, so the label and the corpus name the same file — and dispatched by the node's `type:` in
+// candywalk (the ONE authority for where each authored shape lives), never here.
+//
+// The `nil` trees argument is this collector's stated limit, not an oversight: it means candywalk's
+// standard AgentsSkillsDir, because a candy that declares a NON-default `skills:` tree is not
+// resolvable from here. The authored `skills:` list lives on #Candy (spec.Candy, read by the
+// marketplace generator off the authored entity), and the resolved-project envelope this collector
+// walks carries no such field — spec.CandyModel has SourceDir but not Skills, and spec.CandyView
+// does not either. The failure mode is LOUD, not silent: a routing-only skill node under a
+// non-default tree finds no file here and CollectSkills errors naming the location it looked in,
+// rather than shipping an entry with its prose missing. An `agent`-type node is unaffected by that
+// limit — its path is fixed at AgentsAgentsDir and `skills:` never governs it.
+//
+// (nil, nil) means "no file here" — the in-line form's case, never an error; every other failure
+// (an unreadable file, malformed frontmatter, a frontmatter name that disagrees with the file it is
+// filed under, a resolved candy whose path disagrees with its repo) is an error, because each would
+// otherwise be published under the right name with the wrong prose.
+func readSkillFile(layers map[string]CandyModel, s spec.Skill, name string) (*candywalk.AuthoredBody, error) {
 	layer, ok := layers[s.Owner]
 	if !ok || layer == nil {
 		return nil, nil
@@ -205,12 +212,12 @@ func readSkillFile(layers map[string]CandyModel, s spec.Skill, name string) (*ca
 	base, ok := candyRepoRoot(layer)
 	if !ok {
 		return nil, fmt.Errorf(
-			"skill %q: candy %q has source dir %q, which does not end with its recorded in-repo path (%q/%q), so its repo root — and therefore the %s tree the body lives in — cannot be resolved",
-			name, s.Owner, layer.GetSourceDir(), layer.GetSubPathPrefix(), layer.GetName(), skillTree)
+			"skill %q: candy %q has source dir %q, which does not end with its recorded in-repo path (%q/%q), so its repo root — and therefore the %s the body lives at — cannot be resolved",
+			name, s.Owner, layer.GetSourceDir(), layer.GetSubPathPrefix(), layer.GetName(), candywalk.NodeBodyLocation(s.Type, name, nil))
 	}
-	sf, err := candywalk.ReadSkillFile(filepath.Join(base, skillTree), name)
+	body, err := candywalk.ReadNodeBody(base, name, s.Type, nil)
 	if err != nil {
 		return nil, fmt.Errorf("skill %q: %w", name, err)
 	}
-	return sf, nil
+	return body, nil
 }
