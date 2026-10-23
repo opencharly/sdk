@@ -78,6 +78,30 @@ func (g *Generator) RenderPrepBox(boxName string) error {
 	return nil
 }
 
+// capabilityInitDef is the ONE projection of the RESOLVED init contract onto the
+// deploy-relevant label subset (ai.opencharly.init_def). Extracted from the inline
+// literal so the mapping has a named, testable home: dropping one field here is
+// invisible at build time and degrades every deploy consumer to the nil contract.
+//
+// The container-venue runtime contract rides this SAME label. It is what lets a
+// deploy emit systemd mode + the stop signal from the IMAGE instead of switching
+// on an init-system name, and what keeps an overlay from restoring a non-root
+// USER over a root-required init.
+func capabilityInitDef(def *spec.ResolvedInit) *spec.CapabilityInitDef {
+	if def == nil {
+		return nil
+	}
+	return &spec.CapabilityInitDef{
+		Entrypoint:         def.Entrypoint,
+		FallbackEntrypoint: def.FallbackEntrypoint,
+		RequiresRoot:       def.RequiresRoot,
+		SystemdMode:        def.SystemdMode,
+		StopSignal:         def.StopSignal,
+		ManagementTool:     def.ManagementTool,
+		ManagementCommands: def.ManagementCommands,
+	}
+}
+
 // RenderPrepAll runs RenderPrepBox for every box in the generator's box set.
 // Called by the host build-prep seam before projecting the envelope.
 func (g *Generator) RenderPrepAll() error {
@@ -210,12 +234,7 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) (*sp
 			g.Candies, candyOrder, AuthoredInit(g.Config, boxName))
 		if labelInitSystem != "" && labelInitDef != nil {
 			meta.Init = labelInitSystem
-			meta.InitDef = &spec.CapabilityInitDef{
-				Entrypoint:         labelInitDef.Entrypoint,
-				FallbackEntrypoint: labelInitDef.FallbackEntrypoint,
-				ManagementTool:     labelInitDef.ManagementTool,
-				ManagementCommands: labelInitDef.ManagementCommands,
-			}
+			meta.InitDef = capabilityInitDef(labelInitDef)
 			// Per-init service-name list (legacy candy-name summary).
 			var serviceNames []string
 			for _, candyName := range candyOrder {

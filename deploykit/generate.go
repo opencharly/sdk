@@ -144,9 +144,14 @@ func (g *Generator) generateContainerfile(boxName string) error {
 		b.WriteString("COPY --from=traefik-routes /routes.yml /etc/traefik/dynamic/routes.yml\n\n")
 	}
 
-	// Final USER directive (use UID for robustness)
-	if caps != nil && caps.PreserveUser {
-		// leave as root — systemd handles user sessions
+	// Final USER directive (use UID for robustness). An init that DECLARES it
+	// requires root (systemd as a container's PID 1) must leave the image at root
+	// for the same reason preserve_user does: a non-root PID 1 makes systemd fail
+	// in system mode (measured: exit 255 / start-limit-hit). The requirement is
+	// the init's own contract, so it is read from img.InitDef rather than inferred
+	// from a candy capability.
+	if (caps != nil && caps.PreserveUser) || (img.InitDef != nil && img.InitDef.RequiresRoot) {
+		// leave as root — the init owns the user switch
 	} else if !inUserMode || needsRootAfter {
 		fmt.Fprintf(&b, "USER %d\n", img.UID)
 	}

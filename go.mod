@@ -16,7 +16,7 @@ require (
 	github.com/openai/openai-go/v3 v3.61.0
 	github.com/opencharly/plugin-egress/candy/plugin-egress v0.2026237.1419
 	github.com/opencharly/plugin-init/candy/plugin-init v0.2026237.1424
-	github.com/opencharly/spec v0.2026295.1243
+	github.com/opencharly/spec v0.2026295.2356
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/tidwall/gjson v1.19.0
 	golang.org/x/term v0.45.0
