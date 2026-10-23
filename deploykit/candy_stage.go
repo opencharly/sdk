@@ -2,11 +2,13 @@ package deploykit
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/sdk/vmshared"
 )
 
 // CandyCopySource returns the build-context path a candy's files are COPYed from:
@@ -37,14 +39,87 @@ func (g *Generator) CandyCopySource(candyRef string) string {
 }
 
 // EmitScratchStages emits a `FROM scratch AS <candy>` + `COPY <src>/ /` per candy,
-// staging each candy's files in its own scratch layer. Relocated (P8).
+// staging each candy's files in its own scratch layer, plus the PROJECT-ROOT copy
+// sources the candy's plan names (rootCopySources). Relocated (P8).
 func (g *Generator) EmitScratchStages(b *strings.Builder, candyOrder []string) {
 	for _, candyName := range candyOrder {
 		layer := g.Candies[candyName]
 		stageName := layer.GetName() // use short name for stage alias
 		fmt.Fprintf(b, "FROM scratch AS %s\n", stageName)
-		fmt.Fprintf(b, "COPY %s/ /\n\n", g.CandyCopySource(candyName))
+		fmt.Fprintf(b, "COPY %s/ /\n", g.CandyCopySource(candyName))
+		for _, src := range g.rootCopySources(candyName, layer) {
+			fmt.Fprintf(b, "COPY %s/ %s/\n", src, src)
+		}
+		b.WriteString("\n")
 	}
+}
+
+// rootCopySources returns the plan `copy:` sources a candy resolves at the BUILD ROOT
+// rather than inside its own staged directory, as build-context-relative paths.
+//
+// WHY THIS EXISTS (opencharly/sdk#444). A `copy:` step's source resolves inside the
+// candy's stage, which for a local candy is its own directory — `candy/<name>/`. A
+// CARRIER candy (one that owns `skill:` nodes and installs their prose with
+// `copy: .agents/skills`) names the Agent-Skills tree, which lives at the REPO ROOT
+// (opencharly/opencharly#557), never in the candy directory. Without this the stage
+// has no `/.agents/skills`, so the final stage's
+//
+//	COPY --from=<candy> .agents/skills <dest>
+//
+// fails the whole build with `failed to calculate checksum … "/.agents/skills": not
+// found` — and it takes every downstream image with it, because the carrier is
+// composed into a base image (`ubuntu` carries `ubuntu-skills`).
+//
+// The base is MEASURED, not declared by a new field: a source that exists at the build
+// root and NOT inside the candy's own directory is root-relative. A candy-relative
+// source — the overwhelming majority — keeps exactly today's behaviour, so no existing
+// candy changes meaning.
+//
+// REMOTE candies are skipped: their files live in the materialized `_candy/<name>.<ver>`
+// dir, whose own repo root is not present at generation time. Staging the BUILD root's
+// tree into a remote candy's stage would substitute the wrong repository.
+func (g *Generator) rootCopySources(candyName string, layer CandyModel) []string {
+	if layer.GetRemote() {
+		return nil
+	}
+	candyDir := layer.GetSourceDir()
+	if candyDir == "" {
+		candyDir = filepath.Join(g.Dir, kit.DefaultCandyDir, candyName)
+	}
+	return rootCopySources(layer.RunOps(), g.Dir, candyDir)
+}
+
+// rootCopySources is the pure core of (*Generator).rootCopySources: ops → the sources
+// that exist under projectDir but not under candyDir. Order follows the plan, and each
+// source is emitted once. Absolute sources and ones escaping the project are ignored —
+// neither can be a build-context path.
+func rootCopySources(ops []vmshared.Op, projectDir, candyDir string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, op := range ops {
+		src := op.Copy
+		if src == "" || seen[src] || filepath.IsAbs(src) {
+			continue
+		}
+		seen[src] = true
+		if strings.HasPrefix(filepath.Clean(src), "..") {
+			continue
+		}
+		if pathExists(filepath.Join(candyDir, src)) {
+			continue // candy-relative: already inside the staged directory
+		}
+		if !pathExists(filepath.Join(projectDir, src)) {
+			continue // neither here nor at the root: nothing to stage (fails loudly at build)
+		}
+		out = append(out, filepath.ToSlash(src))
+	}
+	return out
+}
+
+// pathExists reports whether p is an existing file or directory.
+func pathExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // EmitExtractStages emits a `FROM <source> AS <candy>-extract-<i>` stage per
