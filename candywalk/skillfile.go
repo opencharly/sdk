@@ -43,6 +43,15 @@ import (
 // (candy/plugin-marketplace and candy/plugin-docs) and R2 allows one implementation of one read.
 // The docs projection's readSkill — fence split, two-key frontmatter, marker strip, stem-sorted
 // references — is this function's prior art; it converges on this one.
+//
+// WHICH shape a node's prose is filed in is decided HERE, by ShapeOf — never by a consumer
+// comparing the raw `type:` string itself, and never by a consumer hard-coding one tree.
+// ReadNodeBody is the ONE resolution every consumer of authored prose calls (deploykit's
+// label+validate collector and the marketplace generator alike), so the tree the gate that
+// VALIDATES a body reads and the tree the corpus that PUBLISHES it reads cannot drift apart.
+// opencharly/sdk#456 is what a drift costs: the collector resolved the skills tree for every node,
+// so each `type: agent` node reported "no body" for a body sitting exactly where the contract
+// files it.
 const (
 	// AgentsSkillsDir is the Agent-Skills standard location: what a candy's `skills:` list means
 	// when it declares none.
@@ -151,6 +160,9 @@ func readAuthoredEntry(entry, name string) (authoredEntry, bool, error) {
 // `agent` node MUST have a file is the caller's call, and the marketplace generator is the caller
 // that hard-errors on a node with neither a file nor an in-line body, because publishing nothing
 // there would silently drop a published sub-agent.
+//
+// A consumer that starts from a `skill:` node and must find its body without already knowing the
+// shape calls ReadNodeBody, which dispatches here for ShapeAgentFile.
 func ReadAgentFile(agentsDir, name string) (*AgentFile, error) {
 	e, found, err := readAuthoredEntry(filepath.Join(agentsDir, name+".md"), name)
 	if err != nil || !found {
@@ -167,6 +179,9 @@ func ReadAgentFile(agentsDir, name string) (*AgentFile, error) {
 // because publishing nothing there would silently drop a published skill. Everything else is an
 // error, because each case would otherwise publish the wrong skill under the right name: an
 // unreadable file, malformed frontmatter, or a frontmatter `name` that disagrees with its directory.
+//
+// A consumer that starts from a `skill:` node and must find its body without already knowing the
+// shape calls ReadNodeBody, which dispatches here for ShapeSkillFiles.
 func ReadSkillFile(treeDir, name string) (*SkillFile, error) {
 	dir := filepath.Join(treeDir, name)
 	e, found, err := readAuthoredEntry(filepath.Join(dir, skillEntryName), name)
@@ -213,6 +228,131 @@ func ReadSkillTree(treeDir string) (map[string]*SkillFile, error) {
 		out[e.Name()] = sf
 	}
 	return out, nil
+}
+
+// AuthoredShape is the FILE LAYOUT a `skill:` node's prose takes, selected by the node's `type:`
+// discriminator. It is the ONE mapping from that discriminator to a layout: a consumer that must
+// find a body (deploykit's collector) or write one (the marketplace's `extract`) asks ShapeOf,
+// never the raw `type:` string, so the two shapes cannot drift between callers.
+type AuthoredShape int
+
+const (
+	// ShapeSkillFiles is <tree>/<name>/SKILL.md plus references/<stem>.md, where <tree> is the
+	// owning candy's `skills:` list — AgentsSkillsDir when it declares none.
+	ShapeSkillFiles AuthoredShape = iota
+
+	// ShapeAgentFile is AgentsAgentsDir/<name>.md — ONE file, no entry directory, no references/.
+	ShapeAgentFile
+)
+
+// ShapeOf resolves a `skill:` node's authored shape from its `type:`. "agent" is a sub-agent
+// DEFINITION's shape; everything else is a skill's, including the empty value the schema's
+// `type?: *"skill" | "agent"` default pins it to.
+func ShapeOf(nodeType string) AuthoredShape {
+	if nodeType == "agent" {
+		return ShapeAgentFile
+	}
+	return ShapeSkillFiles
+}
+
+// AuthoredBody is ONE `skill:` node's prose, read from the file its repository owns, with both
+// authored shapes projected onto a single value — so a consumer that publishes or labels the prose
+// never branches on the shape.
+//
+// The difference the shape still carries is visible here rather than hidden: an agent file has no
+// `references/` half by construction, so its References are ALWAYS nil. That is also why
+// SkillFile/AgentFile stay distinct types — this projection is where the two are allowed to
+// converge, and only the consumer that must report per-shape detail should reach past it.
+type AuthoredBody struct {
+	// Shape is the layout the body was read from, kept for a caller that must report it.
+	Shape AuthoredShape
+	// Name is the resolved id: the SKILL.md directory name, or the `.md` file stem for an agent.
+	Name string
+	// Description is the frontmatter `description`.
+	Description string
+	// Content is the markdown body VERBATIM (marker stripped, never trimmed).
+	Content string
+	// References are the skill shape's stem-sorted `references/<stem>.md` files. Always nil for
+	// ShapeAgentFile.
+	References []SkillReferenceFile
+}
+
+// ReadNodeBody reads ONE `skill:` node's prose from the repository that owns it, dispatching on the
+// node's `type:` — the ONE authority for WHERE each authored shape lives:
+//
+//	ShapeSkillFiles  <base>/<tree>/<name>/SKILL.md    the first declared tree that holds it
+//	ShapeAgentFile   <base>/AgentsAgentsDir/<name>.md
+//
+// `trees` are the skill trees the owning candy declares; nil (or empty) means the standard
+// AgentsSkillsDir, which is what a candy that declares no `skills:` list means. They are IGNORED
+// for an agent node: a `skills:` list is a list of SKILL trees and does not govern a sub-agent
+// definition, which is what makes a mixed repo the legal shape rather than a half-move.
+//
+// (nil, nil) means "no file here" — whether that is legal is the caller's call, the same contract
+// ReadSkillFile/ReadAgentFile carry: the marketplace generator hard-errors when the node also
+// carries no in-line body, and deploykit's collector does the same, because publishing nothing
+// there silently drops a published skill or sub-agent. Every other failure (an unreadable file,
+// malformed frontmatter, an id disagreeing with the file it is filed under) is an error, because
+// each would publish the wrong prose under the right name.
+func ReadNodeBody(base, name, nodeType string, trees []string) (*AuthoredBody, error) {
+	if ShapeOf(nodeType) == ShapeAgentFile {
+		af, err := ReadAgentFile(filepath.Join(base, AgentsAgentsDir), name)
+		if err != nil || af == nil {
+			return nil, err
+		}
+		return &AuthoredBody{
+			Shape:       ShapeAgentFile,
+			Name:        af.Name,
+			Description: af.Description,
+			Content:     af.Content,
+		}, nil
+	}
+	if len(trees) == 0 {
+		trees = []string{AgentsSkillsDir}
+	}
+	for _, tree := range trees {
+		sf, err := ReadSkillFile(filepath.Join(base, tree), name)
+		if err != nil {
+			return nil, err
+		}
+		if sf == nil {
+			// A miss in one declared tree is not an error: the next one may hold it.
+			continue
+		}
+		return &AuthoredBody{
+			Shape:       ShapeSkillFiles,
+			Name:        sf.Name,
+			Description: sf.Description,
+			Content:     sf.Content,
+			References:  sf.References,
+		}, nil
+	}
+	return nil, nil
+}
+
+// NodeBodyLocation names, for a "no body" message, the file a node's shape is filed at under the
+// repo root — derived from the SAME mapping ReadNodeBody dispatches on.
+//
+// It exists so that the caller reporting a missing body cannot name the OTHER shape's path. That
+// is not cosmetic: the defect this authority closes is a gate that told an author no SKILL.md
+// existed under .agents/skills for a node whose contract files it at .agents/agents/<name>.md, so
+// the author's obvious next move — move the file — could not have made it reachable.
+//
+// `trees` is the owning candy's declared skill trees (nil ⇒ AgentsSkillsDir) and is ignored for an
+// agent node. Several declared trees are named side by side, since any of them would satisfy the
+// read.
+func NodeBodyLocation(nodeType, name string, trees []string) string {
+	if ShapeOf(nodeType) == ShapeAgentFile {
+		return filepath.Join(AgentsAgentsDir, name+".md")
+	}
+	if len(trees) == 0 {
+		trees = []string{AgentsSkillsDir}
+	}
+	paths := make([]string, 0, len(trees))
+	for _, tree := range trees {
+		paths = append(paths, filepath.Join(tree, name, skillEntryName))
+	}
+	return strings.Join(paths, " or ")
 }
 
 // readSkillReferences reads a skill's references/ directory, stem-sorted. A missing directory is

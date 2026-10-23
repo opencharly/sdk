@@ -383,3 +383,123 @@ func TestTheAgentTreeIsNotTheSkillTree(t *testing.T) {
 		t.Fatalf("the agent tree did not read: %+v (err %v)", af, err)
 	}
 }
+
+// TestShapeOf_MapsEveryTypeValue — the ONE mapping from a `skill:` node's `type:` to its authored
+// layout. The empty value is not a third case: the schema's `type?: *"skill" | "agent"` default
+// makes it a skill, and a consumer that special-cased it would read the wrong tree.
+func TestShapeOf_MapsEveryTypeValue(t *testing.T) {
+	for _, tc := range []struct {
+		nodeType string
+		want     AuthoredShape
+	}{
+		{"", ShapeSkillFiles},      // the schema default
+		{"skill", ShapeSkillFiles}, // explicit, the same shape
+		{"agent", ShapeAgentFile},  // a sub-agent definition
+	} {
+		if got := ShapeOf(tc.nodeType); got != tc.want {
+			t.Errorf("ShapeOf(%q) = %v, want %v", tc.nodeType, got, tc.want)
+		}
+	}
+}
+
+// TestReadNodeBody_DispatchesOnTheShape is the defect opencharly/sdk#456 is: a `type: agent` node's
+// body is filed at .agents/agents/<name>.md, and a resolver that reads only the skills tree reports
+// "no body" for a body exactly where the contract puts it. The same repo, the same skill id, two
+// node types — and each shape must read ITS tree and no other.
+func TestReadNodeBody_DispatchesOnTheShape(t *testing.T) {
+	repo := t.TempDir()
+	// Byte-distinct bodies, so a read from the wrong tree cannot pass as a read from the right one.
+	skillBody := strings.ReplaceAll(bareSkill, "git-workflow", "shared-id")
+	agentBody := strings.ReplaceAll(bareAgent, "pr-validator", "shared-id")
+	writeSkill(t, filepath.Join(repo, AgentsSkillsDir), "shared-id", skillBody, nil)
+	writeAgent(t, filepath.Join(repo, AgentsAgentsDir), "shared-id", agentBody)
+
+	t.Run("agent-shape-reads-the-agents-tree", func(t *testing.T) {
+		got, err := ReadNodeBody(repo, "shared-id", "agent", nil)
+		if err != nil {
+			t.Fatalf("ReadNodeBody(agent): %v", err)
+		}
+		if got == nil {
+			t.Fatal("an agent body at .agents/agents/shared-id.md did not read — the collector's red gate")
+		}
+		if got.Shape != ShapeAgentFile {
+			t.Errorf("shape = %v, want ShapeAgentFile", got.Shape)
+		}
+		if want := "# shared-id\n\nAgent body line.\n"; got.Content != want {
+			t.Errorf("content = %q, want %q (the AGENTS tree's body)", got.Content, want)
+		}
+		if len(got.References) != 0 {
+			t.Errorf("an agent body has no references half; got %+v", got.References)
+		}
+	})
+
+	t.Run("skill-shape-reads-the-skills-tree", func(t *testing.T) {
+		got, err := ReadNodeBody(repo, "shared-id", "", nil)
+		if err != nil {
+			t.Fatalf("ReadNodeBody(skill): %v", err)
+		}
+		if got == nil {
+			t.Fatal("a skill body at .agents/skills/shared-id/SKILL.md did not read")
+		}
+		if got.Shape != ShapeSkillFiles {
+			t.Errorf("shape = %v, want ShapeSkillFiles", got.Shape)
+		}
+		if want := "# shared-id\n\nBody line.\n"; got.Content != want {
+			t.Errorf("content = %q, want %q (the SKILLS tree's body)", got.Content, want)
+		}
+	})
+
+	t.Run("a-mis-placed-body-is-not-found", func(t *testing.T) {
+		// The two shapes must not accept each other's layout: an agent node whose only file sits in
+		// the skills tree has no agent body, and vice versa.
+		repo := t.TempDir()
+		writeSkill(t, filepath.Join(repo, AgentsSkillsDir), "only-skill", strings.ReplaceAll(bareSkill, "git-workflow", "only-skill"), nil)
+		if got, err := ReadNodeBody(repo, "only-skill", "agent", nil); err != nil || got != nil {
+			t.Errorf("an agent node read a body from the SKILLS tree: %+v (err %v)", got, err)
+		}
+		repo2 := t.TempDir()
+		writeAgent(t, filepath.Join(repo2, AgentsAgentsDir), "only-agent", strings.ReplaceAll(bareAgent, "pr-validator", "only-agent"))
+		if got, err := ReadNodeBody(repo2, "only-agent", "skill", nil); err != nil || got != nil {
+			t.Errorf("a skill node read a body from the AGENTS tree: %+v (err %v)", got, err)
+		}
+	})
+
+	t.Run("declared-skill-trees-are-walked-first-hit-wins", func(t *testing.T) {
+		repo := t.TempDir()
+		writeSkill(t, filepath.Join(repo, "custom/skills"), "elsewhere", strings.ReplaceAll(bareSkill, "git-workflow", "elsewhere"), nil)
+		got, err := ReadNodeBody(repo, "elsewhere", "", []string{"vendor/skills", "custom/skills"})
+		if err != nil {
+			t.Fatalf("ReadNodeBody(declared trees): %v", err)
+		}
+		if got == nil {
+			t.Fatal("a skill under a DECLARED tree did not read")
+		}
+		if want := "# elsewhere\n\nBody line.\n"; got.Content != want {
+			t.Errorf("content = %q, want %q", got.Content, want)
+		}
+		// The agent shape ignores the list entirely: `skills:` governs SKILL trees only.
+		if got, err := ReadNodeBody(repo, "elsewhere", "agent", []string{"custom/skills"}); err != nil || got != nil {
+			t.Errorf("an agent node was resolved through a declared skills tree: %+v (err %v)", got, err)
+		}
+	})
+}
+
+// TestNodeBodyLocation_NamesTheShapesOwnPath — a "no body" message must name the file the node's
+// SHAPE is filed at. opencharly/sdk#456's user-visible half is exactly this string: an agent node
+// whose body was at .agents/agents/<name>.md was told no SKILL.md existed under .agents/skills, so
+// the author's next move (move the file) could not have made it reachable.
+func TestNodeBodyLocation_NamesTheShapesOwnPath(t *testing.T) {
+	if got, want := NodeBodyLocation("agent", "pr-validator", nil), filepath.Join(AgentsAgentsDir, "pr-validator.md"); got != want {
+		t.Errorf("NodeBodyLocation(agent) = %q, want %q", got, want)
+	}
+	if got, want := NodeBodyLocation("", "pr-validator", nil), filepath.Join(AgentsSkillsDir, "pr-validator", "SKILL.md"); got != want {
+		t.Errorf("NodeBodyLocation(skill) = %q, want %q", got, want)
+	}
+	if got, want := NodeBodyLocation("skill", "x", []string{"a", "b"}), "a/x/SKILL.md or b/x/SKILL.md"; got != want {
+		t.Errorf("NodeBodyLocation(declared trees) = %q, want %q", got, want)
+	}
+	// An agent node's location must not move with a declared skills list.
+	if got, want := NodeBodyLocation("agent", "x", []string{"a"}), filepath.Join(AgentsAgentsDir, "x.md"); got != want {
+		t.Errorf("NodeBodyLocation(agent, trees) = %q, want %q", got, want)
+	}
+}
