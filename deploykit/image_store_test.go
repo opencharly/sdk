@@ -383,6 +383,52 @@ func TestSecurityOptions(t *testing.T) {
 	}
 }
 
+func TestImageStoreHasDoesNotHideDaemonFailure(t *testing.T) {
+	ctx := context.Background()
+	const ref = "ghcr.io/opencharly/box:1"
+	target := resolvedTarget(t, "docker", Selection{})
+	const has = "docker image inspect '" + ref + "'"
+	const info = "docker info"
+
+	t.Run("unreachable daemon is an error, not absence", func(t *testing.T) {
+		rec := newStoreRecExec()
+		rec.exit[has] = imageAbsentExit
+		rec.exit[info] = imageAbsentExit
+		rec.stderr[info] = "Cannot connect to the Docker daemon"
+		store, err := NewImageStore(rec, target)
+		if err != nil {
+			t.Fatalf("NewImageStore: %v", err)
+		}
+		present, err := store.Has(ctx, ref)
+		if err == nil {
+			t.Fatal("Has reported absence for an unreachable daemon")
+		}
+		if present {
+			t.Fatal("Has returned true for an unreachable daemon")
+		}
+		if !strings.Contains(err.Error(), "daemon is not reachable") {
+			t.Fatalf("error does not name the unreachable daemon: %v", err)
+		}
+	})
+
+	t.Run("reachable daemon with a missing image is absence", func(t *testing.T) {
+		rec := newStoreRecExec()
+		rec.exit[has] = imageAbsentExit
+		store, err := NewImageStore(rec, target)
+		if err != nil {
+			t.Fatalf("NewImageStore: %v", err)
+		}
+		present, err := store.Has(ctx, ref)
+		if err != nil {
+			t.Fatalf("Has: %v", err)
+		}
+		if present {
+			t.Fatal("Has = true for a missing image")
+		}
+		assertCall(t, rec, info)
+	})
+}
+
 func TestNewImageStoreRejectsUnresolvedEngine(t *testing.T) {
 	for _, engine := range []spec.EngineName{"", "auto", "nerdctl"} {
 		if _, err := NewImageStore(newStoreRecExec(), ContainerdTarget{Engine: engine}); err == nil {

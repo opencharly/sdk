@@ -132,14 +132,16 @@ func (r *ImageResolver) ResolveImage(ctx context.Context, ref string, target Ima
 		}
 	}
 
-	// 4. Build it, then re-enter at step 2.
+	// 4. Build it, then re-enter at step 2. The charly store is required BEFORE
+	// the build runs: a build that cannot be materialised must not have side
+	// effects.
 	if r.Build != nil {
-		if err := r.Build(ctx, ref); err != nil {
-			return ResolvedImage{}, fmt.Errorf("resolve %q: build:ensure: %w", ref, err)
-		}
 		if r.Charly == nil {
 			return ResolvedImage{}, fmt.Errorf(
-				"resolve %q: build:ensure ran but no charly image store is configured to materialise the result", ref)
+				"resolve %q: build:ensure is configured but no charly image store can materialise the result", ref)
+		}
+		if err := r.Build(ctx, ref); err != nil {
+			return ResolvedImage{}, fmt.Errorf("resolve %q: build:ensure: %w", ref, err)
 		}
 		imported, err := r.importFromCharly(ctx, ref, target)
 		if err != nil {

@@ -263,11 +263,36 @@ func (s *engineImageStore) Has(ctx context.Context, ref string) (bool, error) {
 	case 0:
 		return true, nil
 	case imageAbsentExit:
+		if err := s.confirmDaemonReachable(ctx); err != nil {
+			return false, err
+		}
 		return false, nil
 	default:
 		return false, fmt.Errorf("probe %s in the %s store: exit %d: %s",
 			ref, s.engine, code, strings.TrimSpace(stderr))
 	}
+}
+
+// confirmDaemonReachable turns the engine's not-found exit into "absent" only
+// when the daemon itself answered. docker and nerdctl both exit 1 for a missing
+// image AND for an unreachable daemon, so reading an unqualified exit 1 as
+// absence would hide a daemon failure — this interface explicitly forbids that.
+// A rootful addressed store already proved identity at the top of the operation,
+// so it needs no second probe.
+func (s *engineImageStore) confirmDaemonReachable(ctx context.Context) error {
+	if s.rootful && s.address != "" {
+		return nil
+	}
+	_, stderr, code, err := s.exec.RunCapture(ctx, s.command("info"))
+	if err != nil {
+		return fmt.Errorf("the %s store answered \"not found\", but its daemon probe failed: %w", s.engine, err)
+	}
+	if code != 0 {
+		return fmt.Errorf(
+			"the %s store answered \"not found\", but `%s info` exits %d — the daemon is not reachable, so absence cannot be concluded: %s",
+			s.engine, s.binary, code, strings.TrimSpace(stderr))
+	}
+	return nil
 }
 
 // Import loads the archive, then PROVES the store addresses ref. The proof is

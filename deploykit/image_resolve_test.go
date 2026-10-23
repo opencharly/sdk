@@ -209,10 +209,14 @@ func TestImageResolverOrder(t *testing.T) {
 	})
 
 	t.Run("build without a charly store is an error, not a false success", func(t *testing.T) {
-		resolver := &ImageResolver{Build: func(context.Context, string) error { return nil }}
+		built := 0
+		resolver := &ImageResolver{Build: func(context.Context, string) error { built++; return nil }}
 		_, err := resolver.ResolveImage(ctx, ref, newFakeImageStore())
 		if err == nil || !strings.Contains(err.Error(), "no charly image store") {
 			t.Fatalf("error = %v, want the missing charly store named", err)
+		}
+		if built != 0 {
+			t.Fatalf("build:ensure ran before the missing charly store was reported (%d calls)", built)
 		}
 	})
 }
