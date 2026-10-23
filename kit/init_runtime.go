@@ -41,8 +41,11 @@ func InitContainerRuntimeArgs(engine string, initDef *spec.CapabilityInitDef) []
 }
 
 // InitRequiresRoot reports whether the image's init declares that the CONTAINER
-// must run as root. The build's final USER and the deploy overlay's USER restore
-// both consult it; a non-root PID 1 makes systemd fail in system mode.
+// must run as root. The DEPLOY overlay consults it before restoring a USER; the
+// BUILD reads the same field directly on its own generated type
+// (spec.ResolvedInit.RequiresRoot in deploykit/generate.go), so this helper takes
+// the deploy-side type (spec.CapabilityInitDef) and is not a second predicate —
+// both surfaces read one declared field.
 func InitRequiresRoot(initDef *spec.CapabilityInitDef) bool {
 	return initDef != nil && initDef.RequiresRoot
 }
