@@ -353,32 +353,99 @@ var (
 // ref on each access, so handing it over is what makes the generator see the branch under test.
 //
 // The issue's second, "minimum" arm — hard-error on a declared ref the collector cannot name — was
-// MEASURED and REJECTED as a text-level check: this function scans RAW file bytes, comments
-// included, and a sweep of the org's tracked charly.yml files finds 42 distinct VERSIONLESS
-// `@github.com/opencharly/…` tokens living in PROSE (a `layer-nodejs` mention in a comment, a
-// `distro-*` glob, a trailing-backtick example). Failing closed on those would break every tree
-// that documents a repo path. A versionless token is therefore not evidence of a declared ref;
-// only a token carrying a `:version` is, and every such form is collected — provided its version is
-// one of the real shapes, which acceptableVersion decides (opencharly/sdk#410).
+// MEASURED and REJECTED as a text-level check: a sweep of the org's tracked charly.yml files finds
+// 42 distinct VERSIONLESS `@github.com/opencharly/…` tokens living in PROSE (a `layer-nodejs`
+// mention in a comment, a `distro-*` glob, a trailing-backtick example). Failing closed on those
+// would break every tree that documents a repo path. A versionless token is therefore not evidence
+// of a declared ref; only a token carrying a `:version` is, and every such form is collected —
+// provided its version is one of the real shapes, which acceptableVersion decides
+// (opencharly/sdk#410).
+//
+// THE INSTRUMENT IS THE YAML PARSER, NOT THE BYTES (opencharly/sdk#455). A ref a manifest DECLARES
+// is a scalar in it: an entry of a `require:`/`candy:` sequence, or such a key's scalar value. A ref
+// a manifest merely CONTAINS is its DATA — a `command: |` body that writes fixtures at runtime, a
+// `>-` description, a generated-manifest `template:` body — and a regex over the raw bytes cannot
+// tell the two apart. Measured: `plugin-box`'s R10 bed `box-reconcile-closure-reports-unfetchable`
+// writes a deliberately unfetchable ref INTO A SCRATCH PROJECT at runtime to prove that
+// `charly box reconcile --closure` REPORTS it rather than swallowing it; the raw scan collected that
+// fixture and then killed the whole corpus walk resolving it (`generate` rc=1). So the file is
+// parsed and the refs are read off its scalar nodes, skipping every LITERAL (`|`) and FOLDED (`>`)
+// scalar — the same exclusion whether the body is shell, a template, or prose.
+//
+// Two consequences of parsing, both deliberate and both measured against the org's 596 in-repo
+// manifests: a versioned ref written in a COMMENT is no longer collected (a comment declares
+// nothing; the raw scan used to fetch one such ref), and a file that does not parse as a manifest —
+// prose, a changelog — still falls back to the text scan, because there the text IS the declaration
+// surface. The four refs that live ONLY inside block scalars org-wide are repaid by DIRECT pins in
+// the marketplace refs list, which is where a corpus source belongs (opencharly/plugin-marketplace#41).
 func collectRefs(path string) []string {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
 	var out []string
+	if root := manifestRoot(raw); root != nil {
+		collectRefsNode(root, &out)
+		return out
+	}
 	for _, ref := range remoteRefRe.FindAllString(string(raw), -1) {
-		pr := parseRemoteRef(ref)
-		if pr.RepoPath == "" || pr.RepoPath == "github.com/opencharly/charly" {
-			continue
+		if ref := acceptedRef(ref); ref != "" {
+			out = append(out, ref)
 		}
-		// Prose notation is dropped here, at the scan, rather than left for the resolver to choke on
-		// (`could not resolve ref "v2026.xxx.yyyy"`). See acceptableVersion.
-		if !acceptableVersion(pr.Version) {
-			continue
-		}
-		out = append(out, ref)
 	}
 	return out
+}
+
+// acceptedRef applies the ONE ref policy to a candidate token — the pre-cutover in-repo charly form
+// is skipped, and a version that is not a real ref shape is dropped as prose notation — returning
+// "" when the token is not a declared ref. Both readers below share it, so the policy has one home.
+func acceptedRef(ref string) string {
+	pr := parseRemoteRef(ref)
+	if pr.RepoPath == "" || pr.RepoPath == "github.com/opencharly/charly" {
+		return ""
+	}
+	if !acceptableVersion(pr.Version) {
+		return ""
+	}
+	return ref
+}
+
+// manifestRoot parses raw as a charly entity file and returns its root MAPPING node, or nil when the
+// content is not one — prose, a multi-document bed, a shape yaml.v3 rejects. A nil answer is not an
+// error: the caller falls back to the text scan rather than failing a corpus walk over a comment.
+func manifestRoot(raw []byte) *yaml.Node {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 {
+		return nil
+	}
+	if root := doc.Content[0]; root.Kind == yaml.MappingNode {
+		return root
+	}
+	return nil
+}
+
+// collectRefsNode appends every DECLARED ref in a parsed manifest, in document order (mapping keys
+// and values, sequence entries) — the same order the old byte scan produced, so a walk's ref queue
+// stays deterministic. A literal or folded scalar is DATA and is not read at all.
+func collectRefsNode(n *yaml.Node, out *[]string) {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		if n.Style == yaml.LiteralStyle || n.Style == yaml.FoldedStyle {
+			return
+		}
+		for _, ref := range remoteRefRe.FindAllString(n.Value, -1) {
+			if ref := acceptedRef(ref); ref != "" {
+				*out = append(*out, ref)
+			}
+		}
+	case yaml.SequenceNode, yaml.MappingNode:
+		for _, c := range n.Content {
+			collectRefsNode(c, out)
+		}
+	}
 }
 
 // parseRemoteRef is the canonical spec.ParseRemoteRef (F4.3 parser consolidation: the
