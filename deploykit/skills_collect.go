@@ -27,13 +27,14 @@ import (
 // corpus reader's base (opencharly/marketplace#522); `candyRepoRoot` (candy_repo_root.go) is the
 // ONE derivation of the base both readers use.
 // The node keeps only the ROUTING metadata (family/owner/triggers/category). This collector reads
-// that file through candywalk.ReadNodeBody — the ONE resolution the marketplace generator also
-// uses, which dispatches on the node's `type:` in candywalk and NOT here — so an image's label
-// keeps carrying the skill WHOLE after a repo has moved its prose out, and the gate that validates
-// a body reads the same tree the corpus publishes it from. A node that still carries an in-line
-// `content:` and has no file is the transitional form and is projected exactly as authored; the
-// generator owns the stricter rule (a node whose in-line body DISAGREES with its file is an
-// authoring error there, and such a repo cannot land a corpus).
+// that file through candywalk.ReadNodeBody — the ONE resolution, which dispatches on the node's
+// `type:` in candywalk and NOT here — so an image's label keeps carrying the skill WHOLE after a
+// repo has moved its prose out. The marketplace generator converts onto the same authority in its
+// own PR (opencharly/plugin-marketplace); that is what makes the gate that VALIDATES a body and
+// the corpus that PUBLISHES it read one rule, instead of two copies written to one contract.
+// A node that still carries an in-line `content:` and has no file is the transitional form and is
+// projected exactly as authored; the generator owns the stricter rule (a node whose in-line body
+// DISAGREES with its file is an authoring error there, and such a repo cannot land a corpus).
 //
 // Ownership: a skill's `owner` field names the candy that owns it. Only skills owned by a candy
 // IN the composed chain (BoxCandyChain) ride the image's label — union-of-composed-only, which
