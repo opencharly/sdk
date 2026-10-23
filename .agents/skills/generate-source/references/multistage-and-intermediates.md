@@ -72,7 +72,7 @@ COPY candy/mylib/ /
 ## Auto-Intermediate Images — grouping by `(Base, UID)`
 
 Sibling images that share the same base are grouped by
-`ComputeIntermediates` in `sdk/deploykit/intermediates.go` (moved from `charly/intermediates.go`; `charly/intermediates_shim.go` delegates to it) so repeated layer
+`ComputeIntermediates` in `sdk/deploykit/intermediates.go` (moved from `charly/intermediates.go`; the former `charly/intermediates_shim.go` is DELETED, K-wave 2 — nothing in the kernel delegates here any more) so repeated layer
 prefixes become shared intermediate images (the `fedora-nonfree-ssh-client-dbus`
 pattern). The grouping key is `siblingKey{base, uid}`, not a bare base
 string: grouping on base alone would collapse images with **different
@@ -195,5 +195,5 @@ The create branch uses the `if !` form (rather than a `getent passwd <UID> >/dev
 
 Pulls the base image via go-containerregistry and extracts `/etc/passwd` to auto-detect the home dir. The declarative `base_user:` approach is preferred (simpler, no network round-trip, explicit intent); `InspectImageUser` remains as a fallback for bases without a `base_user:` declaration.
 
-Source: `charly/config.go:ResolveBox` (policy reconciliation), `sdk/deploykit/bootstrap.go:WriteBootstrap` (emission, relocated in #67), `charly/format_config.go:BaseUserDef` (struct), `charly/registry.go:InspectImageUser` (fallback).
+Source: `sdk/buildkit/config_resolve.go:ResolveBox` (policy reconciliation, relocated out of `charly/config.go`), `sdk/deploykit/bootstrap.go:WriteBootstrap` (emission, relocated in #67), `sdk/vmshared/spec_aliases.go:BaseUserDef` (struct, an alias of `spec.BaseUser`; `charly/format_config.go` is DELETED, and with it the `charly/registry.go` `InspectImageUser` fallback — the adopted user is read off the resolved box, not inspected from an image).
 
