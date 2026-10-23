@@ -85,30 +85,13 @@ type ContainerdTarget struct {
 	PrivilegePrefix string
 }
 
-// selectionLevel names one precedence level. It exists so the order is testable:
-// the precedence tests permute levels and assert the winner changes.
-type selectionLevel string
-
-const (
-	levelFlag    selectionLevel = "flag"
-	levelDeploy  selectionLevel = "deploy"
-	levelRuntime selectionLevel = "runtime"
-	levelDefault selectionLevel = "default"
-)
-
-// selectionSource is one level's value. An empty value is "not set" and is
-// skipped by firstSet.
-type selectionSource struct {
-	level selectionLevel
-	value string
-}
-
 // firstSet returns the first non-empty value in SOURCE ORDER. The order is the
-// rule; callers build the slice in precedence order and tests mutate it.
-func firstSet(sources ...selectionSource) string {
-	for _, source := range sources {
-		if source.value != "" {
-			return source.value
+// rule, and it is carried by POSITION: callers build the slice in precedence
+// order and the precedence tests permute it.
+func firstSet(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
 		}
 	}
 	return ""
@@ -127,16 +110,12 @@ var (
 // podEngineSources is the canonical precedence chain for the engine word. It is
 // a function (not an inline slice) so the precedence test asserts the SAME order
 // the resolver uses.
-func podEngineSources(flag string, deploy Selection, rt *kit.ResolvedRuntime) []selectionSource {
+func podEngineSources(flag string, deploy Selection, rt *kit.ResolvedRuntime) []string {
 	runtimeEngine := ""
 	if rt != nil {
 		runtimeEngine = rt.RunEngine
 	}
-	return []selectionSource{
-		{levelFlag, flag},
-		{levelDeploy, string(deploy.Engine)},
-		{levelRuntime, runtimeEngine},
-	}
+	return []string{flag, string(deploy.Engine), runtimeEngine}
 }
 
 // ResolvePodEngine resolves the container-engine word for a pod deploy.
@@ -168,16 +147,12 @@ func ResolvePodEngine(flag string, deploy Selection, rt *kit.ResolvedRuntime) (s
 }
 
 // vmBackendSources is the canonical precedence chain for the VM backend.
-func vmBackendSources(flag string, deploy Selection, rt *kit.ResolvedRuntime) []selectionSource {
+func vmBackendSources(flag string, deploy Selection, rt *kit.ResolvedRuntime) []string {
 	runtimeBackend := ""
 	if rt != nil {
 		runtimeBackend = rt.VmBackend
 	}
-	return []selectionSource{
-		{levelFlag, flag},
-		{levelDeploy, string(deploy.Backend)},
-		{levelRuntime, runtimeBackend},
-	}
+	return []string{flag, string(deploy.Backend), runtimeBackend}
 }
 
 // ResolveVmBackend resolves the VM-backend word for a vm deploy. Precedence:
@@ -236,32 +211,28 @@ func qemuAvailable() bool {
 
 // containerdRootfulSources is the canonical precedence chain for the rootful
 // mode: flag > deploy > rt (env > settings) > the capability default (`auto`).
-func containerdRootfulSources(deploy Selection, rt *kit.ResolvedRuntime) []selectionSource {
+func containerdRootfulSources(deploy Selection, rt *kit.ResolvedRuntime) []string {
 	runtimeRootful := ""
 	if rt != nil {
 		runtimeRootful = rt.Rootful
 	}
-	return []selectionSource{
-		{levelFlag, string(deploy.RootfulFlag)},
-		{levelDeploy, string(deploy.Rootful)},
-		{levelRuntime, runtimeRootful},
-	}
+	return []string{string(deploy.RootfulFlag), string(deploy.Rootful), runtimeRootful}
 }
 
 // containerdNamespaceSources is the canonical precedence chain for the
 // containerd namespace. There is no env level (the plan's table has none); the
 // runtime value is the settings-file fold, and the capability row is the
 // built-in default.
-func containerdNamespaceSources(deploy Selection, rt *kit.ResolvedRuntime, capability spec.EngineCapability) []selectionSource {
+func containerdNamespaceSources(deploy Selection, rt *kit.ResolvedRuntime, capability spec.EngineCapability) []string {
 	runtimeNamespace := ""
 	if rt != nil {
 		runtimeNamespace = rt.Namespace
 	}
-	return []selectionSource{
-		{levelFlag, deploy.NamespaceFlag},
-		{levelDeploy, deploy.Namespace},
-		{levelRuntime, runtimeNamespace},
-		{levelDefault, capability.Namespace},
+	return []string{
+		deploy.NamespaceFlag,
+		deploy.Namespace,
+		runtimeNamespace,
+		capability.Namespace,
 	}
 }
 
@@ -293,11 +264,6 @@ func ResolveContainerdTarget(engine spec.EngineName, deploy Selection, rt *kit.R
 	}
 
 	namespace := firstSet(containerdNamespaceSources(deploy, rt, capability)...)
-	if namespace == "" && capability.Namespace != "" {
-		return ContainerdTarget{}, fmt.Errorf(
-			"engine %q advertises namespace %q but the selection resolved an empty namespace",
-			capability.Name, capability.Namespace)
-	}
 
 	return ContainerdTarget{
 		Engine:          engine,

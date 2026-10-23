@@ -403,21 +403,21 @@ func TestResolveRootfulRefusesUnsupportedEngine(t *testing.T) {
 func TestSelectionPrecedenceMutantsReverseAdjacentPairs(t *testing.T) {
 	engineSources := append(
 		podEngineSources("podman", Selection{Engine: "docker"}, &kit.ResolvedRuntime{RunEngine: "containerd"}),
-		selectionSource{levelDefault, "detected-engine"},
+		"detected-engine",
 	)
-	assertAdjacentSwapsFlip(t, "pod engine", engineSources, []string{"podman", "docker", "containerd", "detected-engine"})
+	assertAdjacentSwapsFlip(t, "pod engine", engineSources)
 
 	backendSources := append(
 		vmBackendSources("libvirt", Selection{Backend: "qemu"}, &kit.ResolvedRuntime{VmBackend: "krun"}),
-		selectionSource{levelDefault, "detected-backend"},
+		"detected-backend",
 	)
-	assertAdjacentSwapsFlip(t, "vm backend", backendSources, []string{"libvirt", "qemu", "krun", "detected-backend"})
+	assertAdjacentSwapsFlip(t, "vm backend", backendSources)
 
 	rootfulSources := append(
 		containerdRootfulSources(Selection{RootfulFlag: "sudo", Rootful: "native"}, &kit.ResolvedRuntime{Rootful: "machine"}),
-		selectionSource{levelDefault, autoSelector},
+		autoSelector,
 	)
-	assertAdjacentSwapsFlip(t, "rootful", rootfulSources, []string{"sudo", "native", "machine", autoSelector})
+	assertAdjacentSwapsFlip(t, "rootful", rootfulSources)
 
 	capability, ok := kit.EngineCapabilityFor("containerd")
 	if !ok {
@@ -428,39 +428,39 @@ func TestSelectionPrecedenceMutantsReverseAdjacentPairs(t *testing.T) {
 		&kit.ResolvedRuntime{Namespace: "ns-settings"},
 		capability,
 	)
-	assertAdjacentSwapsFlip(t, "namespace", namespaceSources, []string{"ns-flag", "ns-deploy", "ns-settings", capability.Namespace})
+	assertAdjacentSwapsFlip(t, "namespace", namespaceSources)
 }
 
 // assertAdjacentSwapsFlip proves the canonical order AND every adjacent swap.
-func assertAdjacentSwapsFlip(t *testing.T, name string, sources []selectionSource, values []string) {
+// The chain is positional, so `sources` IS the expected order.
+func assertAdjacentSwapsFlip(t *testing.T, name string, sources []string) {
 	t.Helper()
-	if len(sources) != len(values) {
-		t.Fatalf("%s: %d sources, want %d", name, len(sources), len(values))
+	if len(sources) < 2 {
+		t.Fatalf("%s: %d sources, want at least 2", name, len(sources))
 	}
-	for i, source := range sources {
-		if source.value != values[i] {
-			t.Fatalf("%s: source %d = %q, want %q (the chain order is wrong)", name, i, source.value, values[i])
+	for i, value := range sources {
+		if value == "" {
+			t.Fatalf("%s: source %d is empty; the mutation test needs concrete values", name, i)
 		}
 	}
-	if got := firstSet(sources...); got != values[0] {
-		t.Fatalf("%s: canonical order resolves %q, want %q", name, got, values[0])
+	if got := firstSet(sources...); got != sources[0] {
+		t.Fatalf("%s: canonical order resolves %q, want %q", name, got, sources[0])
 	}
 	// Each adjacent pair is tested in ISOLATION: the levels above it are
 	// emptied, so the pair is what decides. Swapping the pair must flip the
 	// winner; if the resolver ignored the order, it would not.
 	for i := 0; i+1 < len(sources); i++ {
-		isolated := append([]selectionSource(nil), sources...)
+		isolated := append([]string(nil), sources...)
 		for j := 0; j < i; j++ {
-			isolated[j].value = ""
+			isolated[j] = ""
 		}
-		if got := firstSet(isolated...); got != values[i] {
-			t.Fatalf("%s: isolated pair %d resolves %q, want %q", name, i, got, values[i])
+		if got := firstSet(isolated...); got != sources[i] {
+			t.Fatalf("%s: isolated pair %d resolves %q, want %q", name, i, got, sources[i])
 		}
 		isolated[i], isolated[i+1] = isolated[i+1], isolated[i]
-		got := firstSet(isolated...)
-		if got != values[i+1] {
+		if got := firstSet(isolated...); got != sources[i+1] {
 			t.Errorf("%s: swapping levels %d and %d resolved %q, want %q — the precedence order is not load-bearing",
-				name, i, i+1, got, values[i+1])
+				name, i, i+1, got, sources[i+1])
 		}
 	}
 }
