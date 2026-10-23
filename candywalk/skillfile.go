@@ -46,9 +46,12 @@ import (
 //
 // WHICH shape a node's prose is filed in is decided HERE, by ShapeOf — never by a consumer
 // comparing the raw `type:` string itself, and never by a consumer hard-coding one tree.
-// ReadNodeBody is the ONE resolution every consumer of authored prose calls (deploykit's
-// label+validate collector and the marketplace generator alike), so the tree the gate that
-// VALIDATES a body reads and the tree the corpus that PUBLISHES it reads cannot drift apart.
+// ReadNodeBody is the ONE resolution that decision produces, and deploykit's label+validate
+// collector calls it. The marketplace generator is the second consumer the rule exists for: it
+// converts onto the same authority in its own PR (opencharly/plugin-marketplace), which is what
+// makes the CORPUS and the GATE read one rule instead of two copies — until that PR lands, the
+// generator's read and extract branches still carry their own `type:` comparison, so the two
+// agree by having been written to the same contract, not yet by sharing the code.
 // opencharly/sdk#456 is what a drift costs: the collector resolved the skills tree for every node,
 // so each `type: agent` node reported "no body" for a body sitting exactly where the contract
 // files it.
