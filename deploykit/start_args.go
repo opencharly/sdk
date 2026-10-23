@@ -21,11 +21,14 @@ import (
 // for host-identical bind-mount sharing); pass false for a rootless target.
 // entrypoint is the init system command (e.g., ["supervisord", "-n", "-c", "/etc/supervisord.conf"])
 // or the fallback (e.g., ["sleep", "infinity"]).
+// initDef is the image's baked init contract (ai.opencharly.init_def); it supplies
+// the container-runtime argv a systemd-style init declares (systemd mode + stop
+// signal). Nil for an image that declares none.
 //
 // For a systemd-unit ExecStart (which must run in the FOREGROUND so systemd
 // supervises the CLI), use BuildForegroundRunArgs — same body, no `-d`.
-func BuildStartArgs(engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
-	return buildRunArgs(true, engine, rootful, imageRef, uid, gid, ports, name, volumes, bindMounts, gpu, bindAddr, envVars, security, entrypoint, workingDir, network...)
+func BuildStartArgs(engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, initDef *spec.CapabilityInitDef, workingDir string, network ...string) []string {
+	return buildRunArgs(true, engine, rootful, imageRef, uid, gid, ports, name, volumes, bindMounts, gpu, bindAddr, envVars, security, entrypoint, initDef, workingDir, network...)
 }
 
 // BuildForegroundRunArgs is BuildStartArgs for a FOREGROUND launch (no `-d`),
@@ -33,8 +36,8 @@ func BuildStartArgs(engine string, rootful bool, imageRef string, uid, gid int, 
 // foreground for the container's lifetime, so systemd supervises it directly and
 // the unit does not go inactive the instant the CLI returns. Shares the ONE argv
 // body with BuildStartArgs (R3).
-func BuildForegroundRunArgs(engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
-	return buildRunArgs(false, engine, rootful, imageRef, uid, gid, ports, name, volumes, bindMounts, gpu, bindAddr, envVars, security, entrypoint, workingDir, network...)
+func BuildForegroundRunArgs(engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, initDef *spec.CapabilityInitDef, workingDir string, network ...string) []string {
+	return buildRunArgs(false, engine, rootful, imageRef, uid, gid, ports, name, volumes, bindMounts, gpu, bindAddr, envVars, security, entrypoint, initDef, workingDir, network...)
 }
 
 // buildRunArgs is the ONE run-argv builder, detached or foreground. The
@@ -50,7 +53,7 @@ func BuildForegroundRunArgs(engine string, rootful bool, imageRef string, uid, g
 //     workload as the mode-specific workload user — container-uid 0 for rootless
 //     containerd (driven through nerdctl), where container-uid 0 IS the invoking
 //     host user in the rootless userns; a rootful launch forces no user.
-func buildRunArgs(detach bool, engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, workingDir string, network ...string) []string {
+func buildRunArgs(detach bool, engine string, rootful bool, imageRef string, uid, gid int, ports []string, name string, volumes []spec.VolumeMount, bindMounts []ResolvedBindMount, gpu bool, bindAddr string, envVars []string, security spec.SecurityConfig, entrypoint []string, initDef *spec.CapabilityInitDef, workingDir string, network ...string) []string {
 	binary := kit.EngineBinary(engine)
 	capability, hasCapability := kit.EngineCapabilityFor(engine)
 	args := []string{binary, "run"}
@@ -109,6 +112,10 @@ func buildRunArgs(detach bool, engine string, rootful bool, imageRef string, uid
 	for _, e := range envVars {
 		args = append(args, "-e", e)
 	}
+	// The init's container-runtime mode (systemd mode + stop signal), from the
+	// image's baked init contract. One assembly for every engine — the flag
+	// spelling is an engine-capability fact, not a switch here.
+	args = append(args, kit.InitContainerRuntimeArgs(engine, initDef)...)
 	args = append(args, imageRef)
 	args = append(args, entrypoint...)
 	return args

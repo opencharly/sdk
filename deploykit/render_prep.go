@@ -213,6 +213,13 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) (*sp
 			meta.InitDef = &spec.CapabilityInitDef{
 				Entrypoint:         labelInitDef.Entrypoint,
 				FallbackEntrypoint: labelInitDef.FallbackEntrypoint,
+				// The container-venue runtime contract rides the SAME label. It is
+				// what lets a deploy emit systemd mode + the stop signal from the
+				// IMAGE instead of switching on an init-system name, and what keeps
+				// an overlay from restoring a non-root USER over a root-required init.
+				RequiresRoot:       labelInitDef.RequiresRoot,
+				SystemdMode:        labelInitDef.SystemdMode,
+				StopSignal:         labelInitDef.StopSignal,
 				ManagementTool:     labelInitDef.ManagementTool,
 				ManagementCommands: labelInitDef.ManagementCommands,
 			}

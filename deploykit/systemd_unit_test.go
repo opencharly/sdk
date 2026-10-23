@@ -69,7 +69,7 @@ func TestBuildStartArgs_ContainerdSelectsWorkloadUserByMode(t *testing.T) {
 	bind := []ResolvedBindMount{{HostPath: "/home/u/data", ContPath: "/data"}}
 	rootless := strings.Join(BuildStartArgs(
 		"containerd", false, "img:latest", 1000, 1000, nil, "svc",
-		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work",
+		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, nil, "/work",
 	), " ")
 	if !strings.Contains(rootless, "--user 0") {
 		t.Errorf("containerd rootless bind-mount args must set --user 0 for host-identical sharing, got: %s", rootless)
@@ -82,7 +82,7 @@ func TestBuildStartArgs_ContainerdSelectsWorkloadUserByMode(t *testing.T) {
 	}
 	rootful := strings.Join(BuildStartArgs(
 		"containerd", true, "img:latest", 1000, 1000, nil, "svc",
-		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work",
+		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, nil, "/work",
 	), " ")
 	if strings.Contains(rootful, "--user") {
 		t.Errorf("containerd rootful must not force a user; the image's user applies: %s", rootful)
@@ -101,7 +101,7 @@ func TestBuildStartArgs_PodmanKeepsKeepID(t *testing.T) {
 	bind := []ResolvedBindMount{{HostPath: "/home/u/data", ContPath: "/data"}}
 	args := BuildStartArgs(
 		"podman", false, "img:latest", 1000, 1000, nil, "svc",
-		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work",
+		nil, bind, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, nil, "/work",
 	)
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--userns=keep-id:uid=1000,gid=1000") {
@@ -163,14 +163,14 @@ func TestGenerateSystemdUnit_EscapesSystemdSpecifier(t *testing.T) {
 // -d and --rm cannot be specified together"), so the detached argv must NOT carry
 // --rm for containerd; podman/docker must keep it.
 func TestBuildStartArgs_ContainerdDropsRemoveWithDetach(t *testing.T) {
-	nerd := strings.Join(BuildStartArgs("containerd", false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+	nerd := strings.Join(BuildStartArgs("containerd", false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, nil, "/work"), " ")
 	if strings.Contains(nerd, "--rm") {
 		t.Errorf("nerdctl rejects -d --rm; the detached argv must drop --rm: %s", nerd)
 	}
 	if !strings.HasPrefix(nerd, "nerdctl run -d --name svc") {
 		t.Errorf("nerdctl argv shape unexpected: %s", nerd)
 	}
-	pod := strings.Join(BuildStartArgs("podman", false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+	pod := strings.Join(BuildStartArgs("podman", false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, nil, "/work"), " ")
 	if !strings.Contains(pod, "--rm") {
 		t.Errorf("podman accepts -d --rm; it must keep --rm: %s", pod)
 	}
@@ -187,7 +187,7 @@ func TestBuildForegroundRunArgs_NoDetach_WithRemove(t *testing.T) {
 		{"docker", "docker"},
 		{"containerd", "nerdctl"},
 	} {
-		joined := strings.Join(BuildForegroundRunArgs(tc.engine, false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, "/work"), " ")
+		joined := strings.Join(BuildForegroundRunArgs(tc.engine, false, "img:latest", 1000, 1000, nil, "svc", nil, nil, false, "127.0.0.1", nil, SecurityConfig{}, []string{"sleep", "infinity"}, nil, "/work"), " ")
 		if strings.Contains(joined, " -d ") {
 			t.Errorf("%s foreground argv must NOT detach: %s", tc.engine, joined)
 		}

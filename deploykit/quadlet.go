@@ -65,27 +65,31 @@ type ResolvedSidecar struct {
 // one process (built from config-resolve data), so it never crosses the
 // host↔plugin boundary and needs no CUE-sourcing.
 type QuadletConfig struct {
-	BoxName         string
-	ImageRef        string
-	Home            string
-	Ports           []string
-	Volumes         []VolumeMount
-	BindMounts      []ResolvedBindMount
-	GPU             bool
-	BindAddress     string
-	Tunnel          *spec.TunnelConfig
-	UID             int
-	GID             int
-	Env             []string
-	EnvFile         string
-	Instance        string
-	Security        vmshared.SecurityConfig
-	Network         string
-	Version         string
-	Status          string
-	Info            string
-	Secrets         []CollectedSecret
-	Entrypoint      []string
+	BoxName     string
+	ImageRef    string
+	Home        string
+	Ports       []string
+	Volumes     []VolumeMount
+	BindMounts  []ResolvedBindMount
+	GPU         bool
+	BindAddress string
+	Tunnel      *spec.TunnelConfig
+	UID         int
+	GID         int
+	Env         []string
+	EnvFile     string
+	Instance    string
+	Security    vmshared.SecurityConfig
+	Network     string
+	Version     string
+	Status      string
+	Info        string
+	Secrets     []CollectedSecret
+	Entrypoint  []string
+	// InitDef is the image's baked init contract. It carries the container-runtime
+	// mode a systemd-style init declares (systemd mode + stop signal); nil for an
+	// image with none.
+	InitDef         *spec.CapabilityInitDef
 	CharlyBin       string
 	EncryptedMounts bool
 	KeyringBackend  bool
@@ -220,6 +224,29 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 		fmt.Fprintf(b, "Exec=%s\n", strings.Join(cfg.Entrypoint, " "))
 	} else {
 		b.WriteString("Exec=sleep infinity\n")
+	}
+	emitInitRuntime(b, cfg)
+}
+
+// emitInitRuntime renders the init's declared container-runtime mode into the
+// quadlet, from the SAME declaration the argv path reads. There is no quadlet
+// `Systemd=` key (podman 6.1.4's generator does not know it, and an UNKNOWN key
+// makes quadlet skip the whole unit — `charly start` then reports "Unit ... not
+// found", measured), so the engine flag goes through the escape hatch as the
+// engine's OWN `systemd_mode_arg` and the stop signal through the supported
+// `StopSignal=` key. Quadlet is the podman unit format, so the capability word
+// here is podman by definition.
+func emitInitRuntime(b *strings.Builder, cfg QuadletConfig) {
+	if cfg.InitDef == nil {
+		return
+	}
+	if cfg.InitDef.SystemdMode {
+		if c, ok := kit.EngineCapabilityFor("podman"); ok && c.SystemdModeArg != "" {
+			fmt.Fprintf(b, "PodmanArgs=%s\n", c.SystemdModeArg)
+		}
+	}
+	if cfg.InitDef.StopSignal != "" {
+		fmt.Fprintf(b, "StopSignal=%s\n", cfg.InitDef.StopSignal)
 	}
 }
 
