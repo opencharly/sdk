@@ -208,6 +208,21 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 	expanded := *c
 	env := pc.EffectiveEnv()
 	missing := ExpandOpVars(&expanded, env)
+	// The DATA channel: the host's exported values reach the step's PROCESS ENVIRONMENT.
+	// It runs AFTER the text expansion, because the two channels are different by
+	// construction — the text channel substitutes a value into the step's TEXT (where the
+	// shell re-parses it), and this one puts the value in the step's ENV (where the
+	// command verb applies it as a shell-QUOTED export, so it arrives as one word). A
+	// host that does not implement the optional StepEnvExporter seam exports nothing and
+	// this walk behaves exactly as it did before.
+	//
+	// The step's own `env:` wins on a name collision, and the map is COPIED: `expanded`
+	// is a struct copy that SHARES the Op's Env map, so mutating it in place would leak
+	// one run's values into the next run of the same plan.
+	var stepEnvRejected []string
+	if ex, ok := pc.(StepEnvExporter); ok {
+		expanded.Env, stepEnvRejected = MergeStepEnv(expanded.Env, ex.StepEnv())
+	}
 	if len(missing) > 0 {
 		// An unresolved cross-deployment var (${HOST:…}) means the peer this probe targets is
 		// UNREACHABLE — the probe's premise failed, so it FAILS (a SKIP there would be a fake
@@ -293,6 +308,17 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 	}
 
 	result = RunWithEventually(ctx, &expanded, dispatch)
+	// DISCLOSE what the data channel could not export. A name the shell cannot export
+	// (the check engine's `HOST_PORT:6379` vocabulary is not the shell's) would
+	// otherwise vanish, and a value that vanishes SILENTLY reads exactly like a host that
+	// never supplied it. A NOTE, never a verdict: the step itself still ran.
+	if note := StepEnvRejectionNote(stepEnvRejected); note != "" {
+		if result.Message == "" {
+			result.Message = note
+		} else {
+			result.Message += "\n" + note
+		}
+	}
 	result.Op = c
 	result.Verb = kind
 	result.Elapsed = time.Since(start)
