@@ -84,6 +84,16 @@ type RunnerConfig struct {
 	MCPProvide []spec.CandyMCPProvide
 
 	HostVars map[string]string
+	// StepEnv carries the values a step's PROCESS ENVIRONMENT should hold — the DATA
+	// channel (see stepenv.go). A host that resolves values a step should SEE rather
+	// than interpolate hands them over here; the walk puts them in the step's env, and
+	// the command verb applies them as a shell-QUOTED export, so a value that carries a
+	// shell metacharacter arrives as ONE WORD instead of becoming SOURCE. Empty (the
+	// default) exports nothing and changes no verdict.
+	//
+	// It is the PROCESS environment, not the expansion map: a name the shell cannot
+	// export is not exported at all (and is disclosed), and a value is never expanded.
+	StepEnv map[string]string
 	// CandyDirs maps candy name → resolved source dir (relative committed-APK anchoring);
 	// CandyScanErr is its build error (only an apk-anchoring check consults it). Host-read.
 	CandyDirs    map[string]string
@@ -111,6 +121,10 @@ type RunnerConfig struct {
 // thin CheckContext, to verb dispatch).
 var _ PlanContext = (*Runner)(nil)
 
+// Runner also implements the OPTIONAL StepEnvExporter seam — locked at compile time, so a
+// change to the seam's shape cannot land as a silent no-op.
+var _ StepEnvExporter = (*Runner)(nil)
+
 // Runner wires the execution context for one pass of checks. Constructor-shaped: build it with
 // NewRunner and reach its state through the methods below.
 type Runner struct {
@@ -124,6 +138,7 @@ type Runner struct {
 	vmName       string
 	mcpProvide   []spec.CandyMCPProvide
 	hostVars     map[string]string
+	stepEnv      map[string]string
 	candyDirs    map[string]string
 	candyScanErr error
 
@@ -163,6 +178,7 @@ func NewRunner(cfg RunnerConfig) *Runner {
 		vmName:               cfg.VmName,
 		mcpProvide:           cfg.MCPProvide,
 		hostVars:             cfg.HostVars,
+		stepEnv:              cfg.StepEnv,
 		candyDirs:            cfg.CandyDirs,
 		candyScanErr:         cfg.CandyScanErr,
 		verifyOnly:           cfg.VerifyOnly,
@@ -253,6 +269,11 @@ func (r *Runner) EffectiveEnv() map[string]string {
 	}
 	return env
 }
+
+// StepEnv implements the optional StepEnvExporter seam: the values a step's PROCESS
+// ENVIRONMENT carries — the DATA channel (see stepenv.go). The map is READ-ONLY: the walk
+// copies what it needs, so the host's map is never mutated by a walk.
+func (r *Runner) StepEnv() map[string]string { return r.stepEnv }
 
 // SetUnresolvedClassifier installs the host's classification of an unresolved variable name. The
 // host is the only party that knows its own variable vocabulary — which names a deploy scope, a
