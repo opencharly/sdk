@@ -338,12 +338,19 @@ var (
 )
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy
-// refs only — package names and bare candy names are never remote refs). Refs that point INTO
-// the charly repo itself (@github.com/opencharly/charly/candy/<name> — the pre-cutover in-repo
-// form, still carried by box submodule repos until their own cutover) are NOT standalone candy
-// repos and are skipped: they resolve to the LOCAL charly checkout's candy dir, which the local
-// FS walk already surfaces (or, after Phase 4, are stale refs swept by the box repos' own
-// cutover).
+// refs only — package names and bare candy names are never remote refs).
+//
+// ONE charly ref form is skipped: the SUBPATH form that points INTO the charly repo
+// (@github.com/opencharly/charly/candy/<name> — the pre-cutover in-repo ref, still carried by box
+// submodule repos until their own cutover). It is not a standalone candy repo: it resolves to the
+// LOCAL charly checkout's candy dir, which the local FS walk already surfaces (or, after Phase 4, it
+// is a stale ref swept by the box repos' own cutover). The BARE repo-root form
+// (@github.com/opencharly/charly:<ref>) is NOT that form and IS collected: it is a corpus SOURCE,
+// the shape `opencharly/opencharly`, `spec` and `sdk` are already pinned as, and `charly` authors
+// its skills at `<root>/.agents/skills/` beside the code they describe. Keying the skip on
+// `RepoPath` alone could not tell the two apart — `SubPath` can, and that distinction is the whole
+// predicate in acceptedRef below (opencharly/sdk#468; opencharly/opencharly#600 for the cutover that
+// needed it).
 //
 // WHY THE PATTERN ACCEPTS EVERY REF FORM AND NOTHING FAILS CLOSED. The former CalVer-only pattern
 // dropped a branch (`:feat/…`) or a commit SHA with no error and no warning, so a fail-closed
@@ -396,12 +403,23 @@ func collectRefs(path string) []string {
 	return out
 }
 
-// acceptedRef applies the ONE ref policy to a candidate token — the pre-cutover in-repo charly form
-// is skipped, and a version that is not a real ref shape is dropped as prose notation — returning
-// "" when the token is not a declared ref. Both readers below share it, so the policy has one home.
+// acceptedRef applies the ONE ref policy to a candidate token — the pre-cutover in-repo charly
+// SUBPATH form is skipped, and a version that is not a real ref shape is dropped as prose notation —
+// returning "" when the token is not a declared ref. Both readers below share it, so the policy has
+// one home. `RepoPath` names the repo; `SubPath` says whether the ref points INTO it, which is what
+// separates the two charly forms: the BARE repo-root ref is a corpus source and is accepted
+// (opencharly/sdk#468).
 func acceptedRef(ref string) string {
 	pr := parseRemoteRef(ref)
-	if pr.RepoPath == "" || pr.RepoPath == "github.com/opencharly/charly" {
+	if pr.RepoPath == "" {
+		return ""
+	}
+	// The pre-cutover IN-REPO charly form is still refused: it names a candy INSIDE charly at an old
+	// tag, resolves to the LOCAL checkout's candy dir, and is swept by the box repos' own cutover. The
+	// BARE repo-root form is a CORPUS SOURCE — charly authors skills at `.agents/skills/` beside the
+	// code they describe, and the files-only fetch reads its root manifest and those trees and nothing
+	// else (opencharly/sdk#468).
+	if pr.RepoPath == "github.com/opencharly/charly" && pr.SubPath != "" {
 		return ""
 	}
 	if !acceptableVersion(pr.Version) {
@@ -448,9 +466,10 @@ func collectRefsNode(n *yaml.Node, out *[]string) {
 	}
 }
 
-// parseRemoteRef is the canonical spec.ParseRemoteRef (F4.3 parser consolidation: the
-// pre-cutover in-repo form (@github.com/opencharly/charly/candy/<name>) is excluded by the
-// caller — collectRefs skips RepoPath == github.com/opencharly/charly).
+// parseRemoteRef is the canonical spec.ParseRemoteRef (F4.3 parser consolidation). The ref POLICY —
+// including the one charly form it skips, the pre-cutover in-repo SUBPATH ref — lives in acceptedRef,
+// the single home both readers share; the BARE repo-root charly ref is admitted there
+// (opencharly/sdk#468).
 func parseRemoteRef(ref string) *spec.ParsedRef {
 	return spec.ParseRemoteRef(ref)
 }
