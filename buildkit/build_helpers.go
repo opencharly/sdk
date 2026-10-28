@@ -15,7 +15,7 @@ import (
 )
 
 // build_helpers.go — pure build-engine helpers relocated out of charly core (the BUILD-cone
-// "every capability is a plugin" cutover): box-arg normalization, podman-jobs resolution, host
+// "every capability is a plugin" cutover): box-arg normalization, stage-parallelism resolution, host
 // platform detection, the charly-binary freshness check, and the pacstrap bootstrap-conf
 // renderers. None of these touch the loader, the provider registry, or any charly-core-only
 // type — every dependency is stdlib or a buildkit type already in this package
