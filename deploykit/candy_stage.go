@@ -11,31 +11,79 @@ import (
 	"github.com/opencharly/sdk/vmshared"
 )
 
-// CandyCopySource returns the build-context path a candy's files are COPYed from:
-// the staged _candy dir for a remote candy, the default candy/<name>/ for a local
-// candy at the default location, else the relative SourceDir. Relocated (P8).
+// CandyCopySource returns the build-context path a candy's files are COPYed from — the ONE
+// mapping from a candy's RESOLUTION ORIGIN to its COPY source:
+//
+//   - an @github ref or a candy declared in an imported namespace is STAGED, copied into
+//     .build/_candy/<name>.<version>/ by the build's host-fs prep;
+//   - a project-local candy is referenced by its project-relative directory (the
+//     conventional candy/<name>/ at the default location).
+//
+// The origin is decided from WHERE the candy lives — its resolved SourceDir relative to the
+// build root, plus the resolver's Remote marker — never from its name. Deriving the source
+// from the name alone emitted candy/<name>/ for a candy that lives outside the project (an
+// imported namespace's checkout), a directory the importing project cannot have
+// (opencharly/.github#263). Relocated (P8).
 func (g *Generator) CandyCopySource(candyRef string) string {
-	layer := g.Candies[candyRef]
-	if layer.GetRemote() {
+	return g.candyCopySource(g.Candies[candyRef], candyRef)
+}
+
+// candyCopySource is the origin→COPY-source mapping for a candy already in hand. A caller
+// that holds the layer (a builder stage context) calls this instead of re-deriving the candy's
+// map key, so there is ONE derivation. name is the fallback directory name, used only for a
+// candy carrying no SourceDir (a project-local candy at the conventional candy/<name>/); the
+// origin itself is read from the layer.
+func (g *Generator) candyCopySource(layer CandyModel, name string) string {
+	if name == "" {
+		name = layer.GetName()
+	}
+	if g.candyRequiresStaging(layer, name) {
 		return ".build/_candy/" + CandyStageDirName(layer)
 	}
-	// If SourceDir matches the default candy/<candyRef>/ location, preserve the
+	sourceDir := g.candySourceDir(layer, name)
+	// If SourceDir matches the default candy/<name>/ location, preserve the
 	// legacy path format (cheap, avoids filepath.Rel calls on the hot path).
-	defaultDir := filepath.Join(g.Dir, kit.DefaultCandyDir, candyRef)
-	if layer.GetSourceDir() == "" || layer.GetSourceDir() == defaultDir {
-		return kit.DefaultCandyDir + "/" + candyRef
+	defaultDir := filepath.Join(g.Dir, kit.DefaultCandyDir, name)
+	if sourceDir == defaultDir {
+		return kit.DefaultCandyDir + "/" + name
 	}
-	// A LOCAL candy whose SourceDir is not the default candy/<ref>/ — remote candies returned at
-	// the top of this function, so they never reach here. The case this serves is a candy
-	// anchored somewhere else in the project: an inline candy takes its declaring charly.yml's
-	// directory as SourceDir, and a `discover:` entry can point at a path other than candy/.
-	// Resolve it relative to the build root. (Not a `directory:` redirect — that field was
-	// removed and is now a hard load error, charly/layers.go.)
-	rel, err := filepath.Rel(g.Dir, layer.GetSourceDir())
+	// A LOCAL candy whose SourceDir is not the default candy/<name>/ — staged candies
+	// returned above. The case this serves is a candy anchored somewhere else IN the project:
+	// an inline candy takes its declaring charly.yml's directory as SourceDir, and a
+	// `discover:` entry can point at a path other than candy/. Resolve it relative to the
+	// build root. (Not a `directory:` redirect — that field was removed and is now a hard load
+	// error, charly/layers.go.)
+	rel, err := filepath.Rel(g.Dir, sourceDir)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return kit.DefaultCandyDir + "/" + candyRef
+		return kit.DefaultCandyDir + "/" + name
 	}
 	return rel
+}
+
+// candySourceDir returns the directory a resolved candy's files actually live in: its
+// SourceDir, or the conventional project-local candy/<name>/ when the model carries none.
+func (g *Generator) candySourceDir(layer CandyModel, name string) string {
+	if sourceDir := layer.GetSourceDir(); sourceDir != "" {
+		return sourceDir
+	}
+	return filepath.Join(g.Dir, kit.DefaultCandyDir, name)
+}
+
+// candyRequiresStaging reports whether a candy's files must be staged into the build context
+// (.build/_candy/) rather than referenced by a project-relative COPY source. True for a candy
+// the resolver marked Remote (an @github ref) and for ANY candy whose resolved directory lies
+// outside the build root — an imported namespace's candy is fetched into the namespace's own
+// checkout, so no project-relative path can name it. This is the origin predicate
+// candyCopySource maps to a path; no caller re-derives it.
+func (g *Generator) candyRequiresStaging(layer CandyModel, name string) bool {
+	if layer.GetRemote() {
+		return true
+	}
+	rel, err := filepath.Rel(g.Dir, g.candySourceDir(layer, name))
+	if err != nil {
+		return true
+	}
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // EmitScratchStages emits a `FROM scratch AS <candy>` + `COPY <src>/ /` per candy,
@@ -79,14 +127,14 @@ func (g *Generator) EmitScratchStages(b *strings.Builder, candyOrder []string) {
 // dir, whose own repo root is not present at generation time. Staging the BUILD root's
 // tree into a remote candy's stage would substitute the wrong repository.
 func (g *Generator) rootCopySources(candyName string, layer CandyModel) []string {
-	if layer.GetRemote() {
+	// A staged candy's files live in the materialized _candy/<name>.<ver> dir, whose own repo
+	// root is not present at generation time. Staging the BUILD root's tree into it would
+	// substitute the wrong repository — and, for an imported-namespace candy, the importing
+	// project's tree rather than the namespace's. Same origin predicate as candyCopySource.
+	if g.candyRequiresStaging(layer, candyName) {
 		return nil
 	}
-	candyDir := layer.GetSourceDir()
-	if candyDir == "" {
-		candyDir = filepath.Join(g.Dir, kit.DefaultCandyDir, candyName)
-	}
-	return rootCopySources(layer.RunOps(), g.Dir, candyDir)
+	return rootCopySources(layer.RunOps(), g.Dir, g.candySourceDir(layer, candyName))
 }
 
 // rootCopySources is the pure core of (*Generator).rootCopySources: ops → the sources
