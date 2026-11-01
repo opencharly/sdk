@@ -88,9 +88,12 @@ func projectCandiesScanned(uf *spec.UnifiedFile, rootDir, projectRoot string, pa
 			// `from:`-directory candy whose resolved path happens to fall outside the project root.
 			// Compare against projectRoot — the TOP-LEVEL project, never this namespace's own root,
 			// or an imported-namespace candy looks local to the project (opencharly/.github#263).
+			// The outside test is exact (`..` or a `../` prefix): the loose `..` string prefix would
+			// also mark a project-local directory named `..<x>` Remote.
 			if absRoot, err := filepath.Abs(projectRoot); err == nil {
 				if absCandy, err := filepath.Abs(p); err == nil {
-					if rel, err := filepath.Rel(absRoot, absCandy); err == nil && strings.HasPrefix(rel, "..") {
+					if rel, err := filepath.Rel(absRoot, absCandy); err == nil &&
+						(rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
 						v.Remote = true
 					}
 				}

@@ -1,6 +1,8 @@
 package deploykit
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/opencharly/sdk/buildkit"
@@ -107,5 +109,35 @@ func TestCollectBuilderRuntimeEnv_NilBuilderConfig(t *testing.T) {
 	got := g.CollectBuilderRuntimeEnv([]string{"x"}, img)
 	if got != nil {
 		t.Errorf("expected nil when BuilderConfig is nil, got %v", got)
+	}
+}
+
+// TestBuildStageContext_ImportedNamespaceCopySource is the R7 guard for the
+// BuildStageContext call-site collapse (opencharly/sdk#477). A candy declared in an imported
+// namespace is Remote and carries NO RepoPath (it was never fetched through an @github ref),
+// so the former `CandyCopySource(CandyMapKey(layer))` re-derivation produced an EMPTY map key
+// and looked up no layer at all. The builder stage's COPY source must come from the same
+// origin→path mapping every other COPY site uses.
+func TestBuildStageContext_ImportedNamespaceCopySource(t *testing.T) {
+	project := t.TempDir()
+	namespaceCheckout := t.TempDir()
+	candyDir := filepath.Join(namespaceCheckout, "candy", "cachyos-base-check")
+	if err := os.MkdirAll(candyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	const ref = "cachyos-base-check"
+	layer := NewSpecCandyModel(
+		spec.CandyModel{Name: ref, Version: "2026.300.1129", SourceDir: candyDir},
+		spec.CandyView{Name: ref, Remote: true}, // Remote with NO RepoPath — the namespace-resolved state
+	)
+	g := &Generator{Dir: project, Candies: map[string]CandyModel{ref: layer}}
+	img := &buildkit.ResolvedBox{ResolvedBox: spec.ResolvedBox{
+		UID: 1000, GID: 1000, Home: "/home/crabbox", User: "crabbox",
+	}}
+
+	ctx := g.BuildStageContext(layer, "npm", &buildkit.BuilderDef{}, img, "arch.arch-builder")
+	if want := ".build/_candy/cachyos-base-check.2026.300.1129"; ctx.CopySrc != want {
+		t.Errorf("BuildStageContext CopySrc = %q, want %q", ctx.CopySrc, want)
 	}
 }
