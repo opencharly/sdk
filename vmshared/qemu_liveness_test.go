@@ -173,16 +173,11 @@ func TestQemuAliveLiveForeignQemu(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if !bytes.Contains(cmdline, []byte("qemu-system")) {
-		// Distinguish the two ways this premise can fail, because they need different answers:
-		//   * the helper is GONE — the premise is genuinely broken and this must FAIL;
-		//   * the helper is ALIVE but its argv is not readable — some runners mount /proc so that
-		//     another process's cmdline reads back empty. That is a VISIBILITY limit of the runner,
-		//     not a defect in QemuAlive, and asserting here would turn every unrelated PR's `go`
-		//     gate red on that runner (opencharly/sdk#480).
-		if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
-			t.Fatalf("helper exited before its cmdline could be read (%v), premise broken: %q", err, cmdline)
-		}
+	alive := cmd.Process.Signal(syscall.Signal(0)) == nil
+	switch qemuPremiseOutcome(cmdline, alive) {
+	case premiseHelperGone:
+		t.Fatalf("helper exited before its cmdline could be read, premise broken: %q", cmdline)
+	case premiseUnreadable:
 		t.Skipf("the runner does not expose another process's argv — helper is alive but its cmdline reads back empty (%q), so the substring-degradation premise cannot be established here", cmdline)
 	}
 
