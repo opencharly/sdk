@@ -90,7 +90,10 @@ func TestBuildArgs_ExportShape(t *testing.T) {
 	}
 	got := strings.Join(args, " ")
 	for _, want := range []string{
-		"build --frontend dockerfile.v0",
+		// The progress mode is EXPLICIT: leaving it to buildctl's `auto` default makes a build
+		// report differently in a terminal and in CI, and the non-terminal caller loses the
+		// failing step's own output (opencharly/.github#271).
+		"build --progress plain --frontend dockerfile.v0",
 		"--addr unix:///run/1000/x.sock",
 		"--local context=/ctx",
 		"--local dockerfile=/ctx",
