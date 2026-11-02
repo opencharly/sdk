@@ -175,7 +175,7 @@ func TestQemuAliveLiveForeignQemu(t *testing.T) {
 	}
 	alive := cmd.Process.Signal(syscall.Signal(0)) == nil
 	switch qemuPremiseOutcome(cmdline, alive) {
-	case premiseHelperGone:
+	case premiseBroken:
 		t.Fatalf("helper exited before its cmdline could be read, premise broken: %q", cmdline)
 	case premiseUnreadable:
 		t.Skipf("the runner does not expose another process's argv — helper is alive but its cmdline reads back empty (%q), so the substring-degradation premise cannot be established here", cmdline)

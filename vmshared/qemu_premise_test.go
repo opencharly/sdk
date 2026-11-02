@@ -14,8 +14,9 @@ const (
 	// premiseUnreadable: the helper is alive but its argv is not exposed (some runners mount
 	// /proc so another process's cmdline reads back empty). A VISIBILITY limit, not a defect.
 	premiseUnreadable
-	// premiseHelperGone: the helper has exited, so the premise really is broken.
-	premiseHelperGone
+	// premiseBroken: the premise cannot be relied on — the helper exited, or its argv is readable
+	// and does not carry the marker (so it is not running as qemu-system).
+	premiseBroken
 )
 
 // qemuPremiseOutcome decides the guard's action from the two facts it can observe, with no
@@ -26,10 +27,15 @@ func qemuPremiseOutcome(cmdline []byte, alive bool) premiseOutcome {
 	if bytes.Contains(cmdline, []byte("qemu-system")) {
 		return premiseOK
 	}
-	if alive {
+	// An EMPTY cmdline is the INVISIBLE case: the runner does not expose another process's argv.
+	// A NON-EMPTY cmdline without the marker is a different thing entirely — argv was readable and
+	// the helper is not running as qemu-system, which means the premise really is broken and the
+	// assertion below would be proving nothing. Conflating the two would let a genuinely broken
+	// premise skip (opencharly/sdk#479 round 4).
+	if alive && len(cmdline) == 0 {
 		return premiseUnreadable
 	}
-	return premiseHelperGone
+	return premiseBroken
 }
 
 // TestQemuPremiseOutcome covers all three outcomes. Without it the unreadable-argv branch
@@ -43,8 +49,8 @@ func TestQemuPremiseOutcome(t *testing.T) {
 	}{
 		{"observable argv with the marker", []byte("/tmp/x/qemu-system\x0030\x00"), true, premiseOK},
 		{"alive but argv hidden", []byte(""), true, premiseUnreadable},
-		{"alive, argv present without the marker", []byte("/tmp/x/other\x00"), true, premiseUnreadable},
-		{"helper gone", []byte(""), false, premiseHelperGone},
+		{"alive, argv readable but NOT the marker — a broken premise, not an invisible one", []byte("/tmp/x/other\x00"), true, premiseBroken},
+		{"helper gone", []byte(""), false, premiseBroken},
 	} {
 		if got := qemuPremiseOutcome(tc.cmdline, tc.alive); got != tc.want {
 			t.Errorf("%s: qemuPremiseOutcome(%q, alive=%v) = %v, want %v",
