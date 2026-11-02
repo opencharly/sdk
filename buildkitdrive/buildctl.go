@@ -78,7 +78,15 @@ func (b Build) Args(dest string) ([]string, error) {
 	if strings.TrimSpace(dest) == "" {
 		return nil, fmt.Errorf("buildkitdrive: build: no export destination")
 	}
-	args := []string{"build", "--frontend", "dockerfile.v0"}
+	// `--progress plain` is EXPLICIT, never left to buildctl's `auto` default. Auto picks the mode
+	// from whether the caller looks like a terminal, so the same build reports differently in a
+	// terminal and in CI — and every non-terminal caller (a workflow, a log file, a captured
+	// subprocess) loses the failing step's own output, surfacing only the one-line Solve error.
+	// Measured: an image build in CI failed at a recipe RUN with `did not complete successfully:
+	// exit code: 1` and no step output at all, which cost five wrong hypotheses before the daemon
+	// log named the real cause (opencharly/.github#271). A build's diagnostics must not depend on
+	// how it is being watched.
+	args := []string{"build", "--progress", "plain", "--frontend", "dockerfile.v0"}
 	if b.Addr != "" {
 		args = append(args, "--addr", b.Addr)
 	}
