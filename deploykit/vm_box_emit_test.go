@@ -13,6 +13,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -83,11 +84,10 @@ func TestVmBoxLabelCompleteness(t *testing.T) {
 // TestVmBoxEmitReadBackRoundTrip is the live integration test: EmitVmBox a tiny
 // fixture "disk" (a 1-byte file) with a populated metadata contract into local podman
 // storage, read the contract back with VmCapabilitiesFromLabels, and assert equality.
-// Skips when podman is not available on the host.
+// Skips when the engine is absent OR installed-but-unusable (see engineUsable).
 func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
-	if _, err := exec.LookPath("podman"); err != nil {
-		t.Skipf("podman not available on this host — skipping VM box emit/read-back integration test: %v", err)
-	}
+	requireUsableEngine(t)
+	requireBuildkitDrive(t)
 
 	diskPath := filepath.Join(t.TempDir(), "disk.qcow2")
 	if err := os.WriteFile(diskPath, []byte{0x01}, 0o644); err != nil {
@@ -120,7 +120,7 @@ func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 		_ = exec.Command("podman", "rmi", "-f", ref).Run()
 	})
 
-	if err := EmitVmBox("podman", ref, meta, diskPath); err != nil {
+	if err := EmitVmBox(context.Background(), "podman", ref, meta, diskPath); err != nil {
 		t.Fatalf("EmitVmBox: %v", err)
 	}
 
@@ -149,11 +149,10 @@ func TestVmBoxEmitReadBackRoundTrip(t *testing.T) {
 // with ContainerDiskPath emits a real image whose single layer holds the disk at
 // /disk/disk.img — the KubeVirt containerDisk contract. The emitted image is saved to an
 // OCI layout and the layer tar inspected directly (the scratch image has no shell to run
-// `find` in). Skips when podman is unavailable.
+// `find` in). Skips when the engine is absent OR installed-but-unusable (see engineUsable).
 func TestEmitVmBoxAtContainerDiskPathLive(t *testing.T) {
-	if _, err := exec.LookPath("podman"); err != nil {
-		t.Skipf("podman not available on this host — skipping the live ContainerDiskPath emit: %v", err)
-	}
+	requireUsableEngine(t)
+	requireBuildkitDrive(t)
 
 	diskPath := filepath.Join(t.TempDir(), "disk.qcow2")
 	if err := os.WriteFile(diskPath, []byte("qcow2-fixture-payload"), 0o644); err != nil {
@@ -163,8 +162,8 @@ func TestEmitVmBoxAtContainerDiskPathLive(t *testing.T) {
 	ref := "localhost/vm-box-containerdisk-live:" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	t.Cleanup(func() { _ = exec.Command("podman", "rmi", "-f", ref).Run() })
 
-	if err := EmitVmBoxAt("podman", ref, meta, diskPath, ContainerDiskPath); err != nil {
-		t.Fatalf("EmitVmBoxAt(ContainerDiskPath): %v", err)
+	if err := EmitVmBoxAt(context.Background(), "podman", ref, meta, diskPath, ContainerDiskPath); err != nil {
+		t.Fatalf("EmitVmBoxAt(context.Background(), ContainerDiskPath): %v", err)
 	}
 
 	// Save the emitted image as an OCI layout and read the layer tar's entry names.
@@ -270,7 +269,7 @@ func TestRenderVmBoxContainerfilePaths(t *testing.T) {
 	meta := &spec.VmBoxMetadata{Version: "0.2026269.0"}
 	j, _ := json.Marshal(meta)
 
-	vmBox := renderVmBoxContainerfile("disk.qcow2", VmBoxDiskPath, j, meta, "my-box")
+	vmBox := renderVmBoxContainerfile([]vmBoxCopy{{contextName: "disk.qcow2", inImage: VmBoxDiskPath}}, j, meta, "my-box")
 	if !strings.Contains(vmBox, "COPY disk.qcow2 /disk.qcow2\n") {
 		t.Errorf("the default VM-box render must COPY to %s; got:\n%s", VmBoxDiskPath, vmBox)
 	}
@@ -283,12 +282,57 @@ func TestRenderVmBoxContainerfilePaths(t *testing.T) {
 		t.Errorf("the VM-box render must stamp %s=<leaf> so retention can reclaim the tag:\n%s", spec.LabelBox, vmBox)
 	}
 
-	cd := renderVmBoxContainerfile("disk.img", ContainerDiskPath, j, meta, "my-box")
+	cd := renderVmBoxContainerfile([]vmBoxCopy{{contextName: "disk.img", inImage: ContainerDiskPath}}, j, meta, "my-box")
 	if !strings.Contains(cd, "COPY disk.img /disk/disk.img\n") {
 		t.Errorf("the containerDisk render must COPY to %s; got:\n%s", ContainerDiskPath, cd)
 	}
 	if strings.Contains(cd, VmBoxDiskPath) {
 		t.Errorf("the containerDisk render must NOT carry the VM-box path:\n%s", cd)
+	}
+
+	// The MICROVM shape: one COPY per artefact, at the shipped microVM paths, and neither of
+	// the single-disk paths — a box that carried the wrong destination would let the VMM boot
+	// a path that is not there.
+	micro := renderVmBoxContainerfile([]vmBoxCopy{
+		{contextName: "rootfs.img", inImage: MicroVMRootfsPath},
+		{contextName: "vmlinux", inImage: MicroVMKernelPath},
+	}, j, meta, "my-box")
+	if !strings.Contains(micro, "COPY rootfs.img /rootfs.img\n") {
+		t.Errorf("the microVM render must COPY the root drive to %s; got:\n%s", MicroVMRootfsPath, micro)
+	}
+	if !strings.Contains(micro, "COPY vmlinux /vmlinux\n") {
+		t.Errorf("the microVM render must COPY the kernel to %s; got:\n%s", MicroVMKernelPath, micro)
+	}
+	if strings.Contains(micro, VmBoxDiskPath) || strings.Contains(micro, ContainerDiskPath) {
+		t.Errorf("the microVM render must NOT carry either single-disk path:\n%s", micro)
+	}
+}
+
+// TestEmitVmBoxMicroVM_Guards — the microVM entry point's deterministic guards, with no engine:
+// nil metadata is refused, and an artefact that does not exist is refused BEFORE anything is
+// staged. The last assertion is the one that matters most: a FAILED emit must leave the caller's
+// metadata untouched, because the emitter records only the layout it actually wrote — a box that
+// was never built must not be described by a label.
+func TestEmitVmBoxMicroVM_Guards(t *testing.T) {
+	dir := t.TempDir()
+	rootfs := filepath.Join(dir, "rootfs.img")
+	if err := os.WriteFile(rootfs, []byte{1}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	missing := filepath.Join(dir, "not-there.vmlinux")
+	meta := &spec.VmBoxMetadata{Distro: "ubuntu"}
+
+	if err := EmitVmBoxMicroVM(context.Background(), "podman", "localhost/x:t", nil, rootfs, rootfs); err == nil {
+		t.Error("EmitVmBoxMicroVM accepted nil metadata")
+	}
+
+	if err := EmitVmBoxMicroVM(context.Background(), "podman", "localhost/x:t", meta, rootfs, missing); err == nil {
+		t.Error("EmitVmBoxMicroVM accepted a kernel artefact that does not exist")
+	}
+
+	if meta.Artifacts != (spec.VmBoxArtifacts{}) {
+		t.Errorf("a FAILED emit recorded a layout (%+v); the label must never describe a box that was not built", meta.Artifacts)
 	}
 }
 
@@ -300,7 +344,7 @@ func TestEmitVmBoxAtRejectsRelativePath(t *testing.T) {
 	if err := os.WriteFile(disk, []byte{1}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := EmitVmBoxAt("podman", "localhost/x:t", meta, disk, "disk/disk.img"); err == nil {
+	if err := EmitVmBoxAt(context.Background(), "podman", "localhost/x:t", meta, disk, "disk/disk.img"); err == nil {
 		t.Error("EmitVmBoxAt accepted a relative in-image path; it must be absolute")
 	}
 }
@@ -324,7 +368,7 @@ func TestEmitVmBoxAtRejectsUnsafePath(t *testing.T) {
 		"/disk/disk.img\"",        // quote
 		"/disk/disk.img;rm -rf /", // semicolon
 	} {
-		if err := EmitVmBoxAt("podman", "localhost/x:t", meta, disk, bad); err == nil {
+		if err := EmitVmBoxAt(context.Background(), "podman", "localhost/x:t", meta, disk, bad); err == nil {
 			t.Errorf("EmitVmBoxAt accepted unsafe in-image path %q", bad)
 		}
 	}

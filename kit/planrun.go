@@ -208,6 +208,21 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 	expanded := *c
 	env := pc.EffectiveEnv()
 	missing := ExpandOpVars(&expanded, env)
+	// The DATA channel: the host's exported values reach the step's PROCESS ENVIRONMENT.
+	// It runs AFTER the text expansion, because the two channels are different by
+	// construction — the text channel substitutes a value into the step's TEXT (where the
+	// shell re-parses it), and this one puts the value in the step's ENV (where the
+	// command verb applies it as a shell-QUOTED export, so it arrives as one word). A
+	// host that does not implement the optional StepEnvExporter seam exports nothing and
+	// this walk behaves exactly as it did before.
+	//
+	// The step's own `env:` wins on a name collision, and the map is COPIED: `expanded`
+	// is a struct copy that SHARES the Op's Env map, so mutating it in place would leak
+	// one run's values into the next run of the same plan.
+	var stepEnvRejected []string
+	if ex, ok := pc.(StepEnvExporter); ok {
+		expanded.Env, stepEnvRejected = MergeStepEnv(expanded.Env, ex.StepEnv())
+	}
 	if len(missing) > 0 {
 		// An unresolved cross-deployment var (${HOST:…}) means the peer this probe targets is
 		// UNREACHABLE — the probe's premise failed, so it FAILS (a SKIP there would be a fake
@@ -242,22 +257,43 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 		// do-mode branch: a do:act state-provision verb executes its create/configure. Action
 		// verbs (command/http/dbus/cdp/…) act in their own handler, so do:act there falls
 		// through to the assert dispatch below (the handler IS the act).
+		//
+		// The act's result goes through the SAME never-hang verdict as every other verb: the
+		// do:act branch used to RETURN here, skipping the deadline check below entirely, so a
+		// provision act killed by its own ceiling reported whatever it returned and carried no
+		// kill annotation at all. One mechanism, one verdict.
+		acted := false
 		if pc.EffectiveDo(&expanded) == spec.DoAct {
 			if act, ok := pc.Verbs().RunProvisionAct(ctx, &expanded, kind); ok {
-				return CheckResult{CheckResult: act}
+				dr.CheckResult = act
+				acted = true
 			}
 		}
-		if vr, ok := pc.Verbs().RunVerb(ctx, &expanded); ok {
-			dr.CheckResult = vr
-		} else {
-			dr.Status = StatusSkip
-			dr.Message = fmt.Sprintf("unknown verb %q", kind)
+		if !acted {
+			if vr, ok := pc.Verbs().RunVerb(ctx, &expanded); ok {
+				dr.CheckResult = vr
+			} else {
+				dr.Status = StatusSkip
+				dr.Message = fmt.Sprintf("unknown verb %q", kind)
+			}
 		}
 		// If THIS attempt's per-attempt deadline fired, the probe ran too long — an
 		// AUTHORITATIVE "too slow" failure, flagged so the killed-probe retry does not futilely
 		// re-run a probe that will only re-hang and re-hit the same deadline.
 		if ctx.Err() == context.DeadlineExceeded {
 			dr.DeadlineExceeded = true
+			// ENFORCE, not merely annotate. The attempt did not finish, so its verdict is not
+			// evidence — and a step that reports success it never produced is the one failure a
+			// gate cannot see. A `command:` step is safe by accident: the exec layer turns a
+			// killed process into an error, so the verb returns fail. An IN-PROCESS verb is
+			// not: it returns whatever it computed when its context was cancelled, and the
+			// `task:` hop is exactly that — the nested walk is cut short, produces no completed
+			// step, and the hop's aggregate branch ("ran 1 task(s), 0 step(s) failed") reports
+			// PASS over a nested run that never produced its evidence. The step read green, the
+			// gate read green, and the missing evidence was invisible in a 30-step report
+			// (opencharly/sdk#454). So the deadline decides the verdict: the attempt is over,
+			// and an attempt that was killed has not passed.
+			dr.Status = StatusFail
 			// NAME the deadline in the message. The exec layer reports only
 			// "process terminated by signal (signal: killed)", which describes the
 			// mechanism of death and not its cause — so a step killed by THIS bound
@@ -272,6 +308,17 @@ func RunOne(ctx context.Context, pc PlanContext, c *spec.Op) CheckResult {
 	}
 
 	result = RunWithEventually(ctx, &expanded, dispatch)
+	// DISCLOSE what the data channel could not export. A name the shell cannot export
+	// (the check engine's `HOST_PORT:6379` vocabulary is not the shell's) would
+	// otherwise vanish, and a value that vanishes SILENTLY reads exactly like a host that
+	// never supplied it. A NOTE, never a verdict: the step itself still ran.
+	if note := StepEnvRejectionNote(stepEnvRejected); note != "" {
+		if result.Message == "" {
+			result.Message = note
+		} else {
+			result.Message += "\n" + note
+		}
+	}
 	result.Op = c
 	result.Verb = kind
 	result.Elapsed = time.Since(start)

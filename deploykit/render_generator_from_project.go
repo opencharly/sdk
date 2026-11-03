@@ -303,7 +303,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return reply, nil
 	}
 
-	// EmitBakedPlugins: direct call (K3 build-tail move, coneB-buildtail) — buildPluginBinary is
+	// EmitBakedPlugins: direct call (K3 build-tail move, coneB-buildtail) — the build is
 	// 100% pure os/exec (proven by the already-moved ensureCharlyBinaryFresh), so this needs no
 	// host round-trip at all; the former "bake-plugins" HostBuild seam (charly/host_build_bake_plugins.go)
 	// is DELETED.

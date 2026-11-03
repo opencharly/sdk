@@ -53,17 +53,11 @@ type (
 	InitDef                    = spec.InitDef
 	InstallOptsConfig          = spec.InstallOptsConfig
 	IterateConfig              = spec.IterateConfig
-	KubernetesGatewayAPI       = spec.KubernetesGatewayAPI
-	KubernetesHostname         = spec.KubernetesHostname
 	KubernetesImagesDefaults   = spec.KubernetesImagesDefaults
 	KubernetesIngressDefaults  = spec.KubernetesIngressDefaults
-	KubernetesObservability    = spec.KubernetesObservability
 	KubernetesPatch            = spec.KubernetesPatch
 	KubernetesPodDefaults      = spec.KubernetesPodDefaults
 	KubernetesResourceDefaults = spec.KubernetesResourceDefaults
-	KubernetesResources        = spec.KubernetesResources
-	KubernetesResourceValues   = spec.KubernetesResourceValues
-	KubernetesSecretsBackend   = spec.KubernetesSecretsBackend
 	KubernetesSpec             = spec.KubernetesSpec
 	KubernetesStorage          = spec.KubernetesStorage
 	LibvirtAudio               = spec.LibvirtAudio

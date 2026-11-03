@@ -34,7 +34,9 @@ Canonical files:
 
 - `go build ./...` and `go test ./...` — the module's Go gates.
 - CI (`.github/workflows/ci.yml`) also runs `test -z "$(gofmt -l .)"`,
-  `go vet ./...`, and a cross-compile matrix (`GOOS=linux`, `GOARCH` in
+  `go vet ./...`, **`golangci-lint` v2.13.2** (the pin in that workflow — run it
+  locally before a push: its `errcheck` arm fails a gate on an unchecked
+  `Close()`), and a cross-compile matrix (`GOOS=linux`, `GOARCH` in
   `amd64`/`arm64`/`arm`/`386`, `CGO_ENABLED=0`).
 - The merge gate is the **org-wide** `charly/pr-validator` (required check
   `validate / validate`, defined in `opencharly/.github`); this repo carries no
@@ -43,10 +45,13 @@ Canonical files:
 ## Modify this repo
 
 - Schema and wire types are NOT here: edit them in `github.com/opencharly/spec`
-  (bump its `#SchemaVersion`, regenerate, tag), then bump the
-  `require github.com/opencharly/spec` version here and adopt. Follow
-  `/charly-internals:go` and the SDK-first landing order in
-  `/charly-internals:git-workflow`.
+  (regenerate there, then tag), and bump the `require github.com/opencharly/spec`
+  version here to adopt. There is **no `#SchemaVersion` to bump** — that stamp, the
+  `charly.yml` `version:` field and the equality gate were deleted by the contract
+  module (`opencharly/spec` `CHANGELOG/0.2026270.938.md`); compatibility is enforced
+  by unifying the authored document against the CLOSED CUE schema, where an unknown
+  or removed field is a hard `field not allowed` error. Follow `/charly-internals:go`
+  and the SDK-first landing order in `/charly-internals:git-workflow`.
 - This is a reusable MECHANISM library consumed by more than one plugin: keep it
   kind-blind and free of capability code (the placement test in
   `/charly-internals:plugin`).

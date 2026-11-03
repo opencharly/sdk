@@ -2,49 +2,176 @@ package deploykit
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/sdk/vmshared"
 )
 
-// CandyCopySource returns the build-context path a candy's files are COPYed from:
-// the staged _candy dir for a remote candy, the default candy/<name>/ for a local
-// candy at the default location, else the relative SourceDir. Relocated (P8).
+// CandyCopySource returns the build-context path a candy's files are COPYed from — the ONE
+// mapping from a candy's RESOLUTION ORIGIN to its COPY source:
+//
+//   - an @github ref or a candy declared in an imported namespace is STAGED, copied into
+//     .build/_candy/<name>.<version>/ by the build's host-fs prep;
+//   - a project-local candy is referenced by its project-relative directory (the
+//     conventional candy/<name>/ at the default location).
+//
+// The origin is decided from WHERE the candy lives — its resolved SourceDir relative to the
+// build root, plus the resolver's Remote marker — never from its name. Deriving the source
+// from the name alone emitted candy/<name>/ for a candy that lives outside the project (an
+// imported namespace's checkout), a directory the importing project cannot have
+// (opencharly/.github#263). Relocated (P8).
 func (g *Generator) CandyCopySource(candyRef string) string {
-	layer := g.Candies[candyRef]
-	if layer.GetRemote() {
+	return g.candyCopySource(g.Candies[candyRef], candyRef)
+}
+
+// candyCopySource is the origin→COPY-source mapping for a candy already in hand. A caller
+// that holds the layer (a builder stage context) calls this instead of re-deriving the candy's
+// map key, so there is ONE derivation. name is the fallback directory name, used only for a
+// candy carrying no SourceDir (a project-local candy at the conventional candy/<name>/); the
+// origin itself is read from the layer.
+func (g *Generator) candyCopySource(layer CandyModel, name string) string {
+	if name == "" {
+		name = layer.GetName()
+	}
+	sourceDir := g.candySourceDir(layer, name)
+	staged, rel := g.candyOrigin(layer, sourceDir)
+	if staged {
 		return ".build/_candy/" + CandyStageDirName(layer)
 	}
-	// If SourceDir matches the default candy/<candyRef>/ location, preserve the
-	// legacy path format (cheap, avoids filepath.Rel calls on the hot path).
-	defaultDir := filepath.Join(g.Dir, kit.DefaultCandyDir, candyRef)
-	if layer.GetSourceDir() == "" || layer.GetSourceDir() == defaultDir {
-		return kit.DefaultCandyDir + "/" + candyRef
+	// The conventional project-local candy/<name>/ keeps the legacy path form.
+	if sourceDir == filepath.Join(g.Dir, kit.DefaultCandyDir, name) {
+		return kit.DefaultCandyDir + "/" + name
 	}
-	// A LOCAL candy whose SourceDir is not the default candy/<ref>/ — remote candies returned at
-	// the top of this function, so they never reach here. The case this serves is a candy
-	// anchored somewhere else in the project: an inline candy takes its declaring charly.yml's
-	// directory as SourceDir, and a `discover:` entry can point at a path other than candy/.
-	// Resolve it relative to the build root. (Not a `directory:` redirect — that field was
-	// removed and is now a hard load error, charly/layers.go.)
-	rel, err := filepath.Rel(g.Dir, layer.GetSourceDir())
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return kit.DefaultCandyDir + "/" + candyRef
-	}
+	// A LOCAL candy anchored elsewhere IN the project: an inline candy takes its declaring
+	// charly.yml's directory as SourceDir, and a `discover:` entry can point at a path other
+	// than candy/. candyOrigin already proved this directory is inside the build root, so rel
+	// IS the COPY source — there is no second outside-root guard to duplicate its verdict.
+	// (Not a `directory:` redirect — that field was removed and is now a hard load error,
+	// charly/layers.go.)
 	return rel
 }
 
+// candySourceDir returns the directory a resolved candy's files actually live in: its
+// SourceDir, or the conventional project-local candy/<name>/ when the model carries none.
+func (g *Generator) candySourceDir(layer CandyModel, name string) string {
+	if sourceDir := layer.GetSourceDir(); sourceDir != "" {
+		return sourceDir
+	}
+	return filepath.Join(g.Dir, kit.DefaultCandyDir, name)
+}
+
+// candyOrigin is the ONE origin predicate behind the COPY-source mapping: staged reports
+// whether a candy's files must be copied into the build context
+// (.build/_candy/<name>.<version>/) rather than referenced by a project-relative COPY
+// source, and when staged is false, rel is that project-relative directory.
+//
+// staged is true for a candy the resolver marked Remote (an @github ref) and for ANY candy
+// whose resolved directory lies OUTSIDE the build root — an imported namespace's candy is
+// fetched into the namespace's own checkout, so no project-relative path can name it. The
+// outside-root test is exact (`..` or a `../` prefix, never the loose `..` string prefix a
+// sibling directory named `..<x>` would match); callers map this verdict to a path and never
+// re-implement it.
+func (g *Generator) candyOrigin(layer CandyModel, sourceDir string) (staged bool, rel string) {
+	if layer.GetRemote() {
+		return true, ""
+	}
+	rel, err := filepath.Rel(g.Dir, sourceDir)
+	if err != nil {
+		return true, ""
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return true, ""
+	}
+	return false, rel
+}
+
 // EmitScratchStages emits a `FROM scratch AS <candy>` + `COPY <src>/ /` per candy,
-// staging each candy's files in its own scratch layer. Relocated (P8).
+// staging each candy's files in its own scratch layer, plus the PROJECT-ROOT copy
+// sources the candy's plan names (rootCopySources). Relocated (P8).
 func (g *Generator) EmitScratchStages(b *strings.Builder, candyOrder []string) {
 	for _, candyName := range candyOrder {
 		layer := g.Candies[candyName]
 		stageName := layer.GetName() // use short name for stage alias
 		fmt.Fprintf(b, "FROM scratch AS %s\n", stageName)
-		fmt.Fprintf(b, "COPY %s/ /\n\n", g.CandyCopySource(candyName))
+		fmt.Fprintf(b, "COPY %s/ /\n", g.CandyCopySource(candyName))
+		for _, src := range g.rootCopySources(candyName, layer) {
+			fmt.Fprintf(b, "COPY %s/ %s/\n", src, src)
+		}
+		b.WriteString("\n")
 	}
+}
+
+// rootCopySources returns the plan `copy:` sources a candy resolves at the BUILD ROOT
+// rather than inside its own staged directory, as build-context-relative paths.
+//
+// WHY THIS EXISTS (opencharly/sdk#444). A `copy:` step's source resolves inside the
+// candy's stage, which for a local candy is its own directory — `candy/<name>/`. A
+// CARRIER candy (one that owns `skill:` nodes and installs their prose with
+// `copy: .agents/skills`) names the Agent-Skills tree, which lives at the REPO ROOT
+// (opencharly/opencharly#557), never in the candy directory. Without this the stage
+// has no `/.agents/skills`, so the final stage's
+//
+//	COPY --from=<candy> .agents/skills <dest>
+//
+// fails the whole build with `failed to calculate checksum … "/.agents/skills": not
+// found` — and it takes every downstream image with it, because the carrier is
+// composed into a base image (`ubuntu` carries `ubuntu-skills`).
+//
+// The base is MEASURED, not declared by a new field: a source that exists at the build
+// root and NOT inside the candy's own directory is root-relative. A candy-relative
+// source — the overwhelming majority — keeps exactly today's behaviour, so no existing
+// candy changes meaning.
+//
+// REMOTE candies are skipped: their files live in the materialized `_candy/<name>.<ver>`
+// dir, whose own repo root is not present at generation time. Staging the BUILD root's
+// tree into a remote candy's stage would substitute the wrong repository.
+func (g *Generator) rootCopySources(candyName string, layer CandyModel) []string {
+	sourceDir := g.candySourceDir(layer, candyName)
+	// A staged candy's files live in the materialized _candy/<name>.<ver> dir, whose own repo
+	// root is not present at generation time. Staging the BUILD root's tree into it would
+	// substitute the wrong repository — and, for an imported-namespace candy, the importing
+	// project's tree rather than the namespace's. Same origin predicate as candyCopySource.
+	if staged, _ := g.candyOrigin(layer, sourceDir); staged {
+		return nil
+	}
+	return rootCopySources(layer.RunOps(), g.Dir, sourceDir)
+}
+
+// rootCopySources is the pure core of (*Generator).rootCopySources: ops → the sources
+// that exist under projectDir but not under candyDir. Order follows the plan, and each
+// source is emitted once. Absolute sources and ones escaping the project are ignored —
+// neither can be a build-context path.
+func rootCopySources(ops []vmshared.Op, projectDir, candyDir string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, op := range ops {
+		src := op.Copy
+		if src == "" || seen[src] || filepath.IsAbs(src) {
+			continue
+		}
+		seen[src] = true
+		if strings.HasPrefix(filepath.Clean(src), "..") {
+			continue
+		}
+		if pathExists(filepath.Join(candyDir, src)) {
+			continue // candy-relative: already inside the staged directory
+		}
+		if !pathExists(filepath.Join(projectDir, src)) {
+			continue // neither here nor at the root: nothing to stage (fails loudly at build)
+		}
+		out = append(out, filepath.ToSlash(src))
+	}
+	return out
+}
+
+// pathExists reports whether p is an existing file or directory.
+func pathExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // EmitExtractStages emits a `FROM <source> AS <candy>-extract-<i>` stage per

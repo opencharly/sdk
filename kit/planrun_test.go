@@ -12,20 +12,28 @@ import (
 // fakeVerbResolver returns a canned result for every verb, recording the last op it saw
 // (both the resolved verb word and the full *spec.Op, e.g. for asserting Origin-stamping or
 // post-expansion PluginInput values).
+//
+// delay makes the verb take that long BEFORE it returns its canned result. It models the
+// in-process verb that runs PAST its attempt's ceiling: the context is cancelled while the
+// verb keeps working, and the verb returns whatever it computed — the shape that made a
+// deadline-killed step report PASS (opencharly/sdk#454).
 type fakeVerbResolver struct {
 	result   spec.CheckResult
 	known    bool
 	actKnown bool
 	lastVerb string
 	lastOp   *spec.Op
+	delay    time.Duration
 }
 
 func (f *fakeVerbResolver) RunVerb(_ context.Context, op *spec.Op) (spec.CheckResult, bool) {
 	f.lastVerb, _ = op.Kind()
 	f.lastOp = op
+	time.Sleep(f.delay)
 	return f.result, f.known
 }
 func (f *fakeVerbResolver) RunProvisionAct(_ context.Context, _ *spec.Op, verb string) (spec.CheckResult, bool) {
+	time.Sleep(f.delay)
 	return spec.CheckResult{Status: StatusPass, Message: "acted " + verb}, f.actKnown
 }
 
@@ -44,6 +52,9 @@ type fakePlanContext struct {
 	// classify is the host's answer to ClassifyUnresolved; nil ⇒ UnresolvedConditional, the
 	// behaviour every test had before charly#865.
 	classify func(op *spec.Op, name string) UnresolvedClass
+	// neverHang is the per-attempt ceiling this context hands out; zero ⇒ the one-second
+	// default. A test that needs the ceiling to FIRE sets it short and lets its verb overrun.
+	neverHang time.Duration
 }
 
 func (c *fakePlanContext) ClassifyUnresolved(op *spec.Op, name string) UnresolvedClass {
@@ -53,19 +64,24 @@ func (c *fakePlanContext) ClassifyUnresolved(op *spec.Op, name string) Unresolve
 	return c.classify(op, name)
 }
 
-func (c *fakePlanContext) Distros() []string                     { return c.distros }
-func (c *fakePlanContext) Mode() RunMode                         { return c.mode }
-func (c *fakePlanContext) VerifyOnly() bool                      { return c.verifyOnly }
-func (c *fakePlanContext) SkipDeterministicRun() bool            { return c.skipRun }
-func (c *fakePlanContext) ContextSkipReason(*spec.Op) string     { return c.ctxSkip }
-func (c *fakePlanContext) EffectiveDo(*spec.Op) spec.DoMode      { return c.do }
-func (c *fakePlanContext) EffectiveEnv() map[string]string       { return c.env }
-func (c *fakePlanContext) ProbeNeverHang(*spec.Op) time.Duration { return time.Second }
-func (c *fakePlanContext) SwapVenue(*spec.Op) (func(), string)   { return nil, "" }
-func (c *fakePlanContext) Scenario() *ScenarioContext            { return c.scenario }
-func (c *fakePlanContext) SetScenario(sc *ScenarioContext)       { c.scenario = sc }
-func (c *fakePlanContext) Verbs() VerbResolver                   { return c.verbs }
-func (c *fakePlanContext) Grader() StepGrader                    { return c.grader }
+func (c *fakePlanContext) Distros() []string                 { return c.distros }
+func (c *fakePlanContext) Mode() RunMode                     { return c.mode }
+func (c *fakePlanContext) VerifyOnly() bool                  { return c.verifyOnly }
+func (c *fakePlanContext) SkipDeterministicRun() bool        { return c.skipRun }
+func (c *fakePlanContext) ContextSkipReason(*spec.Op) string { return c.ctxSkip }
+func (c *fakePlanContext) EffectiveDo(*spec.Op) spec.DoMode  { return c.do }
+func (c *fakePlanContext) EffectiveEnv() map[string]string   { return c.env }
+func (c *fakePlanContext) ProbeNeverHang(*spec.Op) time.Duration {
+	if c.neverHang > 0 {
+		return c.neverHang
+	}
+	return time.Second
+}
+func (c *fakePlanContext) SwapVenue(*spec.Op) (func(), string) { return nil, "" }
+func (c *fakePlanContext) Scenario() *ScenarioContext          { return c.scenario }
+func (c *fakePlanContext) SetScenario(sc *ScenarioContext)     { c.scenario = sc }
+func (c *fakePlanContext) Verbs() VerbResolver                 { return c.verbs }
+func (c *fakePlanContext) Grader() StepGrader                  { return c.grader }
 
 func pluginOp() *spec.Op { return &spec.Op{Plugin: "http", PluginInput: map[string]any{"http": "x"}} }
 
@@ -215,6 +231,139 @@ func TestRunOne_ActDispatch(t *testing.T) {
 	r := RunOne(context.Background(), pc, pluginOp())
 	if r.Status != StatusPass || r.Message != "acted plugin" {
 		t.Fatalf("do:act → %v %q, want the provision-act result", r.Status, r.Message)
+	}
+}
+
+// TestRunOne_NeverHangKillFailsTheStep is the regression guard for opencharly/sdk#454: a
+// step whose attempt was KILLED by its own per-attempt ceiling must not report the verdict
+// the verb happened to return.
+//
+// The mechanism: the dispatch bounds each attempt with a never-hang deadline, and a verb
+// that overruns it has its context cancelled while it keeps working. An in-process verb
+// then returns whatever it computed — for the `task:` hop, a nested walk cut short with no
+// completed step, whose aggregate branch ("ran 1 task(s), 0 step(s) failed") reports PASS
+// over a nested run that never produced its evidence. The step read green, the gate read
+// green, and the missing evidence was invisible in a 30-step report.
+//
+// So the deadline DECIDES the verdict: an attempt that was killed did not pass.
+func TestRunOne_NeverHangKillFailsTheStep(t *testing.T) {
+	pc := &fakePlanContext{
+		env:       map[string]string{},
+		neverHang: 30 * time.Millisecond,
+		verbs: &fakeVerbResolver{
+			known:  true,
+			result: spec.CheckResult{Status: StatusPass, Message: "ok"},
+			delay:  300 * time.Millisecond, // overruns the ceiling above
+		},
+	}
+	r := RunOne(context.Background(), pc, pluginOp())
+	if r.Status != StatusFail {
+		t.Fatalf("a step killed by its own ceiling → %v %q, want StatusFail", r.Status, r.Message)
+	}
+	if !r.DeadlineExceeded {
+		t.Errorf("the kill must be flagged as the attempt's own deadline (it is not a retryable infra interruption)")
+	}
+	// NAME the bound: "process terminated by signal (signal: killed)" describes the MECHANISM
+	// of death and not its cause, so the reader goes looking for a bug in their own command.
+	if !strings.Contains(r.Message, "never-hang bound of 30ms") {
+		t.Errorf("the failure must NAME the bound that fired; got %q", r.Message)
+	}
+}
+
+// TestRunOne_InsideTheCeilingStillPasses is the control arm: the same machinery, a verb
+// that finishes INSIDE its ceiling, still reports pass. Without this the fix would be
+// "fail on every step" — a gate that is red is at least honest, but a gate that is red
+// for the wrong reason is not a fix.
+func TestRunOne_InsideTheCeilingStillPasses(t *testing.T) {
+	pc := &fakePlanContext{
+		env:       map[string]string{},
+		neverHang: 2 * time.Second,
+		verbs: &fakeVerbResolver{
+			known:  true,
+			result: spec.CheckResult{Status: StatusPass, Message: "ok"},
+			delay:  5 * time.Millisecond,
+		},
+	}
+	r := RunOne(context.Background(), pc, pluginOp())
+	if r.Status != StatusPass {
+		t.Fatalf("a step that finished inside its ceiling → %v %q, want StatusPass", r.Status, r.Message)
+	}
+	if r.DeadlineExceeded {
+		t.Errorf("a step that finished inside its ceiling must not carry the deadline flag")
+	}
+}
+
+// TestRunOne_ActNeverHangKillFailsTheStep covers the SIBLING surface of the same
+// mechanism: the do:act branch used to RETURN its result before the deadline check
+// ran, so a provision act killed by its own ceiling reported whatever it returned and
+// carried no kill annotation at all. One mechanism, one verdict.
+func TestRunOne_ActNeverHangKillFailsTheStep(t *testing.T) {
+	pc := &fakePlanContext{
+		env:       map[string]string{},
+		do:        spec.DoAct,
+		neverHang: 30 * time.Millisecond,
+		verbs: &fakeVerbResolver{
+			actKnown: true,
+			known:    true,
+			result:   spec.CheckResult{Status: StatusPass},
+			delay:    300 * time.Millisecond,
+		},
+	}
+	r := RunOne(context.Background(), pc, pluginOp())
+	if r.Status != StatusFail {
+		t.Fatalf("a provision act killed by its own ceiling → %v %q, want StatusFail", r.Status, r.Message)
+	}
+	if !r.DeadlineExceeded {
+		t.Errorf("the act's kill must be flagged as the attempt's own deadline")
+	}
+	if !strings.Contains(r.Message, "never-hang bound of 30ms") {
+		t.Errorf("the failure must NAME the bound that fired; got %q", r.Message)
+	}
+}
+
+// TestRunOne_ActInsideTheCeilingStillPasses is the do:act control arm.
+func TestRunOne_ActInsideTheCeilingStillPasses(t *testing.T) {
+	pc := &fakePlanContext{
+		env:       map[string]string{},
+		do:        spec.DoAct,
+		neverHang: 2 * time.Second,
+		verbs: &fakeVerbResolver{
+			actKnown: true,
+			known:    true,
+			result:   spec.CheckResult{Status: StatusPass},
+			delay:    5 * time.Millisecond,
+		},
+	}
+	r := RunOne(context.Background(), pc, pluginOp())
+	if r.Status != StatusPass || r.Message != "acted plugin" {
+		t.Fatalf("a provision act that finished inside its ceiling → %v %q, want the act's own pass", r.Status, r.Message)
+	}
+}
+
+// TestRunPlan_NeverHangKillFailsTheStep proves it at the boundary a reader actually sees:
+// the plan walk's per-step result. The defect's report was a 30-step plan that read green
+// while a step had produced no evidence — so the step result, not the internal flag, is
+// what has to change.
+func TestRunPlan_NeverHangKillFailsTheStep(t *testing.T) {
+	pc := &fakePlanContext{
+		env:       map[string]string{},
+		neverHang: 30 * time.Millisecond,
+		verbs: &fakeVerbResolver{
+			known:  true,
+			result: spec.CheckResult{Status: StatusPass, Message: "ok"},
+			delay:  300 * time.Millisecond,
+		},
+	}
+	set := &LabelDescriptionSet{Candy: []LabeledDescription{{
+		Origin: "candy:x",
+		Plan:   []spec.Step{{Check: "verify it", Op: *pluginOp()}},
+	}}}
+	out := RunPlan(context.Background(), pc, set, false)
+	if len(out) != 1 {
+		t.Fatalf("RunPlan → %d results, want 1", len(out))
+	}
+	if out[0].Result.Status != StatusFail {
+		t.Fatalf("a plan step killed by its own ceiling → %v %q, want StatusFail", out[0].Result.Status, out[0].Result.Message)
 	}
 }
 
