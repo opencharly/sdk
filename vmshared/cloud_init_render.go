@@ -157,6 +157,14 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 		// design: the guest is a disposable, minutes-lived provisioning target, pacman
 		// resolves the named packages' OWN dep upgrades, and nothing long-lived survives
 		// on the pre-upgrade library set.
+		// The keyring must be initialized and populated BEFORE the first transaction. This branch
+		// has always taken a different route for pacman-family (no `packages:` key -- see above),
+		// and that route assumed the base image shipped a populated /etc/pacman.d/gnupg. The dated
+		// Arch cloud image did; the live rolling one does not, so `-Sy` could not verify a single
+		// signature and the whole provisioning transaction failed (surfaced by the charly#826 pin
+		// change, filed as charly#832). `pacman-key --init` is idempotent, and a bare `--populate`
+		// takes the default keyrings, so this needs no per-distro name to be right.
+		keyringCmd := `sh -c 'pacman-key --init && pacman-key --populate 2>/dev/null; true'`
 		pacmanCmd := "pacman -Sy --needed --noconfirm " + strings.Join(packages, " ")
 		// try-restart sshd right after the install: IF openssh rode along in the dep
 		// closure, a live sshd would exec a NEWER sshd-session than the parent that
@@ -164,7 +172,7 @@ func RenderCloudInit(spec *VmSpec, rt CloudInitRuntimeParams) (userData, metaDat
 		// restart-sshd-after-openssh-upgrade rule). A no-op when sshd isn't running yet
 		// (the common path: composeRunCmd enables it later) or wasn't upgraded.
 		sshdResync := `sh -c 'systemctl try-restart sshd.service ssh.socket sshd.socket 2>/dev/null || true'`
-		runcmd = append([]any{pacmanCmd, sshdResync}, runcmd...)
+		runcmd = append([]any{keyringCmd, pacmanCmd, sshdResync}, runcmd...)
 	}
 	if len(runcmd) > 0 {
 		userMap["runcmd"] = runcmd

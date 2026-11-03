@@ -40,13 +40,13 @@ func TestNormalizeBoxArgs(t *testing.T) {
 	}
 }
 
-// TestResolvePodmanJobs verifies the config-driven --jobs capping logic (relocated from
-// charly/build_jobs_test.go). The cap is sourced from defaults.podman_jobs_cap (passed as
-// jobsCap); a jobsCap of 0 falls back to PodmanJobsCapFallback. The helper must:
+// TestResolveStageParallelism verifies the config-driven inner-concurrency capping logic (relocated with the
+// tunable resolution from charly's build drive; its former home was `build_jobs_test.go`). The cap is sourced from defaults.stage_parallelism_cap (passed as
+// jobsCap); a jobsCap of 0 falls back to StageParallelismCapFallback. The helper must:
 //   - honor an explicit override (>0) verbatim, ignoring cap + ncpu
 //   - when no override: return min(NumCPU(), cap)
-//   - treat jobsCap < 1 as PodmanJobsCapFallback
-func TestResolvePodmanJobs(t *testing.T) {
+//   - treat jobsCap < 1 as StageParallelismCapFallback
+func TestResolveStageParallelism(t *testing.T) {
 	origNumCPU := NumCPU
 	defer func() { NumCPU = origNumCPU }()
 
@@ -63,16 +63,16 @@ func TestResolvePodmanJobs(t *testing.T) {
 		{"no override, configured cap 8, ncpu above cap", 0, 8, 16, 8},
 		{"no override, configured cap 8, ncpu below cap returns ncpu", 0, 8, 4, 4},
 		{"no override, configured cap 2 below ncpu", 0, 2, 16, 2},
-		{"no override, cap 0 falls back to PodmanJobsCapFallback", 0, 0, 16, PodmanJobsCapFallback},
-		{"no override, cap negative falls back", 0, -1, 16, PodmanJobsCapFallback},
+		{"no override, cap 0 falls back to StageParallelismCapFallback", 0, 0, 16, StageParallelismCapFallback},
+		{"no override, cap negative falls back", 0, -1, 16, StageParallelismCapFallback},
 		{"no override, cap 8 but ncpu 1", 0, 8, 1, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			NumCPU = func() int { return tc.ncpu }
-			got := ResolvePodmanJobs(tc.override, tc.jobsCap)
+			got := ResolveStageParallelism(tc.override, tc.jobsCap)
 			if got != tc.want {
-				t.Errorf("ResolvePodmanJobs(%d, %d) with ncpu=%d = %d, want %d",
+				t.Errorf("ResolveStageParallelism(%d, %d) with ncpu=%d = %d, want %d",
 					tc.override, tc.jobsCap, tc.ncpu, got, tc.want)
 			}
 		})

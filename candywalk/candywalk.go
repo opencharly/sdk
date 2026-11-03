@@ -36,6 +36,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
@@ -183,6 +184,7 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 	// Pass 2: remote fix-point. Resolve each new ref, walk the fetched repo's candy/ + root
 	// manifest, union the entities, and queue any refs the fetched files surface.
 	if resolve != nil {
+		var resolved int
 		for len(queue) > 0 {
 			ref := queue[0]
 			queue = queue[1:]
@@ -195,6 +197,16 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 				continue
 			}
 			seenRefs[key] = true
+
+			// Progress BEFORE the work, not after. The line names the ref about to be
+			// resolved, so a slow or stalled resolve is attributable to a specific repo
+			// rather than appearing as silence — and the caller can see the frontier
+			// shrinking. The download half already prints one line per repo (spec/refs'
+			// "Downloading %s:%s..."); without a matching line here, a corpus walk over
+			// a thousand refs reports nothing for its entire duration, which is what
+			// made a 20-35 minute walk read as a hang (opencharly/docs#162).
+			fmt.Fprintf(os.Stderr, "charly: resolving %s (%d resolved, %d queued)\n", key, resolved, len(queue))
+			resolved++
 
 			fetched, err := resolve(pr.RepoPath, pr.Version)
 			if err != nil {
@@ -244,15 +256,101 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 // `:v[0-9]+\.[0-9]+\.[0-9]+` anchor was used, and exactly why branches and SHAs were dropped).
 // The ref class stops at the delimiters that end a YAML scalar, so a quoted (`'…'`) or
 // flow-sequence (`[…, …]`) entry yields the bare token.
-var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:]+:[^\s'"\],}#]+`)
+//
+// `<` and `>` are excluded from BOTH classes because they appear in no repository name and no
+// version: they exist only in the notation the docs use to DESCRIBE a ref
+// (`@github.com/opencharly/<kind>-<name>:<tag>`), and prose about refs is not a ref. Without the
+// exclusion that token parses as a repo path plus a version, reaches the resolver, and is
+// `git ls-remote`d as a URL — measured: `charly marketplace generate|drift` died in `collect entities`
+// on exactly such a line, taken from a marketplace CHANGELOG. Excluding them keeps every real form,
+// including the branch and SHA cases the anchor above was dropped for.
+//
+// The VERSION class additionally requires two characters, and that is not cosmetic: excluding `<>`
+// alone TRUNCATES a placeholder rather than rejecting it. In
+// `@github.com/opencharly/layer-omarchy-base/candy/omarchy-base:v<version>` — the same notation with
+// the placeholder in the version instead of the repo name — the repo path is real, so the match stops
+// just before `<` and survives with a one-character version `v`, which then reaches the resolver as a
+// ref that cannot exist (measured: `could not resolve ref "v"`). Every real version is at least two
+// characters — a CalVer tag, a branch, a SHA — so requiring two rejects the stub without narrowing
+// any legitimate form. See opencharly/sdk#408.
+var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:<>` + "`" + `]+:[^\s'"\],}#:<>` + "`" + `]{2,}`)
+
+// acceptableVersion reports whether a candidate's VERSION is one of the closed set of REAL ref
+// forms. The scanner (remoteRefRe) FINDS; this DECIDES. That split is the point: a character class
+// can only guess, while an allowlist decides. opencharly/sdk#405 excluded two characters, #408/#409
+// imposed a length, and each was derived from one observed prose instance — `vTAG` is four
+// characters, so no length constant can ever reach it, which is the proof that the constant was
+// never the defect.
+//
+// A version that CLAIMS the tag namespace (`v` followed by a digit) must be tag-shaped, and that one
+// rule kills the whole `v2026.xxx.yyyy` family: it claims `v<digit>` and is not CalVer, so it is
+// prose. Anything else is accepted only as a branch or a commit — which keeps opencharly/sdk#322
+// fixed, because a branch or a SHA is exactly what a fail-closed pattern used to drop.
+func acceptableVersion(v string) bool {
+	if len(v) > 1 && v[0] == 'v' && v[1] >= '0' && v[1] <= '9' {
+		if calVerRe.MatchString(v) {
+			return true
+		}
+		// A dot means the token is CLAIMING the CalVer/semver form, and failing that claim makes it
+		// prose (`v2026.xxx.yyyy`). Without a dot it is a branch that merely happens to start with
+		// `v<digit>` — `v2-feature` — and rejecting that is the opencharly/sdk#322 defect, where a live
+		// branch was dropped with no error. Both are pinned in the fixture; neither is asserted in
+		// prose only, which is what the review round taught.
+		return !strings.Contains(v, ".") && branchRe.MatchString(v)
+	}
+	// The same rule one `v` to the left: a token SHAPED like CalVer (a four-digit year, then a dot)
+	// must BE CalVer. The `v`-less placeholder `2026.xxx.yyyy` is the same prose in the same notation
+	// minus its `v`, and the branch arm below would otherwise wave it through.
+	if plainCalShapeRe.MatchString(v) {
+		return plainCalRe.MatchString(v)
+	}
+	// A version whose components are all one or two characters AND whose FIRST component is letters is
+	// placeholder-shaped, not a ref: `vx.y.z` is the residual filed as opencharly/sdk#412. The
+	// letter-first requirement is the whole of this rule's precision, and it came from a review round:
+	// without it the pattern also swallowed `1.2.3`, an ordinary version-shaped token that is real and
+	// must resolve. Digits where the placeholder has a letter stub is the difference — and it is a real
+	// cost, not a free win: a token made only of letters (`a.b.c`) is indistinguishable from the stub
+	// and IS rejected, which the fixture records where such a row would have been. Note what this is NOT — a context rule.
+	// "Inside a code span means prose" was the obvious fix and it is wrong: this project's own fixture
+	// requires a backticked REAL ref to be collected clean, so rejecting spans would drop live refs and
+	// re-open opencharly/sdk#322. The shape is what tells them apart: a real version's components are
+	// digits (a tag) or words (a branch), never one- or two-character letter stubs — so `ab.cd.ef` is
+	// rejected too, which is the accepted cost of this rule and is stated rather than glossed.
+	if stubVersionRe.MatchString(v) {
+		return false
+	}
+	return branchRe.MatchString(v) || shaRe.MatchString(v)
+}
+
+var (
+	// CalVer, the Go-module CalVer and semver are one shape with a differing segment count.
+	calVerRe = regexp.MustCompile(`^v\d+(\.\d+){1,2}(-[A-Za-z0-9.]+)?$`)
+	// A branch is lowercase by convention; `feat/x`, `main`, `latest`, and a plain `2026.108.56`
+	// tag all pass, while `vTAG` and a lone `v` do not.
+	branchRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]+$`)
+	shaRe    = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+	// A plain CalVer tag, and the SHAPE that claims it (four digits then a dot) — the `v`-less
+	// placeholder `2026.xxx.yyyy` matches the shape and must therefore be rejected.
+	plainCalRe      = regexp.MustCompile(`^\d{4}\.\d+\.\d+$`)
+	plainCalShapeRe = regexp.MustCompile(`^\d{4}\.`)
+	// `vx.y.z` — two or more dot-separated components of one or two characters each (opencharly/sdk#412).
+	stubVersionRe = regexp.MustCompile(`^[A-Za-z]{1,2}(\.[A-Za-z0-9]{1,2}){2,}$`)
+)
 
 // collectRefs returns every remote candy ref found in one file (the @-prefixed require/candy
-// refs only — package names and bare candy names are never remote refs). Refs that point INTO
-// the charly repo itself (@github.com/opencharly/charly/candy/<name> — the pre-cutover in-repo
-// form, still carried by box submodule repos until their own cutover) are NOT standalone candy
-// repos and are skipped: they resolve to the LOCAL charly checkout's candy dir, which the local
-// FS walk already surfaces (or, after Phase 4, are stale refs swept by the box repos' own
-// cutover).
+// refs only — package names and bare candy names are never remote refs).
+//
+// ONE charly ref form is skipped: the SUBPATH form that points INTO the charly repo
+// (@github.com/opencharly/charly/candy/<name> — the pre-cutover in-repo ref, still carried by box
+// submodule repos until their own cutover). It is not a standalone candy repo: it resolves to the
+// LOCAL charly checkout's candy dir, which the local FS walk already surfaces (or, after Phase 4, it
+// is a stale ref swept by the box repos' own cutover). The BARE repo-root form
+// (@github.com/opencharly/charly:<ref>) is NOT that form and IS collected: it is a corpus SOURCE,
+// the shape `opencharly/opencharly`, `spec` and `sdk` are already pinned as, and `charly` authors
+// its skills at `<root>/.agents/skills/` beside the code they describe. Keying the skip on
+// `RepoPath` alone could not tell the two apart — `SubPath` can, and that distinction is the whole
+// predicate in acceptedRef below (opencharly/sdk#468; opencharly/opencharly#600 for the cutover that
+// needed it).
 //
 // WHY THE PATTERN ACCEPTS EVERY REF FORM AND NOTHING FAILS CLOSED. The former CalVer-only pattern
 // dropped a branch (`:feat/…`) or a commit SHA with no error and no warning, so a fail-closed
@@ -262,29 +360,116 @@ var remoteRefRe = regexp.MustCompile(`@github\.com/opencharly/[^\s'"\],}#:]+:[^\
 // ref on each access, so handing it over is what makes the generator see the branch under test.
 //
 // The issue's second, "minimum" arm — hard-error on a declared ref the collector cannot name — was
-// MEASURED and REJECTED as a text-level check: this function scans RAW file bytes, comments
-// included, and a sweep of the org's tracked charly.yml files finds 42 distinct VERSIONLESS
-// `@github.com/opencharly/…` tokens living in PROSE (a `layer-nodejs` mention in a comment, a
-// `distro-*` glob, a trailing-backtick example). Failing closed on those would break every tree
-// that documents a repo path. A versionless token is therefore not evidence of a declared ref;
-// only a token carrying a `:version` is, and every such form is now collected.
+// MEASURED and REJECTED as a text-level check: a sweep of the org's tracked charly.yml files finds
+// 42 distinct VERSIONLESS `@github.com/opencharly/…` tokens living in PROSE (a `layer-nodejs`
+// mention in a comment, a `distro-*` glob, a trailing-backtick example). Failing closed on those
+// would break every tree that documents a repo path. A versionless token is therefore not evidence
+// of a declared ref; only a token carrying a `:version` is, and every such form is collected —
+// provided its version is one of the real shapes, which acceptableVersion decides
+// (opencharly/sdk#410).
+//
+// THE INSTRUMENT IS THE YAML PARSER, NOT THE BYTES (opencharly/sdk#455). A ref a manifest DECLARES
+// is a scalar in it: an entry of a `require:`/`candy:` sequence, or such a key's scalar value. A ref
+// a manifest merely CONTAINS is its DATA — a `command: |` body that writes fixtures at runtime, a
+// `>-` description, a generated-manifest `template:` body — and a regex over the raw bytes cannot
+// tell the two apart. Measured: `plugin-box`'s R10 bed `box-reconcile-closure-reports-unfetchable`
+// writes a deliberately unfetchable ref INTO A SCRATCH PROJECT at runtime to prove that
+// `charly box reconcile --closure` REPORTS it rather than swallowing it; the raw scan collected that
+// fixture and then killed the whole corpus walk resolving it (`generate` rc=1). So the file is
+// parsed and the refs are read off its scalar nodes, skipping every LITERAL (`|`) and FOLDED (`>`)
+// scalar — the same exclusion whether the body is shell, a template, or prose.
+//
+// Two consequences of parsing, both deliberate and both measured against the org's 596 in-repo
+// manifests: a versioned ref written in a COMMENT is no longer collected (a comment declares
+// nothing; the raw scan used to fetch one such ref), and a file that does not parse as a manifest —
+// prose, a changelog — still falls back to the text scan, because there the text IS the declaration
+// surface. The four refs that live ONLY inside block scalars org-wide are repaid by DIRECT pins in
+// the marketplace refs list, which is where a corpus source belongs (opencharly/plugin-marketplace#41).
 func collectRefs(path string) []string {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
 	var out []string
+	if root := manifestRoot(raw); root != nil {
+		collectRefsNode(root, &out)
+		return out
+	}
 	for _, ref := range remoteRefRe.FindAllString(string(raw), -1) {
-		if pr := parseRemoteRef(ref); pr.RepoPath != "" && pr.RepoPath != "github.com/opencharly/charly" {
+		if ref := acceptedRef(ref); ref != "" {
 			out = append(out, ref)
 		}
 	}
 	return out
 }
 
-// parseRemoteRef is the canonical spec.ParseRemoteRef (F4.3 parser consolidation: the
-// pre-cutover in-repo form (@github.com/opencharly/charly/candy/<name>) is excluded by the
-// caller — collectRefs skips RepoPath == github.com/opencharly/charly).
+// acceptedRef applies the ONE ref policy to a candidate token — the pre-cutover in-repo charly
+// SUBPATH form is skipped, and a version that is not a real ref shape is dropped as prose notation —
+// returning "" when the token is not a declared ref. Both readers below share it, so the policy has
+// one home. `RepoPath` names the repo; `SubPath` says whether the ref points INTO it, which is what
+// separates the two charly forms: the BARE repo-root ref is a corpus source and is accepted
+// (opencharly/sdk#468).
+func acceptedRef(ref string) string {
+	pr := parseRemoteRef(ref)
+	if pr.RepoPath == "" {
+		return ""
+	}
+	// The pre-cutover IN-REPO charly form is still refused: it names a candy INSIDE charly at an old
+	// tag, resolves to the LOCAL checkout's candy dir, and is swept by the box repos' own cutover. The
+	// BARE repo-root form is a CORPUS SOURCE — charly authors skills at `.agents/skills/` beside the
+	// code they describe, and the files-only fetch reads its root manifest and those trees and nothing
+	// else (opencharly/sdk#468).
+	if pr.RepoPath == "github.com/opencharly/charly" && pr.SubPath != "" {
+		return ""
+	}
+	if !acceptableVersion(pr.Version) {
+		return ""
+	}
+	return ref
+}
+
+// manifestRoot parses raw as a charly entity file and returns its root MAPPING node, or nil when the
+// content is not one — prose, a multi-document bed, a shape yaml.v3 rejects. A nil answer is not an
+// error: the caller falls back to the text scan rather than failing a corpus walk over a comment.
+func manifestRoot(raw []byte) *yaml.Node {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 {
+		return nil
+	}
+	if root := doc.Content[0]; root.Kind == yaml.MappingNode {
+		return root
+	}
+	return nil
+}
+
+// collectRefsNode appends every DECLARED ref in a parsed manifest, in document order (mapping keys
+// and values, sequence entries) — the same order the old byte scan produced, so a walk's ref queue
+// stays deterministic. A literal or folded scalar is DATA and is not read at all.
+func collectRefsNode(n *yaml.Node, out *[]string) {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		if n.Style == yaml.LiteralStyle || n.Style == yaml.FoldedStyle {
+			return
+		}
+		for _, ref := range remoteRefRe.FindAllString(n.Value, -1) {
+			if ref := acceptedRef(ref); ref != "" {
+				*out = append(*out, ref)
+			}
+		}
+	case yaml.SequenceNode, yaml.MappingNode:
+		for _, c := range n.Content {
+			collectRefsNode(c, out)
+		}
+	}
+}
+
+// parseRemoteRef is the canonical spec.ParseRemoteRef (F4.3 parser consolidation). The ref POLICY —
+// including the one charly form it skips, the pre-cutover in-repo SUBPATH ref — lives in acceptedRef,
+// the single home both readers share; the BARE repo-root charly ref is admitted there
+// (opencharly/sdk#468).
 func parseRemoteRef(ref string) *spec.ParsedRef {
 	return spec.ParseRemoteRef(ref)
 }

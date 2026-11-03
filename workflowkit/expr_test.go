@@ -87,6 +87,77 @@ func TestValidateAcceptsLobsterGrammar(t *testing.T) {
 	}
 }
 
+// TestValidateAcceptsTheEnvGuard pins the RESTORED `${env.NAME}` form at the GRAMMAR half
+// (opencharly/sdk#437 defect 2). `${env.EVAL_PUBLISH}` is the spelling the org's own
+// migration emits for the retired entity-env reference (`$env.NAME` ⇒ `${env.NAME}`,
+// plugin-migrate's documented rewrite), and the expression below is the consumer's guard
+// after the reshape inverted its `skip_when:`. Before this change expr-lang refused it
+// before the patcher ever ran: `unexpected token Bracket("{")`.
+func TestValidateAcceptsTheEnvGuard(t *testing.T) {
+	for _, e := range []string{
+		"!(${env.EVAL_PUBLISH} != true)",
+		"${env.EVAL_CLASS} == skip",
+		"${env.EVAL_LANES} > 8",
+		"${env.A} == true && ${env.B} != false",
+	} {
+		if err := Validate(e); err != nil {
+			t.Errorf("Validate(%q) = %v, want nil", e, err)
+		}
+	}
+}
+
+// TestEnvRefReadsTheProcessEnvironment pins the EVALUATION half of the same form. The
+// source is the PROCESS environment — the exact source the retired `$env.NAME` read
+// (plugin-pipeline's surviving `envMap()` is built from `os.Environ()`), so this is a
+// restoration of a measured capability, not a new one.
+//
+// The value is typed as the LOBSTER LITERAL the retired text substitution would have put in
+// the expression's place (`true`/`false`/`null`, a number, else the string). That is the
+// whole point: the consumer's guard is `when: '!(${env.EVAL_PUBLISH} != true)'`, which must
+// RUN when the variable is `true` — a plain string comparison cannot express that, because
+// "true" != true is always true and the guard would be permanently skipped.
+func TestEnvRefReadsTheProcessEnvironment(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		expr string
+		want bool
+	}{
+		{"migrated guard, variable true", map[string]string{"EVAL_PUBLISH": "true"}, "!(${env.EVAL_PUBLISH} != true)", true},
+		{"migrated guard, variable false", map[string]string{"EVAL_PUBLISH": "false"}, "!(${env.EVAL_PUBLISH} != true)", false},
+		{"string parity with a bare identifier", map[string]string{"EVAL_CLASS": "skip"}, "${env.EVAL_CLASS} == skip", true},
+		{"numeric literal parity", map[string]string{"EVAL_LANES": "16"}, "${env.EVAL_LANES} > 8", true},
+		{"empty reads empty and is not null", map[string]string{"EVAL_UNSET": ""}, "${env.EVAL_UNSET} != null", true},
+		{"two env reads in one guard", map[string]string{"EVAL_A": "x", "EVAL_B": "y"}, "${env.EVAL_A} == x && ${env.EVAL_B} != z", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			got, err := Eval(tc.expr, Scope{})
+			if err != nil {
+				t.Fatalf("Eval(%q): %v", tc.expr, err)
+			}
+			if got != tc.want {
+				t.Errorf("Eval(%q) = %v, want %v", tc.expr, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEnvIsNotANamespace keeps the boundary the restore must not cross: only the BRACE form
+// is spelled, never an `env` NAMESPACE. `env.HOME` is a MemberNode — refused, exactly like
+// every other bare-word member access — so the grammar widens by ONE named call and not by a
+// whole namespace whose semantics nothing defines.
+func TestEnvIsNotANamespace(t *testing.T) {
+	for _, e := range []string{"env.HOME == open", "env.HOME", "env() == true"} {
+		if err := Validate(e); err == nil {
+			t.Errorf("Validate(%q) accepted an env form the grammar does not spell", e)
+		}
+	}
+}
+
 func TestRewriteRefs(t *testing.T) {
 	got := RewriteRefs(`$fetch.json.name == "ok" && $a.b == 1`)
 	want := `ref("fetch", "json.name") == "ok" && ref("a", "b") == 1`

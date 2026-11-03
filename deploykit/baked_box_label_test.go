@@ -36,7 +36,10 @@ func TestBuildBakedMetadata_BoxLabelIsLeafName(t *testing.T) {
 		}},
 	}
 
-	meta := g.buildBakedMetadata(qualified, nil)
+	meta, err := g.buildBakedMetadata(qualified, nil)
+	if err != nil {
+		t.Fatalf("buildBakedMetadata(%q): %v", qualified, err)
+	}
 	if meta.Box != "fedora-nonfree" {
 		t.Fatalf("ai.opencharly.box = %q, want %q — the label must equal the ref's repo name, "+
 			"never the namespace-qualified map key (a namespaced build is otherwise invisible to "+
@@ -49,7 +52,9 @@ func TestBuildBakedMetadata_BoxLabelIsLeafName(t *testing.T) {
 	}
 	// An unqualified key (every non-imported box, and every synthesized intermediate) is unchanged.
 	g.Boxes["fedora-nonfree"] = g.Boxes[qualified]
-	if meta := g.buildBakedMetadata("fedora-nonfree", nil); meta.Box != "fedora-nonfree" {
+	if meta, err := g.buildBakedMetadata("fedora-nonfree", nil); err != nil {
+		t.Fatalf("buildBakedMetadata(fedora-nonfree): %v", err)
+	} else if meta.Box != "fedora-nonfree" {
 		t.Fatalf("unqualified key: ai.opencharly.box = %q, want %q", meta.Box, "fedora-nonfree")
 	}
 }

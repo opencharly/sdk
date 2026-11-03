@@ -36,10 +36,23 @@ import (
 // `fatal error: stack overflow` (measured: a project carrying a resolved pod target, whose leg
 // runs this scan).
 func ProjectCandiesScanned(uf *spec.UnifiedFile, rootDir string, parseDoc func(path string) (*spec.CandyYAML, error)) (map[string]spec.ScannedCandy, error) {
-	return projectCandiesScanned(uf, rootDir, parseDoc, NamespaceAncestors{})
+	return projectCandiesScanned(uf, rootDir, rootDir, parseDoc, NamespaceAncestors{})
 }
 
-func projectCandiesScanned(uf *spec.UnifiedFile, rootDir string, parseDoc func(path string) (*spec.CandyYAML, error), ancestors NamespaceAncestors) (map[string]spec.ScannedCandy, error) {
+// projectCandiesScanned carries TWO roots, and they answer different questions:
+//
+//   - rootDir anchors this UnifiedFile's relative `from:` paths — the namespace's own root
+//     when recursing into an imported namespace;
+//   - projectRoot is the TOP-LEVEL project's directory, unchanged across the recursion, and
+//     is what the outside-the-project Remote marking compares against.
+//
+// They used to be ONE parameter, which made a candy scanned out of an imported namespace look
+// project-local: its directory is inside that namespace's checkout, so a comparison against
+// the namespace root never escaped it. The build context is the PROJECT, though, so the
+// emitted COPY source became candy/<name>/ — a directory the importing project does not have
+// (opencharly/.github#263). Comparing against projectRoot marks the candy Remote, which is
+// what makes the build stage it under .build/_candy/ like an @github ref.
+func projectCandiesScanned(uf *spec.UnifiedFile, rootDir, projectRoot string, parseDoc func(path string) (*spec.CandyYAML, error), ancestors NamespaceAncestors) (map[string]spec.ScannedCandy, error) {
 	out := map[string]spec.ScannedCandy{}
 	leave, ok := ancestors.Enter(uf)
 	if !ok {
@@ -73,9 +86,14 @@ func projectCandiesScanned(uf *spec.UnifiedFile, rootDir string, parseDoc func(p
 			// inventory) — distinct from ScanRemoteCandy's explicit-fetch case and
 			// QualifyRemoteSiblingDeps's sibling-dep qualification: this one fires on a plain
 			// `from:`-directory candy whose resolved path happens to fall outside the project root.
-			if absRoot, err := filepath.Abs(rootDir); err == nil {
+			// Compare against projectRoot — the TOP-LEVEL project, never this namespace's own root,
+			// or an imported-namespace candy looks local to the project (opencharly/.github#263).
+			// The outside test is exact (`..` or a `../` prefix): the loose `..` string prefix would
+			// also mark a project-local directory named `..<x>` Remote.
+			if absRoot, err := filepath.Abs(projectRoot); err == nil {
 				if absCandy, err := filepath.Abs(p); err == nil {
-					if rel, err := filepath.Rel(absRoot, absCandy); err == nil && strings.HasPrefix(rel, "..") {
+					if rel, err := filepath.Rel(absRoot, absCandy); err == nil &&
+						(rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
 						v.Remote = true
 					}
 				}
@@ -95,12 +113,13 @@ func projectCandiesScanned(uf *spec.UnifiedFile, rootDir string, parseDoc func(p
 	// composes a vendored candy (e.g. distro-cachyos's cachyos base composing
 	// cachyos-base-check from its candy/ discover). The recursion mirrors the walk's
 	// nested-namespace handling; each namespace's RootDir anchors its own relative
-	// `from:` paths.
+	// `from:` paths, while projectRoot stays the TOP-LEVEL project's root so the Remote
+	// marking above still answers the project's question, not the namespace's.
 	for alias, ns := range uf.Namespaces {
 		if ns == nil {
 			continue
 		}
-		nsCandies, err := projectCandiesScanned(ns, ns.RootDir, parseDoc, ancestors)
+		nsCandies, err := projectCandiesScanned(ns, ns.RootDir, projectRoot, parseDoc, ancestors)
 		if err != nil {
 			return nil, fmt.Errorf("namespace %q candies: %w", alias, err)
 		}

@@ -46,8 +46,10 @@ func ResolveVariant(pkg *spec.Packaging, format, variant string) (name string, p
 // other as <name>-<variant>, and FamilyNames applies that SAME rule to every
 // variant. The set is format-dependent because `default_variant` is per-format. It
 // is the input the nFPM config uses to declare the family's mutual
-// Provides/Conflicts/Replaces: every variant installs the SAME paths, so the family
-// members are mutually-exclusive packages over a shared file set.
+// Provides/Conflicts: every variant installs the SAME paths, so the family
+// members are mutually-exclusive packages over a shared file set, with the base
+// name provided by whichever member is installed and no Replaces between them (a
+// mutual replace makes `-Syu` unresolvable — see nfpm_config.go).
 func FamilyNames(pkg *spec.Packaging, format string) []string {
 	if pkg == nil {
 		return nil

@@ -48,36 +48,69 @@ func ProjectDirViaExecutor(ctx context.Context, ex *sdk.Executor, deployName str
 	return reply.Dir, nil
 }
 
-// resolveClusterContext is ResolveClusterContextViaExecutor's body, with the kind:kubernetes
-// resolve leg as a parameter so every arm is testable without a live host (the seam a plugin's
-// own package-var could only reach from its side). Production callers go through the exported
-// wrapper, which passes the real helper.
+// resolveCluster is ResolveClusterViaExecutor's body, with the kind:kubernetes resolve leg as a
+// parameter so every arm is testable without a live host (the seam a plugin's own package-var
+// could only reach from its side). Production callers go through the exported wrapper, which
+// passes the real helper.
+func resolveCluster(
+	ctx context.Context,
+	ex *sdk.Executor,
+	cluster string,
+	resolveKubernetes func(context.Context, *sdk.Executor, string, string) (*spec.ResolvedKubernetes, error),
+) (*spec.ResolvedKubernetes, error) {
+	if ex == nil {
+		return nil, fmt.Errorf("resolving cluster %q: no executor available", cluster)
+	}
+	dir, err := ProjectDirViaExecutor(ctx, ex, "")
+	if err != nil {
+		return nil, fmt.Errorf("resolving the project dir to resolve cluster %q: %w", cluster, err)
+	}
+	view, err := resolveKubernetes(ctx, ex, dir, cluster)
+	if err != nil {
+		return nil, fmt.Errorf("resolving cluster %q: %w", cluster, err)
+	}
+	// A nil view is the legitimate MISS, handed to the caller as-is.
+	return view, nil
+}
+
+// resolveClusterContext is the CONTEXT-ONLY view of resolveCluster, kept so every caller written
+// against the older contract keeps it exactly: ("", nil) for a miss, a loud error otherwise.
 func resolveClusterContext(
 	ctx context.Context,
 	ex *sdk.Executor,
 	cluster string,
 	resolveKubernetes func(context.Context, *sdk.Executor, string, string) (*spec.ResolvedKubernetes, error),
 ) (string, error) {
-	if ex == nil {
-		return "", fmt.Errorf("resolving cluster %q: no executor available", cluster)
-	}
-	dir, err := ProjectDirViaExecutor(ctx, ex, "")
-	if err != nil {
-		return "", fmt.Errorf("resolving the project dir to resolve cluster %q: %w", cluster, err)
-	}
-	view, err := resolveKubernetes(ctx, ex, dir, cluster)
-	if err != nil {
-		return "", fmt.Errorf("resolving cluster %q: %w", cluster, err)
-	}
-	if view == nil {
-		return "", nil
+	view, err := resolveCluster(ctx, ex, cluster, resolveKubernetes)
+	if err != nil || view == nil {
+		return "", err
 	}
 	return view.KubeconfigContext, nil
 }
 
+// ResolveClusterViaExecutor resolves a step's `cluster: <profile>` to the resolved
+// kind:kubernetes template ITSELF — the kubeconfig FILE (`Kubeconfig`), the CONTEXT inside it
+// (`KubeconfigContext`) and the opaque cluster model (`Raw`) — self-loading the project
+// plugin-side over the reverse channel (no host round-trip beyond the two seams above).
+//
+// The FILE is why this view exists: a context NAME alone cannot address an externally-managed
+// cluster's per-cluster kubeconfig, so a consumer that only ever sees the context is structurally
+// unable to honour the file the template declared.
+//
+// It returns (nil, nil) for a legitimate MISS — the project declares no such entity — which the
+// kube/kubevirt verbs read as "no cluster profile named", leaving the kubeconfig's own
+// current-context in force. Every FAILURE is loud and names the cluster: a nil executor, a failing
+// project-dir seam, or a failing entity resolve. That asymmetry is deliberate and load-bearing: a
+// resolve FAILURE must never be read as "no cluster profile" and silently run against whatever
+// current-context the kubeconfig happens to hold (the silent-degradation defect
+// opencharly/plugin-kube#15 fixed, and the reason its tests must survive the move here).
+func ResolveClusterViaExecutor(ctx context.Context, ex *sdk.Executor, cluster string) (*spec.ResolvedKubernetes, error) {
+	return resolveCluster(ctx, ex, cluster, ResolveKubernetesEntityViaExecutor)
+}
+
 // ResolveClusterContextViaExecutor resolves a step's `cluster: <profile>` to the concrete
-// kubeconfig context of the named kind:kubernetes entity, self-loading the project plugin-side
-// over the reverse channel (no host round-trip beyond the two seams above).
+// kubeconfig CONTEXT of the named kind:kubernetes entity — the context-only view of
+// ResolveClusterViaExecutor, kept for callers that need nothing else.
 //
 // It returns ("", nil) for a legitimate MISS — the project declares no such entity — which the
 // kube/kubevirt verbs read as "no cluster profile named", leaving the kubeconfig's own

@@ -1,0 +1,118 @@
+package deploykit
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// engineUsable reports whether the named engine can actually be used, with the reason when it
+// cannot. Presence alone is not usability (opencharly/sdk#364): a host whose engine is installed
+// but cannot initialise passes exec.LookPath and then fails engine-backed tests whose subject has
+// nothing to do with the engine. Bounded, because a wedged engine must not hang the suite - not
+// answering is not usability.
+//
+// The failure this replaces, measured on the host that filed opencharly/sdk#364:
+//
+//	Failed to obtain podman configuration: set sticky bit on: chmod /run/user/1000/libpod: read-only file system
+//
+// A predicate rather than an inline check so the SKIP path is testable: requireUsableEngine calls
+// it and skips; a test calls it and asserts, which is the half of R7 a bare skip cannot provide.
+func engineUsable(engine string) (bool, string) {
+	if _, err := exec.LookPath(engine); err != nil {
+		return false, "not installed: " + err.Error()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, engine, "info").CombinedOutput(); err != nil {
+		return false, fmt.Sprintf("installed but unusable: %v\n%s", err, out)
+	}
+	return true, ""
+}
+
+// createContainer creates a container OBJECT from ref so a test can read the image's LAYER
+// contents (podman cp cid:<path> …). Nothing is started: create only builds the object.
+//
+// The placeholder command is REQUIRED, and it is never executed — a `FROM scratch` image carries no
+// CMD and no ENTRYPOINT, and a runner whose podman enforces the image config refuses such an image
+// outright. Measured on a CI runner, on an image this package's own emitter builds:
+//
+//	podman create …: exit status 125: Error: no command or entrypoint provided, and no CMD or
+//	ENTRYPOINT from image
+//
+// The engine's own output is returned on failure: a test that discards it turns one read into a
+// guessing game, which is exactly how that failure first presented (nothing but the exit status).
+func createContainer(t *testing.T, ref string) string {
+	t.Helper()
+
+	const placeholder = "true" // never executed; create only builds the container object
+
+	out, err := exec.Command("podman", "create", ref, placeholder).CombinedOutput()
+	if err != nil {
+		t.Fatalf("podman create %s: %v: %s", ref, err, out)
+	}
+
+	return strings.TrimSpace(string(out))
+}
+
+// requireUsableEngine skips the calling test when the container engine these integration tests
+// drive cannot be used, and says why - with the engine's own output. See engineUsable for the
+// reasoning. It names NO engine parameter: every caller in this package drives podman, and a
+// parameter that is always one constant is dead surface (it is added back with the second engine,
+// not kept for a hypothetical one).
+func requireUsableEngine(t *testing.T) {
+	t.Helper()
+
+	const engine = "podman"
+
+	if ok, why := engineUsable(engine); !ok {
+		t.Skipf("%s — skipping engine-backed integration test: %s", engine, why)
+	}
+}
+
+// TestEngineUsable_EmptyPathIsNotUsable is the negative half of the proof: with an emptied PATH no
+// engine is usable, which is the state the three guards used to handle by presence and the state a
+// present-but-broken engine shares. It fails without engineUsable, because there was nothing to call.
+func TestEngineUsable_EmptyPathIsNotUsable(t *testing.T) {
+	withEmptyPATH(t)
+	ok, why := engineUsable("podman")
+	if ok {
+		t.Error("engineUsable with an emptied PATH = true, want false")
+	}
+	if why == "" {
+		t.Error("engineUsable returned no reason; a silent skip is the defect this row is about")
+	}
+	if _, err := exec.LookPath("podman"); err == nil {
+		t.Error("withEmptyPATH did not empty PATH; the assertion above proves nothing")
+	}
+}
+
+// TestEngineUsable_PresentButBrokenIsNotUsable is the assertion that distinguishes presence from usability, and
+// the one that fails without the fix: a `podman` that exists on PATH and cannot run is exactly the host class this
+// row was filed from (`Failed to obtain podman configuration: …`). Presence-only logic returns true here.
+//
+// The stub is a two-line script in a temp dir, put first on PATH. It is not a fake of a live service - nothing is
+// contacted - it is a binary that exists and fails, which is the condition under test.
+func TestEngineUsable_PresentButBrokenIsNotUsable(t *testing.T) {
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "podman")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("writing stub engine: %v", err)
+	}
+	t.Setenv("PATH", dir)
+	if _, err := exec.LookPath("podman"); err != nil {
+		t.Fatalf("stub engine is not resolvable, so this test proves nothing: %v", err)
+	}
+	ok, why := engineUsable("podman")
+	if ok {
+		t.Error("engineUsable with an installed but failing engine = true, want false — this is the defect opencharly/sdk#364 filed")
+	}
+	if !strings.Contains(why, "unusable") {
+		t.Errorf("reason = %q, want it to say the engine is unusable rather than missing", why)
+	}
+}

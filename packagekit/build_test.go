@@ -51,6 +51,24 @@ func TestBuild(t *testing.T) {
 	if !strings.Contains(got, "optdepend = qemu-full: full-system VM support") {
 		t.Errorf("archlinux package missing injected optdepends:\n%s", got)
 	}
+	// The variant relationships, asserted at the ARTIFACT boundary: the written
+	// package's own .PKGINFO must refuse co-install with its siblings and must NOT
+	// declare a replace. A mutual replace makes a routine `pacman -Syu` unresolvable
+	// for the installed member — pacman finds two sibling replacers and the
+	// transaction dies (opencharly/charly-arch#13):
+	//     error: unresolvable package conflicts detected
+	//     :: charly-full-<ver> and charly-minimal-<ver> are in conflict
+	if !strings.Contains(got, "provides = charly") {
+		t.Errorf("archlinux package must Provides the base name:\n%s", got)
+	}
+	for _, sibling := range []string{"charly-default", "charly-full"} {
+		if !strings.Contains(got, "conflict = "+sibling) {
+			t.Errorf("archlinux package must Conflict %s:\n%s", sibling, got)
+		}
+	}
+	if strings.Contains(got, "\nreplaces = ") {
+		t.Errorf("archlinux package must NOT declare replaces (a mutual replace makes `-Syu` unresolvable):\n%s", got)
+	}
 }
 
 // TestBuildDefaultVariant builds the default variant (plain `charly` name).

@@ -1,0 +1,98 @@
+# The sdk module's project manifest — the MINIMUM a repo needs to AUTHOR a skill.
+#
+# This file exists for ONE reason. A skill's routing metadata (`family`/`owner`/
+# `triggers`) is authored as a `skill:` node beside a `candy:` node in the owning repo's
+# `charly.yml` (AGENTS.md Part II #5, `spec/schema/skill.cue`), so a repo that owns
+# skills must be a charly project. Before this file sdk held 0 authored skills and was
+# no project at all — `charly box validate` here printed "checked nothing to check".
+#
+# What this manifest is NOT. sdk is the plugin SDK (`github.com/opencharly/sdk`): a Go
+# module of mechanism packages (`deploykit`, `buildkit`, `vmshared`, `kit`, `candywalk`,
+# …). It ships NO image, composes NO box, and installs NO package. The ONE candy below
+# is a CONCEPT candy: its `plan:` is a `true` no-op, it composes nothing, and it appears
+# in no image — so the `skill:` nodes add NOTHING to any `ai.opencharly.skill` OCI label.
+# Adding this manifest changes the Go build in no way (no schema, no package, no
+# `plan:` that executes a real step); `go build ./...` / `go test ./...` / `gofmt` are
+# untouched, which the PR proves.
+#
+# The skill bodies are FILES at `.agents/skills/<name>/SKILL.md`; nothing here inlines a
+# `description:` or a `content:`. An inline body that disagrees with its file is a hard
+# error in the marketplace generator, and copying a body back into a node is exactly how
+# a skill drifts from the file that is its source.
+#
+# WHICH skills live here is decided by what the module CONTAINS, never by what a skill is
+# about: each one below documents a mechanism package of this module, and that destination
+# was MEASURED on the tree (opencharly/opencharly#609, re-derived in #611), never read off
+# a skill's own prose citation.
+repo: github.com/opencharly/sdk
+
+# -----------------------------------------------------------------------------
+# sdk-skill-shelf — the concept candy that owns this module's skills.
+#
+# The name states what it holds: this repo's skill shelf. It is a CARRIER CANDY inside a
+# repo that already holds code — the shape "Repo classes and naming" explicitly sanctions
+# — not a product family (a family is a `layer-<family>` repo, never a bare one) and not
+# the retired `*-skills` carrier REPO class. It carries the repo's own class in its name
+# (`sdk-`), so it can never be read as a product variant, and it leaves this repo's bare
+# name — and therefore its class — exactly as it was.
+# -----------------------------------------------------------------------------
+sdk-skill-shelf:
+    candy:
+        description: |-
+            Concept candy owning the SDK's own skills — the ones whose source of truth is a
+            mechanism package in this module (`deploykit`, `vmshared`, `kit`, `candywalk`). It
+            ships no install content and composes no image; it carries the `skill:` routing nodes,
+            and the prose lives in `.agents/skills/<name>/SKILL.md` at this repo's root.
+        plan:
+            - run: this documentation-only candy ships no install content (it carries the sdk's skill entities); validate-satisfying no-op
+              command: "true"
+              context:
+                  - build
+            - check: validate-satisfying no-op — this assertion is NOT performed by the command, the real body-existence gate is `charly box validate`
+              id: sdk-skill-shelf-present
+              context:
+                  - build
+              command: "true"
+capabilities-skill:
+    skill:
+        name: capabilities
+        family: internals
+        owner: sdk-skill-shelf
+        triggers:
+            - "OCI labels / capabilities contract"
+cloud-init-renderer-skill:
+    skill:
+        name: cloud-init-renderer
+        family: internals
+        owner: sdk-skill-shelf
+generate-source-skill:
+    skill:
+        name: generate-source
+        family: internals
+        owner: sdk-skill-shelf
+        triggers:
+            - "`charly box build` / `charly box generate` / Containerfile"
+libvirt-renderer-skill:
+    skill:
+        name: libvirt-renderer
+        family: internals
+        owner: sdk-skill-shelf
+local-infra-skill:
+    skill:
+        name: local-infra
+        family: internals
+        owner: sdk-skill-shelf
+        triggers:
+            - "local-target deploy / `target: local` / `host: local` (default) / SSH-host deploys / `user:` / `ssh_arg:`"
+ovmf-skill:
+    skill:
+        name: ovmf
+        family: internals
+        owner: sdk-skill-shelf
+skills-skill:
+    skill:
+        name: skills
+        family: internals
+        owner: sdk-skill-shelf
+        triggers:
+            - "Skill authoring / skill maintenance / where does this doc content belong"

@@ -88,9 +88,13 @@ func WriteVmSshStanza(home string, s VmSshStanza) error {
 	if err := os.MkdirAll(filepath.Dir(frag), 0o700); err != nil {
 		return err
 	}
-	stanzas := loadStanzas(frag)
+	release, stanzas, err := lockStanzas(frag)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = release() }()
 	stanzas[s.Alias] = renderStanza(s)
-	return saveStanzas(frag, stanzas)
+	return writeStanzasLocked(frag, stanzas)
 }
 
 // RemoveVmSshStanza drops the named alias and returns the remaining count (0 → the caller also
@@ -100,7 +104,11 @@ func RemoveVmSshStanza(home string, alias string) (remaining int, err error) {
 	if _, err := os.Stat(frag); os.IsNotExist(err) {
 		return 0, nil
 	}
-	stanzas := loadStanzas(frag)
+	release, stanzas, err := lockStanzas(frag)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = release() }()
 	if _, ok := stanzas[alias]; !ok {
 		return len(stanzas), nil
 	}
@@ -109,7 +117,7 @@ func RemoveVmSshStanza(home string, alias string) (remaining int, err error) {
 		_ = os.Remove(frag)
 		return 0, nil
 	}
-	return len(stanzas), saveStanzas(frag, stanzas)
+	return len(stanzas), writeStanzasLocked(frag, stanzas)
 }
 
 // ListVmSshAliases returns the alias names in the managed fragment, sorted.
@@ -177,24 +185,27 @@ func loadStanzas(path string) map[string]string {
 	return out
 }
 
-func saveStanzas(path string, stanzas map[string]string) error {
-	// Serialize concurrent fragment writers: the old read-modify-write had a whole-block
-	// replace of a possibly-stale read — two concurrent vm-creates each merging against their
-	// own load dropped the other's aliases, and the lost alias made that lane's ssh executor
-	// dial hang (measured: the 16-lane check-run stalls/inflation, no CPU/RAM pressure).
-	// The lock + a fresh per-alias merge lose nothing under concurrency.
-	unlock, lockErr := AcquireFileLock(path+".lock", true)
-	if lockErr != nil {
-		return lockErr
+// lockStanzas acquires the fragment's cross-process file lock and loads the current stanza
+// set UNDER it, so a caller's read-modify-write is atomic against concurrent writers/removers.
+// The returned release MUST be deferred and called AFTER any writeStanzasLocked.
+func lockStanzas(path string) (release func() error, stanzas map[string]string, err error) {
+	release, err = AcquireFileLock(path+".lock", true)
+	if err != nil {
+		return nil, nil, err
 	}
-	defer func() { _ = unlock() }()
+	return release, loadStanzas(path), nil
+}
 
-	merged := loadStanzas(path)
-	for k, v := range stanzas {
-		merged[k] = v
-	}
-	keys := make([]string, 0, len(merged))
-	for k := range merged {
+// writeStanzasLocked writes the EXACT stanza set — deliberately NO re-merge against a fresh
+// disk read. The caller already holds the lock AND loaded under it, so the concurrency guarantee
+// (measured: the 16-lane check-run stalls where a lost ssh alias hangs that lane's executor dial)
+// is preserved by loading under the lock, never by re-merging without it. Re-merging was the bug:
+// RemoveVmSshStanza deletes an alias, then a fresh-load upsert re-added it from disk whenever any
+// sibling stanza remained — so `charly vm destroy` reported success yet left the alias behind.
+// Only the single-stanza `len==0 → os.Remove` arm hid it.
+func writeStanzasLocked(path string, stanzas map[string]string) error {
+	keys := make([]string, 0, len(stanzas))
+	for k := range stanzas {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -203,7 +214,7 @@ func saveStanzas(path string, stanzas map[string]string) error {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(strings.TrimRight(merged[k], "\n"))
+		sb.WriteString(strings.TrimRight(stanzas[k], "\n"))
 		sb.WriteString("\n")
 	}
 	body := sb.String()

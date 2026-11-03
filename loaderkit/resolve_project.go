@@ -150,6 +150,22 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 			rp.Candies = make(map[string]spec.CandyView, len(layers))
 			rp.CandyModels = make(map[string]spec.CandyModel, len(layers))
 		}
+		// The skills this candy OWNS — `skill.owner` naming this candy entity — projected onto the
+		// wire model so a consumer holding only the model can answer "which skills does this candy
+		// carry?" without reaching cfg.Skills (opencharly/spec#254; CandyModel.Skills carries NAMES,
+		// the bodies stay in Config.Skills and the marketplace generator).
+		//
+		// PER-CANDY, not per-box: `uf.PluginKinds["skill"]` is the authored document, so a candy's
+		// ownership does not depend on which box happens to compose it. CollectSkills filters by the
+		// composed chain because a LABEL must stay bounded — that is the box question, and asking it
+		// here would make charly-internals own its skills under one image and not under another.
+		if uf != nil {
+			owned, err := deploykit.CandyModelOwnedSkills(uf.PluginKinds["skill"], name)
+			if err != nil {
+				return nil, fmt.Errorf("projecting candy %q skills: %w", name, err)
+			}
+			m.Skills = owned
+		}
 		rp.Candies[name] = v
 		rp.CandyModels[name] = m
 	}

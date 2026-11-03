@@ -64,23 +64,7 @@ func TestProjectResolvedProject_InjectsInitDependsCandy(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	seams := ResolveProjectSeams{
-		// The real resolver, exactly as the host closure wraps it — so the test exercises the
-		// genuine resolve → inject → project chain rather than a hand-built box.
-		ResolveBox: func(c *spec.Config, name, calver, d string) (*buildkit.ResolvedBox, error) {
-			return buildkit.ResolveBox(c, name, calver, d, buildkit.ResolveOpts{
-				DistroCfg:  &buildkit.DistroConfig{},
-				BuilderCfg: &buildkit.BuilderConfig{},
-			})
-		},
-		FillNamespacedBoxes: func(*spec.UnifiedFile, *buildkit.InitConfig, string, string, string, *spec.ResolvedProject, NamespaceAncestors) {
-		},
-		ResolveResources:      func(*spec.UnifiedFile) map[string]*spec.ResolvedResource { return nil },
-		ShouldIncludeDisabled: func(string) bool { return false },
-		ComputeIntermediates: func(boxes map[string]*buildkit.ResolvedBox, _ map[string]spec.CandyReader, _ *spec.Config, _ string) (map[string]*buildkit.ResolvedBox, error) {
-			return boxes, nil
-		},
-	}
+	seams := projectTestSeams()
 
 	rp, err := ProjectResolvedProject(cfg, layers, nil, &buildkit.DistroConfig{}, &buildkit.BuilderConfig{}, initCfg, dir, "2026.1.1", "2026.1.1", seams, nil, nil)
 	if err != nil {

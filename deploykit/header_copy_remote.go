@@ -28,21 +28,15 @@ func remoteBuildConfigCacheRoots(candies map[string]CandyModel) []string {
 		if l == nil || !l.GetRemote() || l.GetSourceDir() == "" {
 			continue
 		}
-		var root string
-		// A ROOT-LEVEL standalone candy (the de-submodule cutover's shape: the manifest lives at
-		// the repo root, ref == repoPath) has an empty SubPathPrefix and its SourceDir IS the
-		// repo@version cache root itself — no suffix to strip. A subpath candy (old
-		// candy/<name> inside the charly repo, or any future multi-candy repo) carries
-		// SubPathPrefix like "candy/"; strip it to reach the shared cache root.
-		if l.GetSubPathPrefix() == "" {
-			root = l.GetSourceDir()
-		} else {
-			suffix := filepath.Join(l.GetSubPathPrefix(), l.GetName())
-			trimmed, ok := strings.CutSuffix(l.GetSourceDir(), suffix)
-			if !ok {
-				continue
-			}
-			root = strings.TrimRight(trimmed, string(filepath.Separator))
+		// The repo@version cache root is the candy's REPO ROOT, and it is derived by the ONE shared
+		// definition (candy_repo_root.go) rather than re-derived here: a ROOT-LEVEL standalone candy
+		// (the de-submodule cutover's shape — the manifest lives at the repo root, ref == repoPath)
+		// has an empty SubPathPrefix and its SourceDir IS that root; a subpath candy carries
+		// SubPathPrefix like "candy/", which is stripped. The same fact computed in two places is how
+		// the candy dir and the repo root drifted into two different bases for one layout.
+		root, ok := candyRepoRoot(l)
+		if !ok {
+			continue
 		}
 		if root != "" && !seen[root] {
 			seen[root] = true

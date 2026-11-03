@@ -17,13 +17,17 @@ import (
 // status. Code 0 falls back to the host's default error handling (no special code).
 type ExitCodeError = exitcode.ExitCodeError
 
-// The check-command exit-code convention (goss/pytest 0/1/2/3), single-sourced here so both the HOST
-// (main()'s exit mapping + `charly box feature run`) and candy/plugin-check reference ONE contract:
+// The check-command exit-code convention (goss/pytest 0/1/2/3) is stated ONCE, in this module's
+// contract source — github.com/opencharly/spec/exitcode. It is deliberately NOT restated here: the
+// two copies had already DIVERGED, which is the argument. This one still said 3 meant only "a
+// required host prerequisite is absent" after the check modes began reporting 3 for a plan
+// resolution that came back EMPTY (an image that baked no `plan:`, a deployment whose source
+// declares none, a bed child contributing no steps — opencharly/plugin-check#110), so a reader of
+// the sdk copy learned a narrower contract than the code implements. A second statement of a
+// contract is a second contract (R2); read the canonical table there.
 //
-//	0  all checks passed
-//	1  infra / usage error — no pass/fail verdict was produced (the host default)
-//	2  the check RAN and one or more checks FAILED
-//	3  the bed was SKIPPED (a required host prerequisite — e.g. a GPU — is absent)
+//	CheckFailExitCode    = 2  the check RAN and one or more checks FAILED
+//	CheckSkippedExitCode = 3  the phase RAN NOTHING — neither a pass nor a failure
 const (
 	CheckFailExitCode    = exitcode.CheckFailExitCode
 	CheckSkippedExitCode = exitcode.CheckSkippedExitCode

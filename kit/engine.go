@@ -18,6 +18,11 @@ var (
 	// the engine name. The capability STRUCT TYPE is spec.EngineCapability (the
 	// generated schema type) — consumers name it directly; no alias here.
 	EngineCapabilityFor = container.EngineCapabilityFor
-	EngineRunModeFor    = container.EngineRunModeFor
-	IsUnitRunMode       = container.IsUnitRunMode
+	// WorkloadUserFor selects the capability's ROOTLESS or ROOTFUL workload-user
+	// fact for the launch mode. The two are separate fields because an engine
+	// can be driven both ways (containerd), and a consumer that assumes rootless
+	// is wrong for the rootful arm.
+	WorkloadUserFor  = container.WorkloadUserFor
+	EngineRunModeFor = container.EngineRunModeFor
+	IsUnitRunMode    = container.IsUnitRunMode
 )

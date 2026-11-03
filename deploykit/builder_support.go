@@ -13,14 +13,18 @@ import (
 // BuildStageContext builds the render context for a candy's builder stage: stage
 // names, copy source, user, cache mounts, detected manifest + lockfile-aware
 // install command, manylinux fix, build script, and config-detected packages.
-// Relocated from charly (P8); byte-identical.
+// The copy source comes from the SAME origin→path mapping every other COPY site uses
+// (candyCopySource), computed from the layer in hand: re-deriving the candy's map key here
+// (CandyMapKey) yielded an empty key for a candy the resolver marked Remote without a
+// RepoPath — an imported-namespace candy — so the copy-source lookup missed the layer.
+// Relocated from charly (P8).
 func (g *Generator) BuildStageContext(layer CandyModel, builderName string, builderDef *buildkit.BuilderDef, img *buildkit.ResolvedBox, builderRef string) *spec.BuildStageContext {
 	stageName := fmt.Sprintf("%s-%s-build", layer.GetName(), builderName)
 	ctx := &spec.BuildStageContext{
 		BuilderRef:  builderRef,
 		StageName:   stageName,
 		LayerStage:  layer.GetName(),
-		CopySrc:     g.CandyCopySource(CandyMapKey(layer)),
+		CopySrc:     g.candyCopySource(layer, layer.GetName()),
 		UID:         img.UID,
 		GID:         img.GID,
 		Home:        img.Home,
