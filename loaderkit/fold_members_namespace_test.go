@@ -1,6 +1,7 @@
 package loaderkit
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -94,5 +95,89 @@ func TestFoldMembers_NamespaceMemberNameCollisionIsAnError(t *testing.T) {
 	if err := FoldMembers(root); err == nil {
 		t.Fatal("FoldMembers accepted the same bare deploy-level member name in two scopes; " +
 			"the bare address is global, so this must be a hard collision error")
+	}
+}
+
+// TestFoldMembers_DiamondAliasFoldsSameMemberNodeOnce covers the same-node-pointer arm of the
+// `folded` guard in foldMembers:
+//
+//	if prev, seen := folded[memberKey]; seen {
+//	    if prev == memberNode { continue }
+//	    ...
+//	}
+//
+// A diamond/multi-alias mount reaches the SAME *UnifiedFile by more than one path BY DESIGN
+// (namespace_walk.go: one repo at `arch` + `cachyos.arch`, or `c` through both `a` and `b`), so
+// the same member node POINTER is collected twice under the same bare name. The second visit must
+// be idempotent — skip, not a collision error — and the member must end up folded exactly once.
+// Without the `prev == memberNode` arm the second alias reports a phantom collision.
+func TestFoldMembers_DiamondAliasFoldsSameMemberNodeOnce(t *testing.T) {
+	member := &spec.Deploy{Target: "vm", From: "eval-vm"}
+	shared := &spec.UnifiedFile{Deploy: map[string]spec.DeployNode{
+		"bed": {
+			Target:     "pod",
+			Disposable: foldTrue(),
+			Member: []spec.Member{{
+				Name:     "diamond-member",
+				Position: spec.PositionDeployLevel,
+				Node:     member,
+			}},
+		},
+	}}
+	// ONE namespace UnifiedFile mounted at two alias paths — the diamond shape.
+	root := &spec.UnifiedFile{Namespaces: map[string]*spec.UnifiedFile{
+		"alias-a": shared,
+		"alias-b": shared,
+	}}
+
+	if err := FoldMembers(root); err != nil {
+		t.Fatalf("FoldMembers rejected a diamond/multi-alias mount: %v\n"+
+			"  The same member node pointer reached by two alias paths is idempotent, not a collision.", err)
+	}
+	folded, ok := shared.Deploy["diamond-member"]
+	if !ok {
+		t.Fatalf("diamond member was not folded (scope deploy keys: %v)", SortedDeployKeys(shared.Deploy))
+	}
+	if folded.Target != "vm" || folded.MemberOf != "bed" {
+		t.Errorf("folded diamond member = (target=%q, memberOf=%q), want (vm, bed)", folded.Target, folded.MemberOf)
+	}
+	// Exactly one fold: the owner plus the single folded entry, no duplicate and no error.
+	if len(shared.Deploy) != 2 {
+		t.Errorf("shared scope has %d deploy entries (%v), want exactly 2 (owner + one folded member)",
+			len(shared.Deploy), SortedDeployKeys(shared.Deploy))
+	}
+}
+
+// TestFoldMembers_MemberShadowingRootDeployIsAnError covers the rootTopLevel arm of foldMembers:
+// the folded member is addressed by its BARE name in the merged-root projection, which is the SAME
+// key space a ROOT top-level deploy occupies. A namespace member whose bare name equals a root
+// deploy would silently overwrite that deploy in the projection, so the fold must reject it before
+// any map write.
+func TestFoldMembers_MemberShadowingRootDeployIsAnError(t *testing.T) {
+	root := &spec.UnifiedFile{
+		Deploy: map[string]spec.DeployNode{
+			"shadowed": {Target: "pod", Image: "root-app"},
+		},
+		Namespaces: map[string]*spec.UnifiedFile{
+			"charly": {Deploy: map[string]spec.DeployNode{
+				"bed": {
+					Target: "pod",
+					Member: []spec.Member{{
+						Name:     "shadowed",
+						Position: spec.PositionDeployLevel,
+						Node:     &spec.Deploy{Target: "vm", From: "eval-vm"},
+					}},
+				},
+			}},
+		},
+	}
+
+	err := FoldMembers(root)
+	if err == nil {
+		t.Fatal("FoldMembers accepted a deploy-level member whose bare name shadows a ROOT top-level deploy; " +
+			"the merged-root projection would silently overwrite the root entry, so this must be a hard error")
+	}
+	if !strings.Contains(err.Error(), "root top-level deploy") {
+		t.Errorf("error does not name the root-shadow collision: %v", err)
 	}
 }
