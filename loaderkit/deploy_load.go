@@ -17,7 +17,10 @@ package loaderkit
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
+	"github.com/opencharly/spec/refs"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -151,12 +154,18 @@ func hoistVenueSubtree(root, node *spec.DeployNode, venuePath string) {
 // (namespace_walk.go), and materializing it through two paths yields DISTINCT *spec.Deploy
 // copies — not one shared pointer — so the idempotence test must key on the member's LOGICAL
 // ORIGIN, never on node pointer identity (opencharly/sdk#484). memberOrigin is that identity:
-// the resolved project directory that declares the member (uf.RootDir, the loader's existing
-// CanonicalRef mount identity: repo@ref/subpath for a remote import, the absolute directory for
-// a local one), the declaring deploy's name within it, and the bare member key. Every mount of
-// one repo@ref resolves to the SAME RootDir, however many aliases reach it, so a repeated fold
-// is idempotent; a different repo, ref or subpath resolves to a different RootDir and remains a
-// hard collision.
+// the resolved project directory that declares the member (uf.RootDir), the ref-independent
+// remote mount identity derived from it (logicalRepoMount), the declaring deploy's name, and
+// the bare member key. Every mount of one repo@ref resolves to the SAME RootDir, however many
+// aliases reach it, so a repeated fold is idempotent.
+//
+// A mixed-pin graph may ALSO mount the same repo+subpath at two DIFFERENT refs — the umbrella's
+// charly and openclaw namespaces pin cachyos at one tag while its strata namespace pins it at
+// another. That is still ONE logical member under the global bare address, so the ref is the ONE
+// dimension relaxed: the second mount folds idempotently instead of hard-erroring
+// (opencharly/charly#1107). A different repo, or the same repo at a different SUBPATH, keeps a
+// different logical identity and remains a hard collision — the bare name is the CLI address, and
+// folding genuinely different owners would silently pick a winner.
 func FoldMembers(uf *spec.UnifiedFile) error {
 	if uf == nil {
 		return nil
@@ -171,28 +180,88 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 }
 
 // memberOrigin is a deploy-level member's LOGICAL origin — the unit the bare-name law makes
-// unique. rootDir is the loader-resolved project directory that DECLARES the member; it is the
-// existing mount identity CanonicalRef produces (the same string for every mount of one
-// repo@ref), so it is reused rather than re-deriving an origin notion. scope is the fallback for
-// a synthetic in-memory tree (RootDir empty — never a loader result), where the *UnifiedFile
-// pointer stands in for the unresolved mount so distinct scopes still collide. owner is the
-// declaring deploy's name inside that project. The member's bare key is the fold map's key.
+// unique. rootDir is the loader-resolved project directory that DECLARES the member: every mount
+// of one repo@ref resolves to the same dir, however many aliases reach it. repo is the
+// ref-independent identity of a REMOTE mount (repo path + imported subpath, ref stripped); it is
+// set only when rootDir is a derived-view dir under the repo cache, so a local import (no ref
+// dimension) or a synthetic in-memory tree keeps its exact identity. scope is the fallback for a
+// synthetic tree (RootDir empty — never a loader result), where the *UnifiedFile pointer stands in
+// for the unresolved mount so distinct scopes still collide. owner is the declaring deploy's name
+// inside that project. The member's bare key is the fold map's key.
 type memberOrigin struct {
 	rootDir string
+	repo    string
 	scope   *spec.UnifiedFile
 	owner   string
 }
 
-// memberOriginOf returns the logical origin of a member declared by owner in uf. It is
-// comparable, so the fold's dedupe is one struct comparison.
+// memberOriginOf returns the logical origin of a member declared by owner in uf.
 func memberOriginOf(uf *spec.UnifiedFile, owner string) memberOrigin {
 	o := memberOrigin{owner: owner}
 	if uf.RootDir != "" {
 		o.rootDir = uf.RootDir
+		o.repo = logicalRepoMount(uf.RootDir)
 	} else {
 		o.scope = uf
 	}
 	return o
+}
+
+// sameMemberOrigin reports whether two occurrences declare the SAME logical member under the
+// global bare address. The exact mount dir is the identity for a local or synthetic tree; two
+// derived-view dirs that differ only in their git ref are the same remote mount at another
+// ref, which the bare-address law folds once instead of calling a collision.
+func (o memberOrigin) sameMemberOrigin(other memberOrigin) bool {
+	if o.owner != other.owner {
+		return false
+	}
+	if o.scope != nil || other.scope != nil {
+		return o.scope == other.scope
+	}
+	if o.rootDir == other.rootDir {
+		return true
+	}
+	return o.repo != "" && o.repo == other.repo
+}
+
+// logicalRepoMount returns the REF-INDEPENDENT identity of a remote import mount: the repo path
+// and imported subpath, with the git ref removed. It recognises the loader's derived-view dir
+// (CanonicalRef → EnsureRepoDownloaded → DeriveRepoView):
+//
+//	<repo-cache>/<repoPath>@<version>.view.<identity>[/<subpath>]
+//
+// The repo path is everything before the "@"; the subpath is everything after the single
+// ".view.<identity>" path component. A local import — no view marker, or not under the repo cache
+// (the loader resolves CHARLY_REPO_OVERRIDE to a live working tree) — has no ref dimension to
+// relax and returns "", leaving the exact RootDir as the identity, so distinct local dirs still
+// collide.
+func logicalRepoMount(rootDir string) string {
+	cacheDir, err := refs.RepoCacheDir()
+	if err != nil {
+		return ""
+	}
+	rel, err := filepath.Rel(cacheDir, rootDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	rel = filepath.ToSlash(rel)
+	v := strings.Index(rel, ".view.")
+	if v <= 0 {
+		return ""
+	}
+	head, tail := rel[:v], rel[v+len(".view."):]
+	at := strings.IndexByte(head, '@')
+	if at <= 0 || at == len(head)-1 {
+		return ""
+	}
+	id, sub := tail, ""
+	if i := strings.IndexByte(tail, '/'); i >= 0 {
+		id, sub = tail[:i], tail[i+1:]
+	}
+	if len(id) != viewIdentityLen || strings.Trim(id, "0123456789abcdef") != "" {
+		return ""
+	}
+	return head[:at] + "\x00" + sub
 }
 
 func foldMembers(uf *spec.UnifiedFile, ancestors NamespaceAncestors, rootTopLevel map[string]bool, folded map[string]memberOrigin, owners map[string]string) error {
@@ -234,7 +303,7 @@ func foldMembers(uf *spec.UnifiedFile, ancestors NamespaceAncestors, rootTopLeve
 			// member from a DIFFERENT origin claiming the same bare name is a genuine collision.
 			origin := memberOriginOf(uf, owner)
 			if prev, seen := folded[memberKey]; seen {
-				if prev == origin {
+				if prev.sameMemberOrigin(origin) {
 					continue
 				}
 				return fmt.Errorf(
