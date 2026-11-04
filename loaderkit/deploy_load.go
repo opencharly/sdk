@@ -127,16 +127,46 @@ func hoistVenueSubtree(root, node *spec.DeployNode, venuePath string) {
 // deploy verbs the deploy path already uses.
 // -----------------------------------------------------------------------------
 
-// FoldMembers copies every deploy node's `peer:` entries into the Deploy map as top-level
+// FoldMembers copies every deploy node's deploy-level members into the Deploy map as top-level
 // addressable entries (MemberOf set, disposability inherited), so every deploy verb resolves a
 // member by name through the same path as any deploy. Runs BEFORE validateDeploymentTree (so folded
 // members get the same deploy validation); a check bed is itself a `disposable: true` deploy, so a
 // bed's members fold the same way. A member name colliding with any existing deploy/member entry is
 // a hard error.
+//
+// It recurses into EVERY imported NAMESPACE (nested `nsA.nsB`), not just the root map: an imported
+// deploy's deploy-level member is the SAME addressable entry as a local one (the Cutover C bare-name
+// law), and without the recursion the merged-root tree never contains it — the re-entrant
+// `charly deploy add <member>` resolves no node, collects no substrate word, connects no provider,
+// and falls back to pod (opencharly/charly#1083). The sibling whole-tree stamps
+// (StampDeployDescents, Deploys' own namespace walk) already recurse; this is the same walk with the
+// same path-scoped NamespaceAncestors guard.
+//
+// The folded entry is addressed by its BARE name in the merged-root projection (UnifiedFile.Deploys
+// skips the namespace prefix for a MemberOf-stamped entry), so the name is GLOBAL: two scopes
+// declaring the same bare member name — or a member shadowing a ROOT top-level deploy — is a hard
+// error, never a silent map overwrite. A diamond/multi-alias mount reaches the SAME *UnifiedFile by
+// more than one path BY DESIGN (namespace_walk.go); the same member pointer folded twice is
+// idempotent, not a collision.
 func FoldMembers(uf *spec.UnifiedFile) error {
-	if uf == nil || len(uf.Deploy) == 0 {
+	if uf == nil {
 		return nil
 	}
+	// Root-scope top-level deploy names share the BARE key space a folded member occupies in the
+	// merged-root projection, so a member anywhere may not shadow one.
+	rootTopLevel := make(map[string]bool, len(uf.Deploy))
+	for name := range uf.Deploy {
+		rootTopLevel[name] = true
+	}
+	return foldMembers(uf, NamespaceAncestors{}, rootTopLevel, map[string]*spec.Deploy{}, map[string]string{})
+}
+
+func foldMembers(uf *spec.UnifiedFile, ancestors NamespaceAncestors, rootTopLevel map[string]bool, folded map[string]*spec.Deploy, owners map[string]string) error {
+	leave, ok := ancestors.Enter(uf)
+	if !ok {
+		return nil
+	}
+	defer leave()
 	// Collect first (we mutate the map below). Iterate a sorted owner list so a collision between
 	// two owners' members is reported deterministically.
 	type pendingMember struct {
@@ -164,6 +194,24 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 			if memberNode.AgentProvisioned {
 				continue
 			}
+			// The bare address is GLOBAL. A diamond/multi-alias mount re-reaches the SAME node
+			// pointer by a second path; that is idempotent, while a DIFFERENT node claiming the
+			// same bare name is a genuine collision.
+			if prev, seen := folded[memberKey]; seen {
+				if prev == memberNode {
+					continue
+				}
+				return fmt.Errorf(
+					"deploy-level member %q (declared under deploy %q) collides with the member of deploy %q — deploy-level member names are globally unique (the bare name is the CLI address); rename one",
+					memberKey, owner, owners[memberKey])
+			}
+			if rootTopLevel[memberKey] {
+				return fmt.Errorf(
+					"deploy-level member %q (declared under deploy %q) collides with a root top-level deploy of the same bare name — deploy-level member names are globally unique (the bare name is the CLI address); rename one",
+					memberKey, owner)
+			}
+			folded[memberKey] = memberNode
+			owners[memberKey] = owner
 			pending = append(pending, pendingMember{
 				key:        memberKey,
 				node:       *memberNode,
@@ -187,6 +235,11 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 			node.Disposable = &disposable
 		}
 		uf.Deploy[p.key] = node
+	}
+	for _, sub := range uf.Namespaces {
+		if err := foldMembers(sub, ancestors, rootTopLevel, folded, owners); err != nil {
+			return err
+		}
 	}
 	return nil
 }
