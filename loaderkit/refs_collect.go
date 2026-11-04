@@ -74,6 +74,11 @@ func markRepoAutoMigrating(path string) bool {
 	return true
 }
 
+// viewIdentityLen is the number of hex characters in a derived-view identity. It is short
+// enough to keep the path suffix readable; the loader's own ref-independent mount identity
+// (logicalRepoMount in deploy_load.go) validates the same width when it strips the ref.
+const viewIdentityLen = 16
+
 // reshapeViewIdentity is the CONTENT-ADDRESSED identity of the reshape a derived view
 // represents: the sha256 (first 16 hex chars) of the schema module version + the loader
 // module version. A schema change (spec) or a loader/reshape change (sdk) yields a new
@@ -91,7 +96,7 @@ var reshapeViewIdentityFn = func() string {
 	// materialized-tree cache key uses (schemaLoaderComponents → cache.KeyDigest), so the
 	// two cache layers re-key on exactly the same schema/loader change (R3 — one identity
 	// computation, not two). 16 hex chars keeps the path suffix short.
-	return cache.KeyDigest(schemaLoaderComponents())[:16]
+	return cache.KeyDigest(schemaLoaderComponents())[:viewIdentityLen]
 }
 
 // reshapeViewPath is the content-addressed derived-view directory for a pristine cache
