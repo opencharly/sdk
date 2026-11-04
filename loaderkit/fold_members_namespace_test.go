@@ -98,41 +98,33 @@ func TestFoldMembers_NamespaceMemberNameCollisionIsAnError(t *testing.T) {
 	}
 }
 
-// TestFoldMembers_DiamondAliasFoldsSameMemberNodeOnce covers the same-node-pointer arm of the
-// `folded` guard in foldMembers:
-//
-//	if prev, seen := folded[memberKey]; seen {
-//	    if prev == memberNode { continue }
-//	    ...
-//	}
-//
-// A diamond/multi-alias mount reaches the SAME *UnifiedFile by more than one path BY DESIGN
-// (namespace_walk.go: one repo at `arch` + `cachyos.arch`, or `c` through both `a` and `b`), so
-// the same member node POINTER is collected twice under the same bare name. The second visit must
-// be idempotent — skip, not a collision error — and the member must end up folded exactly once.
-// Without the `prev == memberNode` arm the second alias reports a phantom collision.
-func TestFoldMembers_DiamondAliasFoldsSameMemberNodeOnce(t *testing.T) {
+// TestFoldMembers_DiamondAliasFoldsSharedScopeOnce covers a REFERENCE mount: the loader can mount
+// the SAME *UnifiedFile at two alias paths (namespace_walk.go's byID pointer identity), so the
+// same member is visited twice through one scope. That second visit is idempotent — the same
+// logical origin, so skip, not a collision.
+func TestFoldMembers_DiamondAliasFoldsSharedScopeOnce(t *testing.T) {
 	member := &spec.Deploy{Target: "vm", From: "eval-vm"}
-	shared := &spec.UnifiedFile{Deploy: map[string]spec.DeployNode{
-		"bed": {
-			Target:     "pod",
-			Disposable: foldTrue(),
-			Member: []spec.Member{{
-				Name:     "diamond-member",
-				Position: spec.PositionDeployLevel,
-				Node:     member,
-			}},
-		},
-	}}
-	// ONE namespace UnifiedFile mounted at two alias paths — the diamond shape.
+	shared := &spec.UnifiedFile{
+		RootDir: "/cache/repos/github.com/opencharly/distro-arch@v2026.274.1256.view.da6451d8a8f0b1c1",
+		Deploy: map[string]spec.DeployNode{
+			"bed": {
+				Target:     "pod",
+				Disposable: foldTrue(),
+				Member: []spec.Member{{
+					Name:     "diamond-member",
+					Position: spec.PositionDeployLevel,
+					Node:     member,
+				}},
+			},
+		}}
+	// ONE namespace UnifiedFile mounted at two alias paths — the shared REFERENCE-mount shape.
 	root := &spec.UnifiedFile{Namespaces: map[string]*spec.UnifiedFile{
 		"alias-a": shared,
 		"alias-b": shared,
 	}}
 
 	if err := FoldMembers(root); err != nil {
-		t.Fatalf("FoldMembers rejected a diamond/multi-alias mount: %v\n"+
-			"  The same member node pointer reached by two alias paths is idempotent, not a collision.", err)
+		t.Fatalf("FoldMembers rejected a shared-scope diamond mount: %v", err)
 	}
 	folded, ok := shared.Deploy["diamond-member"]
 	if !ok {
@@ -145,6 +137,122 @@ func TestFoldMembers_DiamondAliasFoldsSameMemberNodeOnce(t *testing.T) {
 	if len(shared.Deploy) != 2 {
 		t.Errorf("shared scope has %d deploy entries (%v), want exactly 2 (owner + one folded member)",
 			len(shared.Deploy), SortedDeployKeys(shared.Deploy))
+	}
+}
+
+// TestFoldMembers_DiamondAliasFoldsDistinctCopiesOnce is the REAL diamond shape — the one that
+// broke `charly box validate` on sdk v0.2026308.351 (opencharly/sdk#484).
+//
+// The measured graph: a root project imports `arch` and `cachyos`, and cachyos imports the SAME
+// `arch` repo@ref under its own `arch` namespace. Materialize produces two DISTINCT
+// *spec.UnifiedFile scopes for arch and, inside them, distinct *spec.Deploy copies of the same
+// logical member (node copies, not one shared pointer) — both resolved from the SAME repo cache
+// dir, so both scopes carry the SAME RootDir. Keying idempotence on node POINTER identity (the
+// pre-fix model, which only the synthetic shared-pointer test above ever produced) reports the
+// second copy as a phantom collision.
+//
+// The fold's dedupe is therefore keyed on logical ORIGIN — (RootDir of the declaring project,
+// declaring deploy, bare member key) — and this test builds the shape the loader actually emits.
+func TestFoldMembers_DiamondAliasFoldsDistinctCopiesOnce(t *testing.T) {
+	const archDir = "/cache/repos/github.com/opencharly/distro-arch@v2026.274.1256.view.da6451d8a8f0b1c1"
+	// mkArchScope builds ONE independently-materialized copy of distro-arch's deploy; each call
+	// allocates fresh Deploy/Member/Node values, exactly as the two mounts did. The `Node` pointer
+	// is deliberately NOT shared between the copies.
+	mkArchScope := func() *spec.UnifiedFile {
+		return &spec.UnifiedFile{
+			Repo:    "github.com/opencharly/distro-arch",
+			RootDir: archDir,
+			Deploy: map[string]spec.DeployNode{
+				"check-arch-vm": {
+					Target:     "pod",
+					Disposable: foldTrue(),
+					Member: []spec.Member{{
+						Name:     "charly-cachyos-tailscale-test",
+						Position: spec.PositionDeployLevel,
+						Node:     &spec.Deploy{Target: "vm", From: "arch-host"},
+					}},
+				},
+			},
+		}
+	}
+	archA, archB := mkArchScope(), mkArchScope()
+	if archA.Deploy["check-arch-vm"].Member[0].Node == archB.Deploy["check-arch-vm"].Member[0].Node {
+		t.Fatal("fixture defect: the two mounts must carry DISTINCT node copies (that is the real shape)")
+	}
+	root := &spec.UnifiedFile{
+		RootDir: "/tmp/project",
+		Namespaces: map[string]*spec.UnifiedFile{
+			"arch": archA,
+			"cachyos": {
+				RootDir: "/cache/repos/github.com/opencharly/distro-cachyos@v2026.281.1001.view.da6451d8a8f0b1c1",
+				// cachyos's own deploy map (none) + its arch namespace, a SECOND materialization
+				// of the same repo@ref.
+				Namespaces: map[string]*spec.UnifiedFile{"arch": archB},
+			},
+		},
+	}
+
+	if err := FoldMembers(root); err != nil {
+		t.Fatalf("FoldMembers rejected a real diamond (same repo@ref reached as `arch` and `cachyos.arch`, "+
+			"distinct node copies): %v\n"+
+			"  The logical origin is the same repo@ref, so the second fold is idempotent, not a collision.", err)
+	}
+	// The two mounts are ONE logical member, so it folds ONCE (into whichever scope the
+	// nondeterministic namespace-order walk reaches first); the other keeps only its owner.
+	folds := 0
+	for name, scope := range map[string]*spec.UnifiedFile{"arch": archA, "cachyos.arch": archB} {
+		folded, ok := scope.Deploy["charly-cachyos-tailscale-test"]
+		if ok {
+			folds++
+			if folded.Target != "vm" || folded.MemberOf != "check-arch-vm" {
+				t.Errorf("%s: folded diamond member = (target=%q, memberOf=%q), want (vm, check-arch-vm)",
+					name, folded.Target, folded.MemberOf)
+			}
+			if len(scope.Deploy) != 2 {
+				t.Errorf("%s: scope has %d deploy entries (%v), want exactly 2 (owner + one folded member)",
+					name, len(scope.Deploy), SortedDeployKeys(scope.Deploy))
+			}
+			continue
+		}
+		if len(scope.Deploy) != 1 {
+			t.Errorf("%s: non-folded scope has %d deploy entries (%v), want only the owner",
+				name, len(scope.Deploy), SortedDeployKeys(scope.Deploy))
+		}
+	}
+	if folds != 1 {
+		t.Errorf("the same logical member folded %d times across the two mounts, want exactly 1", folds)
+	}
+}
+
+// TestFoldMembers_SameBareNameFromDifferentOriginsIsAnError is the control that keeps the
+// origin-based dedupe honest: a bare-name collision must NOT become a silent fold just because
+// the two declarations happen to share an owner name. Two DIFFERENT repos (distinct RootDir)
+// declaring the same deploying deploy and the same bare member name are genuinely different
+// logical members — the bare CLI address is global, so this stays a hard load error.
+func TestFoldMembers_SameBareNameFromDifferentOriginsIsAnError(t *testing.T) {
+	mk := func(repo, rootDir string) *spec.UnifiedFile {
+		return &spec.UnifiedFile{Repo: repo, RootDir: rootDir, Deploy: map[string]spec.DeployNode{
+			"check-vm": {
+				Target: "pod",
+				Member: []spec.Member{{
+					Name:     "shared-member",
+					Position: spec.PositionDeployLevel,
+					Node:     &spec.Deploy{Target: "vm", From: "eval-vm"},
+				}},
+			},
+		}}
+	}
+	root := &spec.UnifiedFile{
+		RootDir: "/tmp/project",
+		Namespaces: map[string]*spec.UnifiedFile{
+			"a": mk("github.com/opencharly/distro-a", "/cache/repos/github.com/opencharly/distro-a@v1"),
+			"b": mk("github.com/opencharly/distro-b", "/cache/repos/github.com/opencharly/distro-b@v1"),
+		},
+	}
+
+	if err := FoldMembers(root); err == nil {
+		t.Fatal("FoldMembers folded the same bare member name from two DIFFERENT repos: " +
+			"a different logical origin must remain a hard collision, never a silent fold")
 	}
 }
 

@@ -143,11 +143,20 @@ func hoistVenueSubtree(root, node *spec.DeployNode, venuePath string) {
 // same path-scoped NamespaceAncestors guard.
 //
 // The folded entry is addressed by its BARE name in the merged-root projection (UnifiedFile.Deploys
-// skips the namespace prefix for a MemberOf-stamped entry), so the name is GLOBAL: two scopes
-// declaring the same bare member name — or a member shadowing a ROOT top-level deploy — is a hard
-// error, never a silent map overwrite. A diamond/multi-alias mount reaches the SAME *UnifiedFile by
-// more than one path BY DESIGN (namespace_walk.go); the same member pointer folded twice is
-// idempotent, not a collision.
+// skips the namespace prefix for a MemberOf-stamped entry), so the name is GLOBAL: two
+// DIFFERENT logical members declaring the same bare name — or a member shadowing a ROOT
+// top-level deploy — is a hard error, never a silent map overwrite.
+//
+// A diamond/multi-alias graph reaches the SAME logical member more than once BY DESIGN
+// (namespace_walk.go), and materializing it through two paths yields DISTINCT *spec.Deploy
+// copies — not one shared pointer — so the idempotence test must key on the member's LOGICAL
+// ORIGIN, never on node pointer identity (opencharly/sdk#484). memberOrigin is that identity:
+// the resolved project directory that declares the member (uf.RootDir, the loader's existing
+// CanonicalRef mount identity: repo@ref/subpath for a remote import, the absolute directory for
+// a local one), the declaring deploy's name within it, and the bare member key. Every mount of
+// one repo@ref resolves to the SAME RootDir, however many aliases reach it, so a repeated fold
+// is idempotent; a different repo, ref or subpath resolves to a different RootDir and remains a
+// hard collision.
 func FoldMembers(uf *spec.UnifiedFile) error {
 	if uf == nil {
 		return nil
@@ -158,10 +167,35 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 	for name := range uf.Deploy {
 		rootTopLevel[name] = true
 	}
-	return foldMembers(uf, NamespaceAncestors{}, rootTopLevel, map[string]*spec.Deploy{}, map[string]string{})
+	return foldMembers(uf, NamespaceAncestors{}, rootTopLevel, map[string]memberOrigin{}, map[string]string{})
 }
 
-func foldMembers(uf *spec.UnifiedFile, ancestors NamespaceAncestors, rootTopLevel map[string]bool, folded map[string]*spec.Deploy, owners map[string]string) error {
+// memberOrigin is a deploy-level member's LOGICAL origin — the unit the bare-name law makes
+// unique. rootDir is the loader-resolved project directory that DECLARES the member; it is the
+// existing mount identity CanonicalRef produces (the same string for every mount of one
+// repo@ref), so it is reused rather than re-deriving an origin notion. scope is the fallback for
+// a synthetic in-memory tree (RootDir empty — never a loader result), where the *UnifiedFile
+// pointer stands in for the unresolved mount so distinct scopes still collide. owner is the
+// declaring deploy's name inside that project. The member's bare key is the fold map's key.
+type memberOrigin struct {
+	rootDir string
+	scope   *spec.UnifiedFile
+	owner   string
+}
+
+// memberOriginOf returns the logical origin of a member declared by owner in uf. It is
+// comparable, so the fold's dedupe is one struct comparison.
+func memberOriginOf(uf *spec.UnifiedFile, owner string) memberOrigin {
+	o := memberOrigin{owner: owner}
+	if uf.RootDir != "" {
+		o.rootDir = uf.RootDir
+	} else {
+		o.scope = uf
+	}
+	return o
+}
+
+func foldMembers(uf *spec.UnifiedFile, ancestors NamespaceAncestors, rootTopLevel map[string]bool, folded map[string]memberOrigin, owners map[string]string) error {
 	leave, ok := ancestors.Enter(uf)
 	if !ok {
 		return nil
@@ -194,11 +228,13 @@ func foldMembers(uf *spec.UnifiedFile, ancestors NamespaceAncestors, rootTopLeve
 			if memberNode.AgentProvisioned {
 				continue
 			}
-			// The bare address is GLOBAL. A diamond/multi-alias mount re-reaches the SAME node
-			// pointer by a second path; that is idempotent, while a DIFFERENT node claiming the
-			// same bare name is a genuine collision.
+			// The bare address is GLOBAL. A diamond/multi-alias mount reaches the SAME logical
+			// member by a second path — as a DISTINCT node copy, not a shared pointer — so the
+			// idempotence test keys on the member's logical ORIGIN, never on node identity. A
+			// member from a DIFFERENT origin claiming the same bare name is a genuine collision.
+			origin := memberOriginOf(uf, owner)
 			if prev, seen := folded[memberKey]; seen {
-				if prev == memberNode {
+				if prev == origin {
 					continue
 				}
 				return fmt.Errorf(
@@ -210,7 +246,7 @@ func foldMembers(uf *spec.UnifiedFile, ancestors NamespaceAncestors, rootTopLeve
 					"deploy-level member %q (declared under deploy %q) collides with a root top-level deploy of the same bare name — deploy-level member names are globally unique (the bare name is the CLI address); rename one",
 					memberKey, owner)
 			}
-			folded[memberKey] = memberNode
+			folded[memberKey] = origin
 			owners[memberKey] = owner
 			pending = append(pending, pendingMember{
 				key:        memberKey,
