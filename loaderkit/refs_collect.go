@@ -484,16 +484,49 @@ func CollectRemoteRefsOpts(cfg *spec.Config, layers map[string]spec.CandyReader,
 		// kind:local templates compose remote @-ref candies too; they are a property of the
 		// namespace that declares them (never a base/builder, so unreachable from the box walk),
 		// so attribute them to that namespace's scope label — a distinct composition, not a box.
-		for tplName, body := range cfg.Local {
-			r, rerr := seams.ResolveLocal(body)
-			if rerr != nil || r == nil {
-				continue
+		//
+		// The walk descends into cfg.Namespaces. An imported namespace's kind:local template is
+		// visible to validate under its QUALIFIED name (`cachyos.charly-cachyos-app`, via
+		// UnifiedFile.ProjectTemplates), yet it is not a base/builder edge of the importing
+		// project, so the box walk above never reaches it. Iterating only the ROOT Config.Local
+		// left such a template's remote refs out of the fetch set, so they were never fetched or
+		// scanned and validate reported an existing candy as missing (opencharly/sdk#488). ONE
+		// recursive walk covers every namespace depth, so the root and imported paths share this
+		// single implementation (R2 — not a namespace-only filter bolt-on). The guard is
+		// PATH-SCOPED (ancestorStack, the ONE guard namespace_walk.go defines; NamespaceAncestors is
+		// its UnifiedFile-keyed face): a mutual import terminates while a namespace mounted at
+		// several alias paths still contributes under each path.
+		var collectLocalTemplates func(c *spec.Config, nsPath string, ancestors ancestorStack[*spec.Config]) error
+		collectLocalTemplates = func(c *spec.Config, nsPath string, ancestors ancestorStack[*spec.Config]) error {
+			if c == nil {
+				return nil
 			}
-			for _, candyRef := range r.Candy {
-				if err := addRef(candyRef, spec.KindLocalScope(tplName)); err != nil {
-					return nil, err
+			leave, ok := ancestors.enter(c)
+			if !ok {
+				return nil
+			}
+			defer leave()
+			for tplName, body := range c.Local {
+				r, rerr := seams.ResolveLocal(body)
+				if rerr != nil || r == nil {
+					continue
+				}
+				scope := spec.KindLocalScope(joinScopeName(nsPath, tplName))
+				for _, candyRef := range r.Candy {
+					if err := addRef(candyRef, scope); err != nil {
+						return err
+					}
 				}
 			}
+			for alias, sub := range c.Namespaces {
+				if err := collectLocalTemplates(sub, joinScopeName(nsPath, alias), ancestors); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if err := collectLocalTemplates(cfg, "", ancestorStack[*spec.Config]{}); err != nil {
+			return nil, err
 		}
 	}
 
