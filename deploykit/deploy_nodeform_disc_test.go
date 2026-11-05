@@ -30,6 +30,9 @@ func TestDeployDiscForEntity_PodWorkloadNotGroup(t *testing.T) {
 		{"image -> pod", "image: ghcr.io/opencharly/x:latest\n", "pod"},
 		{"resolved_image -> pod", "resolved_image: ghcr.io/opencharly/x@sha256:abc\n", "pod"},
 		{"volume_project_checked -> pod", "volume_project_checked: true\n", "pod"},
+		// A no-overlay PrepareVenue state patch can carry ONLY the authored engine selector
+		// (opencharly/charly#1109). engine is pod-only, so the entry must still be a pod.
+		{"engine-only -> pod", "engine: containerd\n", "pod"},
 		{"authored port -> pod", "port:\n  - 8080:80\n", "pod"},
 		{"no workload -> group", "disposable: true\n", "group"},
 		{"explicit host target -> local", "target: host\n", "local"},

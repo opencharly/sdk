@@ -112,10 +112,11 @@ func deployDiscForEntity(body *yaml.Node) string {
 	case "host":
 		return "local"
 	case "":
-		// An empty target with a POD-WORKLOAD indicator (an image: field, a resolved pod-port
+		// An empty target with a POD indicator (an image: field, a resolved pod-port
 		// map, an authored port:, a resolved_image: — the add_candy: overlay ref a pod's
-		// PrepareVenue persists — or volume_project_checked: — the project-declared volume persist
-		// marker) is a POD — the DEFAULT substrate — NOT a targetless group. A `group:` deploy
+		// PrepareVenue persists — volume_project_checked: — the project-declared volume persist
+		// marker — or engine: — the pod-only container-engine selector a no-overlay PrepareVenue
+		// persists) is a POD — the DEFAULT substrate — NOT a targetless group. A `group:` deploy
 		// carries only MEMBERS and no own workload; misclassifying an image-backed pod as a group
 		// writes its pod-only field under `group:`, which #GroupInput rejects at the next load (the
 		// 2026-07 `charly config <image-ref>` config corruption; its sibling for resolved_image; and
@@ -126,7 +127,13 @@ func deployDiscForEntity(body *yaml.Node) string {
 			kit.FindMappingValue(body, "resolved_image") != nil ||
 			kit.FindMappingValue(body, "resolved_port") != nil ||
 			kit.FindMappingValue(body, "port") != nil ||
-			kit.FindMappingValue(body, "volume_project_checked") != nil {
+			kit.FindMappingValue(body, "volume_project_checked") != nil ||
+			// engine is a POD-ONLY selector (#DeployTraits.selectors: pod carries
+			// engine; #GroupInput rejects it). A patch carrying ONLY the authored engine
+			// (a plain no-overlay deploy, opencharly/charly#1109) therefore IS a pod entry;
+			// without this it would be written as a targetless `group:` and reject `engine`
+			// on the next load.
+			kit.FindMappingValue(body, "engine") != nil {
 			return "pod"
 		}
 		return "group"
