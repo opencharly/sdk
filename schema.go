@@ -9,6 +9,7 @@ import (
 	"github.com/opencharly/spec/capability"
 	"github.com/opencharly/spec/climodel"
 	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/schemacompose"
 	"github.com/opencharly/spec/schemaconcat"
 	"github.com/opencharly/spec/spec"
 )
@@ -64,7 +65,7 @@ type Requirement struct {
 // schema" contract. It concatenates the plugin's embedded schema/*.cue via the SAME
 // schemaconcat contract charly uses for its base (R3 — one concat loop, no
 // duplicate), COMPOSES it as ONE CUE module instance to fail loudly on a broken or
-// empty schema (schema_compose.go: an import of the spec module — the shape this
+// empty schema (spec/schemacompose: an import of the spec module — the shape this
 // contract exists for since the concat→package cutover — is refused by a text compile
 // with no module in scope, at the first import clause), and assembles the Describe
 // reply carrying the raw .cue source the host composes onto its base.
@@ -72,7 +73,7 @@ type Requirement struct {
 // schemaFS is the plugin's `//go:embed schema/*.cue` FS; dir is the embedded
 // subdirectory ("schema"). A plugin that wants a module of its own — or that imports
 // the spec schema — also embeds `cue.mod/module.cue` at the FS root, which
-// ComposeServedSchema picks up as the schema's own module declaration.
+// schemacompose.ServedSchema picks up as the schema's own module declaration.
 func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs.FS, dir string) (*pb.Capabilities, error) {
 	return BuildCapabilitiesWithRequires(calver, provided, nil, schemaFS, dir)
 }
@@ -102,7 +103,7 @@ func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability,
 	if strings.TrimSpace(body) == "" {
 		return nil, fmt.Errorf("plugin ships an EMPTY CUE schema: every plugin MUST serve a non-empty schema")
 	}
-	if _, err := ComposeServedSchema(nil, schemaFS, dir); err != nil {
+	if _, err := schemacompose.ServedSchema(nil, schemaFS, dir); err != nil {
 		return nil, fmt.Errorf("plugin schema does not compile: %w", err)
 	}
 	out := make([]*pb.ProvidedCapability, 0, len(provided))
