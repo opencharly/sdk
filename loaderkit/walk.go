@@ -119,7 +119,10 @@ func (w *walker) walkProject(lp *spec.LoadedProject, path string, dataOverride [
 		return err
 	}
 	lp.Discovered = discovered
-	return nil
+	// D-VAL-4, LAST because it judges the WHOLE project scope: every document the walk collected
+	// (the root file and its flat imports) plus every discovered manifest, against the namespace
+	// table the same walk built. See namespace_node_disjoint.go.
+	return checkNamespaceNodeDisjoint(lp, acc.nsByAlias)
 }
 
 // walkFile reads one file, parses every one of its documents onto lp (APPENDING directly — see
