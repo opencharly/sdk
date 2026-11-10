@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
@@ -242,48 +243,43 @@ func SingleCandyMappingNode(path string, data []byte) (*yaml.Node, error) {
 	return inner, nil
 }
 
-// candyKnownFields lists non-format top-level keys in the candy manifest. Unknown keys are routed to
-// FormatSections (if matching an embedded distro format) or TagSections (otherwise).
+// candyBodyFields is the admitted top-level key set of a candy BODY: the CLOSED `#Candy` schema's OWN
+// field set projected from the compiled contract (cueKindDefs["candy"] → cueDefFields, the same
+// contract-declared-field extraction the parse's declared-fields floor uses). ONE source — the
+// schema — so the load-time field gate cannot drift from the thing it gates.
 //
-// `directory`, `info` deleted in the 2026-05 Calamares cutover (0 YAML files used either;
-// `description:` carries the metadata `info:` previously held). `depends` renamed to `requires`.
-// Calamares-shaped `packages` + `distros` added as the unified package surface; per-format
-// `rpm:`/`deb:`/`pac:`/`aur:` and per-distro tag sections (debian:13: etc.) collapse into them via
-// `charly migrate`.
-var candyKnownFields = map[string]bool{
-	"description": true, "version": true, "status": true,
-	"name": true, "from": true,
-	"candy": true, "require": true, "engine": true, "env": true,
-	"path_append": true, "port": true, "route": true, "service": true,
-	"volume": true, "alias": true, "extract": true, "security": true,
-	"libvirt": true, "hook": true,
-	"port_relay": true, "secret": true, "data": true,
-	"env_provide": true, "env_require": true, "env_accept": true,
-	"secret_accept": true, "secret_require": true,
-	"mcp_provide": true, "mcp_require": true, "mcp_accept": true,
-	"var": true, "plan": true,
-	"plugin":     true,
-	"artifact":   true,
-	"capability": true, "requires_capability": true,
-	"package": true, "distro": true,
-	"apk":      true,
-	"shell":    true,
-	"localpkg": true, "reboot": true,
-	"bake_plugin": true,
-}
+// It replaces a hand-maintained list of the same keys that had drifted BOTH ways, because nothing
+// tied it to the schema it duplicated: that list still admitted four fields `#Candy` had retired
+// (`version`, `from`, `libvirt`, `localpkg`) and it rejected five fields `#Candy` declares
+// (`external_builder`, `skills`, `packaging`, `agent_provide`, `terminal_profile`) — so a legacy
+// manifest using any of those five failed to load with a bogus plural/singular-typo message. A
+// retired field now stops being admitted the moment the schema drops it, and a new field is
+// admissible the moment the schema declares it.
+//
+// LAZY (sync.OnceValue) like the schema itself, so a command that parses no candy manifest pays
+// nothing. It cannot be nil-where-a-map-is-needed: cueDefFields only returns nil for a def absent
+// from the compiled schema, and sharedCueSchema panics on exactly that for every cueKindDefs word —
+// a build-time invariant, never a runtime input.
+var candyBodyFields = sync.OnceValue(func() map[string]bool {
+	return cueDefFields(cueKindDefs["candy"])
+})
 
 // rejectUnknownCandyTopLevelKeys hard-errors on an unknown top-level candy key (a plural/singular
 // typo). This is the load-time typo-detection the deleted CandyYAML.UnmarshalYAML used to do —
 // CUE-decode is lenient and would silently drop the key. Comprehensive closed-schema validation is
-// `charly box validate`.
+// `charly box validate`. The admitted set IS the closed `#Candy` schema (candyBodyFields), so a field
+// the schema dropped is refused here too and this gate has no vocabulary of its own; a REMOVED field
+// whose retirement has a migration gets a named diagnosis from rejectLegacyCandyKeys, which runs
+// first.
 func rejectUnknownCandyTopLevelKeys(path string, body *yaml.Node) error {
 	if body == nil || body.Kind != yaml.MappingNode {
 		return nil
 	}
+	fields := candyBodyFields()
 	var unknown []string
 	for i := 0; i+1 < len(body.Content); i += 2 {
 		key := body.Content[i].Value
-		if candyKnownFields[key] {
+		if fields[key] {
 			continue
 		}
 		unknown = append(unknown, key)
@@ -295,11 +291,16 @@ func rejectUnknownCandyTopLevelKeys(path string, body *yaml.Node) error {
 }
 
 // rejectLegacyCandyKeys is the candy-manifest shape guard: a removed field name
-// (`depends`/`directory`/`info`) or a misplaced package-format / per-distro section at the candy root
-// produces a clear error describing the current schema. Runs before standard YAML decoding so the
-// user sees a precise message, not a generic "field not found". The format/distro vocabulary it
-// recognizes is the DYNAMIC build vocabulary sourced from the embedded build vocabulary — no
-// hardcoded format/distro list, so a newly-added format or distro is caught automatically.
+// (`depends`/`directory`/`info`/`version`/`libvirt`/`localpkg`, or `from:`, which is a #Box field)
+// or a misplaced package-format / per-distro section at the candy root produces a clear error
+// describing the current schema. Runs before standard YAML decoding so the user sees a precise
+// message, not a generic "field not found". The format/distro vocabulary it recognizes is the
+// DYNAMIC build vocabulary sourced from the embedded build vocabulary — no hardcoded format/distro
+// list, so a newly-added format or distro is caught automatically.
+//
+// The named retirements here are the ones whose removal is NOT a typo and whose remedy is not
+// obvious from the key alone, so the generic unknown-key message would misdirect. Every other
+// retired field is refused by rejectUnknownCandyTopLevelKeys through the closed schema.
 func rejectLegacyCandyKeys(path string, body *yaml.Node, vocab spec.CandyVocab) error {
 	for i := 0; i+1 < len(body.Content); i += 2 {
 		key := body.Content[i].Value
@@ -310,6 +311,14 @@ func rejectLegacyCandyKeys(path string, body *yaml.Node, vocab spec.CandyVocab) 
 			return fmt.Errorf("%s: candy manifest uses the removed `directory:` field — the candy directory is implicit", path)
 		case "info":
 			return fmt.Errorf("%s: candy manifest uses the removed `info:` field — use `description:`", path)
+		case "version":
+			return fmt.Errorf("%s: candy manifest uses the removed `version:` field — the version stamp is retired (the ref that fetched the candy is its version of record); delete the key", path)
+		case "libvirt":
+			return fmt.Errorf("%s: candy manifest uses the removed candy-level `libvirt:` field — its raw-XML snippets are retired (a `kind: vm` entity's own `libvirt:` block is the live one); delete the key", path)
+		case "localpkg":
+			return fmt.Errorf("%s: candy manifest uses the removed `localpkg:` field — declare the native-package metadata under `packaging:`", path)
+		case "from":
+			return fmt.Errorf("%s: a candy BODY carries no `from:` — `from:` is a #Box (image) field; write the node form `<name>:` with `from:` under it for an image, or delete `from:` for a layer fragment", path)
 		}
 		// A package-format family key (pac:/deb:/rpm:/aur:) or a per-distro tag section
 		// (`debian:`, `debian:13:`, `debian,ubuntu:`) at the candy ROOT belongs UNDER the `distro:`
