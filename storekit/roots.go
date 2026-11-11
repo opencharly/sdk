@@ -1,11 +1,21 @@
-// Package storekit owns charly's storage ROOTS and its content-addressed STORE.
+// Package storekit owns charly's content-addressed STORE, and re-exports the ROOTS it lives
+// under.
 //
-// DESIGN puts both here: D-SDK-1 lists "the store and its roots (§17)" among the shared
-// mechanisms an sdk package owns, and D-CORE-1 has core build "the store instance (built on
-// the sdk store, §17)" — i.e. the module graph is core → sdk for exactly this. A roots or
-// store implementation living anywhere else is the deviation this package exists to end:
-// before it, the cache root was resolved inside `spec/cache` (under the CONFIG root, contrary
-// to D-STORE-1) and four other packages built their own `.cache` paths by hand.
+// THE ROOTS ARE THE CONTRACT MODULE'S, and this package re-exports them rather than keeping a
+// second computation. D-CORE-1 has core build "the store instance (built on the sdk store,
+// §17)" — the module graph is core → sdk for the store — but core may import only permitted
+// contract surfaces and never an sdk mechanism kit, so a root resolved ONLY here was a root the
+// host could not reach: it hand-built `$XDG_CACHE_HOME/charly` and `$XDG_RUNTIME_DIR/charly` and
+// therefore could not see `CHARLY_CACHE_DIR`, which is exactly the defect
+// opencharly/charly#1119 records. `github.com/opencharly/spec/storeroot` now owns the four roots
+// and the single override; `Dir` and `CacheDir` below delegate to it, so every plugin that
+// imports this package gets the same four roots and the same strings as before, and the host
+// reaches the SAME implementation through a surface it may import.
+//
+// A roots or store implementation living anywhere else is still the deviation this package exists
+// to end: before it, the cache root was resolved inside `spec/cache` (under the CONFIG root,
+// contrary to D-STORE-1 — opencharly/spec#233) and four other packages built their own `.cache`
+// paths by hand.
 //
 // BUILDING THIS PACKAGE BEFORE `spec`'S TAG EXISTS — the same-module trap: a `go.work` cannot
 // list one module twice, so two worktrees of THIS module (`github.com/opencharly/sdk`) cannot be
@@ -41,76 +51,44 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/opencharly/spec/storeroot"
 )
 
-// Root names one of the four D-STORE-1 roots.
-type Root string
+// Root names one of the four roots — a RE-EXPORT of the contract module's type, not a second
+// declaration, so a `storekit.Root` value IS a `storeroot.Root` value and the two can never
+// drift into different root sets.
+type Root = storeroot.Root
 
 const (
 	// RootConfig — `$XDG_CONFIG_HOME/charly`: what the USER sets.
-	RootConfig Root = "config"
+	RootConfig = storeroot.RootConfig
 	// RootCache — `$XDG_CACHE_HOME/charly`: everything content-addressed and re-derivable.
 	// The single `CHARLY_CACHE_DIR` override relocates this one and therefore every store.
-	RootCache Root = "cache"
+	RootCache = storeroot.RootCache
 	// RootState — `$XDG_STATE_HOME/charly`: durable state that is NOT cache — install
 	// ledgers, process locks, anything a restart must not lose and a `cache clear` must not
 	// touch.
-	RootState Root = "state"
+	RootState = storeroot.RootState
 	// RootRuntime — `$XDG_RUNTIME_DIR/charly`: per-boot runtime state.
-	RootRuntime Root = "runtime"
+	RootRuntime = storeroot.RootRuntime
 )
 
-// Dir resolves one of the four roots. It is THE resolver: no caller builds a `.cache` path by
-// hand, and there is exactly one environment override in the whole system
-// (`CHARLY_CACHE_DIR`, on the cache root — TODO 7.2 counts the extra per-cache variables this
-// replaces, and they are being deleted one per migration).
-func Dir(r Root) (string, error) {
-	switch r {
-	case RootCache:
-		return CacheDir()
-	case RootConfig:
-		base, err := os.UserConfigDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve config root: %w", err)
-		}
-		return filepath.Join(base, "charly"), nil
-	case RootState:
-		if v := os.Getenv("XDG_STATE_HOME"); v != "" {
-			return filepath.Join(v, "charly"), nil
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve state root: %w", err)
-		}
-		return filepath.Join(home, ".local", "state", "charly"), nil
-	case RootRuntime:
-		if v := os.Getenv("XDG_RUNTIME_DIR"); v != "" {
-			return filepath.Join(v, "charly"), nil
-		}
-		// No runtime dir (a container, a cron job): fall back to the STATE root rather than
-		// /tmp, which is shared and world-writable. Documented, not silent.
-		return Dir(RootState)
-	default:
-		return "", fmt.Errorf("unknown root %q (want %s|%s|%s|%s)", r, RootConfig, RootCache, RootState, RootRuntime)
-	}
-}
+// Dir resolves one of the four roots. It is THE resolver — no caller builds a `.cache` path by
+// hand — and it resolves through the contract module (`spec/storeroot`), so the host and every
+// plugin get the same answer from the same code.
+func Dir(r Root) (string, error) { return storeroot.Dir(r) }
 
 // CacheDir resolves the cache root: `$XDG_CACHE_HOME/charly`, or `CHARLY_CACHE_DIR` when set.
 // Every named store lives under it.
-func CacheDir() (string, error) {
-	if root := os.Getenv("CHARLY_CACHE_DIR"); root != "" {
-		return root, nil
-	}
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve cache root: %w", err)
-	}
-	return filepath.Join(base, "charly"), nil
-}
+func CacheDir() (string, error) { return storeroot.CacheDir() }
 
 // StoreDir returns the directory of the named store `name` under the cache root. A store name
 // is a single path element: it may not contain a separator, so a store can never escape the
 // root.
+//
+// This is store ADDRESSING, not root resolution — it joins a name onto the ONE cache root — so
+// it stays beside the store it addresses, while the root itself comes from the contract module.
 func StoreDir(name string) (string, error) {
 	if name == "" || strings.ContainsRune(name, filepath.Separator) || name == "." || name == ".." {
 		return "", fmt.Errorf("invalid store name %q", name)
