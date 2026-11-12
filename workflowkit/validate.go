@@ -427,7 +427,7 @@ func planRefNames(plan []spec.Step) []string {
 	if err != nil {
 		return nil
 	}
-	return RefIDs(planRefs(n))
+	return RefIDs(PlanRefs(n))
 }
 
 func nonZeroInput(i spec.PipelineInput) bool {
