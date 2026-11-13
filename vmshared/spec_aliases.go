@@ -18,7 +18,8 @@
 // The `local` kind's authored-body alias is deliberately absent from this surface: the
 // authored `#Local` body, and the Go type generated from it, moved into the plugin that
 // SERVES the kind (opencharly/spec#304 unit 4). The de-typed shape this package's consumers
-// use is `spec.ResolvedLocal`.
+// use is `spec.ResolvedLocal`, and nothing in the org named the alias (the sweep is pasted in
+// the PR that removed it).
 package vmshared
 
 import "github.com/opencharly/spec/spec"
