@@ -1,9 +1,9 @@
 package deploykit
 
 import (
-	"strings"
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/opencharly/sdk/kit"
 )
@@ -23,6 +23,31 @@ import (
 // plugin-pod/plugin-adb/plugin-deploy-pod) imports THESE functions directly. This is the ONE
 // shared implementation.
 
+// splitNamespacedBox returns the (box, instance) pair the container NAMERS must be given to
+// reproduce the name the deploy CREATED the container under.
+//
+// A ROOT-namespaced deploy is addressed `<ns>.<name>` — that is the key a roster, or `charly check
+// run` from a project that imports another as a namespace, holds it by — but its pod is created
+// from the SPLIT pair: the pod lifecycle names the quadlet with
+// `ContainerNameInstance(cfg.BoxName, cfg.Instance)` on the PARTS, so `<ns>.<name>` exists as
+// `charly-<ns>-<name>`. `ContainerNameInstance` maps "/" to "-" and never sees a dot, so naming it
+// from the unsplit key produced `charly-<ns>.<name>`, and the resolver then reported
+// "container … is not running" for a container that WAS running. This is the run-phase sibling of
+// the `charly box build` failure `ResolveBedForRoot` fixed.
+//
+// An explicit instance wins (the caller has already split the key), and a bare name has no
+// namespace boundary to cut, so each is returned unchanged. Only the FIRST dot is the boundary:
+// everything after it belongs to the name.
+func splitNamespacedBox(boxName, instance string) (string, string) {
+	if instance != "" {
+		return boxName, instance
+	}
+	if ns, rest, ok := strings.Cut(boxName, "."); ok && ns != "" && rest != "" {
+		return ns, rest
+	}
+	return boxName, instance
+}
+
 // ResolveContainer resolves engine + container name, verifying the container is running.
 // Use "." as image name for local mode (returns empty engine and name).
 func ResolveContainer(ctx context.Context, box, instance string) (engine, name string, err error) {
@@ -33,22 +58,7 @@ func ResolveContainer(ctx context.Context, box, instance string) (engine, name s
 	if err != nil {
 		return "", "", err
 	}
-	boxName := kit.ResolveBoxName(box)
-	// A ROOT-namespaced deploy is addressed `<ns>.<name>` by a roster, but its pod is created from
-	// the SPLIT pair — `charly box build`/`charly deploy add` receive `<ns>.<name>` and the pod
-	// lifecycle names the quadlet with `ContainerNameInstance(box, instance)` on the PARTS, which
-	// maps "/" to "-" and never sees a dot. Naming the container from the unsplit dotted name here
-	// produced `charly-<ns>.<name>` and this function then reported "container ... is not running"
-	// for a container that WAS running — the sibling of the `charly box build` failure
-	// `ResolveBedForRoot` fixed for the build phase (measured: `charly.check-sidecar-pod` and
-	// `openclaw.check-openclaw-pod`). Only the FIRST dot is the namespace boundary, and a local
-	// (unnamespaced) name is left untouched.
-	inst := instance
-	if inst == "" {
-		if ns, rest, ok := strings.Cut(boxName, "."); ok && ns != "" && rest != "" {
-			boxName, inst = ns, rest
-		}
-	}
+	boxName, inst := splitNamespacedBox(kit.ResolveBoxName(box), instance)
 	runEngine := ResolveBoxEngineForDeploy(ctx, boxName, inst, rt.RunEngine)
 	engine = kit.EngineBinary(runEngine)
 	name = kit.ContainerNameInstance(boxName, inst)
@@ -59,16 +69,18 @@ func ResolveContainer(ctx context.Context, box, instance string) (engine, name s
 }
 
 // ResolveSidecarContainer resolves engine + container name for a named sidecar, verifying it is
-// running.
+// running. The sidecar container is created from the SAME split pair as its pod
+// (`SidecarContainerNameInstance` is `ContainerNameInstance` plus a suffix), so it takes the same
+// resolution — otherwise a namespaced deploy's sidecar is reported "not running" while it runs.
 func ResolveSidecarContainer(ctx context.Context, box, instance, sidecar string) (engine, name string, err error) {
 	rt, err := kit.ResolveRuntime()
 	if err != nil {
 		return "", "", err
 	}
-	boxName := kit.ResolveBoxName(box)
-	runEngine := ResolveBoxEngineForDeploy(ctx, boxName, instance, rt.RunEngine)
+	boxName, inst := splitNamespacedBox(kit.ResolveBoxName(box), instance)
+	runEngine := ResolveBoxEngineForDeploy(ctx, boxName, inst, rt.RunEngine)
 	engine = kit.EngineBinary(runEngine)
-	name = kit.SidecarContainerNameInstance(boxName, instance, sidecar)
+	name = kit.SidecarContainerNameInstance(boxName, inst, sidecar)
 	if !kit.ContainerRunning(engine, name) {
 		return "", "", fmt.Errorf("sidecar container %s is not running", name)
 	}
