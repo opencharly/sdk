@@ -119,6 +119,9 @@ type (
 	LibvirtVideoResolution     = spec.LibvirtVideoResolution
 	LibvirtVsock               = spec.LibvirtVsock
 	LibvirtWatchdog            = spec.LibvirtWatchdog
+	// LocalSpec is deliberately absent: the authored `#Local` body, and the Go type generated
+	// from it, moved into the plugin that SERVES the kind (opencharly/spec#304 unit 4). The
+	// de-typed shape this package's consumers use is `spec.ResolvedLocal`.
 	Matcher                    = spec.Matcher
 	MatcherList                = spec.MatcherList
 	MCPServerYAML              = spec.MCPServerYAML
