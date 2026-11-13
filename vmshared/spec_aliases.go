@@ -129,7 +129,6 @@ type (
 	PacstrapRepo               = spec.PacstrapRepo
 	PhaseSet                   = spec.PhaseSet
 	PhaseTemplates             = spec.PhaseTemplates
-	PodSpec                    = spec.PodSpec
 	PortScope                  = spec.PortScope
 	PortSpec                   = spec.PortSpec
 	PreemptibleConfig          = spec.PreemptibleConfig

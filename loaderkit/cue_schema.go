@@ -55,9 +55,22 @@ var cueKindDefs = map[string]string{
 	"kubernetes": "#Kubernetes",
 	"kubevirt":   "#KubeVirt",
 	"local":      "#Local",
-	"pod":        "#Pod",
+	"pod":        "#ResolvedPod",
 	"vm":         "#Vm",
 }
+
+// `pod` names #ResolvedPod, NOT the authored #Pod: spec#304 unit 3 moved the authored body
+// into plugin-substrate's own CUE module (opencharly/plugin-substrate#32), so the contract no
+// longer declares #Pod. What the contract still declares for the kind — and what this table
+// needs — is the resolve-to-envelope form, whose field set is exactly the authored body's plus
+// the resolved-only `raw` (the pod value gate rejects an authored `raw:` as `field not
+// allowed`, so the floor's one extra name cannot admit a document). Two consequences are
+// deliberate and bounded: the floor for `pod` now carries `raw`, and `env_default`'s type
+// differs between the authored `#StrVal` and the envelope's `string` — which would matter only
+// to a CONCRETE unify, i.e. `ValidateEntityClosedCUE("pod", …)` / `ApplyCueDefaults("pod")`,
+// and no caller in the tree passes "pod" to either. The alternative the sdk's own gate forbids
+// is dropping the entry: `pod` is the live repro's kind (declared_fields_floor.go's header), so
+// a nil floor would re-arm the unsafe value-shape scan sdk#221/#223/#225 fixed.
 
 // cueSchemaCtx is the loader's process-wide CUE context. Every ingest/build/Unify call in this
 // package MUST use it, since cue.Value instances only interoperate within the context that built
