@@ -119,7 +119,6 @@ type (
 	LibvirtVideoResolution     = spec.LibvirtVideoResolution
 	LibvirtVsock               = spec.LibvirtVsock
 	LibvirtWatchdog            = spec.LibvirtWatchdog
-	LocalSpec                  = spec.LocalSpec
 	Matcher                    = spec.Matcher
 	MatcherList                = spec.MatcherList
 	MCPServerYAML              = spec.MCPServerYAML
