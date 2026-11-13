@@ -126,7 +126,11 @@ func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability,
 			pc.CommandModelJson = model
 		}
 		if c.StepContract != nil {
-			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope.String(), Venue: int32(c.StepContract.Venue), Gate: string(c.StepContract.Gate), Emits: c.StepContract.Emits}
+			// PluginPaths travels with the contract for the same reason Emits does: the HOST acts on
+			// it (it is the flag that makes the host inject the connected plugin set into this step's
+			// input), so a field dropped here is a capability the plugin declares and the host never
+			// sees (opencharly/charly#1131).
+			pc.StepContract = &pb.StepContract{Scope: c.StepContract.Scope.String(), Venue: int32(c.StepContract.Venue), Gate: string(c.StepContract.Gate), Emits: c.StepContract.Emits, PluginPaths: c.StepContract.PluginPaths}
 		}
 		for _, sc := range c.Subcommands {
 			pc.Subcommands = append(pc.Subcommands, &pb.CLISubcommand{Name: sc.Name, Help: sc.Help, Hidden: sc.Hidden})
