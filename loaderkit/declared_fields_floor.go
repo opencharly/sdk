@@ -39,17 +39,17 @@ import (
 
 // contractDeclaredFields is lazily computed ONCE per process from the embedded contract:
 // every cueKindDefs word → its declared body FIELD name set. For the substrate words the
-// authored body validates against the #<Kind>Value disjunction (#Local | #DeployValue —
-// spec/schema node.cue), so the declared set is the UNION of the kind def's fields and the
-// #Deploy base's fields (the #DeployValue arm IS #Deploy minus the derived keys). A kind def
-// absent from the compiled schema contributes nothing — the once-guard panics on a missing
-// cueKindDefs def already (cue_schema.go), so the failure mode is a build-time invariant,
-// never a runtime input.
+// authored body validates against the authored #<Kind>Value disjunction, so the declared set
+// is the UNION of the kind def's fields and the #Deploy base's fields (the #DeployValue arm
+// IS #Deploy minus the derived keys). A kind def absent from the compiled schema contributes
+// nothing — the once-guard panics on a missing cueKindDefs def already (cue_schema.go), so the
+// failure mode is a build-time invariant, never a runtime input.
 //
-// `pod` is the one word whose OWN def is no longer in this contract (spec#304 unit 3 moved the
-// authored body into plugin-substrate's CUE module), so its entry names #ResolvedPod — the
-// envelope the contract keeps, whose field set is the authored body's plus the resolved-only
-// `raw`. See cue_schema.go's note beside the table for what that costs and what it does not.
+// `pod` and `local` are the two words whose OWN defs are no longer in this contract (spec#304
+// units 3 and 4 moved those authored bodies into plugin-substrate's CUE module), so their
+// entries name #ResolvedPod / #ResolvedLocal — the envelopes the contract keeps, whose field
+// sets are the authored bodies' plus the resolved-only `raw`. See cue_schema.go's note beside
+// the table for what that costs and what it does not.
 var contractDeclaredFieldsSet = sync.OnceValue(func() map[string]map[string]bool {
 	out := make(map[string]map[string]bool, len(cueKindDefs))
 	for word, defPath := range cueKindDefs {
