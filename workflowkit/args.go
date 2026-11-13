@@ -1,43 +1,19 @@
 package workflowkit
 
 import (
-	"fmt"
 	"path/filepath"
-
-	"github.com/opencharly/spec/spec"
 )
 
-// args.go — task-argument resolution and workdir resolution, moved VERBATIM from
-// plugin-task's resolveParams / resolveTaskDir (R3) so the plugin-task CLI and the
-// workflow lowering share ONE implementation.
-
-// ResolveArgs overlays a task's declared `params:` defaults with the CLI-supplied
-// overrides, and enforces `required: true`. A required param with neither an
-// override nor a default is a hard error. An undeclared CLI arg passes through
-// (forward-compat, and vars-like usage).
-func ResolveArgs(t spec.Task, cli map[string]string) (map[string]string, error) {
-	out := map[string]string{}
-	for name, ps := range t.Params {
-		if v, ok := cli[name]; ok {
-			out[name] = v
-			continue
-		}
-		if ps.Default != nil {
-			out[name] = fmt.Sprint(ps.Default)
-			continue
-		}
-		if ps.Required {
-			return nil, fmt.Errorf("required parameter %q not supplied (--param %s=VALUE)", name, name)
-		}
-	}
-	// Pass through any CLI param not declared (forward-compat, and vars-like usage).
-	for k, v := range cli {
-		if _, declared := t.Params[k]; !declared {
-			out[k] = v
-		}
-	}
-	return out, nil
-}
+// args.go — the KIND-BLIND workdir resolution: it takes strings, knows no task body, and
+// is shared by every caller that resolves an authored directory against a project root.
+//
+// The task-shaped helpers that used to live here — `ResolveArgs` and `MergedEnv` — moved
+// HOME to `plugin-task` (opencharly/spec#304 unit 2). They were here because the SDK's
+// pipeline lowering was their second caller (ONE implementation for the plugin-task CLI
+// and the lowering, plugin-task CHANGELOG 2026.277.0711); unit 1 moved that lowering into
+// the plugin that owns the pipeline kind, so the second caller is gone — and a helper
+// typed on `spec.Task` cannot stay in a kind-blind mechanism library once the task body
+// lives with its own plugin.
 
 // ResolveTaskDir resolves a task's dir against the project root, expanding ${VAR} /
 // $VAR references against the merged task env (so `dir: "$HOME/src"` and
@@ -51,21 +27,4 @@ func ResolveTaskDir(projDir, dir string, env map[string]string) string {
 		dir = filepath.Join(projDir, dir)
 	}
 	return dir
-}
-
-// MergedEnv is the variable map every step + the dir resolution sees: the task's
-// vars, then its env, then the RESOLVED args. Later sources win on a key collision.
-// Moved from plugin-task's mergedEnv (R3).
-func MergedEnv(t spec.Task, args map[string]string) map[string]string {
-	env := map[string]string{}
-	for k, v := range t.Vars {
-		env[k] = v
-	}
-	for k, v := range t.Env {
-		env[k] = v
-	}
-	for k, v := range args {
-		env[k] = v
-	}
-	return env
 }
