@@ -9,6 +9,7 @@ import (
 
 	"github.com/opencharly/sdk/buildcache"
 	"github.com/opencharly/sdk/buildkit"
+	"github.com/opencharly/spec/spec"
 )
 
 // bake_plugins.go — the S0 baked-plugin BUILD-side seam (K3 build-tail move, coneB-buildtail):
@@ -132,12 +133,19 @@ func EmitBakedPlugins(ctx context.Context, b *strings.Builder, buildDir, boxName
 			fmt.Fprintf(b, "COPY %s %s\n", ctxRel, dest)
 			fmt.Fprintf(b, "RUN chmod 0755 %s\n", dest)
 			if plugin.IsPluginCandy() && len(plugin.GetPluginProviders()) > 0 {
-				providers := plugin.GetPluginProviders()
-				manifest := strings.Join(providers, "\n") + "\n"
-				if err := os.WriteFile(filepath.Join(stageDir, binName+".providers"), []byte(manifest), 0o644); err != nil {
+				// THE ONE FORMAT (opencharly/charly#1131). A plugin tree — baked into an image HERE, or
+				// delivered at a venue by a class:step — is read by ONE reader, so its
+				// `<leaf>.providers` manifest has exactly one spelling: spec.PluginManifest, beside the
+				// constant that names the file. This line used to carry its own strings.Join; a
+				// delivering step would have been the third copy.
+				// The enclosing guard (providers > 0) is what decides whether a manifest exists at all;
+				// this call only renders its bytes, so it can never see the empty case. Making that case
+				// an error would be a POLICY change with its own blast radius, not this repoint.
+				manifest := spec.PluginManifest(plugin.GetPluginProviders())
+				if err := os.WriteFile(filepath.Join(stageDir, spec.PluginManifestName(binName)), manifest, spec.ManifestMode); err != nil {
 					return fmt.Errorf("candy %q: bake_plugin %q: stage manifest: %w", candyName, key, err)
 				}
-				fmt.Fprintf(b, "COPY %s.providers %s.providers\n", ctxRel, dest)
+				fmt.Fprintf(b, "COPY %s%s %s%s\n", ctxRel, spec.ManifestSuffix, dest, spec.ManifestSuffix)
 			}
 			b.WriteString("\n")
 		}
