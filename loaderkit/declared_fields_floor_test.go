@@ -213,6 +213,18 @@ func TestContractDeclaredFields_Floor(t *testing.T) {
 			t.Fatalf("contract floor for pod lacks declared field %q (set: %v)", want, pod)
 		}
 	}
+	// pod's own authored def moved to plugin-substrate (spec#304 unit 3), so the floor for the
+	// kind now comes from the contract's resolve-to-envelope form. Pin the AUTHORED body's own
+	// field names, which is what the parse consults the floor for — a floor derived from a form
+	// that lacked one would silently classify that key as an in-substrate member.
+	for _, want := range []string{"box", "sidecar", "env_default", "secret"} {
+		if !pod[want] {
+			t.Fatalf("contract floor for pod lacks the authored body's field %q (set: %v)", want, pod)
+		}
+	}
+	if def := cueKindDefs["pod"]; def != "#ResolvedPod" {
+		t.Fatalf("cueKindDefs[pod] = %q, want the contract's kept envelope #ResolvedPod — the authored #Pod moved out of this module", def)
+	}
 	if got := contractDeclaredFields("example-external-structkind"); got != nil {
 		t.Fatalf("an external plugin word must floor to nil (documented fallback), got %v", got)
 	}

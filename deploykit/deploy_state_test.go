@@ -569,3 +569,38 @@ func TestApplyDeployState_KubeVirtState(t *testing.T) {
 		t.Fatalf("KubeVirtState not persisted: %+v", got)
 	}
 }
+
+// TestApplyDeployState_EnginePersists proves the PrepareVenue state patch carries a pod
+// deploy's authored `engine:` selector onto the per-host entry. `charly config` and
+// `charly start` resolve their run mode from that entry, so an unwritten selector is
+// silently replaced by the host-wide engine.run — the defect measured in
+// opencharly/charly#1109 (podman quadlet emitted for `engine: containerd`). Fails
+// without the input.Engine write.
+func TestApplyDeployState_EnginePersists(t *testing.T) {
+	dc := &DeployConfig{Deploy: map[string]DeployNode{}}
+	if !applyDeployState(dc, "probe", "", SaveDeployStateInput{
+		ResolvedImage: "probe-overlay:abc",
+		Engine:        spec.EngineName("containerd"),
+	}) {
+		t.Fatal("applyDeployState reported nothing to persist")
+	}
+	if got := dc.Deploy["probe"].Engine; got != spec.EngineName("containerd") {
+		t.Fatalf("Engine = %q, want containerd (the state patch dropped the authored selector)", got)
+	}
+}
+
+// TestApplyDeployState_EmptyEngineDoesNotClear is the negative control for the test above:
+// a state patch that selected no engine must leave an operator-authored entry alone. Without
+// this arm, a future write-when-set refactor could silently erase the selector on every
+// routine overlay update.
+func TestApplyDeployState_EmptyEngineDoesNotClear(t *testing.T) {
+	dc := &DeployConfig{Deploy: map[string]DeployNode{
+		"probe": {Engine: spec.EngineName("podman")},
+	}}
+	if !applyDeployState(dc, "probe", "", SaveDeployStateInput{ResolvedImage: "probe-overlay:abc"}) {
+		t.Fatal("applyDeployState reported nothing to persist")
+	}
+	if got := dc.Deploy["probe"].Engine; got != spec.EngineName("podman") {
+		t.Fatalf("Engine = %q after an empty-engine patch, want the existing podman", got)
+	}
+}

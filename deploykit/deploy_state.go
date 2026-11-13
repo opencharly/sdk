@@ -555,6 +555,16 @@ func applyDeployState(dc *DeployConfig, boxName, instance string, input SaveDepl
 	if input.Network != "" {
 		entry.Network = input.Network
 	}
+	// Engine: the deploy node's authored container-engine selector. A pod deploy's
+	// PrepareVenue patch carries it so `charly config` / `charly start` resolve the run
+	// mode and the image store from the engine the deploy was ADDED with, instead of the
+	// host-wide engine.run (opencharly/charly#1109: a `pod:` deploy authored
+	// `engine: containerd` persisted only resolved_image, then config emitted a podman
+	// quadlet). An empty value means "no selection at this level" and MUST NOT clear an
+	// operator-authored entry.
+	if input.Engine != "" {
+		entry.Engine = input.Engine
+	}
 	if input.Security != nil {
 		entry.Security = input.Security
 	}

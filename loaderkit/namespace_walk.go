@@ -25,15 +25,34 @@ import "github.com/opencharly/spec/spec"
 // `fatal error: stack overflow` on the same graph.
 type NamespaceAncestors map[*spec.UnifiedFile]bool
 
+// ancestorStack is the SAME path-scoped guard, keyed by any comparable node identity. It exists so
+// a walk of the namespace graph expressed over a DIFFERENT node type uses this one implementation
+// instead of re-deriving the subtlety: CollectRemoteRefsOpts walks the projected *spec.Config tree
+// (cfg.Namespaces), which is cyclic by design exactly like UnifiedFile.Namespaces, and reaching a
+// namespace's kind:local templates there must terminate a mutual import while still visiting a
+// namespace mounted at several alias paths (opencharly/sdk#488).
+type ancestorStack[T comparable] map[T]bool
+
+// enter marks v as being on the CURRENT path. ok is false when v is already an ancestor on this
+// path — a genuine back-edge — and the caller MUST then return WITHOUT descending. A caller that
+// descended MUST `defer leave()`, which pops v again so the same node reached by a second path
+// still walks.
+func (a ancestorStack[T]) enter(v T) (leave func(), ok bool) {
+	if a[v] {
+		return nil, false
+	}
+	a[v] = true
+	return func() { delete(a, v) }, true
+}
+
 // Enter marks uf as being on the CURRENT path. ok is false when uf is nil or already an ancestor
 // on this path — a genuine back-edge — and the caller MUST then return WITHOUT descending. A
 // caller that descended MUST `defer leave()`, which pops uf again so the same node reached by a
 // second path still walks. Index a NamespaceAncestors directly (a[sub]) to TEST a candidate
 // without descending into it.
 func (a NamespaceAncestors) Enter(uf *spec.UnifiedFile) (leave func(), ok bool) {
-	if uf == nil || a[uf] {
+	if uf == nil {
 		return nil, false
 	}
-	a[uf] = true
-	return func() { delete(a, uf) }, true
+	return ancestorStack[*spec.UnifiedFile](a).enter(uf)
 }

@@ -15,9 +15,9 @@ import (
 // per-plugin data (its CalVer, its provided capabilities, its embedded schema FS).
 
 // fixedMeta is the shared PluginMeta implementation NewMeta returns. Its Describe
-// advertises the plugin's capabilities + its self-contained CUE schema via
-// BuildCapabilities (schema dir fixed to "schema" by convention), compiling the
-// schema standalone and failing loudly before serving if it is broken/empty.
+// advertises the plugin's capabilities + its CUE schema via BuildCapabilities (schema
+// dir fixed to "schema" by convention), composing that schema as a module instance and
+// failing loudly before serving if it is broken or empty.
 type fixedMeta struct {
 	pb.UnimplementedPluginMetaServer
 	calver   string

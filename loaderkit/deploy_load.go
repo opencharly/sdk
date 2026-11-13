@@ -17,7 +17,10 @@ package loaderkit
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
+	"github.com/opencharly/spec/refs"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -127,16 +130,146 @@ func hoistVenueSubtree(root, node *spec.DeployNode, venuePath string) {
 // deploy verbs the deploy path already uses.
 // -----------------------------------------------------------------------------
 
-// FoldMembers copies every deploy node's `peer:` entries into the Deploy map as top-level
+// FoldMembers copies every deploy node's deploy-level members into the Deploy map as top-level
 // addressable entries (MemberOf set, disposability inherited), so every deploy verb resolves a
 // member by name through the same path as any deploy. Runs BEFORE validateDeploymentTree (so folded
 // members get the same deploy validation); a check bed is itself a `disposable: true` deploy, so a
 // bed's members fold the same way. A member name colliding with any existing deploy/member entry is
 // a hard error.
+//
+// It recurses into EVERY imported NAMESPACE (nested `nsA.nsB`), not just the root map: an imported
+// deploy's deploy-level member is the SAME addressable entry as a local one (the Cutover C bare-name
+// law), and without the recursion the merged-root tree never contains it — the re-entrant
+// `charly deploy add <member>` resolves no node, collects no substrate word, connects no provider,
+// and falls back to pod (opencharly/charly#1083). The sibling whole-tree stamps
+// (StampDeployDescents, Deploys' own namespace walk) already recurse; this is the same walk with the
+// same path-scoped NamespaceAncestors guard.
+//
+// The folded entry is addressed by its BARE name in the merged-root projection (UnifiedFile.Deploys
+// skips the namespace prefix for a MemberOf-stamped entry), so the name is GLOBAL: two
+// DIFFERENT logical members declaring the same bare name — or a member shadowing a ROOT
+// top-level deploy — is a hard error, never a silent map overwrite.
+//
+// A diamond/multi-alias graph reaches the SAME logical member more than once BY DESIGN
+// (namespace_walk.go), and materializing it through two paths yields DISTINCT *spec.Deploy
+// copies — not one shared pointer — so the idempotence test must key on the member's LOGICAL
+// ORIGIN, never on node pointer identity (opencharly/sdk#484). memberOrigin is that identity:
+// the resolved project directory that declares the member (uf.RootDir), the ref-independent
+// remote mount identity derived from it (logicalRepoMount), the declaring deploy's name, and
+// the bare member key. Every mount of one repo@ref resolves to the SAME RootDir, however many
+// aliases reach it, so a repeated fold is idempotent.
+//
+// A mixed-pin graph may ALSO mount the same repo+subpath at two DIFFERENT refs — the umbrella's
+// charly and openclaw namespaces pin cachyos at one tag while its strata namespace pins it at
+// another. That is still ONE logical member under the global bare address, so the ref is the ONE
+// dimension relaxed: the second mount folds idempotently instead of hard-erroring
+// (opencharly/charly#1107). A different repo, or the same repo at a different SUBPATH, keeps a
+// different logical identity and remains a hard collision — the bare name is the CLI address, and
+// folding genuinely different owners would silently pick a winner.
 func FoldMembers(uf *spec.UnifiedFile) error {
-	if uf == nil || len(uf.Deploy) == 0 {
+	if uf == nil {
 		return nil
 	}
+	// Root-scope top-level deploy names share the BARE key space a folded member occupies in the
+	// merged-root projection, so a member anywhere may not shadow one.
+	rootTopLevel := make(map[string]bool, len(uf.Deploy))
+	for name := range uf.Deploy {
+		rootTopLevel[name] = true
+	}
+	return foldMembers(uf, NamespaceAncestors{}, rootTopLevel, map[string]memberOrigin{}, map[string]string{})
+}
+
+// memberOrigin is a deploy-level member's LOGICAL origin — the unit the bare-name law makes
+// unique. rootDir is the loader-resolved project directory that DECLARES the member: every mount
+// of one repo@ref resolves to the same dir, however many aliases reach it. repo is the
+// ref-independent identity of a REMOTE mount (repo path + imported subpath, ref stripped); it is
+// set only when rootDir is a derived-view dir under the repo cache, so a local import (no ref
+// dimension) or a synthetic in-memory tree keeps its exact identity. scope is the fallback for a
+// synthetic tree (RootDir empty — never a loader result), where the *UnifiedFile pointer stands in
+// for the unresolved mount so distinct scopes still collide. owner is the declaring deploy's name
+// inside that project. The member's bare key is the fold map's key.
+type memberOrigin struct {
+	rootDir string
+	repo    string
+	scope   *spec.UnifiedFile
+	owner   string
+}
+
+// memberOriginOf returns the logical origin of a member declared by owner in uf.
+func memberOriginOf(uf *spec.UnifiedFile, owner string) memberOrigin {
+	o := memberOrigin{owner: owner}
+	if uf.RootDir != "" {
+		o.rootDir = uf.RootDir
+		o.repo = logicalRepoMount(uf.RootDir)
+	} else {
+		o.scope = uf
+	}
+	return o
+}
+
+// sameMemberOrigin reports whether two occurrences declare the SAME logical member under the
+// global bare address. The exact mount dir is the identity for a local or synthetic tree; two
+// derived-view dirs that differ only in their git ref are the same remote mount at another
+// ref, which the bare-address law folds once instead of calling a collision.
+func (o memberOrigin) sameMemberOrigin(other memberOrigin) bool {
+	if o.owner != other.owner {
+		return false
+	}
+	if o.scope != nil || other.scope != nil {
+		return o.scope == other.scope
+	}
+	if o.rootDir == other.rootDir {
+		return true
+	}
+	return o.repo != "" && o.repo == other.repo
+}
+
+// logicalRepoMount returns the REF-INDEPENDENT identity of a remote import mount: the repo path
+// and imported subpath, with the git ref removed. It recognises the loader's derived-view dir
+// (CanonicalRef → EnsureRepoDownloaded → DeriveRepoView):
+//
+//	<repo-cache>/<repoPath>@<version>.view.<identity>[/<subpath>]
+//
+// The repo path is everything before the "@"; the subpath is everything after the single
+// ".view.<identity>" path component. A local import — no view marker, or not under the repo cache
+// (the loader resolves CHARLY_REPO_OVERRIDE to a live working tree) — has no ref dimension to
+// relax and returns "", leaving the exact RootDir as the identity, so distinct local dirs still
+// collide.
+func logicalRepoMount(rootDir string) string {
+	cacheDir, err := refs.RepoCacheDir()
+	if err != nil {
+		return ""
+	}
+	rel, err := filepath.Rel(cacheDir, rootDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	rel = filepath.ToSlash(rel)
+	v := strings.Index(rel, ".view.")
+	if v <= 0 {
+		return ""
+	}
+	head, tail := rel[:v], rel[v+len(".view."):]
+	at := strings.IndexByte(head, '@')
+	if at <= 0 || at == len(head)-1 {
+		return ""
+	}
+	id, sub := tail, ""
+	if i := strings.IndexByte(tail, '/'); i >= 0 {
+		id, sub = tail[:i], tail[i+1:]
+	}
+	if len(id) != viewIdentityLen || strings.Trim(id, "0123456789abcdef") != "" {
+		return ""
+	}
+	return head[:at] + "\x00" + sub
+}
+
+func foldMembers(uf *spec.UnifiedFile, ancestors NamespaceAncestors, rootTopLevel map[string]bool, folded map[string]memberOrigin, owners map[string]string) error {
+	leave, ok := ancestors.Enter(uf)
+	if !ok {
+		return nil
+	}
+	defer leave()
 	// Collect first (we mutate the map below). Iterate a sorted owner list so a collision between
 	// two owners' members is reported deterministically.
 	type pendingMember struct {
@@ -164,6 +297,26 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 			if memberNode.AgentProvisioned {
 				continue
 			}
+			// The bare address is GLOBAL. A diamond/multi-alias mount reaches the SAME logical
+			// member by a second path — as a DISTINCT node copy, not a shared pointer — so the
+			// idempotence test keys on the member's logical ORIGIN, never on node identity. A
+			// member from a DIFFERENT origin claiming the same bare name is a genuine collision.
+			origin := memberOriginOf(uf, owner)
+			if prev, seen := folded[memberKey]; seen {
+				if prev.sameMemberOrigin(origin) {
+					continue
+				}
+				return fmt.Errorf(
+					"deploy-level member %q (declared under deploy %q) collides with the member of deploy %q — deploy-level member names are globally unique (the bare name is the CLI address); rename one",
+					memberKey, owner, owners[memberKey])
+			}
+			if rootTopLevel[memberKey] {
+				return fmt.Errorf(
+					"deploy-level member %q (declared under deploy %q) collides with a root top-level deploy of the same bare name — deploy-level member names are globally unique (the bare name is the CLI address); rename one",
+					memberKey, owner)
+			}
+			folded[memberKey] = origin
+			owners[memberKey] = owner
 			pending = append(pending, pendingMember{
 				key:        memberKey,
 				node:       *memberNode,
@@ -187,6 +340,11 @@ func FoldMembers(uf *spec.UnifiedFile) error {
 			node.Disposable = &disposable
 		}
 		uf.Deploy[p.key] = node
+	}
+	for _, sub := range uf.Namespaces {
+		if err := foldMembers(sub, ancestors, rootTopLevel, folded, owners); err != nil {
+			return err
+		}
 	}
 	return nil
 }

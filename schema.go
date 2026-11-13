@@ -6,11 +6,10 @@ import (
 	"io/fs"
 	"strings"
 
-	"cuelang.org/go/cue/cuecontext"
-
 	"github.com/opencharly/spec/capability"
 	"github.com/opencharly/spec/climodel"
 	pb "github.com/opencharly/spec/proto"
+	"github.com/opencharly/spec/schemacompose"
 	"github.com/opencharly/spec/schemaconcat"
 	"github.com/opencharly/spec/spec"
 )
@@ -65,15 +64,16 @@ type Requirement struct {
 // BuildCapabilities is the serve-side half of the "every plugin ships its own CUE
 // schema" contract. It concatenates the plugin's embedded schema/*.cue via the SAME
 // schemaconcat contract charly uses for its base (R3 — one concat loop, no
-// duplicate), compiles it STANDALONE to fail loudly on a broken or empty schema
-// (a self-contained schema must compile alone — the same property that lets
-// `cue exp gengotypes` generate the plugin's Go params), and assembles the Describe
-// reply carrying the raw .cue source the host splices onto its base.
+// duplicate), COMPOSES it as ONE CUE module instance to fail loudly on a broken or
+// empty schema (spec/schemacompose: an import of the spec module — the shape this
+// contract exists for since the concat→package cutover — is refused by a text compile
+// with no module in scope, at the first import clause), and assembles the Describe
+// reply carrying the raw .cue source the host composes onto its base.
 //
 // schemaFS is the plugin's `//go:embed schema/*.cue` FS; dir is the embedded
-// subdirectory ("schema"). Both the SDK and charly's base reach the same internal
-// schemaconcat because the SDK lives under charly/ — an external module imports
-// only this SDK, never charly/internal directly.
+// subdirectory ("schema"). A plugin that wants a module of its own — or that imports
+// the spec schema — also embeds `cue.mod/module.cue` at the FS root, which
+// schemacompose.ServedSchema picks up as the schema's own module declaration.
 func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs.FS, dir string) (*pb.Capabilities, error) {
 	return BuildCapabilitiesWithRequires(calver, provided, nil, schemaFS, dir)
 }
@@ -103,8 +103,8 @@ func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability,
 	if strings.TrimSpace(body) == "" {
 		return nil, fmt.Errorf("plugin ships an EMPTY CUE schema: every plugin MUST serve a non-empty schema")
 	}
-	if v := cuecontext.New().CompileString(body); v.Err() != nil {
-		return nil, fmt.Errorf("plugin schema does not compile: %w", v.Err())
+	if _, err := schemacompose.ServedSchema(nil, schemaFS, dir); err != nil {
+		return nil, fmt.Errorf("plugin schema does not compile: %w", err)
 	}
 	out := make([]*pb.ProvidedCapability, 0, len(provided))
 	for _, c := range provided {
