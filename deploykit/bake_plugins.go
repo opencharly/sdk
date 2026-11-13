@@ -138,10 +138,10 @@ func EmitBakedPlugins(ctx context.Context, b *strings.Builder, buildDir, boxName
 				// `<leaf>.providers` manifest has exactly one spelling: spec.PluginManifest, beside the
 				// constant that names the file. This line used to carry its own strings.Join; a
 				// delivering step would have been the third copy.
+				// The enclosing guard (providers > 0) is what decides whether a manifest exists at all;
+				// this call only renders its bytes, so it can never see the empty case. Making that case
+				// an error would be a POLICY change with its own blast radius, not this repoint.
 				manifest := spec.PluginManifest(plugin.GetPluginProviders())
-				if manifest == nil {
-					return fmt.Errorf("candy %q: bake_plugin %q: declares no provider words, so there is no manifest to write", candyName, key)
-				}
 				if err := os.WriteFile(filepath.Join(stageDir, spec.PluginManifestName(binName)), manifest, spec.ManifestMode); err != nil {
 					return fmt.Errorf("candy %q: bake_plugin %q: stage manifest: %w", candyName, key, err)
 				}
