@@ -14,6 +14,12 @@
 // spec.CalVer scalar), CandyRef (refs.go ref struct, vs the spec.CandyRef
 // scalar), Candy (layers.go resolved-candy runtime struct, vs spec.Candy the
 // param — aliased as CandyYAML instead).
+//
+// The `local` kind's authored-body alias is deliberately absent from this surface: the
+// authored `#Local` body, and the Go type generated from it, moved into the plugin that
+// SERVES the kind (opencharly/spec#304 unit 4). The de-typed shape this package's consumers
+// use is `spec.ResolvedLocal`, and nothing in the org named the alias (the sweep is pasted in
+// the PR that removed it).
 package vmshared
 
 import "github.com/opencharly/spec/spec"
@@ -119,7 +125,6 @@ type (
 	LibvirtVideoResolution     = spec.LibvirtVideoResolution
 	LibvirtVsock               = spec.LibvirtVsock
 	LibvirtWatchdog            = spec.LibvirtWatchdog
-	LocalSpec                  = spec.LocalSpec
 	Matcher                    = spec.Matcher
 	MatcherList                = spec.MatcherList
 	MCPServerYAML              = spec.MCPServerYAML
