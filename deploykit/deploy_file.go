@@ -502,11 +502,10 @@ func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 	return dc
 }
 
-// substrateNodeKeys are the EDGE discriminators a node-form deploy entry carries. Membership is
-// this function's whole test for "is this top-level key a deploy entry".
-var substrateNodeKeys = map[string]bool{
-	"pod": true, "vm": true, "kubernetes": true, "local": true, "android": true, "group": true,
-}
+// substrateNodeOrder is the substrate EDGE discriminators a node-form deploy entry can carry, in
+// PRECEDENCE order. One ordered list, not a set: an entry that (wrongly) carries two of them must
+// resolve to the same kind on every run, and ranging a map would make that read nondeterministic.
+var substrateNodeOrder = []string{"pod", "vm", "kubernetes", "local", "android", "group"}
 
 // hostFileKeys are the per-host charly.yml's NON-deploy sections: they share the document with
 // the name-first deploy entries and must never be mistaken for one.
@@ -581,9 +580,12 @@ func nodeFormBody(node yaml.Node) (body yaml.Node, kind string, ok bool) {
 	if err := node.Decode(&inner); err != nil {
 		return yaml.Node{}, "", false
 	}
-	for k := range inner {
-		if substrateNodeKeys[k] {
-			return inner[k], k, true
+	// DETERMINISTIC precedence, not map order: an entry that (wrongly) carries two substrate
+	// keys must resolve to the same kind on every run, so the loader cannot hand back a `vm`
+	// body on one run and a `pod` body on the next. substrateNodeOrder is that precedence.
+	for _, k := range substrateNodeOrder {
+		if node, ok := inner[k]; ok {
+			return node, k, true
 		}
 	}
 	return yaml.Node{}, "", false
