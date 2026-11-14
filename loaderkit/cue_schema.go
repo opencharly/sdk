@@ -54,11 +54,18 @@ var cueKindDefs = map[string]string{
 	"deploy":     "#Deploy",
 	"kubernetes": "#Kubernetes",
 	"kubevirt":   "#KubeVirt",
-	"local":      "#Local",
+	"local":      "#ResolvedLocal",
 	"pod":        "#ResolvedPod",
 	"vm":         "#Vm",
 }
 
+// `local` names #ResolvedLocal for the SAME reason `pod` names #ResolvedPod: spec#304 unit 4
+// moved the authored #Local body into plugin-substrate's own CUE module
+// (opencharly/plugin-substrate#34), so the contract no longer declares it. The envelope is
+// the contract's remaining declaration for the kind, and its field set is the authored
+// body's plus the resolved-only `raw` — the same bounded, deliberate choice described for
+// `pod` below (an authored `raw:` is rejected by the value gate as `field not allowed`).
+//
 // `pod` names #ResolvedPod, NOT the authored #Pod: spec#304 unit 3 moved the authored body
 // into plugin-substrate's own CUE module (opencharly/plugin-substrate#32), so the contract no
 // longer declares #Pod. What the contract still declares for the kind — and what this table
