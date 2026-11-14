@@ -7,9 +7,11 @@ import (
 )
 
 // TestCueKindDefs_HasKubevirt gates that the 6th deploy substrate is wired into
-// the loader's kind→def table: the compiled schema must carry #KubeVirt (the
-// schema fail-fast panics if a cueKindDefs entry names an absent def, so a green
-// sharedCueSchema() here already proves the def exists).
+// the loader's kind→def table. The entry names the contract's ENVELOPE
+// (#ResolvedKubeVirt) since opencharly/spec#304 unit 6 moved the authored body into the
+// plugin that serves the kind — see cue_schema_kubevirt_test.go, which pins the name;
+// this test pins that whatever the table names RESOLVES (the schema fail-fast panics if a
+// cueKindDefs entry names an absent def).
 func TestCueKindDefs_HasKubevirt(t *testing.T) {
 	def, ok := cueKindDef("kubevirt")
 	if !ok {

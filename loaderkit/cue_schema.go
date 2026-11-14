@@ -53,7 +53,7 @@ var cueKindDefs = map[string]string{
 	"check":      "#Check",
 	"deploy":     "#Deploy",
 	"kubernetes": "#ResolvedKubernetes",
-	"kubevirt":   "#KubeVirt",
+	"kubevirt":   "#ResolvedKubeVirt",
 	"local":      "#ResolvedLocal",
 	"pod":        "#ResolvedPod",
 	"vm":         "#Vm",
