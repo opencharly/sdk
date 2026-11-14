@@ -502,7 +502,31 @@ func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 	return dc
 }
 
+// substrateNodeKeys are the EDGE discriminators a node-form deploy entry carries. Membership is
+// this function's whole test for "is this top-level key a deploy entry".
+var substrateNodeKeys = map[string]bool{
+	"pod": true, "vm": true, "kubernetes": true, "local": true, "android": true, "group": true,
+}
+
+// hostFileKeys are the per-host charly.yml's NON-deploy sections: they share the document with
+// the name-first deploy entries and must never be mistaken for one.
+var hostFileKeys = map[string]bool{
+	"deploy": true, "provides": true, "sidecar": true, "cache": true, "ledger": true, "system": true,
+}
+
 // LoadDeployFile reads a charly.yml from an arbitrary path into a DeployConfig.
+//
+// TWO shapes are accepted, because both exist and the import verb must not disagree with the rest
+// of charly about which one is "the" file:
+//
+//   - the WRAPPED shape (`deploy: {<name>: <body>}`), which DeployConfig marshals to;
+//   - the NAME-FIRST shape (`<name>: {pod: …}` plus the `provides:`/`cache:`/`system:`/`ledger:`/
+//     `sidecar:` siblings), which is what ~/.config/charly/charly.yml and every project charly.yml
+//     actually contain.
+//
+// It returns an ERROR when the file contributes no deploy entry at all: a verb that reports an
+// import it did not perform is data loss (sdk#517 — `charly deploy import` printed
+// "Imported 1 file(s)" and the entry was simply absent).
 func LoadDeployFile(path string) (*DeployConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -512,7 +536,57 @@ func LoadDeployFile(path string) (*DeployConfig, error) {
 	if err := yaml.Unmarshal(data, &dc); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
+	if len(dc.Deploy) > 0 {
+		return &dc, nil
+	}
+
+	// Name-first fallback: the document's top-level keys are the deploy names, and each entry's
+	// body sits under its EDGE kind (`pod:`/`vm:`/…), which no flat struct field matches.
+	var top map[string]yaml.Node
+	if err := yaml.Unmarshal(data, &top); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	deploy := make(map[string]DeployNode, len(top))
+	for name, node := range top {
+		if hostFileKeys[name] {
+			continue
+		}
+		body, kind, ok := nodeFormBody(node)
+		if !ok {
+			continue
+		}
+		var dn DeployNode
+		if derr := body.Decode(&dn); derr != nil {
+			return nil, fmt.Errorf("parsing %s: entry %q: %w", path, name, derr)
+		}
+		// Target is loader-derived in the unified path; a file-level read supplies it from the
+		// edge kind so a non-pod entry cannot be dispatched as pod by ClassifyTarget's default.
+		if dn.Target == "" {
+			dn.Target = kind
+		}
+		deploy[name] = dn
+	}
+	if len(deploy) == 0 {
+		return nil, fmt.Errorf("%s: no deploy entry found — expected a name-first entry "+
+			"`<name>: {pod: …}` or the wrapped form `deploy: {<name>: …}`", path)
+	}
+	dc.Deploy = deploy
 	return &dc, nil
+}
+
+// nodeFormBody unwraps one name-first entry to its substrate body and the edge kind that carried
+// it. ok is false when the value carries no substrate key, i.e. it is not a deploy entry.
+func nodeFormBody(node yaml.Node) (body yaml.Node, kind string, ok bool) {
+	var inner map[string]yaml.Node
+	if err := node.Decode(&inner); err != nil {
+		return yaml.Node{}, "", false
+	}
+	for k := range inner {
+		if substrateNodeKeys[k] {
+			return inner[k], k, true
+		}
+	}
+	return yaml.Node{}, "", false
 }
 
 // RemoveBoxDeploy removes an image's entry from a deploy config.
