@@ -4,6 +4,8 @@ ARG BASE_IMAGE=quay.io/fedora/fedora:43
 
 FROM ${BASE_IMAGE}
 
+USER root
+
 # Bootstrap
 RUN { [ -L /usr/local ] && mkdir -p "$(readlink /usr/local)"; mkdir -p /usr/local/bin; } && \
     ARCH=$(uname -m) && \
