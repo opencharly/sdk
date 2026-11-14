@@ -13,7 +13,7 @@ func TestSetUnsatisfiedInitDependsReporterObservesAndRestores(t *testing.T) {
 	prev := SetUnsatisfiedInitDependsReporter(func(box, initName, candy string) {
 		got = append(got, call{box, initName, candy})
 	})
-	defer SetUnsatisfiedInitDependsReporter(prev)
+	defer func() { SetUnsatisfiedInitDependsReporter(prev) }()
 
 	reportUnsatisfiedInitDepends("demo-a", "supervisord", "layer-supervisord")
 	if len(got) != 1 {
@@ -50,7 +50,7 @@ func TestSetUnsatisfiedInitDependsReporterObservesAndRestores(t *testing.T) {
 func TestSetUnsatisfiedInitDependsReporterNilRestoresDefault(t *testing.T) {
 	var swapped int
 	prev := SetUnsatisfiedInitDependsReporter(func(box, initName, candy string) { swapped++ })
-	defer SetUnsatisfiedInitDependsReporter(prev)
+	defer func() { SetUnsatisfiedInitDependsReporter(prev) }()
 
 	reportUnsatisfiedInitDepends("nil-a", "supervisord", "layer-supervisord")
 	if swapped != 1 {
