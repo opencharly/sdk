@@ -96,7 +96,11 @@ func reportUnsatisfiedInitDepends(boxName, initName, dependsCandy string) {
 	unsatisfiedInitDepends(boxName, initName, dependsCandy)
 }
 
-var unsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
+// defaultUnsatisfiedInitDepends is the reporter installed at process start: the stderr
+// printer. It is kept separately so SetUnsatisfiedInitDependsReporter(nil) can RESTORE it
+// rather than leave whatever a caller swapped in — the documented contract that the first
+// cut of this seam stated but did not implement (sdk#520 review).
+var defaultUnsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
 	fmt.Fprintf(os.Stderr,
 		"warning: box %q resolves init %q, which depends on the %q candy, but that candy is not in "+
 			"this project's scanned set — the fetch that should have materialized it did not, so "+
@@ -106,6 +110,8 @@ var unsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
 		boxName, initName, dependsCandy, initName, initName)
 }
 
+var unsatisfiedInitDepends = defaultUnsatisfiedInitDepends
+
 // SetUnsatisfiedInitDependsReporter replaces the reporter above and returns the previous
 // one, so a caller that must COUNT this warning can observe it instead of only printing
 // it. Without that seam `charly box validate` printed the warning and then summarised
@@ -113,13 +119,18 @@ var unsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
 // tally cannot see, so the zero-warnings landing rule was blind to it (sdk#519).
 //
 // The dedupe in reportUnsatisfiedInitDepends runs BEFORE the reporter, so a swapped
-// reporter observes each (box, init, candy) exactly once, and a nil argument restores
-// the default stderr printer.
+// reporter observes each (box, init, candy) exactly once.
+//
+// A nil argument RESTORES the default stderr printer and returns the reporter that was
+// installed before the call, so a caller can always put back what it found:
+// `prev := Set(fn); defer Set(prev)`.
 func SetUnsatisfiedInitDependsReporter(f func(boxName, initName, dependsCandy string)) func(boxName, initName, dependsCandy string) {
 	prev := unsatisfiedInitDepends
-	if f != nil {
-		unsatisfiedInitDepends = f
+	if f == nil {
+		unsatisfiedInitDepends = defaultUnsatisfiedInitDepends
+		return prev
 	}
+	unsatisfiedInitDepends = f
 	return prev
 }
 

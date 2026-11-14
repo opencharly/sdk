@@ -43,3 +43,34 @@ func TestSetUnsatisfiedInitDependsReporterObservesAndRestores(t *testing.T) {
 		t.Fatalf("after restore the old reporter must receive nothing; got %d calls", len(got))
 	}
 }
+
+// TestSetUnsatisfiedInitDependsReporterNilRestoresDefault pins the contract the first cut
+// of this seam STATED but did not implement (sdk#520 review): a nil argument must restore
+// the default stderr printer, not leave the swapped reporter installed.
+func TestSetUnsatisfiedInitDependsReporterNilRestoresDefault(t *testing.T) {
+	var swapped int
+	prev := SetUnsatisfiedInitDependsReporter(func(box, initName, candy string) { swapped++ })
+	defer SetUnsatisfiedInitDependsReporter(prev)
+
+	reportUnsatisfiedInitDepends("nil-a", "supervisord", "layer-supervisord")
+	if swapped != 1 {
+		t.Fatalf("swapped reporter must see the warning; got %d", swapped)
+	}
+
+	// nil = restore the default. The swapped reporter must receive nothing afterwards.
+	if got := SetUnsatisfiedInitDependsReporter(nil); got == nil {
+		t.Fatal("Set(nil) must return the reporter it replaced, not nil")
+	}
+	reportUnsatisfiedInitDepends("nil-b", "supervisord", "layer-supervisord")
+	if swapped != 1 {
+		t.Fatalf("after Set(nil) the default must be installed and the swapped reporter silent; got %d", swapped)
+	}
+
+	// Behavioural, not identity: after Set(nil) a THIRD distinct report must be handled by the
+	// default (silent to the swapped reporter). The un-fixed implementation left the swapped
+	// reporter installed, so this counter would read 2 — that is the regression this pins.
+	reportUnsatisfiedInitDepends("nil-c", "supervisord", "layer-supervisord")
+	if swapped != 1 {
+		t.Fatalf("Set(nil) must restore the default reporter (swapped counter must stay 1); got %d", swapped)
+	}
+}
