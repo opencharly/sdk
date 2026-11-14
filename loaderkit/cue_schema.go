@@ -52,13 +52,20 @@ var cueKindDefs = map[string]string{
 	"candy":      "#Candy",
 	"check":      "#Check",
 	"deploy":     "#Deploy",
-	"kubernetes": "#Kubernetes",
+	"kubernetes": "#ResolvedKubernetes",
 	"kubevirt":   "#KubeVirt",
 	"local":      "#ResolvedLocal",
 	"pod":        "#ResolvedPod",
 	"vm":         "#Vm",
 }
 
+// `kubernetes` names #ResolvedKubernetes for the SAME reason `pod` names #ResolvedPod and
+// `local` names #ResolvedLocal: spec#304 unit 5 moved the authored #Kubernetes body into the
+// serving plugin's CUE module (opencharly/plugin-substrate#35), so the contract no longer
+// declares it. The envelope is the contract's remaining declaration for the kind; its `raw`
+// carries the full cluster model opaquely, and the consumer that decodes it is
+// candy/plugin-k8sgen (the envelope's own note says so).
+//
 // `local` names #ResolvedLocal for the SAME reason `pod` names #ResolvedPod: spec#304 unit 4
 // moved the authored #Local body into plugin-substrate's own CUE module
 // (opencharly/plugin-substrate#34), so the contract no longer declares it. The envelope is
