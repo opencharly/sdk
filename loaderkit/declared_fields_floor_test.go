@@ -225,6 +225,13 @@ func TestContractDeclaredFields_Floor(t *testing.T) {
 	if def := cueKindDefs["pod"]; def != "#ResolvedPod" {
 		t.Fatalf("cueKindDefs[pod] = %q, want the contract's kept envelope #ResolvedPod — the authored #Pod moved out of this module", def)
 	}
+	// vm follows the same rule (opencharly/spec#304 unit 8): the authored #Vm moved to
+	// plugin-substrate's CUE module, so the floor comes from the contract's kept envelope. A
+	// table entry still naming #Vm would panic at first use once the base stops declaring it —
+	// the failure the pod precedent recorded.
+	if def := cueKindDefs["vm"]; def != "#ResolvedVm" {
+		t.Fatalf("cueKindDefs[vm] = %q, want the contract's kept envelope #ResolvedVm — the authored #Vm moved out of this module", def)
+	}
 	if got := contractDeclaredFields("example-external-structkind"); got != nil {
 		t.Fatalf("an external plugin word must floor to nil (documented fallback), got %v", got)
 	}
