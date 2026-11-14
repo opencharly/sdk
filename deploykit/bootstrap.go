@@ -105,6 +105,15 @@ func (g *Generator) EmitBaseBootstrap(b *strings.Builder, boxName string, img *b
 		fmt.Fprintf(b, "ADD .build/%s/%s.tar.gz /\n\n", boxName, builderName)
 	}
 	if img.IsExternalBase && !strings.HasPrefix(img.From, "builder:") {
+		// An external base may end with a NON-ROOT `USER`: every image charly itself
+		// builds does (generate.go emits `USER <uid>` for the workload user), so the
+		// child build inherits it and the bootstrap RUN executes as that uid —
+		// measured as `/etc/dnf/dnf.conf: Permission denied` + `tar: task: Cannot
+		// open: File exists` on `base: ghcr.io/opencharly/fedora-nonfree:<calver>`
+		// (sdk#515). Reset explicitly: a no-op for a distro base, REQUIRED for a
+		// charly-built base, and it makes the two branches agree on the invariant
+		// "the base stage starts as root".
+		b.WriteString("USER root\n\n")
 		g.WriteBootstrap(b, img)
 	} else {
 		// Internal base or builder rootfs - reset to root for candy processing
