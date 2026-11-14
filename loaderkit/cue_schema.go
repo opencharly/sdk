@@ -35,6 +35,8 @@ import (
 	"cuelang.org/go/cue/errors"
 	sdkschema "github.com/opencharly/spec/schema"
 	"github.com/opencharly/spec/schemaconcat"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // cueKindDefs maps a kind name to its entity definition path within the compiled schema.
@@ -114,6 +116,25 @@ var sharedCueSchema = sync.OnceValue(func() cue.Value {
 	}
 	return v
 })
+
+// kindDefFor resolves a kind's authored definition through the THREADED gates first, then the
+// base schema. A gate carries the SERVED CUE source (the base module plus the owning plugin's
+// files, concatenated exactly as they are served) and the definition path the plugin declared;
+// compiling that source here is what lets a loader-side helper see a body that moved into a
+// plugin, without a registry query and without a second private copy of the schema
+// (PROGRAM/schema-ownership-rca-rdd.md §3 I2/I3/I4).
+func kindDefFor(kind string, gates map[string]spec.KindGate) (cue.Value, bool) {
+	if g, ok := gates[kind]; ok && g.Source != "" && g.Def != "" {
+		ctx := cuecontext.New()
+		v := ctx.CompileString(g.Source)
+		if v.Err() == nil {
+			if d := v.LookupPath(cue.ParsePath(g.Def)); d.Err() == nil {
+				return d, true
+			}
+		}
+	}
+	return cueKindDef(kind)
+}
 
 // cueKindDef returns the compiled entity definition for a kind, and whether the kind is known.
 func cueKindDef(kind string) (cue.Value, bool) {
