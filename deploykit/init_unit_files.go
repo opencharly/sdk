@@ -101,12 +101,25 @@ func reportUnsatisfiedInitDepends(boxName, initName, dependsCandy string) {
 // rather than leave whatever a caller swapped in — the documented contract that the first
 // cut of this seam stated but did not implement (sdk#520 review).
 var defaultUnsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
-	fmt.Fprintf(os.Stderr,
-		"warning: box %q resolves init %q, which depends on the %q candy, but that candy is not in "+
+	fmt.Fprintf(os.Stderr, "warning: %s\n", UnsatisfiedInitDependsMessage(boxName, initName, dependsCandy))
+}
+
+// UnsatisfiedInitDependsMessage is the ONE text of the "init depends_candy missing" warning,
+// without its trailing newline. The default reporter prints it as `warning: <text>`; a
+// consumer that must also put the warning into its OWN diagnostics (plugin-box's
+// `box validate` summary — sdk#519/#521) calls THIS instead of restating the prose, so the
+// two surfaces cannot drift.
+//
+// It names the INIT, never `depends_candy` for the runtime: the vocabulary spells that field
+// as a bare name or a pinned remote ref, and only the init's own name is the binary the image
+// will look for in $PATH.
+func UnsatisfiedInitDependsMessage(boxName, initName, dependsCandy string) string {
+	return fmt.Sprintf(
+		"box %q resolves init %q, which depends on the %q candy, but that candy is not in "+
 			"this project's scanned set — the fetch that should have materialized it did not, so "+
 			"nothing was injected: the image will declare init %q with no %s implementation installed "+
 			"and fail at start. Check that the init vocabulary's depends_candy ref exists and is "+
-			"reachable.\n",
+			"reachable.",
 		boxName, initName, dependsCandy, initName, initName)
 }
 
