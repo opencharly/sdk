@@ -56,7 +56,7 @@ var cueKindDefs = map[string]string{
 	"kubevirt":   "#ResolvedKubeVirt",
 	"local":      "#ResolvedLocal",
 	"pod":        "#ResolvedPod",
-	"vm":         "#Vm",
+	"vm":         "#ResolvedVm",
 }
 
 // `kubernetes` names #ResolvedKubernetes for the SAME reason `pod` names #ResolvedPod and
