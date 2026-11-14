@@ -106,6 +106,23 @@ var unsatisfiedInitDepends = func(boxName, initName, dependsCandy string) {
 		boxName, initName, dependsCandy, initName, initName)
 }
 
+// SetUnsatisfiedInitDependsReporter replaces the reporter above and returns the previous
+// one, so a caller that must COUNT this warning can observe it instead of only printing
+// it. Without that seam `charly box validate` printed the warning and then summarised
+// `0 warnings, 0 errors` — the detection writes to stderr, a side channel the validator's
+// tally cannot see, so the zero-warnings landing rule was blind to it (sdk#519).
+//
+// The dedupe in reportUnsatisfiedInitDepends runs BEFORE the reporter, so a swapped
+// reporter observes each (box, init, candy) exactly once, and a nil argument restores
+// the default stderr printer.
+func SetUnsatisfiedInitDependsReporter(f func(boxName, initName, dependsCandy string)) func(boxName, initName, dependsCandy string) {
+	prev := unsatisfiedInitDepends
+	if f != nil {
+		unsatisfiedInitDepends = f
+	}
+	return prev
+}
+
 // orderSatisfiesInitDepends reports whether a box's RESOLVED candy order already
 // supplies the init's depends_candy.
 //
