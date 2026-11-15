@@ -1,6 +1,7 @@
 package loaderkit
 
 import (
+	"cuelang.org/go/cue/cuecontext"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -87,5 +88,29 @@ import "github.com/opencharly/spec/schema"
 	}
 	if d.Err() != nil {
 		t.Fatalf("the resolved def is invalid: %v", d.Err())
+	}
+}
+
+// TestValidateEntityCUEWithGatesResolvesTheAuthoredBody pins opencharly/opencharly#1048's second
+// consumer: entity validation asked the BASE table for the kind's def, and for a kind whose
+// authored body moved into a plugin that entry is whatever keeper remained (`vm` -> `#ResolvedVm`,
+// the POST-default envelope), which an authored document can never satisfy. With the gates
+// threaded, the authored def resolves; with the base-table path (nil gates) the same entity is
+// refused. The pair is the coverage: it fails if the gated resolution stops being used.
+func TestValidateEntityCUEWithGatesResolvesTheAuthoredBody(t *testing.T) {
+	ctx := cuecontext.New()
+	const src = "package schema\n#GateProbe: {firmware: *\"bios\" | string}"
+	// An AUTHORED fixture: it omits nothing the authored def requires, and it would fail against a
+	// post-default envelope that made every scalar mandatory.
+	entity := ctx.CompileString("firmware: \"bios\"\n")
+
+	gates := map[string]spec.KindGate{"gate-probe": {Def: "#GateProbe", Source: src}}
+	if err := ValidateEntityCUEWithGates("gate-probe", "t.yml:gate-probe", entity, gates); err != nil {
+		t.Fatalf("the gated variant must resolve the authored def: %v", err)
+	}
+	// The control: without the gates there is no such kind in the base, so the same entity must
+	// FAIL — a silent pass here would mean the gates were ignored.
+	if err := ValidateEntityCUEWithGates("gate-probe", "t.yml:gate-probe", entity, nil); err == nil {
+		t.Fatal("an undeclared kind validated without its gate — the gates are ignored")
 	}
 }
