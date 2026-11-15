@@ -88,9 +88,21 @@ func ValidateEntityClosedCUE(kind, label string, entity cue.Value) error {
 // stricter form the schema-tightening corpus asserts the schema still enforces, so that a future
 // re-loosening of any modeled subtree fails loudly instead of silently accepting a broken entity.
 func ValidateEntityCUE(kind, label string, entity cue.Value) error {
-	def, ok := cueKindDef(kind)
-	if !ok {
-		return fmt.Errorf("%s: no CUE schema registered for kind %q", label, kind)
+	return ValidateEntityCUEWithGates(kind, label, entity, nil)
+}
+
+// ValidateEntityCUEWithGates is ValidateEntityCUE with the host's THREADED kind gates, so a kind
+// whose authored body moved into a plugin is validated against THAT body rather than against
+// whatever keeper the base table still names for it (`vm` -> `#ResolvedVm`, the POST-default
+// envelope, which an authored document can never satisfy). opencharly/opencharly#1048.
+func ValidateEntityCUEWithGates(kind, label string, entity cue.Value, gates map[string]spec.KindGate) error {
+	// The kind's AUTHORED body, resolved the same way the defaults fill resolves it: a body that
+	// moved into a plugin is reachable only through its DECLARED gate, and the base table's entry
+	// for such a kind is whatever keeper remained (`vm` -> `#ResolvedVm`, the POST-default
+	// envelope), which an authored document can never satisfy. opencharly/opencharly#1048.
+	def, derr := kindDefFor(kind, gates)
+	if derr != nil {
+		return fmt.Errorf("%s: %w", label, derr)
 	}
 	if err := entity.Unify(def).Validate(cue.Concrete(true)); err != nil {
 		return fmt.Errorf("%s: %s", label, errors.Details(err, nil))
