@@ -13,8 +13,6 @@ package deploykit
 // touches only the snapshot-safe subset + HasFile + HasContent.
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -64,18 +62,9 @@ func (a *specCandyAdapter) RunOps() []vmshared.Op   { return a.m.RunOps }
 func (a *specCandyAdapter) HasTasks() bool          { return len(a.m.RunOps) > 0 }
 func (a *specCandyAdapter) HasExtract() bool        { return len(a.m.Extract) > 0 }
 
-// Extract decodes the IR's opaque extract body, exactly as Hooks does for the hook body. A body
-// that does not decode is an invariant violation (the producer marshals a typed #CandyExtract), and
-// a silently empty extraction list would mean a stage produces no files with nothing saying why.
+// Extract decodes the IR's opaque extract list through the shared crossing.
 func (a *specCandyAdapter) Extract() []ExtractYAML {
-	if len(a.m.Extract) == 0 {
-		return nil
-	}
-	var out []ExtractYAML
-	if err := json.Unmarshal(a.m.Extract, &out); err != nil {
-		panic(fmt.Sprintf("deploykit: IR extract body is not a []#CandyExtract: %v", err))
-	}
-	return out
+	return decodeOpaque[ExtractYAML](a.m.Extract, "extract")
 }
 func (a *specCandyAdapter) HasData() bool    { return len(a.m.Data) > 0 }
 func (a *specCandyAdapter) Data() []DataYAML { return a.m.Data }
@@ -184,22 +173,9 @@ func (a *specCandyAdapter) GetSubPathPrefix() string { return a.v.SubPathPrefix 
 // CandyModel field above.
 func (a *specCandyAdapter) Security() *SecurityConfig { return a.m.Security }
 
-// Hooks decodes the IR's opaque hook body. The model carries the authored #CandyHook as BYTES
-// (I1/D-SCH-7: the shape belongs to the plugin that owns the candy body), so the adapter — the
-// one place the build engine reads it — decodes what it needs.
+// Hooks decodes the IR's opaque hook body through the shared crossing (see opaque_body.go).
 func (a *specCandyAdapter) Hooks() *HooksConfig {
-	if len(a.m.Hook) == 0 {
-		return nil
-	}
-	var h HooksConfig
-	if err := json.Unmarshal(a.m.Hook, &h); err != nil {
-		// The bytes are produced by marshalling a typed #CandyHook (loaderkit's producer), so a
-		// decode failure means the IR body was written by something other than that producer — an
-		// invariant violation, not a recoverable condition. Returning nil here would silently drop
-		// a candy's lifecycle hooks, which is worse than failing loudly.
-		panic(fmt.Sprintf("deploykit: IR hook body is not a #CandyHook: %v", err))
-	}
-	return &h
+	return decodeOpaqueOne[HooksConfig](a.m.Hook, "hook")
 }
 func (a *specCandyAdapter) EnvRequire() []EnvDependency    { return a.m.EnvRequire }
 func (a *specCandyAdapter) EnvAccept() []EnvDependency     { return a.m.EnvAccept }

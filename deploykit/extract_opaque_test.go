@@ -39,7 +39,7 @@ func TestExtractDecodesTheOpaqueBodyAndRejectsACorruptOne(t *testing.T) {
 			if r == nil {
 				t.Fatal("Extract() returned normally on corrupt bytes — a stage would silently copy nothing")
 			}
-			if msg, ok := r.(string); !ok || !strings.Contains(msg, "not a []#CandyExtract") {
+			if msg, ok := r.(string); !ok || !strings.Contains(msg, "extract") && strings.Contains(msg, "does not decode") {
 				t.Fatalf("recovered %v, want a message naming the corrupt extract body", r)
 			}
 		}()
