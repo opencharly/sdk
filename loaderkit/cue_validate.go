@@ -156,9 +156,9 @@ func ValidateNodeDocCUE(label string, data []byte) error {
 // against it (it does — the loader validated it). The round-trip is lossless for every modeled
 // field; see cue_defaults_test.go (charly).
 func ApplyCueDefaults(kind string, out any, gates map[string]spec.KindGate) error {
-	def, ok := kindDefFor(kind, gates)
-	if !ok {
-		return fmt.Errorf("applyCueDefaults: no CUE schema registered for kind %q", kind)
+	def, derr := kindDefFor(kind, gates)
+	if derr != nil {
+		return fmt.Errorf("applyCueDefaults: %w", derr)
 	}
 	b, err := yaml.Marshal(out)
 	if err != nil {

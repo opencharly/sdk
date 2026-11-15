@@ -123,17 +123,30 @@ var sharedCueSchema = sync.OnceValue(func() cue.Value {
 // compiling that source here is what lets a loader-side helper see a body that moved into a
 // plugin, without a registry query and without a second private copy of the schema
 // (PROGRAM/schema-ownership-rca-rdd.md §3 I2/I3/I4).
-func kindDefFor(kind string, gates map[string]spec.KindGate) (cue.Value, bool) {
-	if g, ok := gates[kind]; ok && g.Source != "" && g.Def != "" {
+func kindDefFor(kind string, gates map[string]spec.KindGate) (cue.Value, error) {
+	if g, ok := gates[kind]; ok && g.Def != "" {
+		// A DECLARED gate is authoritative: if its served source cannot compile or its def is
+		// missing, that is the error the caller must see. Falling back to the base here would
+		// report "no CUE schema registered" for a body that HAS a declaration.
+		if g.Source == "" {
+			return cue.Value{}, fmt.Errorf("kind %q: gate declares no served source", kind)
+		}
 		ctx := cuecontext.New()
 		v := ctx.CompileString(g.Source)
-		if v.Err() == nil {
-			if d := v.LookupPath(cue.ParsePath(g.Def)); d.Err() == nil {
-				return d, true
-			}
+		if v.Err() != nil {
+			return cue.Value{}, fmt.Errorf("kind %q: gate source does not compile: %w", kind, v.Err())
 		}
+		d := v.LookupPath(cue.ParsePath(g.Def))
+		if d.Err() != nil {
+			return cue.Value{}, fmt.Errorf("kind %q: gate def %s not found in its served source: %w", kind, g.Def, d.Err())
+		}
+		return d, nil
 	}
-	return cueKindDef(kind)
+	// No declaration: the base module is the authority for a word the contract still owns.
+	if d, ok := cueKindDef(kind); ok {
+		return d, nil
+	}
+	return cue.Value{}, fmt.Errorf("no CUE schema registered for kind %q", kind)
 }
 
 // cueKindDef returns the compiled entity definition for a kind, and whether the kind is known.
