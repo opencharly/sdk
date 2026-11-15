@@ -16,11 +16,9 @@ func isNilAny(v any) bool {
 		return true
 	}
 	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Interface:
-		return rv.IsNil()
-	}
-	return false
+	kind := rv.Kind()
+	nillable := kind == reflect.Ptr || kind == reflect.Slice || kind == reflect.Map || kind == reflect.Interface
+	return nillable && rv.IsNil()
 }
 
 // TestOpaqueBodiesDecodeAndRejectCorruptInput covers EVERY field that crosses the IR as opaque bytes,
