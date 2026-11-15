@@ -167,8 +167,8 @@ func ArgHasImageTag(arg string) bool {
 func RejectImageRefAsDeployName(box string) error {
 	if strings.Contains(box, ".") && ArgHasImageTag(box) {
 		return fmt.Errorf(
-			"deploy name %q is a tagged registry image ref — a registry ref can't be a deploy name (its dots collide with dotted-path addressing). Give it a short name:\n    charly deploy add <name> %s",
-			box, box)
+			"deploy name %q is a tagged registry image ref — a registry ref can't be a deploy name (its dots collide with dotted-path addressing). Deploy it source-lessly, giving it a short name:\n    charly deploy from-box %s <name>\n\n(`deploy add` takes a PROJECT box or candy ref, so it rejects a registry image ref — measured: `deploy add <name> %s` fails with \"not found as a box or candy\".)",
+			box, box, box)
 	}
 	return nil
 }
