@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -9,7 +10,13 @@ import (
 // candyWithHooks builds a CandyModel (via the existing NewSpecCandyModel envelope
 // adapter) carrying only a Hook config — the minimal fixture MergeCandyHooks needs.
 func candyWithHooks(h *HooksConfig) CandyModel {
-	return NewSpecCandyModel(spec.CandyModel{Hook: h}, spec.CandyView{})
+	// The IR carries the hook as OPAQUE BYTES (I1/D-SCH-7), so the fixture marshals the authored
+	// shape exactly as loaderkit's producer does — the adapter decodes it back.
+	b, err := json.Marshal(h)
+	if err != nil {
+		panic(err)
+	}
+	return NewSpecCandyModel(spec.CandyModel{Hook: b}, spec.CandyView{})
 }
 
 func TestMergeCandyHooksConcatenatesInOrder(t *testing.T) {

@@ -1,6 +1,7 @@
 package loaderkit
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -324,7 +325,16 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	m.Extract = ly.Extract
 	m.Data = ly.Data
 	m.Security = ly.Security
-	m.Hook = ly.Hook
+	// hook is the IR's FIRST opaque body: the authored #CandyHook moves into the plugin that owns
+	// the candy body (DESIGN.md 3.1), so the model carries BYTES rather than importing that shape
+	// (I1/D-SCH-7) and the consumer decodes what it needs.
+	if ly.Hook != nil {
+		// A typed struct always marshals; the error branch is unreachable by construction, and the
+		// authored value is validated BEFORE this point, so a malformed hook never reaches here.
+		if hookBytes, herr := json.Marshal(ly.Hook); herr == nil {
+			m.Hook = hookBytes
+		}
+	}
 	m.Plan = ly.Plan
 	m.Artifact = ly.Artifact
 	m.Capability = ly.Capability
