@@ -8,58 +8,92 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
+// isNilAny reports whether v is nil OR an interface holding a nil pointer/slice/map. The plain
+// `v == nil` comparison cannot see through the interface box, which is why a correct decode would
+// otherwise fail its own test.
+func isNilAny(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Interface:
+		return rv.IsNil()
+	}
+	return false
+}
+
 // TestOpaqueBodiesDecodeAndRejectCorruptInput covers EVERY field that crosses the IR as opaque bytes,
-// in ONE table rather than one near-identical function per field.
+// in ONE table rather than one near-identical function per field — the same "one implementation per
+// behavior" rule the change itself follows, and the reason `dupl` stopped firing.
 //
-// The fields differ only in their Go type and the body they carry, so three copies of this test
-// would be three copies of the same three assertions — and the linter's `dupl` check said so before a
-// reviewer had to. The shared crossing (decodeOpaque / decodeOpaqueOne) is what makes one table
-// possible: each row exercises the same code path with a different type parameter.
-//
-// Each row asserts the three outcomes that matter:
-//   - well-formed bytes decode to the authored values;
-//   - EMPTY bytes mean "the candy declared nothing" and stay nil;
-//   - bytes that are not the authored shape PANIC with a message naming the body, because a silently
-//     empty list means a hook never runs or a stage copies no files, with nothing saying why.
+// Each row asserts the three outcomes that matter, on the authored values:
+//   - well-formed bytes decode to the values that were marshalled (via the row's own `check`);
+//   - EMPTY bytes mean "the candy declared nothing" and are nil — not `[]`, not a zero value;
+//   - bytes that are not the authored shape PANIC with a message saying the body does not decode,
+//     because a silently empty list means a hook never runs or a stage copies no files, with
+//     nothing saying why.
 func TestOpaqueBodiesDecodeAndRejectCorruptInput(t *testing.T) {
 	cases := []struct {
 		name    string
 		body    spec.RawBody
 		decode  func(spec.RawBody) any
-		want    any // the decoded value's first element, checked by the caller's assertion below
+		check   func(*testing.T, any)
 		badJSON spec.RawBody
 	}{
 		{
 			name:    "hook (decodeOpaqueOne)",
-			body:    spec.RawBody(`{"post_enable":"echo up"}`),
+			body:    spec.RawBody(`{"post_enable":"echo up","pre_remove":"echo down"}`),
 			decode:  func(b spec.RawBody) any { return decodeOpaqueOne[HooksConfig](b, "hook") },
 			badJSON: spec.RawBody(`not json at all`),
+			check: func(t *testing.T, got any) {
+				h, ok := got.(*HooksConfig)
+				if !ok || h == nil {
+					t.Fatalf("decoded %T, want *HooksConfig", got)
+				}
+				if h.PostEnable != "echo up" || h.PreRemove != "echo down" {
+					t.Fatalf("decoded %+v, want the authored hook values", h)
+				}
+			},
 		},
 		{
 			name:    "extract (decodeOpaque)",
 			body:    spec.RawBody(`[{"source":"builder","path":"/out/x","dest":"/usr/x"}]`),
 			decode:  func(b spec.RawBody) any { return decodeOpaque[ExtractYAML](b, "extract") },
 			badJSON: spec.RawBody(`not json`),
+			check: func(t *testing.T, got any) {
+				e, ok := got.([]ExtractYAML)
+				if !ok || len(e) != 1 {
+					t.Fatalf("decoded %T of len %d, want one ExtractYAML", got, len(e))
+				}
+				if e[0].Source != "builder" || e[0].Path != "/out/x" || e[0].Dest != "/usr/x" {
+					t.Fatalf("decoded %+v, want the authored extract values", e[0])
+				}
+			},
 		},
 		{
 			name:    "data (decodeOpaque)",
 			body:    spec.RawBody(`[{"volume":"workspace","src":"/seed","dest":"/data"}]`),
 			decode:  func(b spec.RawBody) any { return decodeOpaque[DataYAML](b, "data") },
 			badJSON: spec.RawBody(`not json`),
+			check: func(t *testing.T, got any) {
+				d, ok := got.([]DataYAML)
+				if !ok || len(d) != 1 {
+					t.Fatalf("decoded %T of len %d, want one DataYAML", got, len(d))
+				}
+				if d[0].Volume != "workspace" || d[0].Src != "/seed" || d[0].Dest != "/data" {
+					t.Fatalf("decoded %+v, want the authored data values", d[0])
+				}
+			},
 		},
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.name+" decodes", func(t *testing.T) {
-			if got := tc.decode(tc.body); got == nil {
-				t.Fatalf("%s returned nil for a well-formed body", tc.name)
-			}
+		t.Run(tc.name+" decodes to the authored values", func(t *testing.T) {
+			tc.check(t, tc.decode(tc.body))
 		})
 
 		t.Run(tc.name+" empty is nil", func(t *testing.T) {
-			// `got != nil` is NOT the question: a nil *HooksConfig (or a nil slice) stored in an
-			// `any` is a NON-nil interface holding a nil value, so the naive check would fail while
-			// the decode is perfectly correct. isNilAny asks the question that was meant.
 			if got := tc.decode(nil); !isNilAny(got) {
 				t.Fatalf("%s returned %+v for an empty body, want nil", tc.name, got)
 			}
@@ -82,21 +116,6 @@ func TestOpaqueBodiesDecodeAndRejectCorruptInput(t *testing.T) {
 			_ = tc.decode(tc.badJSON)
 		})
 	}
-}
-
-// isNilAny reports whether v is nil OR an interface holding a nil pointer/slice/map. The plain
-// `v == nil` comparison cannot see through the interface box, which is why a correct decode would
-// otherwise fail its own test.
-func isNilAny(v any) bool {
-	if v == nil {
-		return true
-	}
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Interface:
-		return rv.IsNil()
-	}
-	return false
 }
 
 // TestOpaqueFieldsDecodeThroughTheAdapter proves the adapter accessors — not just the raw helpers —
