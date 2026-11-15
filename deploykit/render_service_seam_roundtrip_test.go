@@ -26,6 +26,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/opencharly/sdk/rawbody"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -116,13 +117,13 @@ func TestCompileServiceSteps_RealRenderRoundTrip(t *testing.T) {
 	client := newRealProviderExecutorClient()
 	ctx, ex := context.Background(), sdk.NewInProcExecutor(client)
 
-	layer := testCandy("myapp", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("myapp", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{
 			Name: "worker", Exec: "/usr/bin/myapp-worker --config /etc/myapp/config.yaml",
 			Env:     map[string]string{"MYAPP_MODE": "production"},
 			Restart: "always", Enable: true, Scope: "system",
 		},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	img := testServiceImg("fedora:43", "fedora")
 
 	steps, err := CompileServiceSteps(ctx, ex, layer, img, HostContext{
@@ -174,13 +175,13 @@ func TestCompileServiceSteps_RealRenderRoundTrip_CheckLocalCoverageFixture(t *te
 	client := newRealProviderExecutorClient()
 	ctx, ex := context.Background(), sdk.NewInProcExecutor(client)
 
-	layer := testCandy("check-local-layer", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("check-local-layer", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{
 			Name:    "check-local-marker-daemon",
 			Exec:    `/bin/sh -c "echo 'check-local-service v1' > /etc/check-local-service-marker; exec sleep infinity"`,
 			Restart: "always", Enable: true, Scope: "system",
 		},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	img := testServiceImg("arch")
 
 	steps, err := CompileServiceSteps(ctx, ex, layer, img, HostContext{

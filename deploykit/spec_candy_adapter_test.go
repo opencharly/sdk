@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -25,7 +26,7 @@ func TestSpecCandyAdapter_HasInit_PerInitLookup(t *testing.T) {
 		// ServiceFiles empty (no bundled *.service file — the unit ships in the OS
 		// package), Service carries ONE packaged-only entry — the exact shape that
 		// fooled the old fake.
-		Service: []spec.CandyService{{Name: "qemu-guest-agent", UsePackaged: "qemu-guest-agent.service"}},
+		Service: rawbody.Encode([]spec.CandyService{{Name: "qemu-guest-agent", UsePackaged: "qemu-guest-agent.service"}}, "service"),
 	}
 	v := spec.CandyView{
 		Name: "qemu-guest-agent-like",

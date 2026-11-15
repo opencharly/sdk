@@ -12,6 +12,7 @@ package deploykit
 import (
 	"context"
 	"encoding/json"
+	"github.com/opencharly/sdk/rawbody"
 	"strings"
 	"testing"
 
@@ -67,7 +68,7 @@ func TestCompileServiceSteps_PackagedOverridesMaterializeDropin(t *testing.T) {
 	client := newRealProviderExecutorClient()
 	ctx, ex := context.Background(), sdk.NewInProcExecutor(client)
 
-	layer := testCandy("charly-mcp", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("charly-mcp", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{
 			Name:        "mcp",
 			UsePackaged: "charly-mcp.service",
@@ -78,7 +79,7 @@ func TestCompileServiceSteps_PackagedOverridesMaterializeDropin(t *testing.T) {
 				Env:  map[string]string{"CHARLY_MCP_BIND": "all"},
 			},
 		},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	img := testServiceImg("cachyos", "arch")
 
 	steps, err := CompileServiceSteps(ctx, ex, layer, img, HostContext{
@@ -114,9 +115,9 @@ func TestCompileServiceSteps_PackagedOverridesMaterializeDropin(t *testing.T) {
 
 	// A packaged entry WITHOUT overrides must carry no drop-in (the executor skips
 	// the write; the shipped unit runs unmodified).
-	layerPlain := testCandy("charly-mcp", spec.CandyModel{Service: []spec.ServiceEntry{
+	layerPlain := testCandy("charly-mcp", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{Name: "mcp", UsePackaged: "charly-mcp.service", Enable: true, Scope: "system"},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	steps, err = CompileServiceSteps(ctx, ex, layerPlain, img, HostContext{
 		MachineVenue:   true,
 		ActiveInitName: "systemd",

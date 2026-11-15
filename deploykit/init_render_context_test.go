@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,12 +33,12 @@ func TestGenerateInitFragmentsRenderContextIsNotDoubleSeeded(t *testing.T) {
 		Candies: map[string]CandyModel{
 			"svc": NewSpecCandyModel(spec.CandyModel{
 				Name: "svc",
-				Service: []spec.ServiceEntry{{
+				Service: rawbody.Encode([]spec.ServiceEntry{{
 					Name:   "svc",
 					Exec:   "%(ENV_HOME)s/.local/bin/svc",
 					After:  []string{"network.target"},
 					Before: []string{"shutdown.target"},
-				}},
+				}}, "service"),
 			}, spec.CandyView{}),
 		},
 		Boxes: map[string]*ResolvedBox{

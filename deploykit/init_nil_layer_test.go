@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"testing"
 
 	"github.com/opencharly/sdk/buildkit"
@@ -22,7 +23,7 @@ func TestGenerateInitFragments_NilLayerInOrder(t *testing.T) {
 		Candies: map[string]CandyModel{
 			"svc": NewSpecCandyModel(spec.CandyModel{
 				Name:    "svc",
-				Service: []spec.ServiceEntry{{Name: "svc", Exec: "svc serve"}},
+				Service: rawbody.Encode([]spec.ServiceEntry{{Name: "svc", Exec: "svc serve"}}, "service"),
 			}, spec.CandyView{}),
 		},
 		RenderService: fakeRenderService,

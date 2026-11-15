@@ -287,7 +287,9 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 		}
 	}
 
-	m.Service = ly.Service
+	if hasOpaqueSlice(ly.Service) {
+		m.Service = marshalOpaque(ly.Service, "the candy service list")
+	}
 	for _, s := range ly.Service {
 		v.ServiceNames = append(v.ServiceNames, s.Name)
 	}
@@ -317,9 +319,13 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 		v.Route = route
 	}
 
-	m.Volumes = ly.Volume
+	if hasOpaqueSlice(ly.Volume) {
+		m.Volumes = marshalOpaque(ly.Volume, "the candy volume list")
+	}
 	v.Volumes = ly.Volume
-	m.Aliases = ly.Alias
+	if hasOpaqueSlice(ly.Alias) {
+		m.Aliases = marshalOpaque(ly.Alias, "the candy alias list")
+	}
 	v.Aliases = ly.Alias
 	// data is the IR's third opaque body (after hook and extract), through the same crossing.
 	if hasOpaqueSlice(ly.Data) {
@@ -336,7 +342,9 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 		m.Extract = marshalOpaque(ly.Extract, "the candy extract list")
 	}
 	m.Plan = ly.Plan
-	m.Artifact = ly.Artifact
+	if hasOpaqueSlice(ly.Artifact) {
+		m.Artifact = marshalOpaque(ly.Artifact, "the candy artifact list")
+	}
 	m.Capability = ly.Capability
 	m.RequiresCapability = ly.RequiresCapability
 	m.PortRelayPorts = ly.PortRelay

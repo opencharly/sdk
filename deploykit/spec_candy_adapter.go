@@ -90,7 +90,11 @@ func (a *specCandyAdapter) EnvConfig() (*EnvConfig, error) { return a.m.Env, nil
 func (a *specCandyAdapter) HasRoute() bool                 { return a.m.Route != nil }
 func (a *specCandyAdapter) Route() (*RouteConfig, error)   { return a.m.Route, nil }
 func (a *specCandyAdapter) Shell() *ShellConfig            { return a.m.Shell }
-func (a *specCandyAdapter) Service() []ServiceEntry        { return a.m.Service }
+
+// Service decodes the IR's opaque service list through the shared crossing.
+func (a *specCandyAdapter) Service() []ServiceEntry {
+	return decodeOpaque[ServiceEntry](a.m.Service, "service")
+}
 
 // graph refs (spec.CandyRef is a bare-string alias -> deploykit.CandyRef)
 func (a *specCandyAdapter) GetIncludedCandy() []CandyRef { return specRefsToDk(a.v.IncludedCandy) }
@@ -191,13 +195,17 @@ func (a *specCandyAdapter) MCPAccept() []EnvDependency     { return a.m.MCPAccep
 // carry the LIST-subcommand detail, not the build model); Artifact/Capabilities/
 // RequiresCapabilities/Engine/Libvirt/Secret/PortSpecs read off CandyModel (the build half,
 // widened with the same 5 fields added to #CandyModel alongside this fill).
-func (a *specCandyAdapter) Alias() []AliasYAML               { return a.v.Aliases }
-func (a *specCandyAdapter) HasAliases() bool                 { return len(a.v.Aliases) > 0 }
-func (a *specCandyAdapter) Volume() []VolumeYAML             { return a.v.Volumes }
-func (a *specCandyAdapter) HasVolumes() bool                 { return len(a.v.Volumes) > 0 }
-func (a *specCandyAdapter) EnvProvides() map[string]string   { return a.v.EnvProvides }
-func (a *specCandyAdapter) MCPProvide() []MCPServerYAML      { return a.v.MCPProvide }
-func (a *specCandyAdapter) Artifact() []CandyArtifact        { return a.m.Artifact }
+func (a *specCandyAdapter) Alias() []AliasYAML             { return a.v.Aliases }
+func (a *specCandyAdapter) HasAliases() bool               { return len(a.v.Aliases) > 0 }
+func (a *specCandyAdapter) Volume() []VolumeYAML           { return a.v.Volumes }
+func (a *specCandyAdapter) HasVolumes() bool               { return len(a.v.Volumes) > 0 }
+func (a *specCandyAdapter) EnvProvides() map[string]string { return a.v.EnvProvides }
+func (a *specCandyAdapter) MCPProvide() []MCPServerYAML    { return a.v.MCPProvide }
+
+// Artifact decodes the IR's opaque artifact list through the shared crossing.
+func (a *specCandyAdapter) Artifact() []CandyArtifact {
+	return decodeOpaque[CandyArtifact](a.m.Artifact, "artifact")
+}
 func (a *specCandyAdapter) Capabilities() *CandyCapabilities { return a.m.Capability }
 func (a *specCandyAdapter) RequiresCapabilities() []string   { return a.m.RequiresCapability }
 func (a *specCandyAdapter) Engine() string                   { return a.m.Engine }

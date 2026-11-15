@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -11,7 +12,7 @@ import (
 // charly-side; CandyArtifactRegisters' test needs only the Artifact() accessor, so this
 // package keeps its own minimal constructor rather than importing across the boundary).
 func testArtifactCandy(name string, artifacts []spec.CandyArtifact) spec.CandyReader {
-	return NewSpecCandyModel(spec.CandyModel{Name: name, Artifact: artifacts}, spec.CandyView{Name: name})
+	return NewSpecCandyModel(spec.CandyModel{Name: name, Artifact: rawbody.Encode(artifacts, "artifact")}, spec.CandyView{Name: name})
 }
 
 // TestDeriveDeploymentName relocated from the deleted charly/deploy_nested_pod_test.go

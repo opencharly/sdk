@@ -1,6 +1,7 @@
 package loaderkit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"slices"
 	"testing"
 
@@ -56,7 +57,7 @@ func scannedServiceCandy(name, sourceDir string) spec.ScannedCandy {
 		Model: spec.CandyModel{
 			Name:      name,
 			SourceDir: sourceDir,
-			Service:   []spec.CandyService{{Exec: "/usr/local/bin/sshd-wrapper"}},
+			Service:   rawbody.Encode([]spec.CandyService{{Exec: "/usr/local/bin/sshd-wrapper"}}, "service"),
 		},
 		View: spec.CandyView{Name: name},
 	}
@@ -221,7 +222,7 @@ func TestInitDependsSeeds_PackagedServiceDoesNotTriggerSupervisord(t *testing.T)
 		Model: spec.CandyModel{
 			Name:      "svc",
 			SourceDir: t.TempDir(),
-			Service:   []spec.CandyService{{UsePackaged: "openssh-server"}},
+			Service:   rawbody.Encode([]spec.CandyService{{UsePackaged: "openssh-server"}}, "service"),
 		},
 		View: spec.CandyView{Name: "svc"},
 	}
