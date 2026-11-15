@@ -13,6 +13,8 @@ package deploykit
 // touches only the snapshot-safe subset + HasFile + HasContent.
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -167,8 +169,25 @@ func (a *specCandyAdapter) GetSubPathPrefix() string { return a.v.SubPathPrefix 
 // OCI-label-collector surface (CollectSecurity/CollectHooks/layer_secrets): direct
 // field reads over the build model, same snapshot-safe shape as every other
 // CandyModel field above.
-func (a *specCandyAdapter) Security() *SecurityConfig      { return a.m.Security }
-func (a *specCandyAdapter) Hooks() *HooksConfig            { return a.m.Hook }
+func (a *specCandyAdapter) Security() *SecurityConfig { return a.m.Security }
+
+// Hooks decodes the IR's opaque hook body. The model carries the authored #CandyHook as BYTES
+// (I1/D-SCH-7: the shape belongs to the plugin that owns the candy body), so the adapter — the
+// one place the build engine reads it — decodes what it needs.
+func (a *specCandyAdapter) Hooks() *HooksConfig {
+	if len(a.m.Hook) == 0 {
+		return nil
+	}
+	var h HooksConfig
+	if err := json.Unmarshal(a.m.Hook, &h); err != nil {
+		// The bytes are produced by marshalling a typed #CandyHook (loaderkit's producer), so a
+		// decode failure means the IR body was written by something other than that producer — an
+		// invariant violation, not a recoverable condition. Returning nil here would silently drop
+		// a candy's lifecycle hooks, which is worse than failing loudly.
+		panic(fmt.Sprintf("deploykit: IR hook body is not a #CandyHook: %v", err))
+	}
+	return &h
+}
 func (a *specCandyAdapter) EnvRequire() []EnvDependency    { return a.m.EnvRequire }
 func (a *specCandyAdapter) EnvAccept() []EnvDependency     { return a.m.EnvAccept }
 func (a *specCandyAdapter) SecretRequire() []EnvDependency { return a.m.SecretRequire }
