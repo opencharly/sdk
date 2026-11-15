@@ -321,11 +321,6 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	v.Volumes = ly.Volume
 	m.Aliases = ly.Alias
 	v.Aliases = ly.Alias
-	// extract is the IR's second opaque body (after hook): the authored #CandyExtract stays in spec as
-	// #Candy's field, and the model carries the JSON bytes so the contract stops importing the shape.
-	if hasOpaqueSlice(ly.Extract) {
-		m.Extract = marshalOpaque(ly.Extract, "the candy extract list")
-	}
 	m.Data = ly.Data
 	m.Security = ly.Security
 	// Two authored shapes cross the seam as opaque bytes (DESIGN.md 3.1, I1/D-SCH-7): the hook
