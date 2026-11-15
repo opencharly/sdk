@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"strings"
 	"testing"
 
@@ -46,9 +47,9 @@ func TestEmitInitAssemblyEnablesOnlyResolvedInit(t *testing.T) {
 		Candies: map[string]CandyModel{
 			"virt": NewSpecCandyModel(spec.CandyModel{
 				Name: "virt",
-				Service: []spec.ServiceEntry{
+				Service: rawbody.Encode([]spec.ServiceEntry{
 					{Name: "virtqemud", UsePackaged: "virtqemud.socket", Scope: "system"},
-				},
+				}, "service"),
 			}, spec.CandyView{}),
 		},
 	}
@@ -111,9 +112,9 @@ func TestEmitInitAssemblyKeepsPostAssemblyPerInit(t *testing.T) {
 		Candies: map[string]CandyModel{
 			"virt": NewSpecCandyModel(spec.CandyModel{
 				Name: "virt",
-				Service: []spec.ServiceEntry{
+				Service: rawbody.Encode([]spec.ServiceEntry{
 					{Name: "virtqemud", UsePackaged: "virtqemud.socket", Scope: "system"},
-				},
+				}, "service"),
 			}, spec.CandyView{}),
 		},
 	}

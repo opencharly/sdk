@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/opencharly/sdk/rawbody"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -327,9 +328,9 @@ func testServiceImg(distro ...string) *ResolvedBox {
 // on a MachineVenue compile (a host/vm deploy with a real systemd init) — the container-image
 // compile case is covered by the sibling test below.
 func TestCompileServiceSteps_PackagedOnMachineVenue(t *testing.T) {
-	layer := testCandy("x", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("x", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{Name: "redis", UsePackaged: "redis", Scope: "system", Enable: true},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	img := testServiceImg("fedora:43", "fedora")
 
 	ctx, ex := testExecutor(nil) // packaged units never touch render-service
@@ -357,9 +358,9 @@ func TestCompileServiceSteps_PackagedOnMachineVenue(t *testing.T) {
 // MachineVenue=false) — a supervisord-driven pod image cannot consume a systemd packaged unit
 // (compileServiceSteps's own documented invariant).
 func TestCompileServiceSteps_PackagedSkippedOnContainerCompile(t *testing.T) {
-	layer := testCandy("x", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("x", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{Name: "redis", UsePackaged: "redis", Enable: true},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	img := testServiceImg("fedora:43", "fedora")
 
 	ctx, ex := testExecutor(nil)
@@ -377,9 +378,9 @@ func TestCompileServiceSteps_PackagedSkippedOnContainerCompile(t *testing.T) {
 // TargetScope/Enable carried through — and, absent a resolved systemd ActiveInit, UnitText stays
 // empty rather than dialing render-service speculatively.
 func TestCompileServiceSteps_CustomWithoutPackagedSibling(t *testing.T) {
-	layer := testCandy("myapp", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("myapp", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{Name: "worker", Exec: "/usr/bin/myapp-worker", Scope: "user", Enable: true},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	img := testServiceImg("fedora:43", "fedora")
 
 	ctx, ex := testExecutor(nil) // no ActiveInit resolved → renderServiceViaSeam must not be dialed
@@ -410,10 +411,10 @@ func TestCompileServiceSteps_CustomWithoutPackagedSibling(t *testing.T) {
 // and an exec: form, the packaged form wins on a systemd machine venue — the custom entry is
 // skipped entirely, never emitted alongside it.
 func TestCompileServiceSteps_MixedPairPackagedWinsOnSystemd(t *testing.T) {
-	layer := testCandy("x", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("x", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{Name: "libvirtd", UsePackaged: "libvirtd", Enable: true},
 		{Name: "libvirtd", Exec: "/usr/sbin/libvirtd", Enable: true},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	img := testServiceImg("fedora:43", "fedora")
 
 	ctx, ex := testExecutor(nil)
@@ -433,9 +434,9 @@ func TestCompileServiceSteps_MixedPairPackagedWinsOnSystemd(t *testing.T) {
 // entry restricted to "debian" is skipped when the image's distro chain is fedora-only, and
 // renders when the chain matches (either the bare name or a versioned tag).
 func TestCompileServiceSteps_PerDistroFilter(t *testing.T) {
-	layer := testCandy("x", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("x", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{Name: "apt-only", UsePackaged: "apt-only", Distro: []string{"debian"}},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 
 	ctx, ex := testExecutor(nil)
 
@@ -526,9 +527,9 @@ func TestCompileExtractSteps_NoEntriesEmitsNothing(t *testing.T) {
 // (no canned replies) is covered separately by render_service_seam_roundtrip_test.go.
 func TestCompileServiceSteps_RendersCustomUnitViaSeamOnSystemd(t *testing.T) {
 	var initCalls, egressCalls int
-	layer := testCandy("myapp", spec.CandyModel{Service: []spec.ServiceEntry{
+	layer := testCandy("myapp", spec.CandyModel{Service: rawbody.Encode([]spec.ServiceEntry{
 		{Name: "worker", Exec: "/usr/bin/myapp-worker", Enable: true},
-	}}, spec.CandyView{})
+	}, "service")}, spec.CandyView{})
 	img := testServiceImg("fedora:43", "fedora")
 
 	ctx, ex := testExecutorInvoke(func(in *pb.InvokeProviderRequest) (*pb.InvokeReply, error) {

@@ -70,6 +70,36 @@ func TestOpaqueBodiesDecodeAndRejectCorruptInput(t *testing.T) {
 			},
 		},
 		{
+			name:    "service (decodeOpaque)",
+			body:    spec.RawBody(`[{"name":"web","exec":"/usr/bin/web"}]`),
+			decode:  func(b spec.RawBody) any { return decodeOpaque[ServiceEntry](b, "service") },
+			badJSON: spec.RawBody(`not json`),
+			check: func(t *testing.T, got any) {
+				svc, ok := got.([]ServiceEntry)
+				if !ok || len(svc) != 1 {
+					t.Fatalf("decoded %T of len %d, want one ServiceEntry", got, len(svc))
+				}
+				if svc[0].Name != "web" || svc[0].Exec != "/usr/bin/web" {
+					t.Fatalf("decoded %+v, want the authored service values", svc[0])
+				}
+			},
+		},
+		{
+			name:    "artifact (decodeOpaque)",
+			body:    spec.RawBody(`[{"name":"kubeconfig","path":"/etc/k3s/k3s.yaml"}]`),
+			decode:  func(b spec.RawBody) any { return decodeOpaque[CandyArtifact](b, "artifact") },
+			badJSON: spec.RawBody(`not json`),
+			check: func(t *testing.T, got any) {
+				arts, ok := got.([]CandyArtifact)
+				if !ok || len(arts) != 1 {
+					t.Fatalf("decoded %T of len %d, want one CandyArtifact", got, len(arts))
+				}
+				if arts[0].Name != "kubeconfig" || arts[0].Path != "/etc/k3s/k3s.yaml" {
+					t.Fatalf("decoded %+v, want the authored artifact values", arts[0])
+				}
+			},
+		},
+		{
 			name:    "data (decodeOpaque)",
 			body:    spec.RawBody(`[{"volume":"workspace","src":"/seed","dest":"/data"}]`),
 			decode:  func(b spec.RawBody) any { return decodeOpaque[DataYAML](b, "data") },

@@ -1,6 +1,7 @@
 package loaderkit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"path/filepath"
 	"slices"
 
@@ -64,8 +65,10 @@ func candyTriggersInit(sc spec.ScannedCandy, def *spec.ResolvedInit) bool {
 		return false
 	}
 	if slices.Contains(def.CandyFields, "service") {
-		for i := range sc.Model.Service {
-			entry := &sc.Model.Service[i]
+		// Service crosses the IR as opaque bytes now, so decode before deciding. This runs BEFORE
+		// the adapter exists (init-trigger detection feeds the loader's own decisions), which is why
+		// it cannot go through deploykit's accessor.
+		for _, entry := range rawbody.Decode[spec.CandyService](sc.Model.Service, "service") {
 			if entry.IsPackaged() {
 				if def.ServiceSchema != nil && def.ServiceSchema.SupportsPackaged {
 					return true

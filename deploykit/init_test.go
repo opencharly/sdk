@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"os"
 	"strings"
 	"testing"
@@ -41,11 +42,11 @@ func TestGenerateInitFragments(t *testing.T) {
 			"python": NewSpecCandyModel(spec.CandyModel{Name: "python"}, spec.CandyView{}),
 			"svc": NewSpecCandyModel(spec.CandyModel{
 				Name:    "svc",
-				Service: []spec.ServiceEntry{{Name: "svc", Exec: "svc serve"}},
+				Service: rawbody.Encode([]spec.ServiceEntry{{Name: "svc", Exec: "svc serve"}}, "service"),
 			}, spec.CandyView{}),
 			"other": NewSpecCandyModel(spec.CandyModel{
 				Name:    "other",
-				Service: []spec.ServiceEntry{{Name: "other", Exec: "other run"}},
+				Service: rawbody.Encode([]spec.ServiceEntry{{Name: "other", Exec: "other run"}}, "service"),
 			}, spec.CandyView{}),
 		},
 		RenderService: fakeRenderService,
@@ -104,7 +105,7 @@ func TestGenerateRelayInitFragments(t *testing.T) {
 			"chrome": NewSpecCandyModel(spec.CandyModel{
 				Name:           "chrome",
 				PortRelayPorts: []int{9222},
-				Service:        []spec.ServiceEntry{{Name: "chrome", Exec: "chrome"}},
+				Service:        rawbody.Encode([]spec.ServiceEntry{{Name: "chrome", Exec: "chrome"}}, "service"),
 			}, spec.CandyView{}),
 		},
 		RenderService: fakeRenderService,
