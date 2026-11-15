@@ -62,3 +62,30 @@ func TestKindDefForSurfacesABrokenGate(t *testing.T) {
 		t.Fatal("a gate whose def is absent fell back to the base instead of failing")
 	}
 }
+
+// TestKindDefForCompilesAGateThatImportsTheSchemaModule pins opencharly/opencharly#1043: a served
+// plugin schema may IMPORT the spec schema module, and a gate source must still resolve. Before
+// this, kindDefFor prepended the concatenated base to a bare CompileString, which has no module
+// context — the import resolved to nothing and every such gate failed with "imported but not
+// defined", so a body that had correctly moved into a plugin became unresolvable.
+func TestKindDefForCompilesAGateThatImportsTheSchemaModule(t *testing.T) {
+	// A def that CITES the base schema through the module import: the whole point is that the
+	// citation must resolve, which only a module-aware compile can do.
+	const src = `package schema
+
+import "github.com/opencharly/spec/schema"
+
+#GateProbe: {
+	firmware!: *"bios" | string
+	step?: schema.#Step
+}
+`
+	gates := map[string]spec.KindGate{"gate-probe": {Def: "#GateProbe", Source: src}}
+	d, err := kindDefFor("gate-probe", gates)
+	if err != nil {
+		t.Fatalf("a gate that imports the schema module must compile: %v", err)
+	}
+	if d.Err() != nil {
+		t.Fatalf("the resolved def is invalid: %v", d.Err())
+	}
+}

@@ -30,9 +30,14 @@ import (
 	"fmt"
 	"sync"
 
+	"io/fs"
+	"strings"
+
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/errors"
+	"cuelang.org/go/cue/load"
+	specmodule "github.com/opencharly/spec"
 	sdkschema "github.com/opencharly/spec/schema"
 	"github.com/opencharly/spec/schemaconcat"
 
@@ -123,6 +128,81 @@ var sharedCueSchema = sync.OnceValue(func() cue.Value {
 // compiling that source here is what lets a loader-side helper see a body that moved into a
 // plugin, without a registry query and without a second private copy of the schema
 // (PROGRAM/schema-ownership-rca-rdd.md §3 I2/I3/I4).
+// compileGateSource loads a gate's served CUE source as a FILE OF THE SPEC SCHEMA PACKAGE in the
+// same assembled module the base is composed from: the embedded schema, the module's own cue.mod
+// declaration, and the gate file. Everything the source imports then resolves the way it does at
+// build time, and a source that is genuinely invalid still fails loudly.
+func compileGateSource(kind, source string) (cue.Value, error) {
+	overlay := map[string]load.Source{}
+	if err := overlayFSTree(overlay, sdkschema.FS, "schema"); err != nil {
+		return cue.Value{}, fmt.Errorf("kind %q: read the embedded schema: %w", kind, err)
+	}
+	if err := overlayFSTree(overlay, specmodule.FS, "."); err != nil {
+		return cue.Value{}, fmt.Errorf("kind %q: read the module declaration: %w", kind, err)
+	}
+	// The gate's file lives in its OWN package: a served schema that imports the spec schema
+	// cannot sit INSIDE that package (CUE refuses the import cycle), so the gate is loaded from
+	// `./gate` — which imports `schema` — and the def is looked up there.
+	overlay["/gate/gate_"+gateFileSlug(kind)+".cue"] = load.FromString(gatePackage(source))
+	insts := load.Instances([]string{"./gate"}, &load.Config{Dir: "/", Overlay: overlay})
+	if len(insts) != 1 {
+		return cue.Value{}, fmt.Errorf("kind %q: gate source loaded as %d instances, want 1", kind, len(insts))
+	}
+	if insts[0].Err != nil {
+		return cue.Value{}, fmt.Errorf("kind %q: gate source does not compile: %w", kind, insts[0].Err)
+	}
+	v := cueSchemaCtx().BuildInstance(insts[0])
+	if v.Err() != nil {
+		return cue.Value{}, fmt.Errorf("kind %q: gate source does not compile: %w", kind, v.Err())
+	}
+	return v, nil
+}
+
+// gatePackage rewrites a served source's package clause to the gate's own package, so a schema
+// file authored as `package schema` can be compiled beside (and importing) that package.
+func gatePackage(source string) string {
+	lines := strings.Split(source, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "package ") {
+			lines[i] = "package gate"
+			return strings.Join(lines, "\n")
+		}
+	}
+	return "package gate\n" + source
+}
+
+// gateFileSlug renders a kind as a file-name component (no separators, no dots).
+func gateFileSlug(kind string) string {
+	var b strings.Builder
+	for _, r := range kind {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+// overlayFSTree copies every regular file of fsys into the overlay under /<dir>/<path>. CUE's
+// overlay implies parent directories, so this creates no directory entry and touches no disk.
+func overlayFSTree(overlay map[string]load.Source, fsys fs.FS, dir string) error {
+	return fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		data, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return err
+		}
+		overlay["/"+dir+"/"+p] = load.FromBytes(data)
+		return nil
+	})
+}
+
 func kindDefFor(kind string, gates map[string]spec.KindGate) (cue.Value, error) {
 	if g, ok := gates[kind]; ok && g.Def != "" {
 		// A DECLARED gate is authoritative: if its served source cannot compile or its def is
@@ -131,10 +211,14 @@ func kindDefFor(kind string, gates map[string]spec.KindGate) (cue.Value, error) 
 		if g.Source == "" {
 			return cue.Value{}, fmt.Errorf("kind %q: gate declares no served source", kind)
 		}
-		ctx := cuecontext.New()
-		v := ctx.CompileString(g.Source)
-		if v.Err() != nil {
-			return cue.Value{}, fmt.Errorf("kind %q: gate source does not compile: %w", kind, v.Err())
+		// The source is compiled IN THE MODULE IT DECLARES — the embedded spec schema, its
+		// cue.mod declaration, and the gate's own file in the same package. Prepending the
+		// concatenated base to a bare CompileString was NOT enough: a served plugin schema may
+		// import `github.com/opencharly/spec/schema`, and a string compile has no module context
+		// to resolve that import (measured: "package ... imported but not defined").
+		v, verr := compileGateSource(kind, g.Source)
+		if verr != nil {
+			return cue.Value{}, verr
 		}
 		d := v.LookupPath(cue.ParsePath(g.Def))
 		if d.Err() != nil {
