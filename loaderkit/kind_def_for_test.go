@@ -3,8 +3,6 @@ package loaderkit
 import (
 	"testing"
 
-	"cuelang.org/go/cue"
-
 	"github.com/opencharly/spec/spec"
 )
 
@@ -31,7 +29,6 @@ func TestKindDefForResolvesAThreadedGate(t *testing.T) {
 	if !def.Exists() {
 		t.Fatal("resolved def does not exist")
 	}
-	_ = cue.ParsePath // the def path API is exercised by kindDefFor itself
 
 	// The negative control: with no gates, the same word resolves through the BASE — and the base
 	// does not declare it, so the lookup must fail rather than silently succeed.
