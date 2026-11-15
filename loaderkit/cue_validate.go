@@ -19,6 +19,8 @@ import (
 	cuejson "cuelang.org/go/encoding/json"
 	cueyaml "cuelang.org/go/encoding/yaml"
 	"gopkg.in/yaml.v3"
+
+	"github.com/opencharly/spec/spec"
 )
 
 // docDirectiveSet (the reserved document-directive word set, #NodeDoc top-level keys) is already
@@ -153,10 +155,10 @@ func ValidateNodeDocCUE(label string, data []byte) error {
 // Because it round-trips through the CLOSED #<Kind> schema, the entity must already validate
 // against it (it does — the loader validated it). The round-trip is lossless for every modeled
 // field; see cue_defaults_test.go (charly).
-func ApplyCueDefaults(kind string, out any) error {
-	def, ok := cueKindDef(kind)
-	if !ok {
-		return fmt.Errorf("applyCueDefaults: no CUE schema registered for kind %q", kind)
+func ApplyCueDefaults(kind string, out any, gates map[string]spec.KindGate) error {
+	def, derr := kindDefFor(kind, gates)
+	if derr != nil {
+		return fmt.Errorf("applyCueDefaults: %w", derr)
 	}
 	b, err := yaml.Marshal(out)
 	if err != nil {

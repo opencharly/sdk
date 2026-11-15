@@ -19,11 +19,13 @@ import (
 
 // resolveLocalTestSeam decodes an authored template body into the parts the collector reads.
 func resolveLocalTestSeam(body json.RawMessage) (*spec.ResolvedLocal, error) {
-	var l spec.Local
+	// spec.Local moved into plugin-substrate with its body (opencharly/spec#304 unit 4), so the
+	// seam decodes the authored bytes into the surviving resolve envelope - the same field set.
+	var l spec.ResolvedLocal
 	if err := json.Unmarshal(body, &l); err != nil {
 		return nil, err
 	}
-	return &spec.ResolvedLocal{Candy: l.Candy}, nil
+	return &l, nil
 }
 
 func downloadFor(downloads []spec.RemoteDownload, repo, ver string) (spec.RemoteDownload, bool) {
