@@ -14,6 +14,7 @@ package deploykit
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -179,7 +180,11 @@ func (a *specCandyAdapter) Hooks() *HooksConfig {
 	}
 	var h HooksConfig
 	if err := json.Unmarshal(a.m.Hook, &h); err != nil {
-		return nil
+		// The bytes are produced by marshalling a typed #CandyHook (loaderkit's producer), so a
+		// decode failure means the IR body was written by something other than that producer — an
+		// invariant violation, not a recoverable condition. Returning nil here would silently drop
+		// a candy's lifecycle hooks, which is worse than failing loudly.
+		panic(fmt.Sprintf("deploykit: IR hook body is not a #CandyHook: %v", err))
 	}
 	return &h
 }
