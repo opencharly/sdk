@@ -326,9 +326,9 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 		m.Data = marshalOpaque(ly.Data, "the candy data list")
 	}
 	m.Security = ly.Security
-	// Two authored shapes cross the seam as opaque bytes (DESIGN.md 3.1, I1/D-SCH-7): the hook
-	// (a POINTER, so `!= nil` is the right question) and the extract list (a SLICE, so it is
-	// `len() > 0` — see hasOpaqueSlice). Both go through the ONE marshalOpaque crossing.
+	// Three authored shapes cross the seam as opaque bytes (DESIGN.md 3.1, I1/D-SCH-7): the hook
+	// (a POINTER, so `!= nil` is the right question), and the extract and data lists (SLICES, so
+	// `len() > 0` — see hasOpaqueSlice). All go through the ONE marshalOpaque crossing.
 	if hasOpaquePtr(ly.Hook) {
 		m.Hook = marshalOpaque(ly.Hook, "the candy hook")
 	}
