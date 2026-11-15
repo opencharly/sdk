@@ -1,7 +1,6 @@
 package loaderkit
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -322,22 +321,16 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	v.Volumes = ly.Volume
 	m.Aliases = ly.Alias
 	v.Aliases = ly.Alias
-	m.Extract = ly.Extract
 	m.Data = ly.Data
 	m.Security = ly.Security
-	// hook is the IR's FIRST opaque body: the authored #CandyHook moves into the plugin that owns
-	// the candy body (DESIGN.md 3.1), so the model carries BYTES rather than importing that shape
-	// (I1/D-SCH-7) and the consumer decodes what it needs.
-	if ly.Hook != nil {
-		hookBytes, herr := json.Marshal(ly.Hook)
-		if herr != nil {
-			// A typed struct always marshals, so this is an invariant violation rather than a
-			// recoverable condition — and the consumer panics on a body it cannot decode, so a
-			// silently DROPPED hook here would surface there as a decode failure with no cause.
-			// Fail at the point the invariant breaks instead.
-			panic(fmt.Sprintf("loaderkit: marshal #CandyHook for %q: %v", ly.Name, herr))
-		}
-		m.Hook = hookBytes
+	// Two authored shapes cross the seam as opaque bytes (DESIGN.md 3.1, I1/D-SCH-7): the hook
+	// (a POINTER, so `!= nil` is the right question) and the extract list (a SLICE, so it is
+	// `len() > 0` — see hasOpaqueSlice). Both go through the ONE marshalOpaque crossing.
+	if hasOpaquePtr(ly.Hook) {
+		m.Hook = marshalOpaque(ly.Hook, "the candy hook")
+	}
+	if hasOpaqueSlice(ly.Extract) {
+		m.Extract = marshalOpaque(ly.Extract, "the candy extract list")
 	}
 	m.Plan = ly.Plan
 	m.Artifact = ly.Artifact
