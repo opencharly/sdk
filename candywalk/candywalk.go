@@ -184,7 +184,7 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 	// Pass 2: remote fix-point. Resolve each new ref, walk the fetched repo's candy/ + root
 	// manifest, union the entities, and queue any refs the fetched files surface.
 	if resolve != nil {
-		var resolved int
+		var resolved, skipped int
 		for len(queue) > 0 {
 			ref := queue[0]
 			queue = queue[1:]
@@ -210,7 +210,16 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 
 			fetched, err := resolve(pr.RepoPath, pr.Version)
 			if err != nil {
-				return nil, fmt.Errorf("resolve %s: %w", ref, err)
+				// SKIP-AND-WARN, never abort the walk (opencharly/marketplace#613). One dead
+				// ref anywhere in a ~2000-ref transitive closure used to abort the ENTIRE
+				// corpus: a deleted tag in one repo (pod-crabbox:v2026.274.0652, whose commit
+				// no longer exists) kept `charly marketplace generate` red for five days, so
+				// no skill could be republished. A missing ref costs the entities of THAT ref
+				// only; the rest of the closure is still worth publishing, and the warning
+				// makes the gap visible instead of silently shrinking the corpus.
+				skipped++
+				fmt.Fprintf(os.Stderr, "charly: WARNING: skipping unresolvable ref %s: %v\n", ref, err)
+				continue
 			}
 			// A fetched standalone repo holds its candy under candy/<name>/ (plugin repos) OR the
 			// manifest at the repo root (config candies). Walk both; the root manifest is read as
@@ -218,13 +227,21 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 			fetchedRoot := Root{Namespace: key, Dir: fetched}
 			refs, err := walkRoot(fetchedRoot)
 			if err != nil {
-				return nil, fmt.Errorf("walk fetched %s: %w", key, err)
+				// Same contract as the resolve failure above: a fetched tree whose OWN manifest
+				// declares a candy it does not contain (measured: pod-herdr declaring
+				// candy/socat at a tag that has no such dir) costs that ref's entities, not the
+				// whole corpus.
+				skipped++
+				fmt.Fprintf(os.Stderr, "charly: WARNING: skipping ref %s: its fetched tree cannot be walked: %v\n", ref, err)
+				continue
 			}
 			queue = append(queue, refs...)
 			if _, err := os.Stat(filepath.Join(fetched, UnifiedFileName)); err == nil {
 				found, rerr := ReadEntityFile(filepath.Join(fetched, UnifiedFileName), Root{Namespace: key, Dir: fetched}, ".")
 				if rerr != nil {
-					return nil, fmt.Errorf("read fetched root manifest %s: %w", key, rerr)
+					skipped++
+					fmt.Fprintf(os.Stderr, "charly: WARNING: skipping ref %s: its root manifest cannot be read: %v\n", ref, rerr)
+					continue
 				}
 				for i := range found {
 					found[i].SourceRoot = fetched
@@ -234,6 +251,13 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 					queue = append(queue, collectRefs(filepath.Join(fetched, UnifiedFileName))...)
 				}
 			}
+		}
+		// ONE summary line, because the per-ref warnings scroll: whoever reads a corpus build
+		// must be able to tell "published everything" from "published most of it" without
+		// grepping the log. Silent shrinkage is the failure this whole change exists to
+		// prevent, so the count is stated unconditionally when it is non-zero.
+		if skipped > 0 {
+			fmt.Fprintf(os.Stderr, "charly: WARNING: %d ref(s) could not be resolved and were SKIPPED — the corpus is missing their entities; see the warnings above\n", skipped)
 		}
 	}
 
