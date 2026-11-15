@@ -17,7 +17,7 @@ func isNilAny(v any) bool {
 	}
 	rv := reflect.ValueOf(v)
 	kind := rv.Kind()
-	nillable := kind == reflect.Ptr || kind == reflect.Slice || kind == reflect.Map || kind == reflect.Interface
+	nillable := kind == reflect.Pointer || kind == reflect.Slice || kind == reflect.Map || kind == reflect.Interface
 	return nillable && rv.IsNil()
 }
 
