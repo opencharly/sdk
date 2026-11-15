@@ -324,7 +324,10 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	v.Aliases = ly.Alias
 	// extract is the IR's second opaque body (after hook): the authored #CandyExtract stays in spec as
 	// #Candy's field, and the model carries the JSON bytes so the contract stops importing the shape.
-	if ly.Extract != nil {
+	// len() > 0, NOT `!= nil`: an empty but non-nil slice marshals to "[]", which is non-empty
+	// BYTES, so HasExtract() (len(m.Extract) > 0) would answer true where the authored value said
+	// there are no extractions. The guard has to match the question the predicate asks.
+	if len(ly.Extract) > 0 {
 		exBytes, eerr := json.Marshal(ly.Extract)
 		if eerr != nil {
 			panic(fmt.Sprintf("loaderkit: marshal #CandyExtract for %q: %v", ly.Name, eerr))

@@ -48,4 +48,15 @@ func TestPopulateFromYAMLWritesExtractAsJSON(t *testing.T) {
 			t.Fatalf("m.Extract = %q for a candy with no extractions, want empty", m.Extract)
 		}
 	})
+
+	// An EMPTY but non-nil slice is the case that matters most: marshalling it would write "[]",
+	// whose two bytes are non-empty, so HasExtract() would answer true for a candy that declares no
+	// extractions at all. The guard must key on len(), not nil-ness.
+	t.Run("an empty non-nil list is also no extractions", func(t *testing.T) {
+		m := &spec.CandyModel{}
+		populateFromYAML(m, &spec.CandyView{}, &spec.CandyYAML{Name: "demo", Extract: []spec.CandyExtract{}})
+		if len(m.Extract) != 0 {
+			t.Fatalf("m.Extract = %q for an EMPTY non-nil extract list, want empty — otherwise HasExtract() answers true", m.Extract)
+		}
+	})
 }
