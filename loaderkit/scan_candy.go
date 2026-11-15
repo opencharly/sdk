@@ -323,18 +323,18 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	v.Aliases = ly.Alias
 	// extract is the IR's second opaque body (after hook): the authored #CandyExtract stays in spec as
 	// #Candy's field, and the model carries the JSON bytes so the contract stops importing the shape.
-	if hasOpaque(ly.Extract) {
+	if hasOpaqueSlice(ly.Extract) {
 		m.Extract = marshalOpaque(ly.Extract, "the candy extract list")
 	}
 	m.Data = ly.Data
 	m.Security = ly.Security
 	// Two authored shapes cross the seam as opaque bytes (DESIGN.md 3.1, I1/D-SCH-7): the hook
 	// (a POINTER, so `!= nil` is the right question) and the extract list (a SLICE, so it is
-	// `len() > 0` — see hasOpaque). Both go through the ONE marshalOpaque crossing.
-	if ly.Hook != nil {
+	// `len() > 0` — see hasOpaqueSlice). Both go through the ONE marshalOpaque crossing.
+	if hasOpaquePtr(ly.Hook) {
 		m.Hook = marshalOpaque(ly.Hook, "the candy hook")
 	}
-	if hasOpaque(ly.Extract) {
+	if hasOpaqueSlice(ly.Extract) {
 		m.Extract = marshalOpaque(ly.Extract, "the candy extract list")
 	}
 	m.Plan = ly.Plan

@@ -27,8 +27,14 @@ func marshalOpaque[T any](v T, what string) spec.RawBody {
 	return b
 }
 
-// hasOpaque reports whether an authored field should produce a body at all. It exists so no caller
-// has to re-derive the question: for a SLICE the answer is `len() > 0` (an empty non-nil slice
-// marshals to "[]", two non-empty bytes, which would make a `len(body) > 0` predicate answer true
-// for a value that declares nothing), and for a POINTER it is `!= nil`.
-func hasOpaque[T any](v []T) bool { return len(v) > 0 }
+// hasOpaqueSlice and hasOpaquePtr report whether an authored field should produce a body at all.
+//
+// They exist so no caller has to re-derive the question, and they are TWO functions because the
+// question genuinely differs by shape: a SLICE asks `len() > 0` (an empty non-nil slice marshals to
+// "[]", two non-empty bytes, which would make a `len(body) > 0` predicate answer true for a value
+// declaring nothing), while a POINTER asks `!= nil` (`len()` does not apply, and a nil pointer is
+// the only "absent" a pointer has). One generic signature cannot cover both — `[]T` does not accept
+// a `*T` — which is exactly why the hand-written copies drifted.
+func hasOpaqueSlice[T any](v []T) bool { return len(v) > 0 }
+
+func hasOpaquePtr[T any](v *T) bool { return v != nil }
