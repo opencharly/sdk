@@ -63,9 +63,22 @@ func (a *specCandyAdapter) RelayPorts() []int       { return a.m.PortRelayPorts 
 func (a *specCandyAdapter) RunOps() []vmshared.Op   { return a.m.RunOps }
 func (a *specCandyAdapter) HasTasks() bool          { return len(a.m.RunOps) > 0 }
 func (a *specCandyAdapter) HasExtract() bool        { return len(a.m.Extract) > 0 }
-func (a *specCandyAdapter) Extract() []ExtractYAML  { return a.m.Extract }
-func (a *specCandyAdapter) HasData() bool           { return len(a.m.Data) > 0 }
-func (a *specCandyAdapter) Data() []DataYAML        { return a.m.Data }
+
+// Extract decodes the IR's opaque extract body, exactly as Hooks does for the hook body. A body
+// that does not decode is an invariant violation (the producer marshals a typed #CandyExtract), and
+// a silently empty extraction list would mean a stage produces no files with nothing saying why.
+func (a *specCandyAdapter) Extract() []ExtractYAML {
+	if len(a.m.Extract) == 0 {
+		return nil
+	}
+	var out []ExtractYAML
+	if err := json.Unmarshal(a.m.Extract, &out); err != nil {
+		panic(fmt.Sprintf("deploykit: IR extract body is not a []#CandyExtract: %v", err))
+	}
+	return out
+}
+func (a *specCandyAdapter) HasData() bool    { return len(a.m.Data) > 0 }
+func (a *specCandyAdapter) Data() []DataYAML { return a.m.Data }
 
 // maps / pointers
 func (a *specCandyAdapter) Packaging() *spec.Packaging { return a.m.Packaging }

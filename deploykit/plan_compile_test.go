@@ -469,10 +469,10 @@ func TestCompileServiceSteps_PerDistroFilter(t *testing.T) {
 // the change: before CompileExtractSteps existed, a machine-venue deploy silently dropped every
 // `extract:` entry (the Containerfile COPY --from stages only ever ran at image build).
 func TestCompileExtractSteps_MachineVenueEmitsOneStepPerEntry(t *testing.T) {
-	layer := testCandy("agentteams-higress", spec.CandyModel{Extract: []spec.CandyExtract{
+	layer := testCandy("agentteams-higress", spec.CandyModel{Extract: rawExtract([]spec.CandyExtract{
 		{Source: "higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:2.2.1", Path: "/usr/local/bin/envoy", Dest: "/usr/local/bin/envoy"},
 		{Source: "higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:2.2.1", Path: "/etc/istio", Dest: "/etc/istio"},
-	}}, spec.CandyView{})
+	})}, spec.CandyView{})
 
 	steps := CompileExtractSteps(layer, HostContext{MachineVenue: true})
 	if len(steps) != 2 {
@@ -500,9 +500,9 @@ func TestCompileExtractSteps_MachineVenueEmitsOneStepPerEntry(t *testing.T) {
 // targets emit the Containerfile extract stages directly (EmitExtractStages / EmitExtractedFiles)
 // and must never see a machine-venue ExtractStep in their install plan.
 func TestCompileExtractSteps_ContainerCompileEmitsNothing(t *testing.T) {
-	layer := testCandy("agentteams-higress", spec.CandyModel{Extract: []spec.CandyExtract{
+	layer := testCandy("agentteams-higress", spec.CandyModel{Extract: rawExtract([]spec.CandyExtract{
 		{Source: "higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:2.2.1", Path: "/usr/local/bin/envoy", Dest: "/usr/local/bin/envoy"},
-	}}, spec.CandyView{})
+	})}, spec.CandyView{})
 
 	if steps := CompileExtractSteps(layer, HostContext{}); len(steps) != 0 {
 		t.Fatalf("len(steps) = %d, want 0 (container compile must not lower extract steps); got %#v", len(steps), steps)
@@ -581,4 +581,14 @@ func TestCompileServiceSteps_RendersCustomUnitViaSeamOnSystemd(t *testing.T) {
 	if sc.UnitPath != "/etc/systemd/system/charly-myapp-worker.service" {
 		t.Errorf("UnitPath = %q, not carried through from the render-service reply", sc.UnitPath)
 	}
+}
+
+// rawExtract marshals authored extract entries into the IR's opaque body, the same crossing the
+// producer performs (DESIGN.md 3.1, I1/D-SCH-7).
+func rawExtract(e []spec.CandyExtract) spec.RawBody {
+	b, err := json.Marshal(e)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }

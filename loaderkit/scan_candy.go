@@ -322,7 +322,15 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	v.Volumes = ly.Volume
 	m.Aliases = ly.Alias
 	v.Aliases = ly.Alias
-	m.Extract = ly.Extract
+	// extract is the IR's second opaque body (after hook): the authored #CandyExtract stays in spec as
+	// #Candy's field, and the model carries the JSON bytes so the contract stops importing the shape.
+	if ly.Extract != nil {
+		exBytes, eerr := json.Marshal(ly.Extract)
+		if eerr != nil {
+			panic(fmt.Sprintf("loaderkit: marshal #CandyExtract for %q: %v", ly.Name, eerr))
+		}
+		m.Extract = exBytes
+	}
 	m.Data = ly.Data
 	m.Security = ly.Security
 	// hook is the IR's FIRST opaque body: the authored #CandyHook moves into the plugin that owns
