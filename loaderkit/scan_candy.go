@@ -329,11 +329,15 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	// the candy body (DESIGN.md 3.1), so the model carries BYTES rather than importing that shape
 	// (I1/D-SCH-7) and the consumer decodes what it needs.
 	if ly.Hook != nil {
-		// A typed struct always marshals; the error branch is unreachable by construction, and the
-		// authored value is validated BEFORE this point, so a malformed hook never reaches here.
-		if hookBytes, herr := json.Marshal(ly.Hook); herr == nil {
-			m.Hook = hookBytes
+		hookBytes, herr := json.Marshal(ly.Hook)
+		if herr != nil {
+			// A typed struct always marshals, so this is an invariant violation rather than a
+			// recoverable condition — and the consumer panics on a body it cannot decode, so a
+			// silently DROPPED hook here would surface there as a decode failure with no cause.
+			// Fail at the point the invariant breaks instead.
+			panic(fmt.Sprintf("loaderkit: marshal #CandyHook for %q: %v", ly.Name, herr))
 		}
+		m.Hook = hookBytes
 	}
 	m.Plan = ly.Plan
 	m.Artifact = ly.Artifact
