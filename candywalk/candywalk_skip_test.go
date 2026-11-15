@@ -119,7 +119,7 @@ func TestCollectEntitiesRemote_SkipsUnwalkableFetchedTree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resolve := func(repoPath, version string) (string, error) {
+	resolve := func(repoPath, _ string) (string, error) {
 		switch repoPath {
 		case "github.com/opencharly/layer-broken":
 			return broken, nil
