@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -48,7 +49,7 @@ func nsFixture() (*spec.Config, map[string]CandyModel) {
 				Port: []spec.PortSpec{{Port: 2222}},
 				// A data candy on the BASE box, so the data entries must be reached through the
 				// base-chain walk, not just the leaf's own candies.
-				Data: []spec.CandyData{{Src: "etc/sshd", Volume: "sshconf", Dest: "keys"}},
+				Data: rawData([]spec.CandyData{{Src: "etc/sshd", Volume: "sshconf", Dest: "keys"}}),
 				Plan: []spec.Step{{Check: "sshd listens", Op: spec.Op{
 					Plugin: "port", PluginInput: map[string]any{"port": 2222},
 				}}},
@@ -286,4 +287,13 @@ func TestCollectHooks_ImportedBoxWalksChain(t *testing.T) {
 	if got := CollectHooks(root, layers, "distro.app"); got != nil {
 		t.Errorf("CollectHooks = %+v, want nil for a hook-less chain", got)
 	}
+}
+
+// rawData marshals authored data entries into the IR's opaque body, matching the producer.
+func rawData(d []spec.CandyData) spec.RawBody {
+	b, err := json.Marshal(d)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
