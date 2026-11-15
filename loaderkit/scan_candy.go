@@ -321,7 +321,10 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	v.Volumes = ly.Volume
 	m.Aliases = ly.Alias
 	v.Aliases = ly.Alias
-	m.Data = ly.Data
+	// data is the IR's third opaque body (after hook and extract), through the same crossing.
+	if hasOpaqueSlice(ly.Data) {
+		m.Data = marshalOpaque(ly.Data, "the candy data list")
+	}
 	m.Security = ly.Security
 	// Two authored shapes cross the seam as opaque bytes (DESIGN.md 3.1, I1/D-SCH-7): the hook
 	// (a POINTER, so `!= nil` is the right question) and the extract list (a SLICE, so it is

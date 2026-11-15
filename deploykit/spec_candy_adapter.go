@@ -66,8 +66,10 @@ func (a *specCandyAdapter) HasExtract() bool        { return len(a.m.Extract) > 
 func (a *specCandyAdapter) Extract() []ExtractYAML {
 	return decodeOpaque[ExtractYAML](a.m.Extract, "extract")
 }
-func (a *specCandyAdapter) HasData() bool    { return len(a.m.Data) > 0 }
-func (a *specCandyAdapter) Data() []DataYAML { return a.m.Data }
+func (a *specCandyAdapter) HasData() bool { return len(a.m.Data) > 0 }
+
+// Data decodes the IR's opaque data list through the shared crossing.
+func (a *specCandyAdapter) Data() []DataYAML { return decodeOpaque[DataYAML](a.m.Data, "data") }
 
 // maps / pointers
 func (a *specCandyAdapter) Packaging() *spec.Packaging { return a.m.Packaging }
