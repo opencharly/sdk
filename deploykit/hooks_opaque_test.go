@@ -40,8 +40,12 @@ func TestHooksDecodesTheOpaqueBodyAndRejectsACorruptOne(t *testing.T) {
 			if r == nil {
 				t.Fatal("Hooks() returned normally on corrupt bytes — a candy's hooks would vanish silently")
 			}
-			if msg, ok := r.(string); !ok || !(strings.Contains(msg, "hook") && strings.Contains(msg, "does not decode")) {
-				t.Fatalf("recovered %v, want a message naming the corrupt hook body", r)
+			msg, ok := r.(string)
+			if !ok {
+				t.Fatalf("recovered %v, want a string panic message", r)
+			}
+			if !strings.Contains(msg, "hook") || !strings.Contains(msg, "does not decode") {
+				t.Fatalf("recovered %q, want a message naming the corrupt hook body", msg)
 			}
 		}()
 		_ = NewSpecCandyModel(spec.CandyModel{Hook: spec.RawBody(`not json at all`)}, spec.CandyView{}).Hooks()

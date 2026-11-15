@@ -39,8 +39,12 @@ func TestExtractDecodesTheOpaqueBodyAndRejectsACorruptOne(t *testing.T) {
 			if r == nil {
 				t.Fatal("Extract() returned normally on corrupt bytes — a stage would silently copy nothing")
 			}
-			if msg, ok := r.(string); !ok || !(strings.Contains(msg, "extract") && strings.Contains(msg, "does not decode")) {
-				t.Fatalf("recovered %v, want a message naming the corrupt extract body", r)
+			msg, ok := r.(string)
+			if !ok {
+				t.Fatalf("recovered %v, want a string panic message", r)
+			}
+			if !strings.Contains(msg, "extract") || !strings.Contains(msg, "does not decode") {
+				t.Fatalf("recovered %q, want a message naming the corrupt extract body", msg)
 			}
 		}()
 		_ = NewSpecCandyModel(spec.CandyModel{Extract: spec.RawBody(`not json`)}, spec.CandyView{}).Extract()
