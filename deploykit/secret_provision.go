@@ -125,7 +125,8 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 					val = cached
 					source = "auto-generated"
 				} else {
-					val, source = GenerateAndStoreSecret("charly/secret", s.Name, cred)
+					svc, k := secretCoordinate(s)
+					val, source = GenerateAndStoreSecret(svc, k, cred)
 					promptedValues[s.Name] = val
 				}
 			case interactive:
@@ -147,7 +148,8 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 						fmt.Fprintf(os.Stderr, "  %-40s → skipped (no value entered)\n", s.Name)
 						continue
 					}
-					if storeErr := cred.Write("charly/secret", s.Name, entered); storeErr != nil {
+					svc, k := secretCoordinate(s)
+					if storeErr := cred.Write(svc, k, entered); storeErr != nil {
 						fmt.Fprintf(os.Stderr, "  Warning: could not persist secret '%s': %v\n", s.Name, storeErr)
 					}
 					promptedValues[s.Name] = entered
@@ -162,7 +164,8 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 				if s.Env != "" {
 					fmt.Fprintf(os.Stderr, "  %s=xxx charly config %s  (env var override)\n", s.Env, boxName)
 				}
-				fmt.Fprintf(os.Stderr, "  charly secrets set charly/secret %s\n\n", s.Name)
+				hintSvc, hintKey := secretCoordinate(s)
+				fmt.Fprintf(os.Stderr, "  charly secrets set %s %s\n\n", hintSvc, hintKey)
 				continue
 			}
 		}
@@ -186,6 +189,23 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 	}
 
 	return provisioned, fallbackEnv, nil
+}
+
+// secretCoordinate is THE coordinate a candy-owned secret is written to, and it must agree with
+// the coordinate ResolveSecretValue READS from: an explicit `key:` override wins when the
+// collector set one (CollectCandySecretAccepts copies it onto Service/Key), and only a secret
+// without one falls back to the historical default (service "charly/secret", key = the podman
+// secret name). Before this helper the two sides disagreed — the read honoured the override while
+// every WRITE (auto-generation, the interactive prompt, and the hint printed to the operator)
+// hardcoded the default — so a candy declaring `key: charly/api-key/<name>` could never converge:
+// the value it auto-generated landed at a coordinate nothing read, and the next reconcile
+// generated a fresh one over it (opencharly/sdk#526, measured on layer-qdrant's
+// `QDRANT__SERVICE__API_KEY`).
+func secretCoordinate(s CollectedSecret) (service, key string) {
+	if s.Service != "" && s.Key != "" {
+		return s.Service, s.Key
+	}
+	return "charly/secret", s.Name
 }
 
 // ResolveSecretValue looks up the value for a secret from the credential store.
