@@ -2,7 +2,6 @@ package deploykit
 
 import (
 	"maps"
-	"strings"
 
 	"github.com/opencharly/spec/spec"
 )
@@ -43,13 +42,11 @@ import (
 // Race-free across multiple candies declaring the same secret: the first caller's cred.Write
 // lands in the active backend; the second caller's cred.Resolve reads the persisted value.
 func EnsureCandySecret(dep spec.EnvDependency, required bool, cred CredentialAccess) (val, source string) {
-	service, key := "charly/secret", dep.Name
-	if dep.Key != "" {
-		if idx := strings.LastIndex(dep.Key, "/"); idx > 0 {
-			service = dep.Key[:idx]
-			key = dep.Key[idx+1:]
-		}
-	}
+	// ONE rule for the coordinate: SecretKeyForDep owns the split (explicit `key:` wins,
+	// everything before the LAST "/" is the service; otherwise the historical default). This
+	// function used to carry its own copy of that predicate, which is how a read and a write drift
+	// apart — the class opencharly/sdk#526 and opencharly/pod-openwebui#19 both live in.
+	service, key := SecretKeyForDep(dep)
 	// Pass dep.Name as envVar so an operator can override the persisted value via
 	// `export K3S_CLUSTER_TOKEN=…` before invoking deploy (matches the cred.Resolve pattern
 	// used elsewhere in this package).
