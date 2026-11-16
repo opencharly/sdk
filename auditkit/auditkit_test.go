@@ -33,7 +33,9 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// event builds a valid record: the five required fields the contract marks `!`, plus a timestamp.
+// event builds a valid record: the four fields the contract marks `!` that this writer can set
+// (`at`, `event`, `outcome`, `identity`) — `target`, `action`, `namespace`, `revision` and `detail`
+// are optional, so nothing else is required for a record to be valid.
 func event(kind string) spec.AuditEvent {
 	return spec.AuditEvent{
 		At:       spec.Timestamp("2026-11-17T00:00:00Z"),

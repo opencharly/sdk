@@ -179,7 +179,7 @@ func (a *Appender) Append(act string, event spec.AuditEvent) error {
 		if strings.HasSuffix(stem, "-"+key) {
 			return fmt.Errorf("%w: act %q", ErrDuplicateAct, act)
 		}
-		if seq, _, ok := sequence(stem); ok && seq >= next {
+		if seq, ok := sequence(stem); ok && seq >= next {
 			next = seq + 1
 		}
 	}
@@ -279,14 +279,14 @@ func actKey(act string) string {
 }
 
 // sequence reads the zero-padded prefix of a record's file name stem.
-func sequence(stem string) (int, int, bool) {
+func sequence(stem string) (int, bool) {
 	dash := strings.IndexByte(stem, '-')
 	if dash <= 0 {
-		return 0, 0, false
+		return 0, false
 	}
 	seq, err := strconv.Atoi(stem[:dash])
 	if err != nil || seq <= 0 {
-		return 0, 0, false
+		return 0, false
 	}
-	return seq, dash, true
+	return seq, true
 }
