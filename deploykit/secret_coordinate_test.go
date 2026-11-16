@@ -23,26 +23,28 @@ package deploykit
 //     for every existing candy).
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // TestSecretCoordinate pins the rule itself.
 func TestSecretCoordinate(t *testing.T) {
 	withOverride := CollectedSecret{Name: "charly-app-api-key", SecretName: "API_KEY", Service: "charly/api-key", Key: "qdrant"}
-	if svc, key := secretCoordinate(withOverride); svc != "charly/api-key" || key != "qdrant" {
-		t.Errorf("secretCoordinate(with override) = (%q, %q), want (charly/api-key, qdrant)", svc, key)
+	if svc, key, explicit := secretCoordinate(withOverride); svc != "charly/api-key" || key != "qdrant" || !explicit {
+		t.Errorf("secretCoordinate(with override) = (%q, %q, %v), want (charly/api-key, qdrant, true)", svc, key, explicit)
 	}
 	def := CollectedSecret{Name: "charly-app-api-key", SecretName: "API_KEY"}
-	if svc, key := secretCoordinate(def); svc != "charly/secret" || key != "charly-app-api-key" {
-		t.Errorf("secretCoordinate(default) = (%q, %q), want (charly/secret, charly-app-api-key)", svc, key)
+	if svc, key, explicit := secretCoordinate(def); svc != "charly/secret" || key != "charly-app-api-key" || explicit {
+		t.Errorf("secretCoordinate(default) = (%q, %q, %v), want (charly/secret, charly-app-api-key, false)", svc, key, explicit)
 	}
 	// A half-set override is not an override: both fields must be present (same rule the
 	// resolver applies).
 	half := CollectedSecret{Name: "charly-app-api-key", Service: "charly/api-key"}
-	if svc, key := secretCoordinate(half); svc != "charly/secret" || key != "charly-app-api-key" {
-		t.Errorf("secretCoordinate(half override) = (%q, %q), want the default", svc, key)
+	if svc, key, explicit := secretCoordinate(half); svc != "charly/secret" || key != "charly-app-api-key" || explicit {
+		t.Errorf("secretCoordinate(half override) = (%q, %q, %v), want the default", svc, key, explicit)
 	}
 }
 
@@ -143,5 +145,74 @@ func TestProvisionPodmanSecrets_AutoGenKeepsTheDefaultWithoutAnOverride(t *testi
 	}
 	if len(writes) != 1 || writes[0][0] != "charly/secret" || writes[0][1] != "charly-app-token" {
 		t.Errorf("writes = %v, want one at (charly/secret, charly-app-token)", writes)
+	}
+}
+
+// TestProvisionPodmanSecrets_InteractiveWritesToTheOverride covers the second changed write site:
+// the interactive prompt's persist (the branch a TTY would take) must persist at the coordinate
+// the resolver reads, exactly like auto-generation.
+func TestProvisionPodmanSecrets_InteractiveWritesToTheOverride(t *testing.T) {
+	fakeEngine(t)
+	origTerm, origPrompt := stdinIsTerminal, promptPassword
+	t.Cleanup(func() { stdinIsTerminal, promptPassword = origTerm, origPrompt })
+	stdinIsTerminal = func() bool { return true }
+	promptPassword = func(string) (string, error) { return "entered-by-operator", nil }
+
+	var writes [][3]string
+	cred := CredentialAccess{
+		Resolve: func(_, _, _, _ string) (string, string) { return "", "" },
+		Write: func(service, key, value string) error {
+			writes = append(writes, [3]string{service, key, value})
+			return nil
+		},
+	}
+	s := CollectedSecret{Name: "charly-app-api-key", SecretName: "API_KEY", Env: "API_KEY",
+		Service: "charly/api-key", Key: "qdrant"}
+
+	if _, _, err := ProvisionPodmanSecrets("podman", "app", "", []CollectedSecret{s}, false, "", cred); err != nil {
+		t.Fatalf("ProvisionPodmanSecrets: %v", err)
+	}
+	if len(writes) != 1 || writes[0][0] != "charly/api-key" || writes[0][1] != "qdrant" || writes[0][2] != "entered-by-operator" {
+		t.Fatalf("interactive persist wrote %v, want one write of the entered value at (charly/api-key, qdrant)", writes)
+	}
+}
+
+// TestProvisionPodmanSecrets_MissingValueHintNamesTheOverride covers the third changed site: the
+// operator-facing hint is part of this fix's promise — it must name the coordinate the resolver
+// will read, not the hardcoded default.
+func TestProvisionPodmanSecrets_MissingValueHintNamesTheOverride(t *testing.T) {
+	fakeEngine(t)
+	origTerm, origPrompt := stdinIsTerminal, promptPassword
+	t.Cleanup(func() { stdinIsTerminal, promptPassword = origTerm, origPrompt })
+	stdinIsTerminal = func() bool { return false } // no TTY, no auto-generate: the hint prints
+
+	cred := CredentialAccess{
+		Resolve: func(_, _, _, _ string) (string, string) { return "", "" },
+		Write:   func(_, _, _ string) error { return nil },
+	}
+	s := CollectedSecret{Name: "charly-app-api-key", SecretName: "API_KEY", Env: "API_KEY",
+		Service: "charly/api-key", Key: "qdrant"}
+
+	// Capture stderr around the call.
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	_, _, _ = ProvisionPodmanSecrets("podman", "app", "", []CollectedSecret{s}, false, "", cred)
+	_ = w.Close()
+	os.Stderr = origStderr
+	captured, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading captured stderr: %v", err)
+	}
+	_ = r.Close()
+	out := string(captured)
+	if !strings.Contains(out, "charly secrets set charly/api-key qdrant") {
+		t.Errorf("the hint does not name the declared coordinate; got:\n%s", out)
+	}
+	if strings.Contains(out, "charly secrets set charly/secret charly-app-api-key") {
+		t.Errorf("the hint still names the hardcoded default; got:\n%s", out)
 	}
 }
