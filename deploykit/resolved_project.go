@@ -3,6 +3,7 @@ package deploykit
 import (
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/sdk/rawbody"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -118,10 +119,14 @@ func ProjectBoxAggregates(cfg *spec.Config, layers map[string]spec.CandyReader, 
 			view.Volumes = append(view.Volumes, spec.ResolvedVolumeMount(vm))
 		}
 	}
-	if als, aerr := CollectBoxAlias(cfg, layers, name); aerr == nil {
+	if als, aerr := CollectBoxAlias(cfg, layers, name); aerr == nil && len(als) > 0 {
+		// The box view carries its aliases as OPAQUE BYTES (spec#336): the authored shape is about to
+		// leave spec, so the view encodes rather than importing it.
+		authored := make([]spec.CandyAlias, 0, len(als))
 		for _, a := range als {
-			view.Aliases = append(view.Aliases, spec.CandyAlias(a))
+			authored = append(authored, spec.CandyAlias(a))
 		}
+		view.Aliases = rawbody.Encode(authored, "the box view alias list")
 	}
 	view.Engine = ResolveBoxEngine(cfg, layers, name, "")
 }

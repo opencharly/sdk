@@ -1,6 +1,7 @@
 package deploykit
 
 import (
+	"github.com/opencharly/sdk/rawbody"
 	"slices"
 	"testing"
 
@@ -41,7 +42,7 @@ func collectSeamFixture() (*spec.Config, map[string]CandyModel) {
 			spec.CandyView{
 				Name:        "supervisord",
 				Description: "process control system that runs as container init",
-				Volumes:     []spec.CandyVolume{{Name: "supervisord-run", Path: "/run/supervisord"}},
+				Volumes:     rawbody.Encode([]spec.CandyVolume{{Name: "supervisord-run", Path: "/run/supervisord"}}, "volumes"),
 			},
 		),
 	}

@@ -195,9 +195,16 @@ func (a *specCandyAdapter) MCPAccept() []EnvDependency     { return a.m.MCPAccep
 // carry the LIST-subcommand detail, not the build model); Artifact/Capabilities/
 // RequiresCapabilities/Engine/Libvirt/Secret/PortSpecs read off CandyModel (the build half,
 // widened with the same 5 fields added to #CandyModel alongside this fill).
-func (a *specCandyAdapter) Alias() []AliasYAML             { return a.v.Aliases }
-func (a *specCandyAdapter) HasAliases() bool               { return len(a.v.Aliases) > 0 }
-func (a *specCandyAdapter) Volume() []VolumeYAML           { return a.v.Volumes }
+// Alias decodes the box model's opaque alias list through the shared crossing.
+func (a *specCandyAdapter) Alias() []AliasYAML {
+	return decodeOpaque[AliasYAML](a.v.Aliases, "aliases")
+}
+func (a *specCandyAdapter) HasAliases() bool { return len(a.v.Aliases) > 0 }
+
+// Volume decodes the box model's opaque volume list through the shared crossing.
+func (a *specCandyAdapter) Volume() []VolumeYAML {
+	return decodeOpaque[VolumeYAML](a.v.Volumes, "volumes")
+}
 func (a *specCandyAdapter) HasVolumes() bool               { return len(a.v.Volumes) > 0 }
 func (a *specCandyAdapter) EnvProvides() map[string]string { return a.v.EnvProvides }
 func (a *specCandyAdapter) MCPProvide() []MCPServerYAML    { return a.v.MCPProvide }
