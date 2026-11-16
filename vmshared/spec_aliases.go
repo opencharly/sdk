@@ -26,7 +26,7 @@ import "github.com/opencharly/spec/spec"
 
 type (
 	AliasConfig              = spec.AliasConfig
-	AliasYAML                = spec.AliasYAML
+	AliasYAML                = spec.ResolvedCandyAlias
 	AndroidSpec              = spec.AndroidSpec
 	ApkPackageSpec           = spec.ApkPackageSpec
 	BoxConfig                = spec.BoxConfig
@@ -160,7 +160,7 @@ type (
 	VmSource                 = spec.VmSource
 	VmSpec                   = spec.ResolvedVm
 	VmSsh                    = spec.VmSsh
-	VolumeYAML               = spec.VolumeYAML
+	VolumeYAML               = spec.ResolvedCandyVolume
 
 	// --- nested types renamed in spec (charly name != cue-def name) ---
 	AndroidAdbEndpoint     = spec.AdbEndpoint

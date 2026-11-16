@@ -120,13 +120,11 @@ func ProjectBoxAggregates(cfg *spec.Config, layers map[string]spec.CandyReader, 
 		}
 	}
 	if als, aerr := CollectBoxAlias(cfg, layers, name); aerr == nil && len(als) > 0 {
-		// The box view carries its aliases as OPAQUE BYTES (spec#336): the authored shape is about to
-		// leave spec, so the view encodes rather than importing it.
-		authored := make([]spec.CandyAlias, 0, len(als))
-		for _, a := range als {
-			authored = append(authored, spec.CandyAlias(a))
-		}
-		view.Aliases = rawbody.Encode(authored, "the box view alias list")
+		// The box view carries its aliases as OPAQUE BYTES (spec#336), and CollectBoxAlias already
+		// returns the RESOLVED twin's type -- so this encodes `als` DIRECTLY. Converting through
+		// spec.CandyAlias first would keep the AUTHORED def referenced by sdk, which is exactly the
+		// dependency that stops it leaving spec for the plugin that owns the candy body.
+		view.Aliases = rawbody.Encode(als, "the box view alias list")
 	}
 	view.Engine = ResolveBoxEngine(cfg, layers, name, "")
 }
