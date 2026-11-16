@@ -322,11 +322,15 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	if hasOpaqueSlice(ly.Volume) {
 		m.Volumes = marshalOpaque(ly.Volume, "the candy volume list")
 	}
-	v.Volumes = ly.Volume
+	if hasOpaqueSlice(ly.Volume) {
+		v.Volumes = marshalOpaque(ly.Volume, "the view volume list")
+	}
 	if hasOpaqueSlice(ly.Alias) {
 		m.Aliases = marshalOpaque(ly.Alias, "the candy alias list")
 	}
-	v.Aliases = ly.Alias
+	if hasOpaqueSlice(ly.Alias) {
+		v.Aliases = marshalOpaque(ly.Alias, "the view alias list")
+	}
 	// data is the IR's third opaque body (after hook and extract), through the same crossing.
 	if hasOpaqueSlice(ly.Data) {
 		m.Data = marshalOpaque(ly.Data, "the candy data list")

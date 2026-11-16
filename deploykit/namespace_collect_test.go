@@ -2,6 +2,7 @@ package deploykit
 
 import (
 	"encoding/json"
+	"github.com/opencharly/sdk/rawbody"
 	"testing"
 
 	"github.com/opencharly/spec/spec"
@@ -69,8 +70,8 @@ func nsFixture() (*spec.Config, map[string]CandyModel) {
 			spec.CandyView{
 				Name:        "redis",
 				Description: "redis store",
-				Volumes:     []spec.CandyVolume{{Name: "data", Path: "/var/lib/redis"}},
-				Aliases:     []spec.CandyAlias{{Name: "r", Command: "redis-cli"}},
+				Volumes:     rawbody.Encode([]spec.CandyVolume{{Name: "data", Path: "/var/lib/redis"}}, "volumes"),
+				Aliases:     rawbody.Encode([]spec.CandyAlias{{Name: "r", Command: "redis-cli"}}, "aliases"),
 			},
 		),
 	}
