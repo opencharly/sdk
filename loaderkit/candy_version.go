@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/calver"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -67,7 +68,7 @@ func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, diag func(spe
 	}
 	best := cands[0]
 	for _, c := range cands[1:] {
-		if kit.CompareCalVer(c.GitTag, best.GitTag) > 0 {
+		if newerCandidate(c, best) {
 			best = c // newer source git tag
 		}
 	}
@@ -91,10 +92,66 @@ func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, diag func(spe
 	//     on: a real, same-scope, cross-tag content divergence.
 	if conflicts := scopeConflicts(cands); len(conflicts) > 0 && !candyContentsIdentical(cands) {
 		emitDiag(diag, spec.DiagInfo,
-			"candy %s resolved to multiple git tags with differing content within one scope (%s); using newest referenced %s (from %s)",
-			bareRef, strings.Join(conflicts, ", "), best.GitTag, best.Source)
+			"candy %s resolved to multiple git tags with differing content within one scope (%s); using newest referenced %s (from %s)%s",
+			bareRef, strings.Join(conflicts, ", "), best.GitTag, best.Source, describeSkew(cands, best))
 	}
 	return best
+}
+
+// newerCandidate reports whether a is a strictly newer candidate than b.
+//
+// A REAL CalVer TAG OUTRANKS A REF THAT IS NOT ONE. A bare commit SHA is a legitimate pin — the
+// `distro-*` rule pins SHAs because those commits are untagged — but a SHA carries no recency,
+// and the lenient comparator's lexical fallback puts "7766a9d06ec5" ABOVE "v2026.320.1938"
+// ('7' > '2'), so a STALE SHA used to be chosen as "newest" and the old content won the
+// arbitration with only an INFO line to say so. That is exactly the case where the loser is the
+// fix: measured in opencharly/distro-cachyos, where the driver-shadowing fix at
+// layer-nvidia v2026.320.1938 lost to the pre-fix commit pinned by a stale `require:` two hops
+// away (opencharly/charly#1179).
+//
+// spec/calver.ParseCalVer already documents the intended semantics — "a false result is treated
+// by the freshness comparison as older than every real CalVer" — so this restores it. Two refs
+// that are BOTH non-CalVer keep the legacy lenient order, so a project that pins only SHAs is
+// unaffected.
+func newerCandidate(a, b spec.CandyCandidate) bool {
+	// Git tags carry a leading "v"; the canonical CalVer form does not (the lenient comparator
+	// trims it for the same reason). Without the trim EVERY tag parses as non-CalVer and this
+	// preference would never apply.
+	aCal, aOK := calver.ParseCalVer(strings.TrimPrefix(a.GitTag, "v"))
+	bCal, bOK := calver.ParseCalVer(strings.TrimPrefix(b.GitTag, "v"))
+	switch {
+	case aOK && bOK:
+		return bCal.Less(aCal)
+	case aOK:
+		return true
+	case bOK:
+		return false
+	default:
+		return kit.CompareCalVer(a.GitTag, b.GitTag) > 0
+	}
+}
+
+// describeSkew renders EVERY candidate that lost the arbitration: its tag, the source ref it
+// was materialized from, and the box scopes that named it. The diagnostic previously named only
+// the WINNER, so a reader could not tell which refs disagreed or where the losing one came from —
+// a comparison with one side hidden. That cost hours on a real pin advance
+// (opencharly/charly#1179), where the loser turned out to be a stale `require:` two hops away.
+// Appending the losers makes the message self-diagnosing without changing the arbitration.
+func describeSkew(cands []spec.CandyCandidate, best spec.CandyCandidate) string {
+	var b strings.Builder
+	for _, c := range cands {
+		if c.GitTag == best.GitTag && c.Source == best.Source {
+			continue
+		}
+		scopes := append([]string(nil), c.Referrers...)
+		sort.Strings(scopes)
+		fmt.Fprintf(&b, "; also referenced %s (from %s", c.GitTag, c.Source)
+		if len(scopes) > 0 {
+			fmt.Fprintf(&b, "; scopes: %s", strings.Join(scopes, ", "))
+		}
+		b.WriteString(")")
+	}
+	return b.String()
 }
 
 // scopeConflicts returns the BOX scopes whose own references name >=2 DISTINCT git tags — the

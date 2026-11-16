@@ -239,3 +239,40 @@ func TestPickCandyVersionNoContentSignalStillReports(t *testing.T) {
 		t.Errorf("unprovable same-scope identity must report once, got %v", d.levels)
 	}
 }
+
+// A skew diagnostic must name BOTH sides: the winner (as before) AND every loser with its
+// source and the box scopes that named it. A message that states a comparison and hides one
+// side is not actionable — that is opencharly/charly#1179, where the losing ref was a stale
+// `require:` two hops away in another candy and the message could not say so.
+func TestPickCandyVersionNamesTheLosingRefs(t *testing.T) {
+	d := &diagCollector{}
+	cands := []spec.CandyCandidate{
+		{GitTag: "v2026.320.1938", Source: "hub@v2026.320.1938", Referrers: []string{"box=versa"}},
+		{GitTag: "7766a9d06ec5", Source: "hub@7766a9d06ec5", Referrers: []string{"box=versa"}},
+	}
+	best := PickCandyVersion("github.com/opencharly/layer-nvidia", cands, d.sink())
+	if best.GitTag != "v2026.320.1938" {
+		t.Fatalf("winner = %q, want the newest referenced tag", best.GitTag)
+	}
+	if len(d.msgs) != 1 {
+		t.Fatalf("expected exactly one diagnostic, got %d", len(d.msgs))
+	}
+	msg := d.msgs[0]
+	for _, want := range []string{
+		"using newest referenced v2026.320.1938 (from hub@v2026.320.1938)",
+		"also referenced 7766a9d06ec5 (from hub@7766a9d06ec5; scopes: box=versa)",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("diagnostic does not carry %q:\n%s", want, msg)
+		}
+	}
+}
+
+// describeSkew must be empty when every candidate IS the winner — the message then reads exactly
+// as before, so a closure with no genuine skew is unchanged.
+func TestDescribeSkewEmptyWhenAllCandidatesAreTheWinner(t *testing.T) {
+	best := spec.CandyCandidate{GitTag: "v1.0.0", Source: "hub@v1.0.0"}
+	if got := describeSkew([]spec.CandyCandidate{best, best}, best); got != "" {
+		t.Errorf("describeSkew = %q, want empty", got)
+	}
+}
