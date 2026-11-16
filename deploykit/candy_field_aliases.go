@@ -12,8 +12,13 @@ import (
 )
 
 type (
-	CandyYAML         = spec.Candy
-	AliasYAML         = spec.AliasYAML
+	CandyYAML = spec.Candy
+	// AliasYAML is the RESOLVED twin, not the authored shape: the candy sub-shapes are one def
+	// wearing two hats (authored -> the plugin per 3.1; wire -> spec per 10.2), and a reader only
+	// ever sees a body that has already been validated. This is the split the vm unit landed
+	// (VmSpec = ResolvedVm), and what lets the authored defs leave spec without taking their
+	// decode target with them.
+	AliasYAML         = spec.ResolvedCandyAlias
 	CandyCapabilities = spec.CandyCapabilities
 	DataYAML          = spec.DataYAML
 	ExtractYAML       = spec.ExtractYAML
@@ -23,7 +28,7 @@ type (
 	SecretYAML        = spec.SecretYAML
 	SecurityConfig    = spec.SecurityConfig
 	ServiceEntry      = spec.ServiceEntry
-	VolumeYAML        = spec.VolumeYAML
+	VolumeYAML        = spec.ResolvedCandyVolume
 
 	EnvConfig = kit.EnvConfig
 
