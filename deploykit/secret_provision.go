@@ -37,6 +37,13 @@ type CredentialAccess struct {
 	Write   CredentialWriter
 }
 
+// Injected so the interactive branches are reachable from a test (no TTY is ever attached in
+// `go test`, and a prompt cannot be answered): the same seam discipline the engine helpers use.
+var (
+	stdinIsTerminal = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+	promptPassword  = PromptPassword
+)
+
 // EnvVarNameToPodmanSecretSlug converts an env var name to the slug used in the podman
 // secret name (lowercase + underscores → hyphens). Relocated from charly/validate.go
 // (Cutover B unit 6b) — its sole remaining caller was CollectCandySecretAccepts below.
@@ -96,7 +103,7 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 	// promptedValues caches values entered interactively for a given podman secret name.
 	// Two CollectedSecrets sharing the same Name (but different Env vars) only prompt once.
 	promptedValues := make(map[string]string)
-	interactive := term.IsTerminal(int(os.Stdin.Fd()))
+	interactive := stdinIsTerminal()
 
 	for _, s := range secrets {
 		// Short-circuit: if a podman secret already exists, keep it
@@ -125,7 +132,8 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 					val = cached
 					source = "auto-generated"
 				} else {
-					val, source = GenerateAndStoreSecret("charly/secret", s.Name, cred)
+					svc, k, _ := secretCoordinate(s)
+					val, source = GenerateAndStoreSecret(svc, k, cred)
 					promptedValues[s.Name] = val
 				}
 			case interactive:
@@ -138,7 +146,7 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 						prompt += fmt.Sprintf(" (%s)", s.Env)
 					}
 					prompt += ": "
-					entered, promptErr := PromptPassword(prompt)
+					entered, promptErr := promptPassword(prompt)
 					if promptErr != nil {
 						fmt.Fprintf(os.Stderr, "  %-40s → prompt failed: %v\n", s.Name, promptErr)
 						continue
@@ -147,7 +155,8 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 						fmt.Fprintf(os.Stderr, "  %-40s → skipped (no value entered)\n", s.Name)
 						continue
 					}
-					if storeErr := cred.Write("charly/secret", s.Name, entered); storeErr != nil {
+					svc, k, _ := secretCoordinate(s)
+					if storeErr := cred.Write(svc, k, entered); storeErr != nil {
 						fmt.Fprintf(os.Stderr, "  Warning: could not persist secret '%s': %v\n", s.Name, storeErr)
 					}
 					promptedValues[s.Name] = entered
@@ -162,7 +171,8 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 				if s.Env != "" {
 					fmt.Fprintf(os.Stderr, "  %s=xxx charly config %s  (env var override)\n", s.Env, boxName)
 				}
-				fmt.Fprintf(os.Stderr, "  charly secrets set charly/secret %s\n\n", s.Name)
+				hintSvc, hintKey, _ := secretCoordinate(s)
+				fmt.Fprintf(os.Stderr, "  charly secrets set %s %s\n\n", hintSvc, hintKey)
 				continue
 			}
 		}
@@ -188,6 +198,23 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 	return provisioned, fallbackEnv, nil
 }
 
+// secretCoordinate is THE coordinate a candy-owned secret is written to, and it must agree with
+// the coordinate ResolveSecretValue READS from: an explicit `key:` override wins when the
+// collector set one (CollectCandySecretAccepts copies it onto Service/Key), and only a secret
+// without one falls back to the historical default (service "charly/secret", key = the podman
+// secret name). Before this helper the two sides disagreed — the read honoured the override while
+// every WRITE (auto-generation, the interactive prompt, and the hint printed to the operator)
+// hardcoded the default — so a candy declaring `key: charly/api-key/<name>` could never converge:
+// the value it auto-generated landed at a coordinate nothing read, and the next reconcile
+// generated a fresh one over it (opencharly/sdk#526, measured on layer-qdrant's
+// `QDRANT__SERVICE__API_KEY`).
+func secretCoordinate(s CollectedSecret) (service, key string, explicit bool) {
+	if s.Service != "" && s.Key != "" {
+		return s.Service, s.Key, true
+	}
+	return "charly/secret", s.Name, false
+}
+
 // ResolveSecretValue looks up the value for a secret from the credential store.
 //
 // When CollectedSecret.Service and CollectedSecret.Key are both non-empty, they take
@@ -200,10 +227,11 @@ func ProvisionPodmanSecrets(engine, boxName, instance string, secrets []Collecte
 // When Service/Key are unset, the default chain (used by candy-owned secrets) applies:
 // env var → charly/secret/<podman-name> → charly/secret/<bare-secret-name>.
 func ResolveSecretValue(s CollectedSecret, boxName, instance, credServiceVNC string, resolve CredentialResolver) (value, source string) {
-	// Explicit override from CollectCandySecretAccepts: query exactly once at
-	// (Service, Key), allowing the Env var to win via the resolver's env-first chain.
-	if s.Service != "" && s.Key != "" {
-		val, src := resolve(s.Env, s.Service, s.Key, "")
+	// Explicit override from CollectCandySecretAccepts: query exactly once at the coordinate
+	// secretCoordinate names, allowing the Env var to win via the resolver's env-first chain.
+	// The predicate lives in secretCoordinate so the write side cannot drift from this one.
+	if service, key, explicit := secretCoordinate(s); explicit {
+		val, src := resolve(s.Env, service, key, "")
 		return val, src
 	}
 
