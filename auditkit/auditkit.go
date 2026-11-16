@@ -54,11 +54,16 @@
 // ORDER: a record's file name carries a zero-padded sequence, so List returns records in append
 // order from a directory listing alone — no index file to fall out of step with the records.
 //
-// ONE WIRE QUIRK, recorded here because these bytes are this writer's output: `#AuditDetail.value?`
-// generates as a VALUE (`Value Redacted`), not a pointer, and `omitempty` cannot omit a struct — so
-// a detail that carries no marker serializes as `"value":{"redacted":false}`. It asserts "not
-// redacted", never a value, so it is not a leak; the fix belongs in the contract's generator (a
-// pointer for an optional struct), not in a second serialization here.
+// THE `value?` MARKER IS OPTIONAL ON THE WIRE, and that is the pinned contract's doing rather than this
+// package's. `#AuditDetail.value?` projects as `*Redacted` at the spec version this module requires
+// (`v0.2026320.2307`, which adopted opencharly/spec#345), so a detail carrying no marker writes NO
+// `value` key at all — `TestRedactedIsAnEmptyMarker` case (c) asserts exactly that.
+//
+// The history is worth one line because it is why the pin is not incidental: before that fix the field
+// projected as a VALUE, and `encoding/json`'s `omitempty` cannot omit a struct, so an absent marker
+// serialized as `{"redacted":false}` — asserting "not redacted" on a record that had no marker. It was
+// never a leak (`#Redacted` can only hold `true`); it was the `?` lost on the wire. The fix landed in
+// the contract's generator, where it belonged, NOT as a second serialization here.
 package auditkit
 
 import (
