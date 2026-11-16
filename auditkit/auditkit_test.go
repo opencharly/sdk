@@ -117,7 +117,7 @@ func TestListReturnsRecordsInAppendOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	var kinds []string
+	kinds := make([]string, 0, len(got))
 	for _, e := range got {
 		kinds = append(kinds, e.Event)
 	}
@@ -275,32 +275,47 @@ func TestExportedSurfaceHasNoMutator(t *testing.T) {
 	}
 	pkgDir := filepath.Dir(thisFile)
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, pkgDir, func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
+	entries, err := os.ReadDir(pkgDir)
 	if err != nil {
-		t.Fatalf("parse %s: %v", pkgDir, err)
+		t.Fatalf("read %s: %v", pkgDir, err)
+	}
+	// ParseDir was deprecated in Go 1.25 (it ignores build tags when associating files with
+	// packages). This test knows exactly which files it wants — the package's own non-test
+	// sources — so it parses those directly rather than asking the deprecated helper to guess.
+	files := make([]*ast.File, 0, len(entries))
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(pkgDir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		f, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		files = append(files, f)
 	}
 	top, methods := map[string]bool{}, map[string]bool{}
-	for _, pkg := range pkgs {
-		for _, f := range pkg.Files {
-			for _, decl := range f.Decls {
-				fn, isFn := decl.(*ast.FuncDecl)
-				if !isFn || fn.Name == nil || !fn.Name.IsExported() {
-					continue
-				}
-				if fn.Recv != nil && len(fn.Recv.List) > 0 {
-					rt := fn.Recv.List[0].Type
-					if star, isStar := rt.(*ast.StarExpr); isStar {
-						rt = star.X
-					}
-					if id, isID := rt.(*ast.Ident); isID {
-						methods[id.Name+"."+fn.Name.Name] = true
-					}
-					continue
-				}
-				top[fn.Name.Name] = true
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			fn, isFn := decl.(*ast.FuncDecl)
+			if !isFn || fn.Name == nil || !fn.Name.IsExported() {
+				continue
 			}
+			if fn.Recv != nil && len(fn.Recv.List) > 0 {
+				rt := fn.Recv.List[0].Type
+				if star, isStar := rt.(*ast.StarExpr); isStar {
+					rt = star.X
+				}
+				if id, isID := rt.(*ast.Ident); isID {
+					methods[id.Name+"."+fn.Name.Name] = true
+				}
+				continue
+			}
+			top[fn.Name.Name] = true
 		}
 	}
 
