@@ -67,7 +67,7 @@ func TestResolveSecretValue_ReadsTheOverride(t *testing.T) {
 // fakeEngine installs a `podman` script that reports "no such secret", accepts `secret rm` and
 // `secret create`, and records every invocation — enough to drive the provisioning loop without
 // a container engine.
-func fakeEngine(t *testing.T) string {
+func fakeEngine(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
 	script := `#!/bin/sh
@@ -88,7 +88,6 @@ exit 0
 		t.Fatalf("writing fake engine: %v", err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return dir
 }
 
 // TestProvisionPodmanSecrets_AutoGenWritesToTheOverride is the regression test for sdk#526: with
