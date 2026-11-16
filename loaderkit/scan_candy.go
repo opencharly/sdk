@@ -319,17 +319,15 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 		v.Route = route
 	}
 
+	// The model and the view carry the SAME authored list, encoded ONCE and shared: two
+	// hasOpaqueSlice predicates over one value would be the duplication this cutover removes.
 	if hasOpaqueSlice(ly.Volume) {
-		m.Volumes = marshalOpaque(ly.Volume, "the candy volume list")
-	}
-	if hasOpaqueSlice(ly.Volume) {
-		v.Volumes = marshalOpaque(ly.Volume, "the view volume list")
+		body := marshalOpaque(ly.Volume, "the candy volume list")
+		m.Volumes, v.Volumes = body, body
 	}
 	if hasOpaqueSlice(ly.Alias) {
-		m.Aliases = marshalOpaque(ly.Alias, "the candy alias list")
-	}
-	if hasOpaqueSlice(ly.Alias) {
-		v.Aliases = marshalOpaque(ly.Alias, "the view alias list")
+		body := marshalOpaque(ly.Alias, "the candy alias list")
+		m.Aliases, v.Aliases = body, body
 	}
 	// data is the IR's third opaque body (after hook and extract), through the same crossing.
 	if hasOpaqueSlice(ly.Data) {

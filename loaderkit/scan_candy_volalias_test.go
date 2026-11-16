@@ -68,3 +68,48 @@ func TestPopulateFromYAMLWritesVolumesAndAliases(t *testing.T) {
 		}
 	})
 }
+
+// TestPopulateFromYAMLWritesTheVIEWVolumesAndAliases covers the view half: populateFromYAML fills
+// BOTH the model and the view from the same authored list, so the view's bodies must decode back to
+// the same entries. Without this, the producer's view-side encode had no assertion at all — the
+// deploykit fixtures build CandyView values directly and would pass with or without it.
+func TestPopulateFromYAMLWritesTheVIEWVolumesAndAliases(t *testing.T) {
+	m := &spec.CandyModel{}
+	v := &spec.CandyView{}
+	ly := &spec.CandyYAML{
+		Name:   "demo",
+		Volume: []spec.CandyVolume{{Name: "workspace", Path: "/workspace"}},
+		Alias:  []spec.CandyAlias{{Name: "app", Command: "/opt/app"}},
+	}
+	populateFromYAML(m, v, ly)
+
+	if len(v.Volumes) == 0 || len(v.Aliases) == 0 {
+		t.Fatalf("the view bodies are empty (volumes=%q aliases=%q) — the producer dropped them", v.Volumes, v.Aliases)
+	}
+	var vols []spec.CandyVolume
+	if err := json.Unmarshal(v.Volumes, &vols); err != nil {
+		t.Fatalf("view volumes are not decodable JSON (%q): %v", v.Volumes, err)
+	}
+	if len(vols) != 1 || vols[0].Name != "workspace" {
+		t.Fatalf("view volumes round-tripped to %+v, want the authored entry", vols)
+	}
+	var als []spec.CandyAlias
+	if err := json.Unmarshal(v.Aliases, &als); err != nil {
+		t.Fatalf("view aliases are not decodable JSON (%q): %v", v.Aliases, err)
+	}
+	if len(als) != 1 || als[0].Name != "app" {
+		t.Fatalf("view aliases round-tripped to %+v, want the authored entry", als)
+	}
+
+	// The model and the view carry the same bytes — one encode, shared.
+	if string(m.Volumes) != string(v.Volumes) || string(m.Aliases) != string(v.Aliases) {
+		t.Fatalf("model and view bodies differ — the producer must encode the authored list once")
+	}
+
+	// And an empty list leaves BOTH empty.
+	m2, v2 := &spec.CandyModel{}, &spec.CandyView{}
+	populateFromYAML(m2, v2, &spec.CandyYAML{Name: "demo"})
+	if len(m2.Volumes) != 0 || len(v2.Volumes) != 0 || len(m2.Aliases) != 0 || len(v2.Aliases) != 0 {
+		t.Fatalf("empty lists produced bodies: model(v=%q a=%q) view(v=%q a=%q)", m2.Volumes, m2.Aliases, v2.Volumes, v2.Aliases)
+	}
+}
