@@ -107,6 +107,17 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 	extractSteps := CompileExtractSteps(layer, hostCtx)
 	plan.Steps = append(plan.Steps, extractSteps...)
 
+	// 2.8. `use: secret:` entries — the §8 secret DELIVERY (D-SEC-1). Each entry becomes a FILE
+	// step carrying ONLY the host source and the venue destination; the value is read on the
+	// operator host at realize and written into the venue, so it never enters the plan, the
+	// ledger or a log. Emitted BEFORE the candy's tasks, like every slot above it: a task that
+	// reads `dst` (DESIGN.md:735's check) must find the file already in place.
+	secretSteps, err := CompileSecretSteps(layer)
+	if err != nil {
+		return nil, fmt.Errorf("BuildDeployPlan: compiling secret delivery steps for %q: %w", layer.GetName(), err)
+	}
+	plan.Steps = append(plan.Steps, secretSteps...)
+
 	// 3. The install timeline: the candy plan's build/deploy-context run: steps,
 	// lowered into typed install steps (or generic OpSteps).
 	taskSteps, err := CompileOpSteps(ctx, ex, layer, img)
