@@ -194,7 +194,7 @@ func TestRedactedIsAnEmptyMarker(t *testing.T) {
 	}
 }
 
-// D-AUDIT-2 plus the required marks: a record names WHO acted, and the five `!` fields cannot be
+// D-AUDIT-2 plus the required marks: a record names WHO acted, and the FOUR `!` fields cannot be
 // empty — the half a Go caller can defeat, because the value never passes through the CUE pass.
 func TestRequiredFieldsAreRefusedWhenEmpty(t *testing.T) {
 	a, err := auditkit.Open(t.TempDir())
