@@ -11,6 +11,7 @@ package deploykit
 // value. `kit.walkFile` is what reads the source at realize.
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,5 +195,30 @@ use:
 	}
 	if opAt >= 0 && fileAt > opAt {
 		t.Fatalf("the secret delivery is at step %d, after the first op step at %d — a task would read `dst` before it lands", fileAt, opAt)
+	}
+}
+
+// notACarrier is a CandyModel that does NOT implement CandyUse: it embeds the reader interface, so
+// it has every reader method and no accessor. It is the shape a caller that builds its own model
+// would have.
+type notACarrier struct{ CandyModel }
+
+// TestCompileSecretSteps_UnreachableUseBlockIsAnError pins the choice made for a model that cannot
+// report its `use:` block: an ERROR, never an empty entry list. A silent skip would start the
+// deployment without the key it needs and report success.
+func TestCompileSecretSteps_UnreachableUseBlockIsAnError(t *testing.T) {
+	layer := notACarrier{CandyModel: candyWithUse(t, `
+use:
+  secret:
+    lab-signing-key:
+      src: /host/key
+      dst: /run/lab/key
+`)}
+	_, err := CompileSecretSteps(layer)
+	if !errors.Is(err, ErrUseBlockUnreachable) {
+		t.Fatalf("a CandyModel that cannot report its use: block must fail with ErrUseBlockUnreachable, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "notACarrier") {
+		t.Fatalf("the error %q does not name the offending type — a reader cannot act on it", err)
 	}
 }

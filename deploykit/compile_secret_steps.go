@@ -34,6 +34,7 @@ package deploykit
 // follow-up); deciding it here is honest and covers the case DESIGN names.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -51,12 +52,26 @@ type secretUseCarrier interface {
 	CandyUse() *spec.CandyUse
 }
 
+// The one production implementation. If the adapter ever loses the accessor this stops compiling,
+// which is the only way a compile-time assertion can guard a structural interface.
+var _ secretUseCarrier = (*specCandyAdapter)(nil)
+
+// ErrUseBlockUnreachable is returned when a CandyModel cannot report its authored `use:` block.
+//
+// A SILENT SKIP IS THE WORST OUTCOME HERE: the deployment would start without the key it needs and
+// report success, which is a D-SEC-1 failure that looks like a clean run. So a CandyModel that
+// cannot answer is an error naming the type, not an empty entry list. Every production candy is
+// wrapped by `deploykit.NewSpecCandyModel` (charly/layers.go is the scanner's only construction
+// path, and the golden tool uses the same constructor), so this fires only for a caller that
+// builds its own CandyModel.
+var ErrUseBlockUnreachable = errors.New("the CandyModel cannot report its authored `use:` block")
+
 // CompileSecretSteps lowers a candy's `use: secret:` entries into FILE steps, in the order of the
 // entry NAMES so a plan is reproducible from one compile to the next.
 func CompileSecretSteps(layer CandyModel) ([]InstallStep, error) {
 	carrier, ok := layer.(secretUseCarrier)
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("candy %q (%T): %w — a `use: secret:` entry would otherwise be delivered to nobody and the deploy would report success; build the model through deploykit.NewSpecCandyModel", layer.GetName(), layer, ErrUseBlockUnreachable)
 	}
 	use := carrier.CandyUse()
 	if use == nil || len(use.Secret) == 0 {
