@@ -234,9 +234,26 @@ func (g *Generator) WriteLabels(b *strings.Builder, meta *spec.BakedLabelSet, bo
 	b.WriteString("\n")
 }
 
+// maxLabelLineBytes bounds ONE emitted Dockerfile line. BuildKit refuses a longer line with
+// "dockerfile line greater than max allowed size of 65535", and a wide box's serialized
+// description passes that on its own: `box/immich-ml` failed to build with a 65 KiB
+// ai.opencharly.description line (opencharly/sdk#553). The cap lives here, in the emitter,
+// because the per-line limit is a property of the format this code targets — a box author
+// cannot fix it without shrinking the composition to please a formatter.
+//
+// 60000 leaves room for the "LABEL <key>=" prefix and for the continuation backslash.
+const maxLabelLineBytes = 60000
+
 // writeJSONLabel writes a JSON-encoded LABEL directive. Omits the label if the value is
 // nil/empty. The generic form is the verbatim relocation of the former charly/generate.go
 // writeJSONLabel (R3: one copy, now in the render home).
+//
+// A value too long for one Dockerfile line is wrapped with the format's own line
+// continuation (a backslash immediately before a newline), which the parser removes — so the
+// label's VALUE is byte-identical to the unwrapped form and every reader (ExtractMetadata
+// included) sees one label with one value. The split never lands on a backslash: an even run
+// of backslashes before a newline is NOT a continuation, so cutting there would break the
+// value instead of wrapping it.
 func writeJSONLabel[T any](b *strings.Builder, key string, value T) {
 	// Check for nil/empty slices and maps via JSON
 	data, err := json.Marshal(value)
@@ -250,5 +267,32 @@ func writeJSONLabel[T any](b *strings.Builder, key string, value T) {
 	// Wrap in single-quoted form with proper '\'' escaping so embedded single quotes (common
 	// inside test command strings like awk '{print $1}') don't terminate the LABEL value and
 	// trip podman's key=value parser.
-	fmt.Fprintf(b, "LABEL %s=%s\n", key, shellquote.ShellQuote(s))
+	quoted := shellquote.ShellQuote(s)
+	head := "LABEL " + key + "="
+	// Room left for value bytes on this line, after the prefix on the first line and after
+	// nothing on the continuations — minus the one byte the continuation backslash takes.
+	limit := maxLabelLineBytes - len(head) - 1
+	if limit < 1 {
+		limit = 1
+	}
+	for len(quoted) > limit {
+		cut := limit
+		for cut > 0 && quoted[cut-1] == '\\' {
+			cut--
+		}
+		if cut == 0 {
+			// A longer run of backslashes than the line allows: nothing sane to wrap at, so
+			// emit the remainder as it stands rather than corrupt the value.
+			break
+		}
+		b.WriteString(head)
+		b.WriteString(quoted[:cut])
+		b.WriteString("\\\n")
+		quoted = quoted[cut:]
+		head = ""
+		limit = maxLabelLineBytes - 1
+	}
+	b.WriteString(head)
+	b.WriteString(quoted)
+	b.WriteString("\n")
 }
