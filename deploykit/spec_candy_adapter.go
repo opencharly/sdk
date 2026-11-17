@@ -43,6 +43,14 @@ func NewSpecCandyModel(m spec.CandyModel, v spec.CandyView) CandyModel {
 // with identity-only fields (Description/Status/Info/Plugin) no OTHER consumer needs).
 func (a *specCandyAdapter) RawCandy() (spec.CandyModel, spec.CandyView) { return a.m, a.v }
 
+// CandyUse returns the candy's authored §8 ask (the `use:` block) — the accessor the secret
+// DELIVERY compiler reads (deploykit/compile_secret_steps.go). It is a method on the ADAPTER
+// rather than a widening of `spec.CandyReader`: this type is the one production implementation
+// of that interface (charly/layers.go wraps every candy through NewSpecCandyModel), and the
+// authored `use:` block lives on the raw spec.CandyModel it already holds. A CandyModel that
+// does not carry the authored model has no `use:` entries, which the compiler reads as "none".
+func (a *specCandyAdapter) CandyUse() *spec.CandyUse { return a.m.Use }
+
 // identity / scalars
 func (a *specCandyAdapter) GetName() string      { return a.m.Name }
 func (a *specCandyAdapter) GetSourceDir() string { return a.sd }
