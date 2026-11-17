@@ -9,6 +9,26 @@ the container-engine client (`enginekit/`), the unified-config parse
 **`github.com/opencharly/spec`** (wire/IR/param types, proto, CUE schema source,
 fabric primitives) — it does not own or generate them.
 
+The MUST's subject is **`DESIGN.md`** in the umbrella,
+[`opencharly/opencharly`](https://github.com/opencharly/opencharly/blob/main/DESIGN.md).
+The umbrella's `AGENTS.md` says how to work; DESIGN.md says what must be true when
+the work is done — the contract's requirements, its invariants, and the data shapes
+every repo shares. **Read it before designing anything**, and treat conformance to
+the rulebook with a violation of DESIGN.md as **not a pass**: a rule in the rulebook
+and a requirement in DESIGN.md are two halves of one obligation, and when the two
+disagree the disagreement is a **defect in one of them** — fix the one that is wrong,
+in the open, and say so. `spec/schema/*.cue` is DESIGN.md's machine-readable
+projection and `DESIGN.cue` is that projection's schema: where the prose and the CUE
+differ, the CUE is what the tooling enforces and the difference is a defect to
+resolve, never a licence to pick whichever is convenient.
+
+**Every package here is a RENDERER of a shape DESIGN.md owns.** `deploykit/` renders
+InstallPlan steps, `buildkit/` renders a Containerfile, `loaderkit/` parses the
+unified config, and `vmshared/` carries the VM types (`kit/`, `enginekit/` and
+`agentkit/` the same way). A hand-written shape in the SDK that DESIGN.md does not
+define is a **defect, not an implementation detail** — and R5's cutover rule means it
+goes when the DESIGN shape lands, not later.
+
 Canonical files:
 
 - `go.mod` — the module (`github.com/opencharly/sdk`) and its pinned
