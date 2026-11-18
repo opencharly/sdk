@@ -73,10 +73,18 @@ func assembleAndValidateEntitySteps(pn spec.ParsedNode, label string) error {
 // into the plan/body fields before a spec.ParsedNode ever reaches here), so no discClass filter is
 // needed.
 func ValidateEntityNodeRec(pn spec.ParsedNode, path string) error {
+	return validateEntityRec(pn, path, true)
+}
+
+// validateEntityRec is the ONE recursion behind the two entity-tree verdicts: candyBody selects
+// whether this walk also unifies a candy node's desugared body concretely against #CandyValue
+// (the `charly box validate` verdict) or stops at the STEP typing (the every-load verdict, D-LOAD-5).
+// Every pn.Children entry is an entity child by construction, so no discClass filter is needed.
+func validateEntityRec(pn spec.ParsedNode, path string, candyBody bool) error {
 	if err := assembleAndValidateEntitySteps(pn, fmt.Sprintf("%s: %s", path, pn.Name)); err != nil {
 		return err
 	}
-	if pn.Disc == "candy" {
+	if candyBody && pn.Disc == "candy" {
 		body, err := AssembleEntityBody(pn)
 		if err != nil {
 			return fmt.Errorf("%s: %s: assemble: %w", path, pn.Name, err)
@@ -109,11 +117,26 @@ func ValidateEntityNodeRec(pn spec.ParsedNode, path string) error {
 		}
 	}
 	for _, ch := range pn.Children {
-		if err := ValidateEntityNodeRec(*ch, path); err != nil {
+		if err := validateEntityRec(*ch, path, candyBody); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ValidateEntityStepsRec applies the STEP half of ValidateEntityNodeRec — assembleAndValidateEntitySteps
+// — to one entity and, recursively, to its sub-entity children (deploy members, nested deploys, which
+// carry their own plans). It is what "validate steps on EVERY load" (D-LOAD-5, §12.1) calls: the
+// per-document composer runs it on every node it parses, so a step whose body the closed #Step/#Op
+// does not admit is refused at load rather than only by `charly box validate`.
+//
+// The candy-body half is deliberately NOT here. ValidateEntityNodeRec additionally unifies a candy
+// node's desugared body concretely against #CandyValue, which requires a version and a non-empty
+// description — a different obligation, with its own gate, that a LOAD must not newly impose on a
+// project whose manifest is otherwise well-formed. Two verdicts, two entry points; the shared
+// mechanism (assembleAndValidateEntitySteps) is written once.
+func ValidateEntityStepsRec(pn spec.ParsedNode, path string) error {
+	return validateEntityRec(pn, path, false)
 }
 
 // ValidateNodeFormSteps parses a node-form document and validates EVERY entity's (and nested

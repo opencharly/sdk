@@ -12,6 +12,12 @@
 // imports this package gets the same four roots and the same strings as before, and the host
 // reaches the SAME implementation through a surface it may import.
 //
+// There are FOUR roots, and an artifact lives in the CACHE root like every other cached item:
+// D-STORE-3's store holds "every cached item … including artifacts", and `CHARLY_CACHE_DIR` is the
+// ONE override that relocates it. A fifth, durable data root was proposed and REVERTED
+// (opencharly/spec#375, opencharly/opencharly#1098) precisely because a second layout in a second
+// root is what D-STORE-1 and D-STORE-3 forbid.
+//
 // A roots or store implementation living anywhere else is still the deviation this package exists
 // to end: before it, the cache root was resolved inside `spec/cache` (under the CONFIG root,
 // contrary to D-STORE-1 — opencharly/spec#233) and four other packages built their own `.cache`
