@@ -53,17 +53,22 @@ package loaderkit
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"runtime/debug"
 
+	"github.com/opencharly/sdk/storekit"
 	"github.com/opencharly/spec/cache"
 	"github.com/opencharly/spec/spec"
 )
 
-// materializedCacheEnvName overrides the materialized-tree cache root (tests isolate to a
-// temporary dir; operators can point it anywhere), mirroring CHARLY_REPO_CACHE's role for the
-// repo cache.
-const materializedCacheEnvName = "CHARLY_MATERIALIZED_CACHE"
+// materializedCacheDir returns the materialized-tree cache root: the `materialized` store under the
+// ONE cache root (D-STORE-1 — `$XDG_CACHE_HOME/charly`, or `CHARLY_CACHE_DIR` when set, resolved by
+// `spec/storeroot` through `sdk/storekit`).
+//
+// This package used to read a SECOND override here (`CHARLY_MATERIALIZED_CACHE`); it is DELETED, not
+// deprecated (R5): a per-cache variable is a second resolver, and D-STORE-1 admits exactly one.
+func materializedCacheDir() (string, error) {
+	return storekit.StoreDir("materialized")
+}
 
 var (
 	// materializedCacheMaxEntries bounds the cache SIZE (the Docker builder --keep-storage
@@ -78,16 +83,6 @@ var (
 	// no-cache behavior (the materializer is called once per load).
 	materializedTreeCacheEnabled = true
 )
-
-// materializedCacheDir returns the materialized-tree cache root: $CHARLY_MATERIALIZED_CACHE if
-// set, else the shared cache's `materialized` store under the charly dir
-// (~/.config/charly/cache/materialized).
-func materializedCacheDir() (string, error) {
-	if envDir := os.Getenv(materializedCacheEnvName); envDir != "" {
-		return envDir, nil
-	}
-	return cache.StoreDir("materialized")
-}
 
 // materializedStore opens the shared Store for the materialized tree (the ONE cache mechanism).
 func materializedStore() *cache.Layout {
