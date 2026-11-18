@@ -314,10 +314,10 @@ func TestImageStoreLiveArtifactKeepsItsWholeGraphReachable(t *testing.T) {
 }
 
 // TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable is the IDENTITY behaviour the
-// ruling turns on: a rebuild deletes NOTHING. The new artifact is a new digest, so the store
-// appends a second entry; the previous artifact remains a first-class entry addressable by its own
-// digest, and reclaiming it is a SWEEP decision (D-STORE-7) made from what `Entries()` exposes —
-// key, reference and build time — never something a build performs.
+// ruling turns on: a rebuild deletes NOTHING. The new artifact is a new digest, hence a new key,
+// so the store APPENDS a second entry and the previous artifact remains a first-class entry,
+// addressable by its own digest. The APPEND assertion comes first, because it is the property
+// that decides the question (a `PutEntry` keyed by the reference leaves ONE entry here).
 func TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable(t *testing.T) {
 	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
 	store, err := OpenImageStore()
@@ -325,17 +325,14 @@ func TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable(t *testing.T)
 		t.Fatal(err)
 	}
 	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
-	first := addImage(t, store, ref, "layer-first")
+	addImage(t, store, ref, "layer-first")
 	firstEntries, err := store.store.Entries()
 	if err != nil || len(firstEntries) != 1 {
 		t.Fatalf("Entries after one build = (%d, %v), want one", len(firstEntries), err)
 	}
 	firstKey := firstEntries[0].Key
-	second := addImage(t, store, ref, "layer-second")
+	addImage(t, store, ref, "layer-second")
 
-	// THE APPEND PROPERTY, asserted first because it is what the ruling turned on: a rebuild adds a
-	// second entry and deletes nothing. A `PutEntry` keyed by the reference instead of the digest
-	// leaves ONE entry here — the old artifact's address silently gone.
 	entries, err := store.store.Entries()
 	if err != nil {
 		t.Fatalf("Entries: %v", err)
@@ -358,18 +355,19 @@ func TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable(t *testing.T)
 	if _, found, err := store.store.LookupEntry(firstKey); err != nil || !found {
 		t.Fatalf("the superseded artifact %s is no longer addressable by digest (found=%v, err=%v)", firstKey, found, err)
 	}
-	firstDigest, secondDigest := firstKey, ""
+	secondKey := ""
 	for key := range named {
 		if key != firstKey {
-			secondDigest = key
+			secondKey = key
 		}
 	}
-	if secondDigest == "" || secondDigest == firstDigest {
+	if secondKey == "" || secondKey == firstKey {
 		t.Fatalf("the rebuild produced no second artifact: %v", named)
 	}
-	if got, ok, lerr := store.Lookup(ref); lerr != nil || !ok || got != secondDigest {
-		t.Errorf("Lookup(%q) = (%q, %v, %v), want the newer artifact %q", ref, got, ok, lerr, secondDigest)
+	if got, ok, lerr := store.Lookup(ref); lerr != nil || !ok || got != secondKey {
+		t.Errorf("Lookup(%q) = (%q, %v, %v), want the newer artifact %q", ref, got, ok, lerr, secondKey)
 	}
+	// The store's LIST is references, so a rebuild keeps it at one.
 	if refs, err := store.List(); err != nil {
 		t.Fatal(err)
 	} else if len(refs) != 1 || refs[0] != ref {
@@ -379,13 +377,50 @@ func TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable(t *testing.T)
 	if sweepable := unresolvable(t, store); len(sweepable) != 0 {
 		t.Fatalf("the sweep would reclaim %d blob(s) of two LIVE artifacts: %v", len(sweepable), sweepable)
 	}
+}
 
-	// A sweep keeps what state references (the newest artifact for the reference) and evicts the
-	// rest: `DeleteEntry` names the digest, and the superseded artifact's own blobs then become
-	// exactly the sweep's candidates.
-	if removed, err := store.store.DeleteEntry(firstDigest); err != nil || !removed {
-		t.Fatalf("DeleteEntry(%q) = (%v, %v)", firstDigest, removed, err)
+// TestImageStoreSupersededArtifactIsTheSweepsDecision is D-STORE-7 from the store's side: reclaiming
+// a superseded artifact is the SWEEP's decision, made from what the store exposes — the entry's key
+// (the digest), its reference and its build time — and never something a build performs. Deleting
+// one entry makes exactly that artifact's unshared blobs the sweep's candidates; the shared config
+// and the live artifact stay.
+func TestImageStoreSupersededArtifactIsTheSweepsDecision(t *testing.T) {
+	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
+	store, err := OpenImageStore()
+	if err != nil {
+		t.Fatal(err)
 	}
+	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
+	first := addImage(t, store, ref, "layer-first")
+	second := addImage(t, store, ref, "layer-second")
+
+	entries, err := store.store.Entries()
+	if err != nil {
+		t.Fatalf("Entries: %v", err)
+	}
+	keys := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.Annotations[AnnotationImageName] == ref {
+			keys = append(keys, e.Key)
+		}
+	}
+	if len(keys) != 2 {
+		t.Fatalf("%d entr(ies) name %q, want 2 (the superseded artifact and the current one)", len(keys), ref)
+	}
+	// The sweep keeps what state references — the artifact the reference resolves to NOW — and
+	// names the superseded one by its digest.
+	current, ok, err := store.Lookup(ref)
+	if err != nil || !ok {
+		t.Fatalf("Lookup(%q) = (_, %v, %v)", ref, ok, err)
+	}
+	superseded := keys[0]
+	if superseded == current {
+		superseded = keys[1]
+	}
+	if removed, derr := store.store.DeleteEntry(superseded); derr != nil || !removed {
+		t.Fatalf("DeleteEntry(%q) = (%v, %v)", superseded, removed, derr)
+	}
+
 	sweepable := unresolvable(t, store)
 	for _, data := range [][]byte{first.manifest, first.layer} {
 		dgst, derr := DigestOf(data)
@@ -396,19 +431,18 @@ func TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable(t *testing.T)
 			t.Errorf("the superseded blob %s is not named by the sweep", dgst)
 		}
 	}
-	// ... its CONFIG is not, because both builds share those identical bytes and the image that is
-	// still current keeps them (the store's "cached once" property, not a leak) ...
+	// Its CONFIG is not, because both builds share those identical bytes and the image that is
+	// still current keeps them (the store's "cached once" property, not a leak).
 	if dgst, _ := DigestOf(first.config); sweepable[dgst] {
 		t.Errorf("the sweep would reclaim the config blob %s, which the CURRENT image still reaches", dgst)
 	}
-	// ... and nothing the current artifact reaches may be named.
 	for dgst := range blobSet(t, second) {
 		if sweepable[dgst] {
 			t.Errorf("the sweep would reclaim the CURRENT blob %s", dgst)
 		}
 	}
-	if sweepable[secondDigest] {
-		t.Errorf("the sweep would reclaim the current artifact %s", secondDigest)
+	if sweepable[current] {
+		t.Errorf("the sweep would reclaim the current artifact %s", current)
 	}
 	for dgst := range sweepable {
 		if err := store.store.RemoveBlob(dgst); err != nil {
@@ -419,7 +453,7 @@ func TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable(t *testing.T)
 		t.Fatalf("after the sweep %d blob(s) are STILL unreferenced: %v", len(left), left)
 	}
 	live := blobSet(t, second)
-	live[secondDigest] = true
+	live[current] = true
 	for dgst := range live {
 		if !store.store.HasBlob(dgst) {
 			t.Errorf("the sweep removed %s, which the live entry reaches", dgst)
