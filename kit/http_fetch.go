@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/opencharly/sdk/storekit"
 )
 
 // FetchedImage is the result of FetchQcow2: the absolute path to the
@@ -56,13 +58,17 @@ func FetchArtifact(src VmSource, ext string) (FetchedImage, error) {
 		return FetchedImage{}, fmt.Errorf("FetchArtifact: ext is empty")
 	}
 
+	// D-STORE-1: the cache root comes from the ONE resolver (`spec/storeroot`, re-exported by
+	// `sdk/storekit`), so `CHARLY_CACHE_DIR` governs this fetch like every other cache. The path was
+	// hand-built as `$HOME/.cache/charly/vm-images` here, which silently ignored that override and
+	// mixed `UserHomeDir` with the resolver's own root.
 	cacheDir := src.Cache
 	if cacheDir == "" {
-		home, err := os.UserHomeDir()
+		dir, err := storekit.StoreDir("vm-images")
 		if err != nil {
-			return FetchedImage{}, fmt.Errorf("resolving home dir: %w", err)
+			return FetchedImage{}, fmt.Errorf("resolving the vm-images cache root: %w", err)
 		}
-		cacheDir = filepath.Join(home, ".cache", "charly", "vm-images")
+		cacheDir = dir
 	}
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return FetchedImage{}, fmt.Errorf("creating cache dir: %w", err)

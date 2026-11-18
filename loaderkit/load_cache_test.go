@@ -87,10 +87,11 @@ func testMaterializedState() (spec.LoadedProject, spec.UnifiedFile) {
 }
 
 // isolateCacheRoot points the materialized-tree cache at a fresh temp dir for the test's
-// lifetime (never the developer's real ~/.cache/charly).
+// lifetime (never the developer's real cache). It sets the ONE override D-STORE-1 allows —
+// CHARLY_CACHE_DIR — rather than a private per-cache variable, which no longer exists.
 func isolateCacheRoot(t *testing.T) {
 	t.Helper()
-	t.Setenv(materializedCacheEnvName, t.TempDir())
+	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
 }
 
 // TestMaterializedCache_SameStateMaterializesOnce is THE cache contract: two sequential
