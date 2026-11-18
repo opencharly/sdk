@@ -50,9 +50,10 @@ var CapabilityLabelMap = map[string]string{
 	// Security
 	"Security": spec.LabelSecurity,
 
-	// Networking — image-declared network mode. Tunnel / DNS / AcmeEmail
-	// moved to DeployNode in schema v4 (deployment choices, no
-	// image-declaration meaning).
+	// Networking — image-declared network mode. Tunnel / DNS moved to
+	// DeployNode in schema v4 (deployment choices, no image-declaration
+	// meaning); `acme_email` has since been retired from the contract
+	// (opencharly/spec#379).
 	"Network": spec.LabelNetwork,
 
 	// Env / vars
@@ -122,14 +123,14 @@ var CapabilityLabelMap = map[string]string{
 // CapabilityLabelMap mapping.
 //
 // This list codifies the schema v4 migration note on labels.go: "Tunnel / DNS /
-// AcmeEmail / Engine moved to DeployNode". The fields stay on spec.BoxMetadata because
+// Engine moved to DeployNode". The fields stay on spec.BoxMetadata because
 // deploy-mode commands still consume them after MergeDeployOntoMetadata runs — but they
-// never round-trip through OCI labels.
+// never round-trip through OCI labels. (`AcmeEmail` was on this list until
+// opencharly/spec#379 retired the field from the contract altogether.)
 var DeployOnlyCapabilityFields = map[string]bool{
-	"Tunnel":    true,
-	"DNS":       true,
-	"AcmeEmail": true,
-	"Engine":    true,
+	"Tunnel": true,
+	"DNS":    true,
+	"Engine": true,
 }
 
 // CheckCapabilityLabelCompleteness returns an error listing any spec.BoxMetadata exported
