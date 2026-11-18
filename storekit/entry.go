@@ -76,8 +76,17 @@ const AnnotationCacheKey = "ai.opencharly.cache.key"
 // literals that happen to be equal today.
 const AnnotationRefName = "org.opencontainers.image.ref.name"
 
+// AnnotationCreated dates an entry. It is the export's recency key and it is STRIPPED from a
+// stored artifact payload (D-STORE-6: a payload carries no timestamp); an entry that wants to
+// record its own time records it as an annotation, outside the payload's digest.
+const AnnotationCreated = "org.opencontainers.image.created"
+
 // MediaTypeStoreEntry is the media type of a store entry manifest.
 const MediaTypeStoreEntry = "application/vnd.opencharly.store.entry.v1+json"
+
+// MediaTypeOCIIndex is the media type of an OCI image index — the shape `index.json` has in a store
+// tree and in an OCI archive alike, and the media type an index the store WRITES declares.
+const MediaTypeOCIIndex = "application/vnd.oci.image.index.v1+json"
 
 // Entry is one keyed cache entry: what it IS, what KEY finds it, and where its payload lives.
 //
@@ -201,6 +210,10 @@ type indexDescriptor struct {
 	Digest      string            `json:"digest"`
 	Size        int64             `json:"size,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
+	// Platform is an image descriptor's platform, and it travels here unchanged because the
+	// descriptor shape is the image spec's, not this package's: an image store that dropped it
+	// would lose the only thing that tells two manifests of ONE reference apart.
+	Platform json.RawMessage `json:"platform,omitempty"`
 }
 
 type storeIndex struct {
@@ -219,10 +232,10 @@ func entryTag(key string) string {
 }
 
 func (s *Store) readIndex() (*storeIndex, error) {
-	raw, err := os.ReadFile(filepath.Join(s.dir, "index.json"))
+	raw, err := os.ReadFile(s.indexPath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &storeIndex{SchemaVersion: 2, MediaType: "application/vnd.oci.image.index.v1+json"}, nil
+			return &storeIndex{SchemaVersion: 2, MediaType: MediaTypeOCIIndex}, nil
 		}
 		return nil, err
 	}
@@ -231,7 +244,7 @@ func (s *Store) readIndex() (*storeIndex, error) {
 		return nil, fmt.Errorf("parse store index: %w", err)
 	}
 	if idx.MediaType == "" {
-		idx.MediaType = "application/vnd.oci.image.index.v1+json"
+		idx.MediaType = MediaTypeOCIIndex
 	}
 	return &idx, nil
 }
@@ -280,10 +293,16 @@ func (s *Store) indexEntry(key, manifestDigest string, size int64) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	// A store that has published an index IS an OCI image layout, and D-STORE-3 says its on-disk
+	// form is exactly that — so the `oci-layout` marker is written HERE, by the one function every
+	// store write goes through. Without it `NamedStores()` cannot see the store and D-STORE-7's
+	// sweep has nothing to keep or evict: a store the sweep cannot discover is a store that grows
+	// forever. (Measured before this: no storekit-created store carried the marker at all, so
+	// every named store — buildcache's, the registry's — was invisible to `charly clean --cache`.)
+	if err := s.EnsureLayout(); err != nil {
 		return err
 	}
 	// Through the ONE atomic-write helper: this call site had its OWN fixed temp path
 	// (`index.json.tmp`), so two concurrent PutEntry calls raced exactly as two PutBlob calls did.
-	return writeFileAtomic(filepath.Join(s.dir, "index.json"), raw)
+	return writeFileAtomic(s.indexPath(), raw)
 }

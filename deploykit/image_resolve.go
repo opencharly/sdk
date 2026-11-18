@@ -11,18 +11,22 @@ package deploykit
 // An empty tag resolves to the newest CalVer across the target store and the
 // charly store.
 //
-// The charly image store is an interface, not a second implementation of W3.6's
-// OCI layout. The layout (one index.json, `io.containerd.image.name` naming) is
-// owned by `plugin-build/candy/plugin-build/imagestore.go` today; copying its
-// reader/writer here would be the R2 duplication the store move exists to
-// remove. A follow-up (opencharly/sdk#460) moves that layout into
-// `sdk/storekit`, at which point the production CharlyImageSource is a thin
-// adapter over it.
+// The charly image store is an INTERFACE here, never a second implementation of
+// its OCI layout. That layout — the `oci-layout` marker, one `index.json`,
+// `blobs/<alg>/<digest>`, the atomic index rewrite under a cross-process lock, and
+// the `io.containerd.image.name` export annotation — lives in `sdk/storekit` as the
+// named `registry` store under the ONE cache root. A layout reader/writer written
+// here would be the R2 duplication the store move (opencharly/sdk#460) existed to
+// remove, so the production CharlyImageSource below is the store's own answer with
+// no layout knowledge of its own.
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
+
+	"github.com/opencharly/sdk/storekit"
 )
 
 // ImageOrigin names which step of the resolution order answered.
@@ -54,7 +58,10 @@ type ResolvedImage struct {
 type CharlyImageSource interface {
 	// Has reports whether the store holds ref.
 	Has(ctx context.Context, ref string) (bool, error)
-	// Archive materialises ref as an OCI archive and returns its path.
+	// Archive materialises ref as an OCI archive carrying the
+	// `io.containerd.image.name` annotation, and returns its path. THE PATH
+	// BELONGS TO THE CALLER: an archive is as large as the image, so the caller
+	// removes it once the import that needed it is done.
 	Archive(ctx context.Context, ref string) (string, error)
 	// List returns every reference the store holds.
 	List(ctx context.Context) ([]string, error)
@@ -173,6 +180,10 @@ func (r *ImageResolver) importFromCharly(ctx context.Context, ref string, target
 	if err != nil {
 		return false, fmt.Errorf("resolve %q: materialise it from the charly image store: %w", ref, err)
 	}
+	// The archive is the CALLER's from here on (see the interface's Archive
+	// contract) and it is as large as the image, so it goes whatever the import
+	// does — a successful resolve must not leave a copy of the image behind.
+	defer func() { _ = os.Remove(archive) }()
 	if err := target.Import(ctx, archive, ref); err != nil {
 		return false, fmt.Errorf("resolve %q: import from the charly image store: %w", ref, err)
 	}
@@ -256,6 +267,58 @@ const (
 	calverNumStart = '0'
 	calverNumEnd   = '9'
 )
+
+// charlyImageSource is the PRODUCTION CharlyImageSource: the charly image store as
+// `sdk/storekit` owns it. Every method is the store's own answer — the adapter adds
+// nothing but the context discipline — because a second reading of `index.json`
+// here would be exactly the duplication this move removed.
+type charlyImageSource struct {
+	store *storekit.ImageStore
+}
+
+var _ CharlyImageSource = (*charlyImageSource)(nil)
+
+// NewCharlyImageSource opens the charly image store as the resolver's source: the
+// named `registry` store under the cache root, so `CHARLY_CACHE_DIR` is the ONE
+// override that relocates it (D-STORE-1). A caller with no charly store passes nil
+// to ImageResolver instead of a source that would answer for a store nothing wrote.
+func NewCharlyImageSource() (CharlyImageSource, error) {
+	store, err := storekit.OpenImageStore()
+	if err != nil {
+		return nil, err
+	}
+	return &charlyImageSource{store: store}, nil
+}
+
+// Has reports whether the store holds ref.
+func (s *charlyImageSource) Has(ctx context.Context, ref string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	_, ok, err := s.store.Lookup(ref)
+	if err != nil {
+		return false, fmt.Errorf("look up %q in the charly image store: %w", ref, err)
+	}
+	return ok, nil
+}
+
+// Archive materialises ref as an OCI archive. The materialisation is one pass over
+// local, immutable, content-addressed blobs, so it observes cancellation only before
+// it starts: it cannot honour a cancel that arrives mid-blob.
+func (s *charlyImageSource) Archive(ctx context.Context, ref string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return s.store.Archive(ref)
+}
+
+// List returns every reference the store holds, sorted, one per image.
+func (s *charlyImageSource) List(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.store.List()
+}
 
 // calverKey returns the comparison key for a CalVer tag. Anything else (a
 // `latest`, a digest, a branch word) is not a CalVer tag.
