@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/opencharly/spec/lock"
 )
@@ -97,6 +96,18 @@ func (s *Store) ReachableBlobs() (map[string]bool, error) {
 	for _, e := range entries {
 		if e.Payload != "" {
 			live[e.Payload] = true
+			// An ARTIFACT entry's payload is an image's root document, and the blobs that make it
+			// usable — its config and its layers — are reachable only THROUGH it. A sweep that
+			// marked the root alone would keep a manifest and delete the layer it names, turning a
+			// live image into an unreadable digest. The walk is the same one `Archive` uses.
+			if isImageMediaType(e.MediaType) {
+				if err := s.walkImageGraph(e.Payload, e.MediaType, func(dgst string) error {
+					live[dgst] = true
+					return nil
+				}); err != nil {
+					return nil, fmt.Errorf("reachability: walk the image %s (entry %q): %w", e.Payload, e.Key, err)
+				}
+			}
 		}
 		if e.Tree == "" {
 			continue
@@ -226,7 +237,7 @@ func (s *Store) DeleteEntry(key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := writeFileAtomic(filepath.Join(s.dir, "index.json"), raw); err != nil {
+	if err := writeFileAtomic(s.indexPath(), raw); err != nil {
 		return false, err
 	}
 	return true, nil

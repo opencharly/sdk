@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/sdk/storekit"
 	"github.com/opencharly/spec/container"
 	"github.com/opencharly/spec/shellquote"
 	spec "github.com/opencharly/spec/spec"
@@ -59,11 +60,10 @@ type ImageStore interface {
 }
 
 const (
-	// imageNameAnnotation is the annotation that NAMES an image inside an OCI
-	// layout index. It is NOT org.opencontainers.image.ref.name: a buildkit
-	// `--output type=oci,name=<full-ref>` export writes the full `<repo>:<tag>`
-	// in io.containerd.image.name and only the TAG in ref.name (W3.7 spike).
-	imageNameAnnotation = "io.containerd.image.name"
+	// The annotation that NAMES an image inside an OCI layout index is
+	// storekit.AnnotationImageName, defined ONCE beside the layout that writes
+	// and reads it: a buildkit `--output type=oci,name=<full-ref>` export writes
+	// the full `<repo>:<tag>` there and only the TAG in ref.name (W3.7 spike).
 
 	// imageAbsentExit is the engine's own "no such image" exit. Every other
 	// non-zero exit is a store/daemon failure and is surfaced, not folded into
@@ -317,7 +317,7 @@ func (s *engineImageStore) Import(ctx context.Context, ociSource, ref string) er
 		return fmt.Errorf(
 			"imported %s, but the %s store does not address %q: the OCI archive must carry the %s annotation naming the full reference "+
 				"(an archive built without it lands untagged)",
-			ociSource, s.engine, ref, imageNameAnnotation)
+			ociSource, s.engine, ref, storekit.AnnotationImageName)
 	}
 	return nil
 }

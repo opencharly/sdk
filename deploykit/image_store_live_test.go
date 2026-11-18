@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opencharly/sdk/storekit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -153,7 +154,7 @@ func TestImageStoreLiveAnnotationControl(t *testing.T) {
 			switch {
 			case controlErr == nil:
 				t.Fatal("control archive (no io.containerd.image.name) imported as successfully named — the annotation is not doing the naming")
-			case strings.Contains(controlErr.Error(), imageNameAnnotation):
+			case strings.Contains(controlErr.Error(), storekit.AnnotationImageName):
 				// Capability confirmed; the control proved the annotation is load-bearing.
 			case isUnsupportedOCILayout(controlErr):
 				t.Skipf("live %s arm: the engine does not accept an OCI image layout (%v); the W3.7 contract is measured on the OCI layout and the type=docker export is the documented compatibility fallback", arm.name, controlErr)
@@ -269,7 +270,7 @@ func rewriteArchiveIndex(t *testing.T, src, dst, imageName, tagOnly string) {
 		if strings.TrimPrefix(hdr.Name, "./") == "index.json" {
 			annotations := map[string]string{"org.opencontainers.image.ref.name": tagOnly}
 			if imageName != "" {
-				annotations[imageNameAnnotation] = imageName
+				annotations[storekit.AnnotationImageName] = imageName
 			}
 			body = []byte(fmt.Sprintf(
 				`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[`+
