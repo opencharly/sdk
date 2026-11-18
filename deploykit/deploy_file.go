@@ -363,9 +363,6 @@ func MergeDeployOntoMetadata(meta *spec.BoxMetadata, dc *DeployConfig, deployNam
 	if overlay.DNS != "" {
 		meta.DNS = overlay.DNS
 	}
-	if overlay.AcmeEmail != "" {
-		meta.AcmeEmail = overlay.AcmeEmail
-	}
 	// Ports: prefer the persisted ResolvedPort (the auto-allocated / pinned host:container mapping
 	// `charly config` computed via ResolveDeployPorts). A deploy `port:` entry is only a PIN INPUT
 	// to that resolution — never a wholesale replacement — so it is NOT applied here. If
@@ -482,8 +479,9 @@ func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 	sort.Strings(names)
 	for _, name := range names {
 		view := rp.Boxes[name]
-		// Schema v4: Tunnel / DNS / AcmeEmail / Engine no longer sourced from BoxConfig
-		// (they're deploy-only).
+		// Schema v4: Tunnel / DNS / Engine no longer sourced from BoxConfig (they're
+		// deploy-only). `acme_email` was retired from the contract entirely
+		// (opencharly/spec#379) — it is neither a box nor a deploy field any more.
 		entry := DeployNode{
 			Description: view.Description,
 			Env:         view.Env,

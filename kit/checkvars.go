@@ -189,9 +189,6 @@ func buildTimeVars(meta *spec.BoxMetadata, instance string) map[string]string {
 	if meta.DNS != "" {
 		env["DNS"] = meta.DNS
 	}
-	if meta.AcmeEmail != "" {
-		env["ACME_EMAIL"] = meta.AcmeEmail
-	}
 	if instance != "" {
 		env["INSTANCE"] = instance
 	}

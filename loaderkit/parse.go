@@ -31,8 +31,11 @@ import (
 // registered at init before any load; a nil parser is a FATAL host-side, never a silent fallback).
 
 // reserved-word sets, CUE-sourced spec vocab (never a registry query).
+//
+// The #ResourceKind set is NOT here: it is asked of the contract at every consult
+// (spec.ResourceKindSet()), so the parse and the contract cannot hold two derivations of one
+// vocabulary — see resource_kind_live_test.go, which makes the vocabulary move and asks the parse.
 var (
-	resourceKindSet  = sliceSet(spec.ResourceKinds)
 	stepKeywordSet   = sliceSet(spec.StepKeywords)
 	docDirectiveSet  = sliceSet(spec.DocDirectives)
 	authoringVerbSet = sliceSet(spec.AuthoringVerbs) // core's authoredOpFieldSet
@@ -61,7 +64,7 @@ func sliceSet(ss []string) map[string]bool {
 // an external-structural child under an external-structural parent classifies (the 8a bug:
 // the child arm never consulted t.StructuralKinds — dies here).
 func memberDisc(word string, t spec.Threaded) bool {
-	return resourceKindSet[word] || t.StructuralKinds[word] || t.DeploySubstrates[word]
+	return spec.ResourceKindSet()[word] || t.StructuralKinds[word] || t.DeploySubstrates[word]
 }
 
 // classifyKind reports whether k is a recognized KIND word in this position. At the top level
@@ -235,7 +238,7 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	// while still being a StructuralKind; the structural key rule then skips every in-body member
 	// (a member's KEY is its own name, never a kind word), leaving the member key in the body for
 	// a closed #<Kind>Value gate to reject.
-	if t.DeploySubstrates[disc] || resourceKindSet[disc] {
+	if t.DeploySubstrates[disc] || spec.ResourceKindSet()[disc] {
 		deployDeclared := threadedDeclaredFields(t.DeployDeclaredFields, disc)
 		for _, c := range discEntityPairs(discValue, t) {
 			if deployDeclared[c.k.Value] {
