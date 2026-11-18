@@ -8,8 +8,9 @@ package loaderkit
 // — the SAME snapshot loaderThreaded() already fills for the parse — never a kind-word switch (the
 // boundary law's self-test).
 //
-// resourceKindSet (the CUE-derived #ResourceKind vocab) is already declared in parse.go — reused
-// here (R3), never re-threaded, exactly like decode_entity.go/cue_validate.go reuse docDirectiveSet.
+// The #ResourceKind vocab is asked of the CONTRACT (spec.ResourceKindSet()), not re-derived here —
+// one derivation for the whole loader, exactly like decode_entity.go/cue_validate.go reuse
+// docDirectiveSet rather than rebuilding it.
 
 import (
 	"encoding/json"

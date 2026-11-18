@@ -343,6 +343,6 @@ func DecodeStandaloneTemplateJSON(pn spec.ParsedNode, t spec.Threaded) (json.Raw
 // deploy-shape composite (len(ResourceChildren(pn)) > 0), subsumed by IsDeployShape's member
 // channel above — the ONE member walk (BuildResourceMemberChildren) over the ONE predicate
 // (IsResourceDisc) is the single source of truth for member classification. Its former frozen
-// resourceKindSet-only filter also MISSED structural/external member children; the member
+// contract-derived resource-kind filter alone also MISSED structural/external member children; the member
 // channel checks the authored children themselves, so a structural or external member now
 // classifies a node as deploy-shaped exactly like a builtin resource member.
