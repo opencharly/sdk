@@ -166,8 +166,9 @@ func ResolveBox(cfg *spec.Config, name string, calverTag string, dir string, opt
 	// BuilderCapabilities: image-specific capability declaration, NOT inherited.
 	resolved.BuilderCapabilities = img.Produce
 
-	// Schema v4: DNS / AcmeEmail / Tunnel / Engine no longer resolve from image config — they are
+	// Schema v4: DNS / Tunnel / Engine no longer resolve from image config — they are
 	// deployment choices and flow through MergeDeployOntoMetadata → BoxMetadata directly.
+	// (`acme_email` is gone from the contract entirely — opencharly/spec#379.)
 
 	// VM configuration lives on `kind: vm` entities in vm.yml, NOT on box: entries.
 
