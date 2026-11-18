@@ -122,9 +122,15 @@ var CapabilityLabelMap = map[string]string{
 // CapabilityLabelMap mapping.
 //
 // This list codifies the schema v4 migration note on labels.go: "Tunnel / DNS /
-// AcmeEmail / Engine moved to DeployNode". The fields stay on spec.BoxMetadata because
-// deploy-mode commands still consume them after MergeDeployOntoMetadata runs — but they
-// never round-trip through OCI labels.
+// AcmeEmail / Engine moved to DeployNode". Tunnel, DNS and Engine stay on
+// spec.BoxMetadata because deploy-mode commands still consume them after
+// MergeDeployOntoMetadata runs — but they never round-trip through OCI labels.
+//
+// AcmeEmail is NOT here, and not as an exemption: spec#379 (spec@576c85c) DELETED the
+// field from spec.BoxMetadata. It has no image meaning and no deploy-node meaning left,
+// so there is nothing left to exempt. This list names fields that exist; a field that
+// does not exist must not appear in it, or the description outlives the thing it
+// describes.
 var DeployOnlyCapabilityFields = map[string]bool{
 	"Tunnel": true,
 	"DNS":    true,
