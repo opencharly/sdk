@@ -64,6 +64,18 @@ func ParseDocStream(data []byte, srcLabel, srcDir string, seams spec.WalkSeams) 
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("%s: %w", label, err)
 			}
+			// D-LOAD-5 (§12.1): type EVERY entity's plan steps against the closed #Step/#Op on
+			// EVERY load. The desugar (desugar_steps.go) judges a step's INTENT KEYWORD; only this
+			// pass judges its BODY, and until now only `charly box validate` ran it — so a step the
+			// schema does not admit parsed clean here and failed later, at best. This composer is
+			// the ONE per-document pipeline the file walk and the embedded vocabulary stream both
+			// drive, so the gate has exactly one home and no caller can skip it. Steps only: the
+			// candy-body verdict stays with ValidateEntityNodeRec / `charly box validate`.
+			for i := range pp.Nodes {
+				if verr := ValidateEntityStepsRec(pp.Nodes[i], label); verr != nil {
+					return nil, nil, nil, verr
+				}
+			}
 			doc := spec.LoadedDoc{Project: pp, SrcDir: srcDir, SrcLabel: label}
 			if len(directives) > 0 {
 				// The raw reserved-directive mapping (version/repo/defaults/provides/discover;
