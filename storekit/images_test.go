@@ -326,36 +326,49 @@ func TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable(t *testing.T)
 	}
 	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
 	first := addImage(t, store, ref, "layer-first")
-	firstDigest, _, err := store.Lookup(ref)
-	if err != nil {
-		t.Fatal(err)
+	firstEntries, err := store.store.Entries()
+	if err != nil || len(firstEntries) != 1 {
+		t.Fatalf("Entries after one build = (%d, %v), want one", len(firstEntries), err)
 	}
+	firstKey := firstEntries[0].Key
 	second := addImage(t, store, ref, "layer-second")
-	secondDigest, ok, err := store.Lookup(ref)
-	if err != nil || !ok {
-		t.Fatalf("Lookup after the rebuild = (_, %v, %v)", ok, err)
-	}
-	if firstDigest == secondDigest {
-		t.Fatal("the rebuild did not produce a new artifact digest")
-	}
 
-	// THE OLD ARTIFACT IS STILL AN ENTRY, by its own digest — not merely bytes on disk.
-	if _, found, err := store.store.LookupEntry(firstDigest); err != nil || !found {
-		t.Fatalf("the superseded artifact %s is no longer addressable by digest (found=%v, err=%v)", firstDigest, found, err)
-	}
-	// Two entries name the reference; the store's LIST is references, so it stays one.
+	// THE APPEND PROPERTY, asserted first because it is what the ruling turned on: a rebuild adds a
+	// second entry and deletes nothing. A `PutEntry` keyed by the reference instead of the digest
+	// leaves ONE entry here — the old artifact's address silently gone.
 	entries, err := store.store.Entries()
 	if err != nil {
 		t.Fatalf("Entries: %v", err)
 	}
-	named := 0
+	named := map[string]bool{}
 	for _, e := range entries {
-		if e.Annotations[AnnotationImageName] == ref {
-			named++
+		if e.Annotations[AnnotationImageName] != ref {
+			continue
+		}
+		named[e.Key] = true
+		if e.Key != e.Payload {
+			t.Errorf("entry %q names payload %q — an artifact entry is keyed by its own digest", e.Key, e.Payload)
 		}
 	}
-	if named != 2 {
-		t.Errorf("%d entr(ies) name %q, want 2 — a rebuild APPENDS, it does not replace", named, ref)
+	if len(named) != 2 {
+		t.Fatalf("%d distinct entr(ies) name %q, want 2 — a rebuild APPENDS, it does not replace", len(named), ref)
+	}
+	// AND THE OLD ARTIFACT IS STILL AN ENTRY, addressable by its own digest — not merely bytes on
+	// disk: `LookupEntry(digest)` answers.
+	if _, found, err := store.store.LookupEntry(firstKey); err != nil || !found {
+		t.Fatalf("the superseded artifact %s is no longer addressable by digest (found=%v, err=%v)", firstKey, found, err)
+	}
+	firstDigest, secondDigest := firstKey, ""
+	for key := range named {
+		if key != firstKey {
+			secondDigest = key
+		}
+	}
+	if secondDigest == "" || secondDigest == firstDigest {
+		t.Fatalf("the rebuild produced no second artifact: %v", named)
+	}
+	if got, ok, lerr := store.Lookup(ref); lerr != nil || !ok || got != secondDigest {
+		t.Errorf("Lookup(%q) = (%q, %v, %v), want the newer artifact %q", ref, got, ok, lerr, secondDigest)
 	}
 	if refs, err := store.List(); err != nil {
 		t.Fatal(err)
