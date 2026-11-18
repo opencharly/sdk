@@ -13,13 +13,12 @@ import (
 // into Env, and negative checks for runtime-only vars (must not be present).
 func TestResolveTestVarsBuild(t *testing.T) {
 	meta := &spec.BoxMetadata{
-		Box:       "redis-ml",
-		User:      "user",
-		Home:      "/home/user",
-		UID:       1000,
-		GID:       1000,
-		DNS:       "redis.example.com",
-		AcmeEmail: "ops@example.com",
+		Box:  "redis-ml",
+		User: "user",
+		Home: "/home/user",
+		UID:  1000,
+		GID:  1000,
+		DNS:  "redis.example.com",
 	}
 	r := ResolveCheckVarsBuild(meta)
 
@@ -27,13 +26,12 @@ func TestResolveTestVarsBuild(t *testing.T) {
 		t.Error("build-time resolver must not claim runtime")
 	}
 	want := map[string]string{
-		"IMAGE":      "redis-ml",
-		"USER":       "user",
-		"HOME":       "/home/user",
-		"UID":        "1000",
-		"GID":        "1000",
-		"DNS":        "redis.example.com",
-		"ACME_EMAIL": "ops@example.com",
+		"IMAGE": "redis-ml",
+		"USER":  "user",
+		"HOME":  "/home/user",
+		"UID":   "1000",
+		"GID":   "1000",
+		"DNS":   "redis.example.com",
 	}
 	if !reflect.DeepEqual(r.Env, want) {
 		t.Errorf("env mismatch\ngot:  %v\nwant: %v", r.Env, want)

@@ -126,10 +126,9 @@ var CapabilityLabelMap = map[string]string{
 // deploy-mode commands still consume them after MergeDeployOntoMetadata runs — but they
 // never round-trip through OCI labels.
 var DeployOnlyCapabilityFields = map[string]bool{
-	"Tunnel":    true,
-	"DNS":       true,
-	"AcmeEmail": true,
-	"Engine":    true,
+	"Tunnel": true,
+	"DNS":    true,
+	"Engine": true,
 }
 
 // CheckCapabilityLabelCompleteness returns an error listing any spec.BoxMetadata exported

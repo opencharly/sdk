@@ -362,11 +362,7 @@ func MergeDeployOntoMetadata(meta *spec.BoxMetadata, dc *DeployConfig, deployNam
 	}
 	if overlay.DNS != "" {
 		meta.DNS = overlay.DNS
-	}
-	if overlay.AcmeEmail != "" {
-		meta.AcmeEmail = overlay.AcmeEmail
-	}
-	// Ports: prefer the persisted ResolvedPort (the auto-allocated / pinned host:container mapping
+	} // Ports: prefer the persisted ResolvedPort (the auto-allocated / pinned host:container mapping
 	// `charly config` computed via ResolveDeployPorts). A deploy `port:` entry is only a PIN INPUT
 	// to that resolution — never a wholesale replacement — so it is NOT applied here. If
 	// ResolvedPort isn't set yet (deploy not configured), meta.Port keeps the image-label's bare
