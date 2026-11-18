@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/opencharly/spec/lock"
 )
@@ -226,7 +225,7 @@ func (s *Store) DeleteEntry(key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := writeFileAtomic(filepath.Join(s.dir, "index.json"), raw); err != nil {
+	if err := writeFileAtomic(s.indexPath(), raw); err != nil {
 		return false, err
 	}
 	return true, nil

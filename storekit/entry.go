@@ -79,6 +79,10 @@ const AnnotationRefName = "org.opencontainers.image.ref.name"
 // MediaTypeStoreEntry is the media type of a store entry manifest.
 const MediaTypeStoreEntry = "application/vnd.opencharly.store.entry.v1+json"
 
+// MediaTypeOCIIndex is the media type of an OCI image index — the shape `index.json` has in a store
+// tree and in an OCI archive alike, and the media type an index the store WRITES declares.
+const MediaTypeOCIIndex = "application/vnd.oci.image.index.v1+json"
+
 // Entry is one keyed cache entry: what it IS, what KEY finds it, and where its payload lives.
 //
 // Exactly one of Payload or Tree is set:
@@ -201,6 +205,10 @@ type indexDescriptor struct {
 	Digest      string            `json:"digest"`
 	Size        int64             `json:"size,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
+	// Platform is an image descriptor's platform, and it travels here unchanged because the
+	// descriptor shape is the image spec's, not this package's: an image store that dropped it
+	// would lose the only thing that tells two manifests of ONE reference apart.
+	Platform json.RawMessage `json:"platform,omitempty"`
 }
 
 type storeIndex struct {
@@ -219,10 +227,10 @@ func entryTag(key string) string {
 }
 
 func (s *Store) readIndex() (*storeIndex, error) {
-	raw, err := os.ReadFile(filepath.Join(s.dir, "index.json"))
+	raw, err := os.ReadFile(s.indexPath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &storeIndex{SchemaVersion: 2, MediaType: "application/vnd.oci.image.index.v1+json"}, nil
+			return &storeIndex{SchemaVersion: 2, MediaType: MediaTypeOCIIndex}, nil
 		}
 		return nil, err
 	}
@@ -231,7 +239,7 @@ func (s *Store) readIndex() (*storeIndex, error) {
 		return nil, fmt.Errorf("parse store index: %w", err)
 	}
 	if idx.MediaType == "" {
-		idx.MediaType = "application/vnd.oci.image.index.v1+json"
+		idx.MediaType = MediaTypeOCIIndex
 	}
 	return &idx, nil
 }
@@ -285,5 +293,5 @@ func (s *Store) indexEntry(key, manifestDigest string, size int64) error {
 	}
 	// Through the ONE atomic-write helper: this call site had its OWN fixed temp path
 	// (`index.json.tmp`), so two concurrent PutEntry calls raced exactly as two PutBlob calls did.
-	return writeFileAtomic(filepath.Join(s.dir, "index.json"), raw)
+	return writeFileAtomic(s.indexPath(), raw)
 }

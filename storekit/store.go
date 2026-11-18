@@ -1,9 +1,12 @@
 package storekit
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -32,8 +35,16 @@ type Store struct {
 // LayoutFile is the marker that makes a directory an OCI image layout, and therefore a store.
 const LayoutFile = "oci-layout"
 
+// layoutMarker is the `oci-layout` file's content: the image-layout version every reader of this
+// marker agrees on.
+const layoutMarker = `{"imageLayoutVersion":"1.0.0"}`
+
 // blobDir is the content-addressed blob directory inside a store.
 const blobDir = "blobs"
+
+// indexFile is the layout's entry point: the ONE `index.json` an OCI image layout has, holding one
+// descriptor per keyed entry (the cache store) or per stored image manifest (the image store).
+const indexFile = "index.json"
 
 // OpenStoreDir opens the store rooted at dir (an existing layout, or a path a pull will
 // populate).
@@ -51,6 +62,29 @@ func OpenStore(name string) (*Store, error) {
 // Dir is the store's layout directory.
 func (s *Store) Dir() string { return s.dir }
 
+// indexPath is the store's `index.json`.
+func (s *Store) indexPath() string { return filepath.Join(s.dir, indexFile) }
+
+// EnsureLayout creates the layout's blob directory and its `oci-layout` marker, so the directory
+// IS an OCI image layout — the thing `NamedStores` recognises and an `oci-layout://` solve source
+// requires. Idempotent: an existing marker is left untouched.
+//
+// A store populated only through `PutBlob` needs no marker (its index is what its readers read);
+// a store another PROCESS must discover as a layout — the image store, handed to a build daemon
+// as `--oci-layout <id>=<dir>` — does.
+func (s *Store) EnsureLayout() error {
+	if err := os.MkdirAll(filepath.Join(s.dir, blobDir), 0o755); err != nil {
+		return fmt.Errorf("prepare the store %s: %w", s.dir, err)
+	}
+	marker := filepath.Join(s.dir, LayoutFile)
+	if _, err := os.Stat(marker); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect the store marker %s: %w", marker, err)
+	}
+	return writeFileAtomic(marker, []byte(layoutMarker))
+}
+
 // blobPath is the on-disk path of a content-addressed blob. It validates the digest's SHAPE
 // before building the path: a digest is a path element here, so a malformed one must not be
 // able to escape `blobs/`.
@@ -59,16 +93,21 @@ func (s *Store) blobPath(dgst string) (string, error) {
 	if !ok || alg == "" || hexPart == "" {
 		return "", fmt.Errorf("malformed digest %q", dgst)
 	}
-	if strings.ContainsAny(alg+hexPart, `/\`) || strings.Contains(hexPart, "..") {
+	// Both halves are PATH ELEMENTS, so neither may carry a separator, and a `..` in either would
+	// walk out of `blobs/` — an archive whose member names are attacker-controlled reaches this
+	// through `blobs/<alg>/<hex>`, which is why the check lives here rather than at that call site.
+	if strings.ContainsAny(alg+hexPart, `/\`) ||
+		strings.Contains(alg, "..") || strings.Contains(hexPart, "..") {
 		return "", fmt.Errorf("malformed digest %q", dgst)
 	}
 	return filepath.Join(s.dir, blobDir, alg, hexPart), nil
 }
 
 // writeFileAtomic publishes data at dest through a UNIQUE temp file in dest's own directory, then
-// renames. It is THE single atomic-write definition in this package — both PutBlob and indexEntry call
-// it — because the atomic write was previously duplicated and the fix for a real race landed in only
-// one copy.
+// renames. It is THE single atomic-write definition in this package — every buffered writer
+// (PutBlob, indexEntry, DeleteEntry, the layout marker, the image store's index) calls it, and
+// every streaming writer calls it through copyFileAtomic — because the atomic write was previously
+// duplicated and the fix for a real race landed in only one copy.
 //
 // A FIXED temp path is shared by construction: two writers of the same value (two puts of identical
 // bytes, two PutEntry calls for the same key) write one temp file, the first rename consumes it, and
@@ -78,15 +117,37 @@ func (s *Store) blobPath(dgst string) (string, error) {
 // The proof is deterministic and cheap, not load-dependent: N concurrent writers of the same value
 // must all succeed, leave ONE item, and leave no temp file behind.
 func writeFileAtomic(dest string, data []byte) error {
+	return copyFileAtomic(dest, bytes.NewReader(data), false)
+}
+
+// copyFileAtomic publishes a STREAM at dest through a unique temp file in dest's own directory, then
+// renames it into place. Concurrent writers never share a temp name, and a reader never sees a
+// partial file.
+//
+// THE STREAM SHAPE MATTERS: an image store copies a build's blobs out of an export archive, and a
+// layer is often gigabytes — buffering one in memory is not something a build can afford, so the
+// streaming form is the one implementation and the buffered form is a wrapper over it.
+//
+// `durable` asks for the bytes to be flushed to stable storage before the rename. An IMAGE store
+// pays for that: its blobs are the only copy of a built image, and the index that names them is
+// rewritten durable-or-not. A cache blob is re-derivable by contract, so the cache store does not.
+func copyFileAtomic(dest string, src io.Reader, durable bool) error {
 	f, err := os.CreateTemp(filepath.Dir(dest), filepath.Base(dest)+".*.tmp")
 	if err != nil {
 		return err
 	}
 	tmp := f.Name()
-	if _, err := f.Write(data); err != nil {
+	if _, err := io.Copy(f, src); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
 		return err
+	}
+	if durable {
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			_ = os.Remove(tmp)
+			return err
+		}
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tmp)

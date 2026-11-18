@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/storekit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -313,8 +314,8 @@ func TestImageStoreImportAnnotationControl(t *testing.T) {
 		if err == nil {
 			t.Fatal("Import reported success for an archive that left the store untagged")
 		}
-		if !strings.Contains(err.Error(), imageNameAnnotation) {
-			t.Fatalf("error does not name the missing annotation %q: %v", imageNameAnnotation, err)
+		if !strings.Contains(err.Error(), storekit.AnnotationImageName) {
+			t.Fatalf("error does not name the missing annotation %q: %v", storekit.AnnotationImageName, err)
 		}
 	})
 
