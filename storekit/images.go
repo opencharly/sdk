@@ -23,21 +23,32 @@ package storekit
 // ⚑ THE ENTRY MODEL IS THE STORE'S, AND IT IS THE KEYING ANSWER. Each artifact is one
 // `Entry`:
 //
-//	Key       = the reference the caller asked for   (the INPUT identity)
-//	Payload   = the artifact's own digest            (the RESOLUTION: what that name IS, as content)
-//	MediaType = what that payload is
+//	Key         = the artifact's own digest        (D-LAW-7: an artifact's name IS a digest)
+//	Payload     = the same digest                  (the entry's payload is its root document)
+//	MediaType   = what that document is
+//	Annotations = the reference + the build time   (the RESOLUTION RECORD, outside the payload)
 //
-// so nothing immutable is ever mutated: the payload is a content-addressed blob, the entry
-// manifest is a content-addressed blob, and a rebuild REPLACES the index POINTER for that key —
-// exactly what `PutEntry` documents and what D-STORE-5's "re-resolves only on --refresh" means.
-// The previous artifact stays addressable by digest until D-STORE-7's sweep reclaims it, which is
-// what makes retention possible at all: one current entry per reference, the rest unreferenced.
+// The reference is an ANNOTATION, never the key. D-STORE-5 is satisfied in the only way a store
+// can satisfy it: the mutable name is resolved to the artifact's digest BEFORE the write, and the
+// digest is what the store keys on; a reader resolves a name to a digest by reading the entries'
+// annotations, and the digest — not the name — is what it then asks the store for.
 //
-// D-STORE-5 answers itself in that shape: a mutable name never becomes an ARTIFACT's name. It is
-// the index slot a caller asks by; the artifact is addressed, stored and served by the digest the
-// name resolved to at write time. This is the same shape opencharly/plugin-cache's `registry`
-// ingest already writes (`Key: ref, Payload: root digest`), so a built image and an ingested one
-// are the same kind of entry in the same store — the two callers the move exists for.
+// A REBUILD DELETES NOTHING. The new artifact is a different digest, so it is a different key: the
+// store APPENDS it and the previous artifact remains a first-class entry, addressable by its own
+// digest (D-STORE-7's "keeps what state references and evicts the rest" is a decision for the
+// sweep, which can see both entries — key, reference and build time — and reclaim the superseded
+// one with `DeleteEntry` + `UnreferencedBlobs`). Replacing an entry for a reference, which is what
+// this store did before this change, destroyed exactly the evidence a sweep needs.
+//
+// D-FORM-2's key — "content-addressed by the digests of its start artifact and its IR" — is the
+// same digest seen from the other side: for a reproducible build the artifact's content address
+// IS the function of those inputs. This store cannot compute the input key before the build, and
+// it does not pretend to: it keys on the digest the build produced, which is what a reader and a
+// sweep actually need.
+//
+// The entry model, the annotation slot and the "payload outside the digest" split are the store's
+// own (`Entry`'s doc), not a shape invented here — which is why a built image is the same kind of
+// entry opencharly/plugin-cache's `registry` ingest writes.
 //
 // ⚑ THE NAMING ANNOTATION IS THE EXPORT CONTRACT, and it is `io.containerd.image.name`, NOT
 // `org.opencontainers.image.ref.name`. Measured on buildkit 0.34.1: a `--output
@@ -122,54 +133,109 @@ func isImageMediaType(mediaType string) bool {
 	}
 }
 
-// Lookup returns the digest ref resolves to inside the store — the entry's payload, which is the
-// artifact's own content address.
+// Lookup returns the digest ref currently resolves to inside the store — the newest entry whose
+// annotation names it.
 func (s *ImageStore) Lookup(ref string) (digest string, ok bool, err error) {
-	entry, found, err := s.store.LookupEntry(ref)
+	entry, found, err := s.newestEntry(ref)
 	if err != nil {
 		return "", false, err
 	}
 	if !found {
 		return "", false, nil
 	}
-	return entry.Payload, true, nil
+	return entry.Key, true, nil
 }
 
 // Has reports whether the store holds ref.
 func (s *ImageStore) Has(ref string) (bool, error) {
-	_, ok, err := s.store.LookupEntry(ref)
-	return ok, err
+	_, ok, err := s.newestEntry(ref)
+	if err != nil {
+		return false, err
+	}
+	return ok, nil
 }
 
-// List returns every reference the store holds, sorted — the entries' keys, which is the store's
-// own inventory (D-STORE-7's "enumerate entries", satisfied by the model rather than by a
-// listing sidecar).
+// newestEntry is the ONE resolver from a reference to the entry it names. The reference is not a
+// key, so it is answered from the entries' annotations: the matching entry with the greatest
+// build time, and on a tie the LATER in index order — which is write order, because a rebuild
+// appends. One index scan and one small read per entry, which is the price of keying by identity
+// instead of by name; the store's entries are its inventory, not a sidecar.
+func (s *ImageStore) newestEntry(ref string) (*Entry, bool, error) {
+	idx, err := s.store.readIndex()
+	if err != nil {
+		return nil, false, err
+	}
+	var best *Entry
+	var bestCreated time.Time
+	for _, d := range idx.Manifests {
+		raw, rerr := s.store.ReadBlob(d.Digest)
+		if rerr != nil {
+			return nil, false, rerr
+		}
+		var e Entry
+		if uerr := json.Unmarshal(raw, &e); uerr != nil {
+			return nil, false, fmt.Errorf("parse the entry %s: %w", d.Digest, uerr)
+		}
+		if e.Annotations[AnnotationImageName] != ref {
+			continue
+		}
+		created, _ := time.Parse(time.RFC3339, e.Annotations[AnnotationCreated])
+		if best == nil || !created.Before(bestCreated) {
+			best, bestCreated = &e, created
+		}
+	}
+	if best == nil {
+		return nil, false, nil
+	}
+	return best, true, nil
+}
+
+// List returns every reference the store holds, deduplicated and sorted: the annotations the
+// entries carry, not their keys — a caller elects a tag over references, and a rebuild leaves two
+// entries naming one reference.
+//
+// The KEYS are the store's inventory, and a sweep reads them through `Entries()` (key = digest,
+// plus the reference and the build time), which is the surface D-STORE-7's "know what state
+// references" needs.
 func (s *ImageStore) List() ([]string, error) {
 	entries, err := s.store.Entries()
 	if err != nil {
 		return nil, err
 	}
+	seen := make(map[string]bool, len(entries))
 	refs := make([]string, 0, len(entries))
 	for _, e := range entries {
-		refs = append(refs, e.Key)
+		ref := e.Annotations[AnnotationImageName]
+		if ref == "" || seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		refs = append(refs, ref)
 	}
 	sort.Strings(refs)
 	return refs, nil
 }
 
-// Add lands an exported OCI archive as ONE store entry keyed by ref.
+// Add lands an exported OCI archive as ONE store entry, KEYED BY THE ARTIFACT'S DIGEST and
+// annotated with the reference it was built as.
 //
 // The order is the contract: blobs first, the entry LAST, so a reader never observes a key whose
 // payload is not yet published. Existing blobs are not rewritten (content-addressed bytes are the
 // same bytes), and the entry's payload is the archive's own `index.json` — the OCI layout's entry
-// point — so a single-platform and a multi-platform export are stored the same way and
-// `Archive` reproduces either.
+// point — so a single-platform and a multi-platform export are stored the same way and `Archive`
+// reproduces either.
+//
+// Nothing is DELETED here: a rebuild produces a different digest, hence a different key, hence a
+// new entry beside the old one — which stays reachable by its own digest until a sweep reclaims
+// it. That is what makes the reference an annotation rather than an identity: replacing the entry
+// for a name would have thrown away the previous artifact's address.
 //
 // The archive must ALREADY name ref with the export annotation, because the same file is what an
 // engine load reads; a caller that leaned on the store to supply the name would still be feeding
-// an unaddressable archive to that load. Its copy of that annotation is STRIPPED from the payload
-// (D-STORE-6: a stored payload carries no name and no timestamp) and re-applied by `Archive`,
-// which is the only surface that crosses the engine boundary.
+// an unaddressable archive to that load. The payload is published with that annotation STRIPPED
+// (D-STORE-6: a payload carries no name and no timestamp); the ENTRY carries both, where the
+// store's own model puts a resolution record, and `Archive` re-applies the export annotation —
+// the one surface that crosses the engine boundary.
 func (s *ImageStore) Add(archivePath, ref string) error {
 	if strings.TrimSpace(ref) == "" {
 		return fmt.Errorf("add an image to the %s store: no reference to key it by", ImageStoreName)
@@ -209,14 +275,42 @@ func (s *ImageStore) Add(archivePath, ref string) error {
 	if err != nil {
 		return fmt.Errorf("publish the artifact index of %s: %w", ref, err)
 	}
+	// THE ENTRY: keyed by the digest the build produced, carrying the reference and the build time
+	// as annotations — the resolution record D-STORE-5 asks for, beside the key and outside the
+	// payload's digest by construction.
+	// The build time is REQUIRED on the entry, because it is what makes "which artifact does this
+	// reference mean NOW" answerable without a sidecar: the export's own time when it carries one,
+	// otherwise the moment the store learned of it. Either way it is recorded on the ENTRY, never
+	// in the payload (D-STORE-6).
+	created := exportCreated(exported)
+	if created == "" {
+		created = time.Now().UTC().Format(time.RFC3339)
+	}
+	annotations := map[string]string{
+		AnnotationImageName: ref,
+		AnnotationCreated:   created,
+	}
 	if _, err := s.store.PutEntry(Entry{
-		Key:       ref,
-		MediaType: indexMediaType(exported),
-		Payload:   payloadDigest,
+		Key:         payloadDigest,
+		MediaType:   indexMediaType(exported),
+		Payload:     payloadDigest,
+		Annotations: annotations,
 	}); err != nil {
 		return fmt.Errorf("index %s in the %s store: %w", ref, ImageStoreName, err)
 	}
 	return nil
+}
+
+// exportCreated returns the build time the export carries, if any. It is re-recorded on the ENTRY
+// (never in the payload) because it is what makes "which artifact does this reference mean NOW"
+// answerable — D-STORE-6's one sanctioned home for a resolution time.
+func exportCreated(exported *storeIndex) string {
+	for _, d := range exported.Manifests {
+		if created := d.Annotations[AnnotationCreated]; created != "" {
+			return created
+		}
+	}
+	return ""
 }
 
 // indexMediaType is the artifact's media type: what the archive's own index declares, defaulting
@@ -278,7 +372,7 @@ func (s *ImageStore) WriteArchive(ref string, w io.Writer) error { return s.writ
 // writeArchive is the ONE archive writer: an `oci-layout` marker, an `index.json` naming the
 // reference for the engine, and every blob the artifact reaches.
 func (s *ImageStore) writeArchive(ref string, w io.Writer) error {
-	entry, ok, err := s.store.LookupEntry(ref)
+	entry, ok, err := s.newestEntry(ref)
 	if err != nil {
 		return err
 	}

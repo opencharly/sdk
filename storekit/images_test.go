@@ -195,10 +195,11 @@ func TestImageStoreIsTheRegistryStoreUnderTheCacheRoot(t *testing.T) {
 	}
 }
 
-// TestImageStoreIsAnEntryKeyedByReferenceAndAddressedByDigest is the KEYING claim (D-STORE-3,
-// D-STORE-5): the reference a caller asks by is the entry's KEY, the artifact is stored under the
-// digest it resolved to, and the stored payload carries neither a name nor a timestamp (D-STORE-6).
-func TestImageStoreIsAnEntryKeyedByReferenceAndAddressedByDigest(t *testing.T) {
+// TestImageStoreIsKeyedByTheArtifactDigestAndAnnotatedWithTheReference is the KEYING claim
+// (D-STORE-5, D-STORE-3, D-LAW-7): the store keys an artifact by the DIGEST it resolved to, the
+// reference rides as an annotation, and the stored payload carries neither a name nor a timestamp
+// (D-STORE-6).
+func TestImageStoreIsKeyedByTheArtifactDigestAndAnnotatedWithTheReference(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CHARLY_CACHE_DIR", root)
 	store, err := OpenImageStore()
@@ -208,26 +209,33 @@ func TestImageStoreIsAnEntryKeyedByReferenceAndAddressedByDigest(t *testing.T) {
 	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
 	parts := addImage(t, store, ref, "layer-entry")
 
-	entry, ok, err := store.store.LookupEntry(ref)
-	if err != nil {
-		t.Fatalf("LookupEntry(%q): %v", ref, err)
+	digest, ok, err := store.Lookup(ref)
+	if err != nil || !ok {
+		t.Fatalf("Lookup(%q) = (_, %v, %v)", ref, ok, err)
 	}
-	if !ok {
-		t.Fatalf("the store holds no entry for %q", ref)
+	// The KEY is the digest, and it is the same value the payload names: an artifact's identity in
+	// this store is its content, never the reference it was built as.
+	entry, found, err := store.store.LookupEntry(digest)
+	if err != nil || !found {
+		t.Fatalf("LookupEntry(%q) = (_, %v, %v) — the store must be addressable BY DIGEST", digest, found, err)
 	}
-	if entry.Key != ref {
-		t.Errorf("entry.Key = %q, want the reference the caller asked by %q", entry.Key, ref)
+	if entry.Key != digest || entry.Payload != digest {
+		t.Errorf("entry = {Key:%q, Payload:%q}, want both to be the artifact digest %q", entry.Key, entry.Payload, digest)
+	}
+	if got := entry.Annotations[AnnotationImageName]; got != ref {
+		t.Errorf("the entry's %s annotation = %q, want the reference %q", AnnotationImageName, got, ref)
 	}
 	if entry.MediaType != MediaTypeOCIIndex {
 		t.Errorf("entry.MediaType = %q, want the artifact index media type %q", entry.MediaType, MediaTypeOCIIndex)
 	}
-	// The payload IS the artifact's content address: the digest of the stored index document.
+
+	// The payload IS the artifact's content address, and it holds no name and no timestamp.
 	payload, err := store.store.ReadBlob(entry.Payload)
 	if err != nil {
 		t.Fatalf("read the payload %s: %v", entry.Payload, err)
 	}
-	if got, err := DigestOf(payload); err != nil {
-		t.Fatal(err)
+	if got, derr := DigestOf(payload); derr != nil {
+		t.Fatal(derr)
 	} else if got != entry.Payload {
 		t.Errorf("entry.Payload = %q is not the content address of the bytes it names", entry.Payload)
 	}
@@ -238,18 +246,18 @@ func TestImageStoreIsAnEntryKeyedByReferenceAndAddressedByDigest(t *testing.T) {
 	if len(stored.Manifests) != 1 || stored.Manifests[0].Digest != parts.digest {
 		t.Fatalf("the stored index names %+v, want the built manifest %q", stored.Manifests, parts.digest)
 	}
-	// D-STORE-6: no name and no timestamp inside a payload.
 	for _, banned := range []string{AnnotationImageName, AnnotationRefName, AnnotationCreated} {
 		if _, present := stored.Manifests[0].Annotations[banned]; present {
 			t.Errorf("the stored payload carries the %q annotation; a payload holds no name and no timestamp", banned)
 		}
 	}
 
-	if digest, ok, err := store.Lookup(ref); err != nil || !ok || digest != entry.Payload {
-		t.Errorf("Lookup(%q) = (%q, %v, %v), want the entry's payload %q", ref, digest, ok, err, entry.Payload)
+	// The reference is what a caller asks by, and the TAG ALONE is not a reference.
+	if _, ok, err := store.Lookup("2026.296.1200"); err != nil || ok {
+		t.Errorf("Lookup(tag-only) = (_, %v, %v) — the tag alone names nothing", ok, err)
 	}
 	if held, err := store.Has("2026.296.1200"); err != nil || held {
-		t.Errorf("Has(tag-only) = (%v, %v) — the tag alone is not a key", held, err)
+		t.Errorf("Has(tag-only) = (%v, %v) — the tag alone names nothing", held, err)
 	}
 	refs, err := store.List()
 	if err != nil {
@@ -305,11 +313,12 @@ func TestImageStoreLiveArtifactKeepsItsWholeGraphReachable(t *testing.T) {
 	}
 }
 
-// TestImageStoreRebuildMovesThePointerAndLeavesTheOldArtifactSweepable is reading (a) of
-// D-STORE-3/D-STORE-5 tested as a property: a rebuild REPLACES the entry's pointer, mutating no
-// entry, and the superseded artifact's blobs become exactly the sweep's candidates — which is the
-// retention mechanism itself.
-func TestImageStoreRebuildMovesThePointerAndLeavesTheOldArtifactSweepable(t *testing.T) {
+// TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable is the IDENTITY behaviour the
+// ruling turns on: a rebuild deletes NOTHING. The new artifact is a new digest, so the store
+// appends a second entry; the previous artifact remains a first-class entry addressable by its own
+// digest, and reclaiming it is a SWEEP decision (D-STORE-7) made from what `Entries()` exposes —
+// key, reference and build time — never something a build performs.
+func TestImageStoreRebuildAppendsAndKeepsTheOldArtifactAddressable(t *testing.T) {
 	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
 	store, err := OpenImageStore()
 	if err != nil {
@@ -327,15 +336,43 @@ func TestImageStoreRebuildMovesThePointerAndLeavesTheOldArtifactSweepable(t *tes
 		t.Fatalf("Lookup after the rebuild = (_, %v, %v)", ok, err)
 	}
 	if firstDigest == secondDigest {
-		t.Fatal("the rebuild did not move the pointer: both builds resolved to the same digest")
+		t.Fatal("the rebuild did not produce a new artifact digest")
+	}
+
+	// THE OLD ARTIFACT IS STILL AN ENTRY, by its own digest — not merely bytes on disk.
+	if _, found, err := store.store.LookupEntry(firstDigest); err != nil || !found {
+		t.Fatalf("the superseded artifact %s is no longer addressable by digest (found=%v, err=%v)", firstDigest, found, err)
+	}
+	// Two entries name the reference; the store's LIST is references, so it stays one.
+	entries, err := store.store.Entries()
+	if err != nil {
+		t.Fatalf("Entries: %v", err)
+	}
+	named := 0
+	for _, e := range entries {
+		if e.Annotations[AnnotationImageName] == ref {
+			named++
+		}
+	}
+	if named != 2 {
+		t.Errorf("%d entr(ies) name %q, want 2 — a rebuild APPENDS, it does not replace", named, ref)
 	}
 	if refs, err := store.List(); err != nil {
 		t.Fatal(err)
 	} else if len(refs) != 1 || refs[0] != ref {
-		t.Errorf("List() = %v after a rebuild, want one entry keyed %q", refs, ref)
+		t.Errorf("List() = %v after a rebuild, want one reference %q", refs, ref)
+	}
+	// Both artifacts are live, so the sweep must reclaim nothing yet.
+	if sweepable := unresolvable(t, store); len(sweepable) != 0 {
+		t.Fatalf("the sweep would reclaim %d blob(s) of two LIVE artifacts: %v", len(sweepable), sweepable)
 	}
 
-	// The superseded artifact's own bytes are exactly what the sweep should reclaim ...
+	// A sweep keeps what state references (the newest artifact for the reference) and evicts the
+	// rest: `DeleteEntry` names the digest, and the superseded artifact's own blobs then become
+	// exactly the sweep's candidates.
+	if removed, err := store.store.DeleteEntry(firstDigest); err != nil || !removed {
+		t.Fatalf("DeleteEntry(%q) = (%v, %v)", firstDigest, removed, err)
+	}
 	sweepable := unresolvable(t, store)
 	for _, data := range [][]byte{first.manifest, first.layer} {
 		dgst, derr := DigestOf(data)
@@ -358,10 +395,8 @@ func TestImageStoreRebuildMovesThePointerAndLeavesTheOldArtifactSweepable(t *tes
 		}
 	}
 	if sweepable[secondDigest] {
-		t.Errorf("the sweep would reclaim the current entry's payload %s", secondDigest)
+		t.Errorf("the sweep would reclaim the current artifact %s", secondDigest)
 	}
-	// Sweeping the candidates leaves exactly the live artifact: its payload index, its manifest,
-	// its config and its layer — and nothing else.
 	for dgst := range sweepable {
 		if err := store.store.RemoveBlob(dgst); err != nil {
 			t.Fatalf("RemoveBlob(%s): %v", dgst, err)
@@ -370,39 +405,12 @@ func TestImageStoreRebuildMovesThePointerAndLeavesTheOldArtifactSweepable(t *tes
 	if left := unresolvable(t, store); len(left) != 0 {
 		t.Fatalf("after the sweep %d blob(s) are STILL unreferenced: %v", len(left), left)
 	}
-	// ... and the live artifact is intact: its payload index, its manifest, its config and its
-	// layer all survive, because the entry still reaches every one of them.
 	live := blobSet(t, second)
 	live[secondDigest] = true
 	for dgst := range live {
 		if !store.store.HasBlob(dgst) {
 			t.Errorf("the sweep removed %s, which the live entry reaches", dgst)
 		}
-	}
-
-	// And a deleted entry leaves its artifact collectable — item 5's "delete one entry + its
-	// unreferenced blobs", through the store's own surface.
-	if removed, err := store.store.DeleteEntry(ref); err != nil || !removed {
-		t.Fatalf("DeleteEntry(%q) = (%v, %v)", ref, removed, err)
-	}
-	if _, ok, _ := store.Lookup(ref); ok {
-		t.Error("the deleted entry still resolves")
-	}
-	sweepable = unresolvable(t, store)
-	for dgst := range blobSet(t, second) {
-		if !sweepable[dgst] {
-			t.Errorf("after deleting the entry, blob %s is not named by the sweep", dgst)
-		}
-	}
-	for dgst := range sweepable {
-		if err := store.store.RemoveBlob(dgst); err != nil {
-			t.Errorf("RemoveBlob(%s): %v", dgst, err)
-		}
-	}
-	if blobs, err := store.store.Blobs(); err != nil {
-		t.Fatal(err)
-	} else if len(blobs) != 0 {
-		t.Errorf("the swept store still holds %d blob(s): %v", len(blobs), blobs)
 	}
 }
 
