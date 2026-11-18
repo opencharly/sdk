@@ -306,3 +306,32 @@ func (s *Store) indexEntry(key, manifestDigest string, size int64) error {
 	// (`index.json.tmp`), so two concurrent PutEntry calls raced exactly as two PutBlob calls did.
 	return writeFileAtomic(s.indexPath(), raw)
 }
+
+// ManifestDigest answers D-STORE-10's question about ONE entry: which manifest blob does the store's
+// own index point at for this KEY?
+//
+// It is a separate reader from LookupEntry because the two answer different things. LookupEntry hands
+// back the ENTRY (what the payload is); a distribution client asks for the MANIFEST ADDRESS, and a
+// caller that tried to derive one from the other would be re-reading the index by hand — the second
+// resolver this package exists to prevent.
+//
+// The `bool` is "this key has a manifest", which is NOT "no error": an absent key is a 404 to the
+// caller that asked, and an unreadable index is a 500. Collapsing them is how a missing image becomes
+// a silent empty answer.
+func (s *Store) ManifestDigest(key string) (digest string, found bool, err error) {
+	if key == "" {
+		return "", false, fmt.Errorf("ManifestDigest: empty key")
+	}
+	idx, err := s.readIndex()
+	if err != nil {
+		return "", false, err
+	}
+	wantTag := entryTag(key)
+	for _, d := range idx.Manifests {
+		if d.Annotations[AnnotationCacheKey] != key && d.Annotations[AnnotationRefName] != wantTag {
+			continue
+		}
+		return d.Digest, true, nil
+	}
+	return "", false, nil
+}
