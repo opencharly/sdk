@@ -76,6 +76,11 @@ const AnnotationCacheKey = "ai.opencharly.cache.key"
 // literals that happen to be equal today.
 const AnnotationRefName = "org.opencontainers.image.ref.name"
 
+// AnnotationCreated dates an entry. It is the export's recency key and it is STRIPPED from a
+// stored artifact payload (D-STORE-6: a payload carries no timestamp); an entry that wants to
+// record its own time records it as an annotation, outside the payload's digest.
+const AnnotationCreated = "org.opencontainers.image.created"
+
 // MediaTypeStoreEntry is the media type of a store entry manifest.
 const MediaTypeStoreEntry = "application/vnd.opencharly.store.entry.v1+json"
 
@@ -288,7 +293,13 @@ func (s *Store) indexEntry(key, manifestDigest string, size int64) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	// A store that has published an index IS an OCI image layout, and D-STORE-3 says its on-disk
+	// form is exactly that — so the `oci-layout` marker is written HERE, by the one function every
+	// store write goes through. Without it `NamedStores()` cannot see the store and D-STORE-7's
+	// sweep has nothing to keep or evict: a store the sweep cannot discover is a store that grows
+	// forever. (Measured before this: no storekit-created store carried the marker at all, so
+	// every named store — buildcache's, the registry's — was invisible to `charly clean --cache`.)
+	if err := s.EnsureLayout(); err != nil {
 		return err
 	}
 	// Through the ONE atomic-write helper: this call site had its OWN fixed temp path

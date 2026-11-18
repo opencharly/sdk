@@ -14,9 +14,9 @@ package deploykit
 // The charly image store is an INTERFACE here, never a second implementation of
 // its OCI layout. That layout — the `oci-layout` marker, one `index.json`,
 // `blobs/<alg>/<digest>`, the atomic index rewrite under a cross-process lock, and
-// the `io.containerd.image.name` naming annotation — lives in `sdk/storekit` as the
-// named `charly` store, under the DATA root. A layout reader/writer written here
-// would be the R2 duplication the store move (opencharly/sdk#460) existed to
+// the `io.containerd.image.name` export annotation — lives in `sdk/storekit` as the
+// named `registry` store under the ONE cache root. A layout reader/writer written
+// here would be the R2 duplication the store move (opencharly/sdk#460) existed to
 // remove, so the production CharlyImageSource below is the store's own answer with
 // no layout knowledge of its own.
 
@@ -278,11 +278,10 @@ type charlyImageSource struct {
 
 var _ CharlyImageSource = (*charlyImageSource)(nil)
 
-// NewCharlyImageSource opens the charly image store as the resolver's source:
-// `CHARLY_IMAGE_STORE_DIR` when set (a disposable target's relocated store), else
-// `images/` under the DATA root that `storekit.Dir(storekit.RootData)` resolves. A
-// caller with no charly store passes nil to ImageResolver instead of a source that
-// would answer for a store nothing wrote.
+// NewCharlyImageSource opens the charly image store as the resolver's source: the
+// named `registry` store under the cache root, so `CHARLY_CACHE_DIR` is the ONE
+// override that relocates it (D-STORE-1). A caller with no charly store passes nil
+// to ImageResolver instead of a source that would answer for a store nothing wrote.
 func NewCharlyImageSource() (CharlyImageSource, error) {
 	store, err := storekit.OpenImageStore()
 	if err != nil {

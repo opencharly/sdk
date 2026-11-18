@@ -1,18 +1,20 @@
 package storekit
 
-// images_test.go — the CHARLY IMAGE STORE's properties, each arm keyed to the thing it would
-// break in production:
+// images_test.go — the CHARLY IMAGE STORE's properties, each arm keyed to the contract row it
+// would break:
 //
-//   - the RELOCATION and the root: the store lives under the DATA root, `CHARLY_CACHE_DIR` does
-//     not move it, and `CHARLY_IMAGE_STORE_DIR` does (a check bed's build must not write the
-//     operator's store);
-//   - the NAMING ANNOTATION: `io.containerd.image.name` is the key, the tag-only
-//     `org.opencontainers.image.ref.name` is not, and an archive that carries only the latter is
-//     REFUSED rather than filed under a name nothing can resolve;
-//   - the ONE-image-per-reference index: a rebuild replaces that reference's whole descriptor set
-//     and leaves every other reference alone, concurrently;
-//   - the ARCHIVE: it carries the marker, the annotated index and exactly the blobs the image
-//     reaches — not the whole blob directory, which holds every image the host ever built.
+//   - D-STORE-1 — the store is the named `registry` store under the ONE cache root, relocated by
+//     `CHARLY_CACHE_DIR` and by nothing else;
+//   - D-STORE-3 — one content-addressed store holds the artifact too, its tree is the layout and
+//     nothing else, and a rebuild moves the INDEX POINTER rather than mutating an entry;
+//   - D-STORE-5 — the name a caller asks by is the entry's KEY; the artifact is stored and served
+//     by the digest it resolved to;
+//   - D-STORE-7 — a live artifact keeps its whole graph reachable, the store is discoverable by
+//     `NamedStores()`, and a superseded or deleted artifact's blobs become exactly the sweep's
+//     candidates;
+//   - D-STORE-6 — a stored payload carries no name and no timestamp;
+//   - and the export contract: an archive crossing the engine boundary carries
+//     `io.containerd.image.name`.
 
 import (
 	"archive/tar"
@@ -38,7 +40,7 @@ type imageParts struct {
 }
 
 // newImageParts builds a minimal image whose layer bytes are distinct per call, so two "builds"
-// never accidentally share a blob.
+// never accidentally share a layer.
 func newImageParts(t *testing.T, layer string) imageParts {
 	t.Helper()
 	parts := imageParts{
@@ -53,11 +55,10 @@ func newImageParts(t *testing.T, layer string) imageParts {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := fmt.Sprintf(
+	parts.manifest = []byte(fmt.Sprintf(
 		`{"schemaVersion":2,"mediaType":%q,"config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":%q,"size":%d},`+
 			`"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar","digest":%q,"size":%d}]}`,
-		mediaTypeOCIManifest, configDigest, len(parts.config), layerDigest, len(parts.layer))
-	parts.manifest = []byte(manifest)
+		mediaTypeOCIManifest, configDigest, len(parts.config), layerDigest, len(parts.layer)))
 	parts.digest, err = DigestOf(parts.manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -66,8 +67,8 @@ func newImageParts(t *testing.T, layer string) imageParts {
 }
 
 // writeImageArchive writes a minimal OCI image archive for ref. `named` selects the annotations
-// the index carries: the naming annotation (`io.containerd.image.name`, what a
-// `--output type=oci,name=<full-ref>` export writes) plus the tag-only one, or — the CONTROL the
+// the index carries: the export annotation (`io.containerd.image.name`, what a
+// `--output type=oci,name=<full-ref>` build writes) plus the tag-only one, or — the CONTROL a
 // `name=`-less export produces — the tag-only annotation alone.
 func writeImageArchive(t *testing.T, path, ref string, parts imageParts, named bool) string {
 	t.Helper()
@@ -139,109 +140,297 @@ func addImage(t *testing.T, store *ImageStore, ref, layer string) imageParts {
 	return parts
 }
 
-// TestImageStoreDirLivesUnderTheDataRootAndRelocates pins the ROOT and the ONE relocation. The
-// data-root half is the point of opencharly/spec#372: the cache root is disposable by contract, so
-// an image store there would be deleted by a cache clear.
-func TestImageStoreDirLivesUnderTheDataRootAndRelocates(t *testing.T) {
-	home := t.TempDir()
-	pinRootsEnv(t, home)
-	t.Setenv(ImageStoreDirEnv, "")
+// unresolvable is the set of blob digests a sweep would reclaim, as a set for comparison.
+func unresolvable(t *testing.T, store *ImageStore) map[string]bool {
+	t.Helper()
+	blobs, err := store.store.UnreferencedBlobs()
+	if err != nil {
+		t.Fatalf("UnreferencedBlobs: %v", err)
+	}
+	out := make(map[string]bool, len(blobs))
+	for _, b := range blobs {
+		out[b.Digest] = true
+	}
+	return out
+}
+
+// blobSet is the set of an image's own blob digests (manifest, config, layer).
+func blobSet(t *testing.T, parts imageParts) map[string]bool {
+	t.Helper()
+	out := make(map[string]bool, 3)
+	for _, data := range [][]byte{parts.manifest, parts.config, parts.layer} {
+		dgst, err := DigestOf(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[dgst] = true
+	}
+	return out
+}
+
+// TestImageStoreIsTheRegistryStoreUnderTheCacheRoot pins D-STORE-1: the store is a NAMED store
+// under the ONE cache root, so the single override relocates it — and the retired
+// `CHARLY_IMAGE_STORE_DIR` no longer does anything (R5: the second relocation lever is gone, not
+// left dormant).
+func TestImageStoreIsTheRegistryStoreUnderTheCacheRoot(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHARLY_CACHE_DIR", root)
+	t.Setenv("CHARLY_IMAGE_STORE_DIR", "")
 
 	dir, err := ImageStoreDir()
 	if err != nil {
 		t.Fatalf("ImageStoreDir: %v", err)
 	}
-	if want := filepath.Join(home, "xdg-data", "charly", "images"); dir != want {
-		t.Errorf("ImageStoreDir() = %q, want %q under the DATA root", dir, want)
+	if want := filepath.Join(root, "registry"); dir != want {
+		t.Errorf("ImageStoreDir() = %q, want the named registry store %q under the cache root", dir, want)
 	}
 
-	// The cache root's override must NOT carry the built images: an operator relocating a
-	// disposable cache is not relocating a durable artefact.
-	cache := filepath.Join(home, "relocated-cache")
-	t.Setenv("CHARLY_CACHE_DIR", cache)
+	// The retired lever must be INERT: a stale environment variable may not move the store to a
+	// second root (that is the defect the fifth root's revert removed).
+	t.Setenv("CHARLY_IMAGE_STORE_DIR", filepath.Join(root, "elsewhere"))
 	if got, err := ImageStoreDir(); err != nil {
-		t.Fatalf("ImageStoreDir with CHARLY_CACHE_DIR: %v", err)
-	} else if strings.HasPrefix(got, cache) {
-		t.Errorf("ImageStoreDir() = %q followed CHARLY_CACHE_DIR (%q); the data root must not follow the cache override", got, cache)
-	}
-
-	// The store's OWN relocation wins, and is used verbatim.
-	relocated := filepath.Join(home, "bed-store")
-	t.Setenv(ImageStoreDirEnv, relocated)
-	if got, err := ImageStoreDir(); err != nil {
-		t.Fatalf("ImageStoreDir with %s: %v", ImageStoreDirEnv, err)
-	} else if got != relocated {
-		t.Errorf("ImageStoreDir() = %q, want the %s override %q", got, ImageStoreDirEnv, relocated)
-	}
-
-	// An unset XDG_DATA_HOME falls back to $HOME/.local/share, through the contract resolver.
-	t.Setenv(ImageStoreDirEnv, "")
-	t.Setenv("XDG_DATA_HOME", "")
-	if got, err := ImageStoreDir(); err != nil {
-		t.Fatalf("ImageStoreDir with XDG_DATA_HOME unset: %v", err)
-	} else if want := filepath.Join(home, ".local", "share", "charly", "images"); got != want {
-		t.Errorf("ImageStoreDir() = %q with XDG_DATA_HOME unset, want %q", got, want)
+		t.Fatalf("ImageStoreDir: %v", err)
+	} else if got != dir {
+		t.Errorf("ImageStoreDir() = %q with the retired CHARLY_IMAGE_STORE_DIR set, want %q — the cache root's override is the ONE override", got, dir)
 	}
 }
 
-// TestImageStoreIsKeyedByTheNamingAnnotation is the annotation CONTROL at the store boundary: the
-// full reference resolves, the tag alone does not, and an archive carrying only the tag-only
-// annotation is refused instead of being filed under a key nothing can reach.
-func TestImageStoreIsKeyedByTheNamingAnnotation(t *testing.T) {
-	t.Setenv(ImageStoreDirEnv, t.TempDir())
+// TestImageStoreIsAnEntryKeyedByReferenceAndAddressedByDigest is the KEYING claim (D-STORE-3,
+// D-STORE-5): the reference a caller asks by is the entry's KEY, the artifact is stored under the
+// digest it resolved to, and the stored payload carries neither a name nor a timestamp (D-STORE-6).
+func TestImageStoreIsAnEntryKeyedByReferenceAndAddressedByDigest(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHARLY_CACHE_DIR", root)
+	store, err := OpenImageStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
+	parts := addImage(t, store, ref, "layer-entry")
+
+	entry, ok, err := store.store.LookupEntry(ref)
+	if err != nil {
+		t.Fatalf("LookupEntry(%q): %v", ref, err)
+	}
+	if !ok {
+		t.Fatalf("the store holds no entry for %q", ref)
+	}
+	if entry.Key != ref {
+		t.Errorf("entry.Key = %q, want the reference the caller asked by %q", entry.Key, ref)
+	}
+	if entry.MediaType != MediaTypeOCIIndex {
+		t.Errorf("entry.MediaType = %q, want the artifact index media type %q", entry.MediaType, MediaTypeOCIIndex)
+	}
+	// The payload IS the artifact's content address: the digest of the stored index document.
+	payload, err := store.store.ReadBlob(entry.Payload)
+	if err != nil {
+		t.Fatalf("read the payload %s: %v", entry.Payload, err)
+	}
+	if got, err := DigestOf(payload); err != nil {
+		t.Fatal(err)
+	} else if got != entry.Payload {
+		t.Errorf("entry.Payload = %q is not the content address of the bytes it names", entry.Payload)
+	}
+	var stored storeIndex
+	if err := json.Unmarshal(payload, &stored); err != nil {
+		t.Fatalf("parse the stored index: %v", err)
+	}
+	if len(stored.Manifests) != 1 || stored.Manifests[0].Digest != parts.digest {
+		t.Fatalf("the stored index names %+v, want the built manifest %q", stored.Manifests, parts.digest)
+	}
+	// D-STORE-6: no name and no timestamp inside a payload.
+	for _, banned := range []string{AnnotationImageName, AnnotationRefName, AnnotationCreated} {
+		if _, present := stored.Manifests[0].Annotations[banned]; present {
+			t.Errorf("the stored payload carries the %q annotation; a payload holds no name and no timestamp", banned)
+		}
+	}
+
+	if digest, ok, err := store.Lookup(ref); err != nil || !ok || digest != entry.Payload {
+		t.Errorf("Lookup(%q) = (%q, %v, %v), want the entry's payload %q", ref, digest, ok, err, entry.Payload)
+	}
+	if held, err := store.Has("2026.296.1200"); err != nil || held {
+		t.Errorf("Has(tag-only) = (%v, %v) — the tag alone is not a key", held, err)
+	}
+	refs, err := store.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(refs) != 1 || refs[0] != ref {
+		t.Errorf("List() = %v, want [%q]", refs, ref)
+	}
+}
+
+// TestImageStoreIsDiscoveredByNamedStores pins D-STORE-7's precondition: a store the sweep cannot
+// discover is a store that grows forever. The `oci-layout` marker is written by the store's own
+// index publication, so every storekit store is discoverable.
+func TestImageStoreIsDiscoveredByNamedStores(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHARLY_CACHE_DIR", root)
+	store, err := OpenImageStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	addImage(t, store, "ghcr.io/opencharly/fedora:2026.296.1200", "layer-discoverable")
+
+	names, err := NamedStores()
+	if err != nil {
+		t.Fatalf("NamedStores: %v", err)
+	}
+	if len(names) != 1 || names[0] != ImageStoreName {
+		t.Fatalf("NamedStores() = %v, want [%q] — a store the sweep cannot see is never swept", names, ImageStoreName)
+	}
+	if _, err := os.Stat(filepath.Join(store.Dir(), LayoutFile)); err != nil {
+		t.Fatalf("the store carries no %s marker: %v", LayoutFile, err)
+	}
+}
+
+// TestImageStoreLiveArtifactKeepsItsWholeGraphReachable is D-STORE-7 applied to an artifact: a
+// live image's CONFIG and LAYERS are reachable only through its root document, so a sweep that
+// marked the root alone would keep a manifest and delete the layer it names.
+func TestImageStoreLiveArtifactKeepsItsWholeGraphReachable(t *testing.T) {
+	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
+	store, err := OpenImageStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := addImage(t, store, "ghcr.io/opencharly/fedora:2026.296.1200", "layer-live")
+
+	if sweepable := unresolvable(t, store); len(sweepable) != 0 {
+		t.Fatalf("the sweep would reclaim %d blob(s) of a LIVE image: %v", len(sweepable), sweepable)
+	}
+	for dgst := range blobSet(t, parts) {
+		if !store.store.HasBlob(dgst) {
+			t.Errorf("the live image's blob %s is not in the store", dgst)
+		}
+	}
+}
+
+// TestImageStoreRebuildMovesThePointerAndLeavesTheOldArtifactSweepable is reading (a) of
+// D-STORE-3/D-STORE-5 tested as a property: a rebuild REPLACES the entry's pointer, mutating no
+// entry, and the superseded artifact's blobs become exactly the sweep's candidates — which is the
+// retention mechanism itself.
+func TestImageStoreRebuildMovesThePointerAndLeavesTheOldArtifactSweepable(t *testing.T) {
+	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
+	store, err := OpenImageStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
+	first := addImage(t, store, ref, "layer-first")
+	firstDigest, _, err := store.Lookup(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := addImage(t, store, ref, "layer-second")
+	secondDigest, ok, err := store.Lookup(ref)
+	if err != nil || !ok {
+		t.Fatalf("Lookup after the rebuild = (_, %v, %v)", ok, err)
+	}
+	if firstDigest == secondDigest {
+		t.Fatal("the rebuild did not move the pointer: both builds resolved to the same digest")
+	}
+	if refs, err := store.List(); err != nil {
+		t.Fatal(err)
+	} else if len(refs) != 1 || refs[0] != ref {
+		t.Errorf("List() = %v after a rebuild, want one entry keyed %q", refs, ref)
+	}
+
+	// The superseded artifact's own bytes are exactly what the sweep should reclaim ...
+	sweepable := unresolvable(t, store)
+	for _, data := range [][]byte{first.manifest, first.layer} {
+		dgst, derr := DigestOf(data)
+		if derr != nil {
+			t.Fatal(derr)
+		}
+		if !sweepable[dgst] {
+			t.Errorf("the superseded blob %s is not named by the sweep", dgst)
+		}
+	}
+	// ... its CONFIG is not, because both builds share those identical bytes and the image that is
+	// still current keeps them (the store's "cached once" property, not a leak) ...
+	if dgst, _ := DigestOf(first.config); sweepable[dgst] {
+		t.Errorf("the sweep would reclaim the config blob %s, which the CURRENT image still reaches", dgst)
+	}
+	// ... and nothing the current artifact reaches may be named.
+	for dgst := range blobSet(t, second) {
+		if sweepable[dgst] {
+			t.Errorf("the sweep would reclaim the CURRENT blob %s", dgst)
+		}
+	}
+	if sweepable[secondDigest] {
+		t.Errorf("the sweep would reclaim the current entry's payload %s", secondDigest)
+	}
+	// Sweeping the candidates leaves exactly the live artifact: its payload index, its manifest,
+	// its config and its layer — and nothing else.
+	for dgst := range sweepable {
+		if err := store.store.RemoveBlob(dgst); err != nil {
+			t.Fatalf("RemoveBlob(%s): %v", dgst, err)
+		}
+	}
+	if left := unresolvable(t, store); len(left) != 0 {
+		t.Fatalf("after the sweep %d blob(s) are STILL unreferenced: %v", len(left), left)
+	}
+	// ... and the live artifact is intact: its payload index, its manifest, its config and its
+	// layer all survive, because the entry still reaches every one of them.
+	live := blobSet(t, second)
+	live[secondDigest] = true
+	for dgst := range live {
+		if !store.store.HasBlob(dgst) {
+			t.Errorf("the sweep removed %s, which the live entry reaches", dgst)
+		}
+	}
+
+	// And a deleted entry leaves its artifact collectable — item 5's "delete one entry + its
+	// unreferenced blobs", through the store's own surface.
+	if removed, err := store.store.DeleteEntry(ref); err != nil || !removed {
+		t.Fatalf("DeleteEntry(%q) = (%v, %v)", ref, removed, err)
+	}
+	if _, ok, _ := store.Lookup(ref); ok {
+		t.Error("the deleted entry still resolves")
+	}
+	sweepable = unresolvable(t, store)
+	for dgst := range blobSet(t, second) {
+		if !sweepable[dgst] {
+			t.Errorf("after deleting the entry, blob %s is not named by the sweep", dgst)
+		}
+	}
+	for dgst := range sweepable {
+		if err := store.store.RemoveBlob(dgst); err != nil {
+			t.Errorf("RemoveBlob(%s): %v", dgst, err)
+		}
+	}
+	if blobs, err := store.store.Blobs(); err != nil {
+		t.Fatal(err)
+	} else if len(blobs) != 0 {
+		t.Errorf("the swept store still holds %d blob(s): %v", len(blobs), blobs)
+	}
+}
+
+// TestImageStoreAddRefusesAnUnnamedOrMismatchedArchive: the archive must ALREADY name the
+// reference it is added as — the same file is what an engine load reads, and an entry filed under
+// a reference it does not name would be resolved and materialised as the wrong image.
+func TestImageStoreAddRefusesAnUnnamedOrMismatchedArchive(t *testing.T) {
+	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
 	store, err := OpenImageStore()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
-	parts := addImage(t, store, ref, "layer-named")
-
-	digest, ok, err := store.Lookup(ref)
-	if err != nil {
-		t.Fatalf("Lookup(%q): %v", ref, err)
-	}
-	if !ok || digest != parts.digest {
-		t.Fatalf("Lookup(%q) = (%q, %v), want the stored manifest digest %q", ref, digest, ok, parts.digest)
-	}
-
-	// The TAG ALONE is what `org.opencontainers.image.ref.name` carries, and it must not resolve:
-	// keying on it would match the wrong image for every namespaced reference.
-	if digest, ok, err := store.Lookup("2026.296.1200"); err != nil {
-		t.Fatalf("Lookup(tag-only): %v", err)
-	} else if ok {
-		t.Errorf("Lookup(tag-only) found %q — the store must key on %s only", digest, AnnotationImageName)
-	}
-
-	// The CONTROL archive: the same image named only by `org.opencontainers.image.ref.name`, which
-	// is exactly what a build export WITHOUT `name=` writes.
-	control := writeImageArchive(t, filepath.Join(t.TempDir(), "control.tar"), "ghcr.io/opencharly/fedora:2026.296.1201",
-		newImageParts(t, "layer-control"), false)
+	// The CONTROL archive: named only by `org.opencontainers.image.ref.name`, which is what a build
+	// export WITHOUT `name=` writes.
+	control := writeImageArchive(t, filepath.Join(t.TempDir(), "control.tar"),
+		"ghcr.io/opencharly/fedora:2026.296.1201", newImageParts(t, "layer-control"), false)
 	err = store.Add(control, "ghcr.io/opencharly/fedora:2026.296.1201")
 	if err == nil {
-		t.Fatal("Add accepted an archive carrying no " + AnnotationImageName + " annotation — the entry would be unaddressable")
+		t.Fatal("Add accepted an archive carrying no " + AnnotationImageName + " annotation")
 	}
 	if !strings.Contains(err.Error(), AnnotationImageName) {
 		t.Errorf("the refusal does not name the missing annotation %q: %v", AnnotationImageName, err)
 	}
-	if _, ok, _ := store.Lookup("ghcr.io/opencharly/fedora:2026.296.1201"); ok {
-		t.Error("the refused archive was stored anyway")
-	}
-}
 
-// TestImageStoreRefusesAnArchiveNamingAnotherReference: the store's key IS the reference the image
-// was built as, so an archive naming one reference cannot be filed under another — a lookup would
-// then materialise an image under a name it never had.
-func TestImageStoreRefusesAnArchiveNamingAnotherReference(t *testing.T) {
-	t.Setenv(ImageStoreDirEnv, t.TempDir())
-	store, err := OpenImageStore()
-	if err != nil {
-		t.Fatal(err)
-	}
-	const named, added = "ghcr.io/opencharly/fedora:2026.296.1200", "ghcr.io/opencharly/fedora:2026.296.1201"
-	path := writeImageArchive(t, filepath.Join(t.TempDir(), "export.tar"), named, newImageParts(t, "layer-mismatch"), true)
-
-	err = store.Add(path, added)
+	const named, added = "ghcr.io/opencharly/fedora:2026.296.1200", "ghcr.io/opencharly/fedora:2026.296.1299"
+	mismatched := writeImageArchive(t, filepath.Join(t.TempDir(), "mismatch.tar"), named, newImageParts(t, "layer-mismatch"), true)
+	err = store.Add(mismatched, added)
 	if err == nil {
 		t.Fatalf("Add accepted an archive naming %q as %q", named, added)
 	}
@@ -250,62 +439,11 @@ func TestImageStoreRefusesAnArchiveNamingAnotherReference(t *testing.T) {
 	}
 }
 
-// TestImageStoreReplacesOneReferenceAndKeepsEveryOther proves the index operation: a rebuild of ONE
-// reference replaces that reference's descriptor set, keeps every other reference byte-for-byte,
-// and leaves the superseded image's blobs content-addressed in the store (nothing is rewritten, and
-// nothing another reference shares is lost).
-func TestImageStoreReplacesOneReferenceAndKeepsEveryOther(t *testing.T) {
-	t.Setenv(ImageStoreDirEnv, t.TempDir())
-	store, err := OpenImageStore()
-	if err != nil {
-		t.Fatal(err)
-	}
-	const rebuilt, other = "ghcr.io/opencharly/fedora:2026.296.1200", "ghcr.io/opencharly/arch:2026.296.1201"
-
-	first := addImage(t, store, rebuilt, "layer-first")
-	otherParts := addImage(t, store, other, "layer-other")
-	second := addImage(t, store, rebuilt, "layer-second")
-
-	if digest, ok, _ := store.Lookup(rebuilt); !ok || digest != second.digest {
-		t.Errorf("Lookup(%q) = (%q, %v), want the REBUILD's manifest %q", rebuilt, digest, ok, second.digest)
-	}
-	if digest, ok, _ := store.Lookup(other); !ok || digest != otherParts.digest {
-		t.Errorf("the rebuild disturbed the unrelated reference: Lookup(%q) = (%q, %v), want %q", other, digest, ok, otherParts.digest)
-	}
-	refs, err := store.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(refs) != 2 || refs[0] != other || refs[1] != rebuilt {
-		t.Errorf("List() = %v, want [%q %q] — one reference per image, sorted", refs, other, rebuilt)
-	}
-
-	// The superseded image's layer is still there: content-addressed bytes are immutable, and the
-	// sweep that reclaims an unreferenced one is a separate, deliberate call.
-	layerDigest, err := DigestOf(first.layer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !store.store.HasBlob(layerDigest) {
-		t.Errorf("the superseded layer %s was removed by the rebuild", layerDigest)
-	}
-
-	// The layout marker is what makes the directory an OCI layout to another process (a solve gets
-	// it as `--oci-layout charly=<dir>`), so it must exist after a write.
-	marker, err := os.ReadFile(filepath.Join(store.Dir(), LayoutFile)) // #nosec G304 — the store's own path.
-	if err != nil {
-		t.Fatalf("read the layout marker: %v", err)
-	}
-	if string(marker) != layoutMarker {
-		t.Errorf("%s = %q, want %q", LayoutFile, marker, layoutMarker)
-	}
-}
-
-// TestConcurrentImageStoreAddsKeepEveryReference is the cross-writer index test: two levels of one
-// build (and two builds at once) write the store concurrently, so the read-modify-write must be
-// serialized or one writer's reference is silently DROPPED — data loss, not a spurious error.
+// TestConcurrentImageStoreAddsKeepEveryReference is the cross-writer test: two builds (and two
+// levels of one build) write the store concurrently, so the entry RMW must be serialized or one
+// writer's reference is silently DROPPED — data loss, not a spurious error.
 func TestConcurrentImageStoreAddsKeepEveryReference(t *testing.T) {
-	t.Setenv(ImageStoreDirEnv, t.TempDir())
+	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
 	const writers = 8
 	store, err := OpenImageStore()
 	if err != nil {
@@ -336,40 +474,39 @@ func TestConcurrentImageStoreAddsKeepEveryReference(t *testing.T) {
 		}
 	}
 
-	refs_after, err := store.List()
+	after, err := store.List()
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(refs_after) != writers {
-		t.Fatalf("List() has %d references, want all %d — a concurrent writer's entry was lost", len(refs_after), writers)
+	if len(after) != writers {
+		t.Fatalf("List() has %d references, want all %d — a concurrent writer's entry was lost", len(after), writers)
 	}
 	for _, want := range refs {
 		found := false
-		for _, got := range refs_after {
+		for _, got := range after {
 			if got == want {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("the store lost reference %q: %v", want, refs_after)
+			t.Errorf("the store lost reference %q: %v", want, after)
 		}
 	}
 }
 
 // TestImageStoreArchiveCarriesTheNamingAnnotationAndOnlyItsBlobs is the ARCHIVE contract: the
 // marker, an index whose descriptor names the full reference, and exactly the blobs that image
-// reaches. A copy of `blobs/` would carry every other image the host ever built — which on this
-// host is 619 GiB of them.
+// reaches. A copy of `blobs/` would carry every other image the host ever built.
 func TestImageStoreArchiveCarriesTheNamingAnnotationAndOnlyItsBlobs(t *testing.T) {
-	t.Setenv(ImageStoreDirEnv, t.TempDir())
+	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
 	store, err := OpenImageStore()
 	if err != nil {
 		t.Fatal(err)
 	}
 	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
 	parts := addImage(t, store, ref, "layer-archived")
-	// An unrelated image, whose blobs must NOT appear in the archive of ref.
+	// An unrelated image, whose MANIFEST and LAYER must not appear in the archive of ref.
 	unrelated := addImage(t, store, "ghcr.io/opencharly/arch:2026.296.1201", "layer-unrelated")
 
 	var archive bytes.Buffer
@@ -421,14 +558,13 @@ func TestImageStoreArchiveCarriesTheNamingAnnotationAndOnlyItsBlobs(t *testing.T
 			t.Errorf("archive member %s does not hold the stored bytes", name)
 		}
 	}
-	// The unrelated image's MANIFEST and LAYER must not travel with ref. (Its CONFIG is the same
-	// bytes as ref's — `{"architecture":"amd64","os":"linux"}` — so the two legitimately share ONE
-	// content-addressed blob; that is the store's "cached once" property, not a leak.)
 	for _, unwanted := range [][]byte{unrelated.manifest, unrelated.layer} {
 		if name := blobMember(t, unwanted); members[name] != nil {
 			t.Errorf("the archive carries %s, which belongs to another image", name)
 		}
 	}
+	// The two images share the identical CONFIG bytes, so ONE content-addressed blob serves both —
+	// the store's "cached once" property, not a leak.
 	if !bytes.Equal(members[blobMember(t, unrelated.config)], unrelated.config) {
 		t.Error("the archive is missing the config blob the two images share")
 	}
@@ -451,7 +587,7 @@ func TestImageStoreArchiveCarriesTheNamingAnnotationAndOnlyItsBlobs(t *testing.T
 // TestImageStoreArchiveMaterialisesACallerOwnedFile: `Archive` stages a real file (what an engine
 // `load -i` needs) and hands its ownership to the caller.
 func TestImageStoreArchiveMaterialisesACallerOwnedFile(t *testing.T) {
-	t.Setenv(ImageStoreDirEnv, t.TempDir())
+	t.Setenv("CHARLY_CACHE_DIR", t.TempDir())
 	store, err := OpenImageStore()
 	if err != nil {
 		t.Fatal(err)
@@ -490,14 +626,13 @@ func TestImageStoreArchiveMaterialisesACallerOwnedFile(t *testing.T) {
 // that would leave `blobs/` must be refused, and nothing may be written outside the store tree.
 func TestImageStoreRefusesAnUnsafeBlobPathInAnArchive(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv(ImageStoreDirEnv, filepath.Join(root, "store"))
+	t.Setenv("CHARLY_CACHE_DIR", root)
 	store, err := OpenImageStore()
 	if err != nil {
 		t.Fatal(err)
 	}
 	const ref = "ghcr.io/opencharly/fedora:2026.296.1200"
-	parts := newImageParts(t, "layer-escape")
-	path := writeImageArchive(t, filepath.Join(t.TempDir(), "export.tar"), ref, parts, true)
+	path := writeImageArchive(t, filepath.Join(t.TempDir(), "export.tar"), ref, newImageParts(t, "layer-escape"), true)
 
 	// Append the traversal member to a copy of a valid export.
 	f, err := os.Open(path) // #nosec G304 — a test path this file chose.

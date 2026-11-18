@@ -52,13 +52,17 @@ func (s *recordingStore) Remove(_ context.Context, _ ...string) error { return n
 
 func (s *recordingStore) List(_ context.Context) ([]string, error) { return nil, nil }
 
-// seedImageStore puts ONE image into a real charly image store at dir, through the store's own
-// Add: the store is production code, not a fixture of it.
-func seedImageStore(t *testing.T, dir, ref string) {
+// seedImageStore puts ONE image into a real charly image store under the cache root at dir,
+// through the store's own Add: the store is production code, not a fixture of it.
+func seedImageStore(t *testing.T, ref string) {
 	t.Helper()
 	archive := filepath.Join(t.TempDir(), "export.tar")
 	writeNamedExport(t, archive, ref)
-	if err := storekit.OpenImageStoreDir(dir).Add(archive, ref); err != nil {
+	store, err := storekit.OpenImageStore()
+	if err != nil {
+		t.Fatalf("open the charly image store: %v", err)
+	}
+	if err := store.Add(archive, ref); err != nil {
 		t.Fatalf("seed the charly image store with %s: %v", ref, err)
 	}
 }
@@ -153,14 +157,14 @@ func blobMemberName(digest string) string {
 }
 
 // TestCharlyImageSourceIsTheStoreAndTheResolverImportsFromIt pins the adapter's answers AND the
-// resolution that consumes them: Has/List are the store's, the tag alone is not a key, and the
-// resolve imports the materialised archive into the target store.
+// resolution that consumes them: Has/List are the store's ENTRIES (keyed by the reference), the
+// tag alone is not a key, and the resolve imports the materialised archive into the target store.
 func TestCharlyImageSourceIsTheStoreAndTheResolverImportsFromIt(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	t.Setenv(storekit.ImageStoreDirEnv, dir)
+	t.Setenv("CHARLY_CACHE_DIR", dir)
 	const ref = "ghcr.io/opencharly/box:2026.296.1200"
-	seedImageStore(t, dir, ref)
+	seedImageStore(t, ref)
 
 	source, err := NewCharlyImageSource()
 	if err != nil {
@@ -217,9 +221,9 @@ func TestCharlyImageSourceIsTheStoreAndTheResolverImportsFromIt(t *testing.T) {
 func TestCharlyImageSourceArchiveCarriesTheNamingAnnotation(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	t.Setenv(storekit.ImageStoreDirEnv, dir)
+	t.Setenv("CHARLY_CACHE_DIR", dir)
 	const ref = "ghcr.io/opencharly/box:2026.296.1200"
-	seedImageStore(t, dir, ref)
+	seedImageStore(t, ref)
 
 	source, err := NewCharlyImageSource()
 	if err != nil {
@@ -283,7 +287,7 @@ func TestCharlyImageSourceArchiveCarriesTheNamingAnnotation(t *testing.T) {
 // EMPTY store, not a broken one — the resolver must reach its registry/build steps rather than fail.
 func TestCharlyImageSourceOnAnAbsentStoreAnswersEmpty(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv(storekit.ImageStoreDirEnv, filepath.Join(t.TempDir(), "never-written"))
+	t.Setenv("CHARLY_CACHE_DIR", filepath.Join(t.TempDir(), "never-written"))
 	source, err := NewCharlyImageSource()
 	if err != nil {
 		t.Fatalf("NewCharlyImageSource: %v", err)

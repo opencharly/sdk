@@ -2,38 +2,52 @@ package storekit
 
 // images.go — THE CHARLY IMAGE STORE: the engine-neutral artefact of every build.
 //
-// One OCI image layout at `<data root>/images` — `oci-layout` + ONE `index.json` +
-// `blobs/<alg>/<digest>` — holding every image this host has built. It is engine-NEUTRAL on
-// purpose: the build's canonical output must not belong to whichever container engine happens to
-// be selected, because the next deploy may resolve a different one.
+// The store is the `registry` NAMED STORE under the ONE cache root — `<cache root>/registry`,
+// addressed through `StoreDir` — and every decision below is a contract row:
 //
-// ⚑ THE NAMING ANNOTATION IS THE WHOLE CONTRACT, and it is `io.containerd.image.name`, NOT
+//   - D-STORE-1: one root, one override. Named stores live under the cache root, so a disposable
+//     target isolates with `CHARLY_CACHE_DIR` and this store follows it. There is NO second
+//     override for an image store: a bed that relocated only images would be a second root
+//     resolver wearing an environment variable.
+//   - D-STORE-3: one content-addressed store holds every cached item INCLUDING artifacts, and "a
+//     store tree is that layout and nothing else". This is a named store like any other, not a
+//     second layout in a second root; its entries are immutable blobs behind an atomically
+//     renamed `index.json`, and its only locks are the store's own (in the runtime root).
+//   - D-STORE-10: the store is served read-only as an image registry, "a view of store ENTRIES,
+//     never a second copy" — so a built image must BE an entry of that store, or the view can
+//     never serve it. That is why the name is `registry`: it is the store the registry surface
+//     reads, and plugin-clean's retirement record already names `<cache root>/registry` as where
+//     image content lives (`<cache root>/images` is the RETIRED pre-rename blob store, so that
+//     name is taken and must not be reused).
+//
+// ⚑ THE ENTRY MODEL IS THE STORE'S, AND IT IS THE KEYING ANSWER. Each artifact is one
+// `Entry`:
+//
+//	Key       = the reference the caller asked for   (the INPUT identity)
+//	Payload   = the artifact's own digest            (the RESOLUTION: what that name IS, as content)
+//	MediaType = what that payload is
+//
+// so nothing immutable is ever mutated: the payload is a content-addressed blob, the entry
+// manifest is a content-addressed blob, and a rebuild REPLACES the index POINTER for that key —
+// exactly what `PutEntry` documents and what D-STORE-5's "re-resolves only on --refresh" means.
+// The previous artifact stays addressable by digest until D-STORE-7's sweep reclaims it, which is
+// what makes retention possible at all: one current entry per reference, the rest unreferenced.
+//
+// D-STORE-5 answers itself in that shape: a mutable name never becomes an ARTIFACT's name. It is
+// the index slot a caller asks by; the artifact is addressed, stored and served by the digest the
+// name resolved to at write time. This is the same shape opencharly/plugin-cache's `registry`
+// ingest already writes (`Key: ref, Payload: root digest`), so a built image and an ingested one
+// are the same kind of entry in the same store — the two callers the move exists for.
+//
+// ⚑ THE NAMING ANNOTATION IS THE EXPORT CONTRACT, and it is `io.containerd.image.name`, NOT
 // `org.opencontainers.image.ref.name`. Measured on buildkit 0.34.1: a `--output
 // type=oci,name=<full-ref>` export writes BOTH — `io.containerd.image.name` = `<repo>:<tag>` and
 // `org.opencontainers.image.ref.name` = the TAG ALONE. Every engine measured (podman 6.1.4,
 // docker 29.9.2, nerdctl 2.4.1) imports such an archive with the full reference already applied
 // and needs NO `tag` step; an archive built WITHOUT `name=` lands untagged/dangling everywhere.
-// Store lookups therefore key on `io.containerd.image.name` only — keying on the tag-only
-// annotation would match the wrong image (or none) for every namespaced ref.
-//
-// # What is shared, and what is this file's own
-//
-// The LAYOUT is `Store`'s and is not re-implemented here: the blob directory, the
-// content-addressed paths, the atomic write, the cross-process index lock and the `oci-layout`
-// marker all come from store.go/entry.go. This file adds only what an IMAGE store needs on top —
-// the reference vocabulary that keys it, and the two archive forms that cross the engine
-// boundary (an export coming in, a loadable archive going out).
-//
-// `Store` is deliberately NOT embedded. Its `Entries`/`PutEntry` vocabulary is the CACHE store's,
-// and an image store that could be mistaken for one would misparse every descriptor it holds.
-//
-// # The root, and the one relocation
-//
-// The store lives under the DATA root, never the cache root: a built image is a durable artefact
-// whose loss costs a rebuild, while the cache root is disposable by contract (a `cache clear`
-// must be able to delete it) — so `CHARLY_CACHE_DIR`, which relocates the cache root, must not
-// carry the built images with it. `CHARLY_IMAGE_STORE_DIR` is this store's own relocation, and a
-// check bed MUST use it: a bed's build must not write the operator's store.
+// It is an EXPORT/IMPORT annotation, not a store key: the store's key is the entry above, and the
+// payload therefore carries no name and no timestamp (D-STORE-6) — the archive materialised for an
+// engine re-applies it.
 
 import (
 	"archive/tar"
@@ -47,30 +61,21 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/opencharly/spec/lock"
 )
 
 const (
-	// ImageStoreName is the name of the ONE image store a host builds into — the `charly` store.
-	// A solve addresses it as `oci-layout://charly@<manifest-digest>`. It is a NAME, not a path
-	// element: the layout itself lives at `<data root>/images`.
-	ImageStoreName = "charly"
-	// ImageStoreDirEnv relocates the store for a disposable target, exactly as `CHARLY_CACHE_DIR`
-	// relocates the cache root. A check bed MUST use it: a bed's build must not write the
-	// operator's store.
-	ImageStoreDirEnv = "CHARLY_IMAGE_STORE_DIR"
-	// imageStoreDirName is the layout's path element under the charly data root.
-	imageStoreDirName = "images"
+	// ImageStoreName is the name of the ONE store a host's built images live in: the `registry`
+	// named store under the cache root. It is a NAME, not a path element under a data root — see
+	// the header for why this name and not `images` (retired) or a second root (D-STORE-1).
+	ImageStoreName = "registry"
 
-	// AnnotationImageName is the annotation that NAMES an image inside an OCI layout index: the
-	// full `<repo>:<tag>` reference, which is what an engine applies on load and what every store
-	// lookup keys on. See the header for why it is not AnnotationRefName.
+	// AnnotationImageName is the annotation that NAMES an image inside an OCI layout index, in an
+	// ARCHIVE crossing the engine boundary. See the header for why it is not AnnotationRefName.
 	AnnotationImageName = "io.containerd.image.name"
 
-	// The OCI image media types an archive's blob graph is walked by. The two INDEX types name a
-	// set of manifests; the two MANIFEST types name a config plus layers. Anything else is an
-	// opaque leaf and is copied by digest without being interpreted.
+	// The OCI image media types the artifact graph is walked by, and the ones an entry's media
+	// type may declare. The two INDEX types name a set of manifests; the two MANIFEST types name
+	// a config plus layers. Anything else is an opaque leaf.
 	mediaTypeOCIManifest    = "application/vnd.oci.image.manifest.v1+json"
 	mediaTypeDockerManifest = "application/vnd.docker.distribution.manifest.v2+json"
 	mediaTypeDockerList     = "application/vnd.docker.distribution.manifest.list.v2+json"
@@ -78,128 +83,96 @@ const (
 
 // archiveEpoch is the modification time every member of a materialised archive carries. A fixed
 // time is what makes two archives of one stored image the same bytes: the store's blobs are
-// immutable and its index is a pure function of them, so the timestamps are the only thing that
-// could differ per call, and they must not.
+// immutable, so the timestamps are the only thing that could differ per call.
 var archiveEpoch = time.Unix(0, 0)
 
-// ImageStoreDir resolves the charly image store's layout directory: `CHARLY_IMAGE_STORE_DIR` when
-// set, otherwise `images/` under the DATA root.
-//
-// It resolves through `DataDir()` — the contract module's ONE data-root accessor, re-exported by
-// this package — rather than composing `$XDG_DATA_HOME` here. A root resolved in a second place is
-// the deviation storekit exists to end: the host and every plugin must get the same answer from
-// the same code, or a plugin writes an image the host can never find.
-func ImageStoreDir() (string, error) {
-	if dir := os.Getenv(ImageStoreDirEnv); dir != "" {
-		return dir, nil
-	}
-	root, err := DataDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve the %s image store: %w", ImageStoreName, err)
-	}
-	return filepath.Join(root, imageStoreDirName), nil
-}
+// ImageStoreDir resolves the image store's layout directory: the `registry` named store under the
+// cache root, through the ONE resolver (`StoreDir`), so `CHARLY_CACHE_DIR` relocates it with every
+// other store. The build drive needs the DIR (a solve takes the layout as `--oci-layout
+// <id>=<dir>`); it must never compose one, which is why there is no constructor taking a dir.
+func ImageStoreDir() (string, error) { return StoreDir(ImageStoreName) }
 
-// ImageStore is the charly image store: ONE OCI image layout under the DATA root, keyed by the
-// reference each stored manifest was built as.
+// ImageStore is the charly image store: the named `registry` store, whose entries are artifacts
+// keyed by the reference each build was asked for and addressed by the digest it resolved to.
 type ImageStore struct {
 	store *Store
 }
 
 // OpenImageStore opens the charly image store at its resolved directory.
 func OpenImageStore() (*ImageStore, error) {
-	dir, err := ImageStoreDir()
+	store, err := OpenStore(ImageStoreName)
 	if err != nil {
 		return nil, err
 	}
-	return OpenImageStoreDir(dir), nil
+	return &ImageStore{store: store}, nil
 }
-
-// OpenImageStoreDir opens the image store rooted at dir — a disposable target's relocated store,
-// or a test's own tree. It accepts a directory that does not exist yet: the store is created by
-// the first `Add`, exactly as a cache store is created by its first `PutBlob`.
-func OpenImageStoreDir(dir string) *ImageStore { return &ImageStore{store: OpenStoreDir(dir)} }
 
 // Dir is the layout directory.
 func (s *ImageStore) Dir() string { return s.store.dir }
 
-// namesRef reports whether a descriptor is keyed by ref. THE KEY IS `io.containerd.image.name`:
-// the tag-only annotation cannot tell two references of one repository apart.
-func namesRef(d indexDescriptor, ref string) bool {
-	return d.Annotations[AnnotationImageName] == ref
+// isImageMediaType reports whether a media type names an OCI image manifest or index — the four
+// structural types whose bytes this package may interpret. Anything else (a config, a layer, a
+// cache payload) is an opaque leaf it must never parse.
+func isImageMediaType(mediaType string) bool {
+	switch mediaType {
+	case MediaTypeOCIIndex, mediaTypeOCIManifest, mediaTypeDockerList, mediaTypeDockerManifest:
+		return true
+	default:
+		return false
+	}
 }
 
-// lookupAll returns every descriptor the index names for ref, in index order. A multi-platform
-// build writes ONE descriptor per platform and every one carries the same reference, so this is a
-// set, never a single answer.
-func (s *ImageStore) lookupAll(ref string) ([]indexDescriptor, error) {
-	idx, err := s.store.readIndex()
-	if err != nil {
-		return nil, err
-	}
-	var out []indexDescriptor
-	for _, d := range idx.Manifests {
-		if namesRef(d, ref) {
-			out = append(out, d)
-		}
-	}
-	return out, nil
-}
-
-// Lookup returns the MANIFEST digest ref resolves to inside the store.
+// Lookup returns the digest ref resolves to inside the store — the entry's payload, which is the
+// artifact's own content address.
 func (s *ImageStore) Lookup(ref string) (digest string, ok bool, err error) {
-	descs, err := s.lookupAll(ref)
+	entry, found, err := s.store.LookupEntry(ref)
 	if err != nil {
 		return "", false, err
 	}
-	if len(descs) == 0 {
+	if !found {
 		return "", false, nil
 	}
-	return descs[0].Digest, true, nil
+	return entry.Payload, true, nil
 }
 
-// List returns every reference the store holds, deduplicated and sorted — one reference per
-// image, not one per platform, because that is what a caller elects a tag over.
+// Has reports whether the store holds ref.
+func (s *ImageStore) Has(ref string) (bool, error) {
+	_, ok, err := s.store.LookupEntry(ref)
+	return ok, err
+}
+
+// List returns every reference the store holds, sorted — the entries' keys, which is the store's
+// own inventory (D-STORE-7's "enumerate entries", satisfied by the model rather than by a
+// listing sidecar).
 func (s *ImageStore) List() ([]string, error) {
-	idx, err := s.store.readIndex()
+	entries, err := s.store.Entries()
 	if err != nil {
 		return nil, err
 	}
-	seen := make(map[string]bool, len(idx.Manifests))
-	refs := make([]string, 0, len(idx.Manifests))
-	for _, d := range idx.Manifests {
-		ref := d.Annotations[AnnotationImageName]
-		if ref == "" || seen[ref] {
-			continue
-		}
-		seen[ref] = true
-		refs = append(refs, ref)
+	refs := make([]string, 0, len(entries))
+	for _, e := range entries {
+		refs = append(refs, e.Key)
 	}
 	sort.Strings(refs)
 	return refs, nil
 }
 
-// Add copies an exported OCI archive's blobs into the store and merges its manifest
-// descriptor(s) into the store index, replacing any entry that already names ref. One descriptor
-// is written per manifest in the export (a multi-platform `--push` export contributes one per
-// platform); a rebuild replaces the whole previous set for that reference.
+// Add lands an exported OCI archive as ONE store entry keyed by ref.
 //
-// The blobs are content-addressed, so an existing blob is the same bytes and is left alone; the
-// index is the only mutable file and it is rewritten atomically under the store's cross-process
-// lock (two levels of a build write the store concurrently).
+// The order is the contract: blobs first, the entry LAST, so a reader never observes a key whose
+// payload is not yet published. Existing blobs are not rewritten (content-addressed bytes are the
+// same bytes), and the entry's payload is the archive's own `index.json` — the OCI layout's entry
+// point — so a single-platform and a multi-platform export are stored the same way and
+// `Archive` reproduces either.
 //
-// THE ARCHIVE MUST ALREADY BE NAMED, and named with THIS reference. Both refusals are about the
-// same property from two sides: an entry that is not keyed by a reference is unreachable, and an
-// entry filed under a reference it does not name would be found by a lookup and materialised as
-// the wrong image. The same archive is what an engine load later reads, so a caller leaning on
-// the store to supply the name would still be feeding an unaddressable archive to that load — the
-// name belongs in the export, and this call checks it rather than inventing it.
+// The archive must ALREADY name ref with the export annotation, because the same file is what an
+// engine load reads; a caller that leaned on the store to supply the name would still be feeding
+// an unaddressable archive to that load. Its copy of that annotation is STRIPPED from the payload
+// (D-STORE-6: a stored payload carries no name and no timestamp) and re-applied by `Archive`,
+// which is the only surface that crosses the engine boundary.
 func (s *ImageStore) Add(archivePath, ref string) error {
 	if strings.TrimSpace(ref) == "" {
-		return fmt.Errorf("add an image to the %s image store: no reference to key it by", ImageStoreName)
-	}
-	if err := s.store.EnsureLayout(); err != nil {
-		return err
+		return fmt.Errorf("add an image to the %s store: no reference to key it by", ImageStoreName)
 	}
 	exported, err := readArchiveIndex(archivePath)
 	if err != nil {
@@ -214,46 +187,68 @@ func (s *ImageStore) Add(archivePath, ref string) error {
 			return fmt.Errorf("the OCI archive %s carries no %s annotation on manifest %d: an archive without it lands unaddressable", archivePath, AnnotationImageName, i)
 		}
 		if named != ref {
-			return fmt.Errorf("the OCI archive %s names %q but is being added as %q: the store's key IS the reference the image was built as", archivePath, named, ref)
+			return fmt.Errorf("the OCI archive %s names %q but is being added as %q: the entry's key IS the reference the image was built as", archivePath, named, ref)
 		}
 	}
 	if err := s.copyArchiveBlobs(archivePath); err != nil {
 		return err
 	}
 
-	lockPath, err := s.store.indexLockPath()
+	// The PAYLOAD is the layout's entry point: the archive's `index.json`, stripped of the naming
+	// and creation annotations the export carries for the engine. Its digest is the artifact's
+	// content address, which is what the entry records as the resolution of ref.
+	payload, err := json.Marshal(&storeIndex{
+		SchemaVersion: 2,
+		MediaType:     indexMediaType(exported),
+		Manifests:     stripNamingAnnotations(exported.Manifests),
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("render the artifact index of %s: %w", ref, err)
 	}
-	release, err := lock.AcquireFileLockWithin(lockPath, true, indexLockWait)
+	payloadDigest, err := s.store.PutBlob(payload)
 	if err != nil {
-		return fmt.Errorf("lock the %s image store index: %w", ImageStoreName, err)
+		return fmt.Errorf("publish the artifact index of %s: %w", ref, err)
 	}
-	defer func() { _ = release() }() // the release error carries nothing a caller can act on
-
-	idx, err := s.store.readIndex()
-	if err != nil {
-		return err
-	}
-	// A fresh slice, never an in-place `[:0]` re-slice: the aliasing form appends into the OLD
-	// backing array while assigning to a different name, which reads like a copy and is not one.
-	manifests := make([]indexDescriptor, 0, len(idx.Manifests)+len(exported.Manifests))
-	for _, d := range idx.Manifests {
-		if namesRef(d, ref) {
-			continue // superseded by this build
-		}
-		manifests = append(manifests, d)
-	}
-	manifests = append(manifests, exported.Manifests...)
-	idx.Manifests = manifests
-	raw, err := json.Marshal(idx)
-	if err != nil {
-		return fmt.Errorf("render the %s image store index: %w", ImageStoreName, err)
-	}
-	if err := writeFileAtomic(s.store.indexPath(), raw); err != nil {
-		return fmt.Errorf("write the %s image store index: %w", ImageStoreName, err)
+	if _, err := s.store.PutEntry(Entry{
+		Key:       ref,
+		MediaType: indexMediaType(exported),
+		Payload:   payloadDigest,
+	}); err != nil {
+		return fmt.Errorf("index %s in the %s store: %w", ref, ImageStoreName, err)
 	}
 	return nil
+}
+
+// indexMediaType is the artifact's media type: what the archive's own index declares, defaulting
+// to the OCI image index it is.
+func indexMediaType(idx *storeIndex) string {
+	if idx.MediaType != "" {
+		return idx.MediaType
+	}
+	return MediaTypeOCIIndex
+}
+
+// stripNamingAnnotations returns the descriptors without the export's naming/creation
+// annotations, so the stored payload holds no name and no timestamp (D-STORE-6) — the entry's key
+// and payload already carry what a reader needs.
+func stripNamingAnnotations(descs []indexDescriptor) []indexDescriptor {
+	out := make([]indexDescriptor, len(descs))
+	for i, d := range descs {
+		annotations := make(map[string]string, len(d.Annotations))
+		for k, v := range d.Annotations {
+			switch k {
+			case AnnotationImageName, AnnotationRefName, AnnotationCreated:
+				continue
+			}
+			annotations[k] = v
+		}
+		if len(annotations) == 0 {
+			annotations = nil
+		}
+		d.Annotations = annotations
+		out[i] = d
+	}
+	return out
 }
 
 // Archive materialises ref as an OCI image archive in a NEW temporary file and returns its path.
@@ -277,31 +272,26 @@ func (s *ImageStore) Archive(ref string) (string, error) {
 	return path, nil
 }
 
-// WriteArchive writes ref as an OCI image archive to w without staging a file — the same archive
-// `Archive` materialises, for a caller that streams it straight at an engine.
+// WriteArchive writes ref as an OCI image archive to w without staging a file.
 func (s *ImageStore) WriteArchive(ref string, w io.Writer) error { return s.writeArchive(ref, w) }
 
-// writeArchive is the ONE archive writer: an `oci-layout` marker, an `index.json` carrying the
-// stored descriptors (and therefore the naming annotation), and every blob the image needs.
+// writeArchive is the ONE archive writer: an `oci-layout` marker, an `index.json` naming the
+// reference for the engine, and every blob the artifact reaches.
 func (s *ImageStore) writeArchive(ref string, w io.Writer) error {
-	descs, err := s.lookupAll(ref)
+	entry, ok, err := s.store.LookupEntry(ref)
 	if err != nil {
 		return err
 	}
-	if len(descs) == 0 {
-		return fmt.Errorf("the %s image store %s holds no image %q", ImageStoreName, s.store.dir, ref)
+	if !ok {
+		return fmt.Errorf("the %s store %s holds no image %q", ImageStoreName, s.store.dir, ref)
 	}
-	blobs, err := s.archiveBlobs(descs)
+	indexJSON, err := s.archiveIndex(ref, entry)
 	if err != nil {
 		return err
 	}
-	indexJSON, err := json.Marshal(&storeIndex{
-		SchemaVersion: 2,
-		MediaType:     MediaTypeOCIIndex,
-		Manifests:     descs,
-	})
+	blobs, err := s.blobsOf(entry)
 	if err != nil {
-		return fmt.Errorf("render the index for %s: %w", ref, err)
+		return err
 	}
 
 	tw := tar.NewWriter(w)
@@ -341,6 +331,63 @@ func (s *ImageStore) writeArchive(ref string, w io.Writer) error {
 	return nil
 }
 
+// archiveIndex re-reads the stored artifact index and re-applies the export annotation, which is
+// what makes the archive addressable on load and what the payload deliberately does not carry.
+func (s *ImageStore) archiveIndex(ref string, entry *Entry) ([]byte, error) {
+	raw, err := s.store.ReadBlob(entry.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("read the stored index of %s: %w", ref, err)
+	}
+	var idx storeIndex
+	if err := json.Unmarshal(raw, &idx); err != nil {
+		return nil, fmt.Errorf("parse the stored index of %s: %w", ref, err)
+	}
+	for i := range idx.Manifests {
+		if idx.Manifests[i].Annotations == nil {
+			idx.Manifests[i].Annotations = map[string]string{}
+		}
+		idx.Manifests[i].Annotations[AnnotationImageName] = ref
+	}
+	idx.SchemaVersion = 2
+	if idx.MediaType == "" {
+		idx.MediaType = MediaTypeOCIIndex
+	}
+	out, err := json.Marshal(&idx)
+	if err != nil {
+		return nil, fmt.Errorf("render the archive index of %s: %w", ref, err)
+	}
+	return out, nil
+}
+
+// blobsOf returns every blob the entry's artifact reaches, sorted, excluding the entry's own
+// payload when it IS the root document the archive writes as `index.json` (that member is written
+// from the annotated copy, not from the stored bytes).
+func (s *ImageStore) blobsOf(entry *Entry) ([]string, error) {
+	raw, err := s.store.ReadBlob(entry.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("read the stored index: %w", err)
+	}
+	var idx storeIndex
+	if err := json.Unmarshal(raw, &idx); err != nil {
+		return nil, fmt.Errorf("parse the stored index: %w", err)
+	}
+	seen := make(map[string]bool, len(idx.Manifests))
+	blobs := make([]string, 0, len(idx.Manifests))
+	for _, d := range idx.Manifests {
+		if err := s.store.walkImageGraph(d.Digest, d.MediaType, func(dgst string) error {
+			if !seen[dgst] {
+				seen[dgst] = true
+				blobs = append(blobs, dgst)
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	sort.Strings(blobs)
+	return blobs, nil
+}
+
 // blobMemberName renders a digest's archive member name (`blobs/<alg>/<hex>`).
 func (s *ImageStore) blobMemberName(dgst string) (string, error) {
 	if _, err := s.store.blobPath(dgst); err != nil {
@@ -351,10 +398,6 @@ func (s *ImageStore) blobMemberName(dgst string) (string, error) {
 }
 
 // tarFile appends one regular file to an archive, streaming size bytes from src.
-//
-// An entry name is data read by an engine, so it is written exactly as the layout spells it; the
-// mode and the timestamp are fixed, because an archive of immutable content-addressed bytes must
-// be the same bytes every time it is materialised.
 func tarFile(tw *tar.Writer, name string, src io.Reader, size int64) error {
 	hdr := &tar.Header{
 		Typeflag: tar.TypeReg,
@@ -370,86 +413,6 @@ func tarFile(tw *tar.Writer, name string, src io.Reader, size int64) error {
 	// changed under us fails loudly here instead of producing a truncated image.
 	_, err := io.Copy(tw, src)
 	return err
-}
-
-// archiveBlobs returns every blob digest the descriptors reach — the manifests themselves, their
-// configs, and their layers — in a stable order.
-//
-// It walks the GRAPH rather than copying `blobs/`: an image store holds every image it ever built,
-// so an archive made by copying the whole blob directory would carry every unrelated image too.
-// Only the four structural media types are interpreted; a config or a layer is an opaque leaf that
-// must merely EXIST, which is also what keeps a multi-gigabyte layer out of memory.
-func (s *ImageStore) archiveBlobs(descs []indexDescriptor) ([]string, error) {
-	seen := make(map[string]bool, len(descs))
-	var order []string
-	var walk func(d indexDescriptor) error
-	walk = func(d indexDescriptor) error {
-		if d.Digest == "" {
-			return fmt.Errorf("the %s image store carries a descriptor with no digest (media type %q)", ImageStoreName, d.MediaType)
-		}
-		if seen[d.Digest] {
-			return nil
-		}
-		seen[d.Digest] = true
-		order = append(order, d.Digest)
-		switch d.MediaType {
-		case MediaTypeOCIIndex, mediaTypeDockerList:
-			raw, err := s.store.ReadBlob(d.Digest)
-			if err != nil {
-				return err
-			}
-			var nested storeIndex
-			if err := json.Unmarshal(raw, &nested); err != nil {
-				return fmt.Errorf("parse the image index %s: %w", d.Digest, err)
-			}
-			for _, child := range nested.Manifests {
-				if err := walk(child); err != nil {
-					return err
-				}
-			}
-		case mediaTypeOCIManifest, mediaTypeDockerManifest:
-			raw, err := s.store.ReadBlob(d.Digest)
-			if err != nil {
-				return err
-			}
-			var manifest struct {
-				Config indexDescriptor   `json:"config"`
-				Layers []indexDescriptor `json:"layers"`
-			}
-			if err := json.Unmarshal(raw, &manifest); err != nil {
-				return fmt.Errorf("parse the image manifest %s: %w", d.Digest, err)
-			}
-			if err := walk(manifest.Config); err != nil {
-				return err
-			}
-			for _, layer := range manifest.Layers {
-				if err := walk(layer); err != nil {
-					return err
-				}
-			}
-		default:
-			// An opaque leaf (a config, a layer): its bytes are copied by digest and never
-			// interpreted, but a missing one would silently truncate the image.
-			if !s.store.HasBlob(d.Digest) {
-				return fmt.Errorf("the %s image store names blob %s (%q), which it does not hold", ImageStoreName, d.Digest, d.MediaType)
-			}
-		}
-		return nil
-	}
-	for _, d := range descs {
-		switch d.MediaType {
-		case MediaTypeOCIIndex, mediaTypeDockerList, mediaTypeOCIManifest, mediaTypeDockerManifest:
-		default:
-			// The TOP level is strict: a descriptor this store names as an image and cannot
-			// interpret would be archived as a bare blob with its contents dropped.
-			return nil, fmt.Errorf("cannot archive %s: unknown image media type %q", d.Digest, d.MediaType)
-		}
-		if err := walk(d); err != nil {
-			return nil, err
-		}
-	}
-	sort.Strings(order)
-	return order, nil
 }
 
 // readArchiveIndex reads an OCI archive's `index.json` without rewriting the archive.
@@ -486,8 +449,8 @@ func readArchiveIndex(archivePath string) (*storeIndex, error) {
 }
 
 // copyArchiveBlobs copies every `blobs/` member of an archive into the layout, SKIPPING a blob the
-// store already holds (content-addressed bytes are the same bytes, so a rebuild of a shared base
-// costs nothing) and streaming each one that is new.
+// store already holds (content-addressed bytes are the same bytes) and streaming each one that is
+// new.
 func (s *ImageStore) copyArchiveBlobs(archivePath string) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -544,4 +507,73 @@ func (s *ImageStore) archiveBlobPath(name string) (string, error) {
 		return "", fmt.Errorf("%q is not a content-addressed blob path", name)
 	}
 	return s.store.blobPath(alg + ":" + hexPart)
+}
+
+// walkImageGraph calls visit for every blob the image at dgst reaches — the manifest or index
+// itself first, then its config, its layers, and (for an index) each child manifest and its own
+// graph — once per digest.
+//
+// ONE WALK, TWO CALLERS, because two walks would be two answers to "what does this image need":
+//
+//   - `ReachableBlobs` uses it so a sweep can never free a blob a live entry reaches
+//     (D-STORE-7: "charly clean keeps what state references and evicts the rest");
+//   - `Archive` uses it to decide what an archive must carry.
+//
+// A digest's media type decides whether its bytes are INTERPRETED at all: only the four image
+// media types are parsed, and anything else — a config, a layer, an arbitrary cache payload — is
+// an opaque leaf that is visited and never read. That is what keeps this store's image graph walk
+// from ever misreading a cache store's JSON.
+func (s *Store) walkImageGraph(dgst, mediaType string, visit func(dgst string) error) error {
+	if dgst == "" {
+		return fmt.Errorf("the store carries an image descriptor with no digest (media type %q)", mediaType)
+	}
+	return s.walkImage(dgst, mediaType, visit, make(map[string]bool))
+}
+
+// walkImage is walkImageGraph's recursion; seen makes it terminate on a cyclic or duplicated graph.
+func (s *Store) walkImage(dgst, mediaType string, visit func(dgst string) error, seen map[string]bool) error {
+	if seen[dgst] {
+		return nil
+	}
+	seen[dgst] = true
+	if err := visit(dgst); err != nil {
+		return err
+	}
+	switch mediaType {
+	case MediaTypeOCIIndex, mediaTypeDockerList:
+		raw, err := s.ReadBlob(dgst)
+		if err != nil {
+			return err
+		}
+		var nested storeIndex
+		if err := json.Unmarshal(raw, &nested); err != nil {
+			return fmt.Errorf("parse the image index %s: %w", dgst, err)
+		}
+		for _, child := range nested.Manifests {
+			if err := s.walkImage(child.Digest, child.MediaType, visit, seen); err != nil {
+				return err
+			}
+		}
+	case mediaTypeOCIManifest, mediaTypeDockerManifest:
+		raw, err := s.ReadBlob(dgst)
+		if err != nil {
+			return err
+		}
+		var manifest struct {
+			Config indexDescriptor   `json:"config"`
+			Layers []indexDescriptor `json:"layers"`
+		}
+		if err := json.Unmarshal(raw, &manifest); err != nil {
+			return fmt.Errorf("parse the image manifest %s: %w", dgst, err)
+		}
+		if err := s.walkImage(manifest.Config.Digest, manifest.Config.MediaType, visit, seen); err != nil {
+			return err
+		}
+		for _, layer := range manifest.Layers {
+			if err := s.walkImage(layer.Digest, layer.MediaType, visit, seen); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

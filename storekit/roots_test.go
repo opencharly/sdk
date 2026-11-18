@@ -4,9 +4,9 @@ package storekit
 //
 // `Dir` and `CacheDir` no longer compute anything: they delegate to the contract module's ONE
 // resolver (`github.com/opencharly/spec/storeroot`), so that the plugin HOST — which may import
-// only `spec/*` — and every plugin reach the same five roots from the same code.
+// only `spec/*` — and every plugin reach the same four roots from the same code.
 //
-// The package's pre-existing tests pin the cache root's default and its override, the five root
+// The package's pre-existing tests pin the cache root's default and its override, the four root
 // NAMES, the runtime→state fallback and that an unknown root errors — so a `Dir` that stopped
 // distinguishing roots AT ALL is caught there (measured: `Dir` returning `CacheDir()` for every
 // root fails `TestExportedConstantsAndRootsAreContract` on "Dir accepted an unknown root name").
@@ -34,11 +34,10 @@ func pinRootsEnv(t *testing.T, home string) {
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "xdg-cache"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "xdg-state"))
 	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "xdg-run"))
-	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "xdg-data"))
 	t.Setenv("CHARLY_CACHE_DIR", "")
 }
 
-// TestDirReExportPinsEveryRoot pins all five roots by their EXPECTED path, and requires the
+// TestDirReExportPinsEveryRoot pins all four roots by their EXPECTED path, and requires the
 // re-export to agree with the contract resolver for each one. Both halves matter: the table is
 // an independent statement of where the roots are, and the agreement is the claim that this
 // package re-exports rather than reimplements.
@@ -51,7 +50,6 @@ func TestDirReExportPinsEveryRoot(t *testing.T) {
 		RootCache:   filepath.Join(home, "xdg-cache", "charly"),
 		RootState:   filepath.Join(home, "xdg-state", "charly"),
 		RootRuntime: filepath.Join(home, "xdg-run", "charly"),
-		RootData:    filepath.Join(home, "xdg-data", "charly"),
 	}
 	for root, wantDir := range want {
 		got, err := Dir(root)
@@ -82,20 +80,6 @@ func TestDirReExportPinsEveryRoot(t *testing.T) {
 	}
 	if cache != want[RootCache] || cache != viaContract {
 		t.Errorf("CacheDir() = %q, want the cache root %q via the contract resolver %q", cache, want[RootCache], viaContract)
-	}
-
-	// The data root's accessor is the second half of that pair, and it must be the contract's
-	// answer too — not a path composed here.
-	data, err := DataDir()
-	if err != nil {
-		t.Fatalf("DataDir: %v", err)
-	}
-	viaContract, err = storeroot.DataDir()
-	if err != nil {
-		t.Fatalf("storeroot.DataDir: %v", err)
-	}
-	if data != want[RootData] || data != viaContract {
-		t.Errorf("DataDir() = %q, want the data root %q via the contract resolver %q", data, want[RootData], viaContract)
 	}
 }
 
@@ -128,7 +112,6 @@ func TestCacheDirReExportHonoursTheOneOverride(t *testing.T) {
 		RootConfig:  filepath.Join(home, "xdg-config", "charly"),
 		RootState:   filepath.Join(home, "xdg-state", "charly"),
 		RootRuntime: filepath.Join(home, "xdg-run", "charly"),
-		RootData:    filepath.Join(home, "xdg-data", "charly"),
 	} {
 		if got, err := Dir(root); err != nil {
 			t.Fatalf("Dir(%s): %v", root, err)
@@ -139,7 +122,7 @@ func TestCacheDirReExportHonoursTheOneOverride(t *testing.T) {
 }
 
 // TestRootConstsAreTheContractRoots pins the re-export's IDENTITY, not only its values: because
-// `Root` is an alias and the five consts ARE the contract's, a plugin can pass a value across
+// `Root` is an alias and the four consts ARE the contract's, a plugin can pass a value across
 // the boundary in either direction with no conversion. A future "helpful" local re-declaration
 // would break this without changing any path.
 func TestRootConstsAreTheContractRoots(t *testing.T) {
@@ -151,7 +134,6 @@ func TestRootConstsAreTheContractRoots(t *testing.T) {
 		{RootCache, storeroot.RootCache},
 		{RootState, storeroot.RootState},
 		{RootRuntime, storeroot.RootRuntime},
-		{RootData, storeroot.RootData},
 	}
 	for _, p := range pairs {
 		if p.ours != p.contracts {

@@ -7,14 +7,16 @@
 // contract surfaces and never an sdk mechanism kit, so a root resolved ONLY here was a root the
 // host could not reach: it hand-built `$XDG_CACHE_HOME/charly` and `$XDG_RUNTIME_DIR/charly` and
 // therefore could not see `CHARLY_CACHE_DIR`, which is exactly the defect
-// opencharly/charly#1119 records. `github.com/opencharly/spec/storeroot` now owns the FIVE roots
+// opencharly/charly#1119 records. `github.com/opencharly/spec/storeroot` now owns the four roots
 // and the single override; `Dir` and `CacheDir` below delegate to it, so every plugin that
-// imports this package gets the same roots and the same strings as before, and the host reaches
-// the SAME implementation through a surface it may import.
+// imports this package gets the same four roots and the same strings as before, and the host
+// reaches the SAME implementation through a surface it may import.
 //
-// The FIFTH — `RootData`, `$XDG_DATA_HOME/charly` — is where a built artefact lives: losing it
-// costs a rebuild, so it is not cache, and `CHARLY_CACHE_DIR` must not relocate it. Its one tenant
-// is the image store in images.go.
+// There are FOUR roots, and an artifact lives in the CACHE root like every other cached item:
+// D-STORE-3's store holds "every cached item … including artifacts", and `CHARLY_CACHE_DIR` is the
+// ONE override that relocates it. A fifth, durable data root was proposed and REVERTED
+// (opencharly/spec#375, opencharly/opencharly#1098) precisely because a second layout in a second
+// root is what D-STORE-1 and D-STORE-3 forbid.
 //
 // A roots or store implementation living anywhere else is still the deviation this package exists
 // to end: before it, the cache root was resolved inside `spec/cache` (under the CONFIG root,
@@ -59,7 +61,7 @@ import (
 	"github.com/opencharly/spec/storeroot"
 )
 
-// Root names one of the five roots — a RE-EXPORT of the contract module's type, not a second
+// Root names one of the four roots — a RE-EXPORT of the contract module's type, not a second
 // declaration, so a `storekit.Root` value IS a `storeroot.Root` value and the two can never
 // drift into different root sets.
 type Root = storeroot.Root
@@ -76,15 +78,9 @@ const (
 	RootState = storeroot.RootState
 	// RootRuntime — `$XDG_RUNTIME_DIR/charly`: per-boot runtime state.
 	RootRuntime = storeroot.RootRuntime
-	// RootData — `$XDG_DATA_HOME/charly`: durable, operator-visible DATA that a re-derivation
-	// cannot replace — the artefacts a build produces. The one tenant today is the engine-neutral
-	// image store (`images/`, an OCI layout), which is why it is NOT under the cache root: a
-	// `cache clear` must be able to delete the cache, and a built image is a product whose loss
-	// costs a rebuild.
-	RootData = storeroot.RootData
 )
 
-// Dir resolves one of the five roots. It is THE resolver — no caller builds a `.cache` path by
+// Dir resolves one of the four roots. It is THE resolver — no caller builds a `.cache` path by
 // hand — and it resolves through the contract module (`spec/storeroot`), so the host and every
 // plugin get the same answer from the same code.
 func Dir(r Root) (string, error) { return storeroot.Dir(r) }
@@ -92,13 +88,6 @@ func Dir(r Root) (string, error) { return storeroot.Dir(r) }
 // CacheDir resolves the cache root: `$XDG_CACHE_HOME/charly`, or `CHARLY_CACHE_DIR` when set.
 // Every named store lives under it.
 func CacheDir() (string, error) { return storeroot.CacheDir() }
-
-// DataDir resolves the data root: `$XDG_DATA_HOME/charly`, or `$HOME/.local/share/charly` when
-// that variable is unset. No override relocates it, and it sits beside `CacheDir` because those
-// two are the pair a caller actually compares: an artefact belongs here when losing it costs a
-// rebuild, and in the cache root when it can be re-derived. The accessor is the CONTRACT'S
-// (`storeroot.DataDir`), not a second path computation.
-func DataDir() (string, error) { return storeroot.DataDir() }
 
 // StoreDir returns the directory of the named store `name` under the cache root. A store name
 // is a single path element: it may not contain a separator, so a store can never escape the
