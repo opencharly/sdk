@@ -64,8 +64,8 @@ import (
 // ONE cache root (D-STORE-1 — `$XDG_CACHE_HOME/charly`, or `CHARLY_CACHE_DIR` when set, resolved by
 // `spec/storeroot` through `sdk/storekit`).
 //
-// This package used to read a SECOND override here (`CHARLY_MATERIALIZED_CACHE`); it is DELETED, not
-// deprecated (R5): a per-cache variable is a second resolver, and D-STORE-1 admits exactly one.
+// There is no SECOND override here (`CHARLY_MATERIALIZED_CACHE` does not exist): a per-cache variable
+// would be a second resolver, and D-STORE-1 admits exactly one.
 func materializedCacheDir() (string, error) {
 	return storekit.StoreDir("materialized")
 }
