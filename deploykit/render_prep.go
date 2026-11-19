@@ -113,7 +113,7 @@ func (g *Generator) RenderPrepAll() error {
 	return nil
 }
 
-// buildBakedMetadata runs the former writeLabels data-gathering for boxName into a *spec.BakedLabelSet
+// buildBakedMetadata runs the OCI-label data-gathering for boxName into a *spec.BakedLabelSet
 // (the BUILD-side wire-form carrier). candyOrder is the render candy order (g.GlobalOrderForBox result)
 // — it must equal the order the deploykit render iterates so the per-candy-ordered label lists
 // (services, secrets, routes, env) are byte-identical. The candy-declared arbitrary OCI labels
@@ -125,7 +125,7 @@ func (g *Generator) RenderPrepAll() error {
 // aggregator reads a moved skill's prose off disk, and a label entry that lost its body is
 // indistinguishable from a skill that never had one (see CollectSkills).
 //
-//nolint:gocyclo // linear OCI-label gather — one branch per label field (the former writeLabels data half); no shared abstraction across the ~40 independent labels.
+//nolint:gocyclo // linear OCI-label gather -- one branch per label field; no shared abstraction across the ~40 independent labels.
 func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) (*spec.BakedLabelSet, error) {
 	img := g.Boxes[boxName]
 	meta := &spec.BakedLabelSet{}
@@ -465,7 +465,7 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) (*sp
 }
 
 // collectChainDataEntries walks the full image chain collecting data entries from candies in
-// parent/intermediate images — the former writeLabels data-entries block.
+// parent/intermediate images.
 //
 // It walks via the SHARED BoxCandyChain, exactly like its sibling chain collectors
 // (CollectBoxVolume / CollectBoxPorts / CollectDescriptions / CollectHooks / CollectShell /
@@ -512,7 +512,7 @@ func collectedAliasesToLabel(aliases []spec.CollectedAlias) []spec.CollectedAlia
 }
 
 // sortedEnvDepsFromCandies collects per-candy env-dependency lists (dedup by name, last wins) and
-// returns them sorted — the former writeLabels envRequires/accepts/mcp blocks (via sortedEnvDeps).
+// returns them sorted.
 func sortedEnvDepsFromCandies(layers map[string]spec.CandyReader, candyOrder []string, pick func(spec.CandyReader) ([]spec.EnvDependency, bool)) []spec.EnvDependency {
 	m := make(map[string]spec.EnvDependency)
 	for _, candyName := range candyOrder {

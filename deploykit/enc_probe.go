@@ -20,10 +20,10 @@ import (
 // via the SAME deploykit.LoadDeployConfig every deploy-config consumer already uses), so they
 // move here rather than staying behind a HostBuild seam. The verb:enc OpExecute dispatch is now
 // fully plugin-owned (candy/plugin-deploy-pod + candy/plugin-pod each drive verb:enc via their own
-// InvokeProvider; the former core encExecViaPlugin shim + the pod-config-enc-mounts seam are
-// RETIRED). charly/enc.go is now DELETED (#55 coneB-br2): coreCredentialAccess moved plugin-side to
-// candy/plugin-deploy-pod's buildOverlay (deploykit.CredentialAccessViaExecutor, mirroring
-// candy/plugin-fleet/secrets_artifacts.go). candy/plugin-deploy-pod
+// InvokeProvider; there is no core encExecViaPlugin shim and no pod-config-enc-mounts seam).
+// coreCredentialAccess is plugin-side in candy/plugin-deploy-pod's buildOverlay
+// (deploykit.CredentialAccessViaExecutor, mirroring candy/plugin-fleet/secrets_artifacts.go).
+// candy/plugin-deploy-pod
 // had ALREADY hand-duplicated 3 of these (isEncryptedMountedLocal/cipherPopulatedPlainEmptyLocal/
 // verifyBindMountsLocal in config_setup_helpers.go) because the originals weren't movable as a
 // whole — those duplicates are deleted in the same cutover, now calling this package instead (R3).
@@ -106,7 +106,7 @@ func EncPlanFor(ctx context.Context, boxName, instance, volume, scopeDir string)
 // a guarantee (the exact class of latent bug candy/plugin-pod/remove_orchestration.go's
 // resolveSidecarNames hit and fixed the same way). A caller that might ever run
 // out-of-process loads dc itself via loaderkit.LoadHostDeployConfigViaExecutor (over the
-// executor reverse channel — the former pod-config-load-deploy host seam was retired) and
+// executor reverse channel -- there is no pod-config-load-deploy host seam) and
 // calls this instead — see candy/plugin-pod/enc_cmd.go.
 func EncPlanForConfig(dc *DeployConfig, boxName, instance, volume, scopeDir string) ([]spec.EncVolumePlan, error) {
 	mounts, storagePath, err := LoadEncryptedVolumeFromConfig(dc, boxName, instance)
@@ -163,9 +163,9 @@ func FuseAllowOtherEnabled() bool {
 // Returns the deploy volume configs with type=encrypted and the encrypted storage path.
 func LoadEncryptedVolume(ctx context.Context, boxName, instance string) ([]vmshared.DeployVolumeConfig, string, error) {
 	// Propagate LoadDeployConfig errors instead of swallowing them. A
-	// schema error (e.g. the 2026-05-12 require-image cutover rejecting
-	// pre-cutover deploy.yml entries) used to silently degrade to "no
-	// encrypted volumes", which broke the encMount short-circuit and
+	// schema error (e.g. one rejecting a pre-2026-05-12 require-image deploy.yml
+	// entry) silently degrades to "no encrypted volumes" if swallowed, which
+	// breaks the encMount short-circuit and
 	// drove the call into resolveEncPassphraseForMount → systemd-ask-
 	// password → indefinite hang waiting for stdin. Surfacing the error
 	// turns that hang into a clean error message with a remediation
