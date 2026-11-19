@@ -70,8 +70,8 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 
 // LoadDeployConfig reads the per-host deploy overlay (~/.config/charly/charly.yml) through the
 // unified loader — the SAME LoadUnified path as every project charly.yml. Returns nil, nil if
-// the file doesn't exist. Relocated from charly/deploy.go; the LoadUnified hop
-// reaches core through DeployStateHost.LoadUnifiedDeployConfig.
+// the file doesn't exist. The LoadUnified hop reaches core through
+// DeployStateHost.LoadUnifiedDeployConfig.
 //
 // ctx is REQUIRED: it carries the invocation's RunEnv (spec.WithRunEnv) so a concurrent
 // in-process bed roster reads its OWN overlay rather than the operator's process env. There is no
@@ -126,7 +126,7 @@ func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
 // transform) is the caller's responsibility — supplied via marshalNode, which returns the
 // MIGRATED node-form body for one DeployNode (the value placed under the entry's name key).
 // This keeps SaveDeployConfig kind-blind: no per-kind map, no target-vocabulary switch, no
-// deploy-kind-specific struct knowledge. Relocated from charly/deploy.go.
+// deploy-kind-specific struct knowledge.
 //
 // failsafeRead is the config re-read the write path performs for its data-safety guard (below).
 // A nil failsafeRead falls back to LoadDeployConfig — the DeployStateHost-backed host read, so
@@ -276,7 +276,6 @@ func removeDeployKeys(m *yaml.Node) {
 // with nil → feature degrades invisibly), this helper SURFACES the load error as a stderr
 // warning while still returning nil — preserving the existing caller nil-check contract but
 // giving the operator visibility into why a command behaved as if charly.yml were absent.
-// Relocated from charly/deploy.go.
 //
 // label is a short human-readable diagnostic included in the warning message so the operator can
 // trace which code path noticed the problem (e.g. "charly status", "config injectEnvProvides").
@@ -302,7 +301,7 @@ func LoadDeployConfigForRead(label string, ctx context.Context) *DeployConfig {
 // LoadDeployConfigForWrite loads charly.yml for mutation. Unlike the historical
 // `dc, _ := LoadDeployConfig()` pattern (silently discards validation errors → writer constructs
 // an empty config → SaveDeployConfig truncates the file), this helper PROPAGATES the load error
-// so writers can ABORT instead of destroying data. Relocated from charly/deploy.go.
+// so writers can ABORT instead of destroying data.
 //
 // label is a short human-readable diagnostic included in the error message (e.g.
 // "saveDeployState"). ctx carries the invocation's RunEnv. Returns (nil, error) when the file
@@ -324,7 +323,7 @@ func LoadDeployConfigForWrite(label string, ctx context.Context) (*DeployConfig,
 
 // MergeDeployOntoMetadata applies a per-host charly.yml entry's overrides (ports, env,
 // security, tunnel, secrets, …) onto label-derived image metadata. Field-level replace
-// semantics. Relocated from charly/deploy.go.
+// semantics.
 //
 // The overlay entry is keyed by deployName — the charly.yml key base the caller is operating
 // on (the bed / instance / Pattern-B name), NOT meta.Image (the baked ai.opencharly.box
