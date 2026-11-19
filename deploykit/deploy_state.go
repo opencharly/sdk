@@ -399,7 +399,6 @@ type Named interface {
 }
 
 // IsSameBaseBox returns true if source is the same base image (with or without instance).
-// .
 func IsSameBaseBox(source, boxName string) bool {
 	return source == boxName || strings.HasPrefix(source, boxName+"/")
 }
