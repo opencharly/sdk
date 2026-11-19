@@ -11,32 +11,24 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// intermediates_compute.go — the HOST-COUPLED half of the auto-intermediate-image
-// subsystem (W3/K3, formerly charly/intermediates.go): ComputeIntermediates,
-// processSiblingGroup, walkTrieScoped, pickAutoName, createIntermediate,
-// resolvePlatforms, and distroBuilderMap. This half used to read *Config
-// (cfg.Defaults.*) directly and stayed in charly core for that reason alone; it
-// is now a PURE function over IntermediateDefaults (a plain scalar-field
-// carrier — no *Config, no loader/registry access) plus the
-// buildkit.ResolvedBox / CandyModel maps ComputeIntermediates already threads
-// throughout this package. The former charly-side entry point lifted
-// cfg.Defaults into an IntermediateDefaults and called ComputeIntermediates
-// directly (removed in #55 Cluster-B) — no host callback remains. Behaviour
-// is byte-identical to the former
-// charly/intermediates.go (kit.SortStrings is the SAME lexicographic sort core
-// aliased as sortStrings). distroBuilderMap is now a pure function over the
-// SAME `boxes`/`origBoxes` map ComputeIntermediates/createIntermediate already
-// receive, instead of *Config.allBoxNames()+BoxConfig — RDD-spiked equivalent
-// on real box/cachyos production data (25 resolved boxes, 8 distro-tag
-// sequences including the two real sequences ["arch"] and ["cachyos","arch"],
-// zero mismatches), skipping dotted namespaced-pull names the same way the
-// sibling-group grouping below already does (and the same rationale the
-// former docstring already gave: a base's namespace-relative builder map must
-// NOT be copied across a namespace boundary).
+// intermediates_compute.go -- the config-consuming half of the auto-intermediate-image
+// subsystem (W3/K3): ComputeIntermediates, processSiblingGroup, walkTrieScoped,
+// pickAutoName, createIntermediate, resolvePlatforms, and distroBuilderMap. It is a PURE
+// function over IntermediateDefaults (a plain scalar-field carrier -- no *Config, no
+// loader/registry access) plus the buildkit.ResolvedBox / CandyModel maps ComputeIntermediates
+// already threads throughout this package. No host callback is involved: a caller lifts
+// cfg.Defaults into an IntermediateDefaults and calls ComputeIntermediates directly.
+// Behaviour is byte-identical to charly's own intermediates.go (kit.SortStrings is the SAME
+// lexicographic sort core aliased as sortStrings). distroBuilderMap is a pure function over the
+// SAME `boxes`/`origBoxes` map ComputeIntermediates/createIntermediate already receive, rather
+// than *Config.allBoxNames()+BoxConfig -- RDD-spiked equivalent on real box/cachyos production
+// data (25 resolved boxes, 8 distro-tag sequences including the two real sequences ["arch"] and
+// ["cachyos","arch"], zero mismatches), skipping dotted namespaced-pull names the same way the
+// sibling-group grouping below does: a base's namespace-relative builder map must NOT be
+// copied across a namespace boundary.
 
 // IntermediateDefaults carries the scalar `defaults:` fields ComputeIntermediates
-// needs from the project config — exactly the fields the former
-// charly/intermediates.go read off *Config (cfg.Defaults.*). A plain data
+// needs from the project config -- exactly the fields a *Config read off cfg.Defaults.*. A plain data
 // carrier (no loader/registry access), so ComputeIntermediates stays a pure
 // function of its inputs.
 type IntermediateDefaults struct {
@@ -509,8 +501,7 @@ func resolvePlatforms(defaults IntermediateDefaults) []string {
 // iteration is name-sorted so the result is deterministic when more than one
 // image shares a distro tag.
 //
-// Pure over `boxes` instead of *Config.allBoxNames()+BoxConfig (the former
-// charly/config.go distroBuilderMap): boxes already carries the SAME
+// Pure over `boxes` rather than *Config.allBoxNames()+BoxConfig: boxes already carries the SAME
 // Distro/Builder fields per resolved box, so no data is missing — this is the
 // SAME "already have the data, just not using it that way" pattern this wave
 // already found elsewhere. RDD-spiked equivalent against real box/cachyos

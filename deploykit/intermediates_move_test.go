@@ -12,12 +12,10 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// intermediates_move_test.go — migrated from charly/intermediates_test.go +
-// charly/intermediates_determinism_test.go (W3, task #36): the auto-
-// intermediate-image subsystem's HOST-COUPLED half (ComputeIntermediates and
-// everything it calls — formerly charly/intermediates.go, now
-// intermediates_compute.go in this package) moved out of charly core, so its
-// test suite moves too. Candy fixtures use the SAME test-fake precedent as
+// intermediates_move_test.go -- the auto-intermediate-image subsystem's
+// config-consuming half (ComputeIntermediates and everything it calls, in
+// intermediates_compute.go) lives in this package rather than in charly core, so its test suite
+// lives here too (W3, task #36). Candy fixtures use the SAME test-fake precedent as
 // candy_stage_test.go (NewSpecCandyModel over spec.CandyModel/spec.CandyView —
 // the production hydration constructor doubles as the test fake) instead of
 // the concrete charly *Candy struct the tests used before the move.
