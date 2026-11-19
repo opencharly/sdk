@@ -12,8 +12,8 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// bake_plugins.go — the S0 baked-plugin BUILD-side seam (K3 build-tail move, coneB-buildtail):
-// bakes each composing candy's `bake_plugin:` out-of-tree plugin binaries into the FINAL image at
+// bake_plugins.go -- the baked-plugin BUILD-side seam: bakes each composing candy's
+// `bake_plugin:` out-of-tree plugin binaries into the FINAL image at
 // bakedPluginDir (/usr/lib/charly/plugins/), so a DEPLOYED container (which has neither the candy
 // source nor a go toolchain) can run an external plugin its in-container charly needs at runtime.
 //

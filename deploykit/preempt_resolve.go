@@ -13,11 +13,9 @@ import (
 // servable off a plain map[string]spec.DeployNode: the shape both a freshly-loaded uf.Deploy
 // (host-side) and a resolved-project envelope's rp.Deploy (plugin-side, via
 // Executor.InvokeProvider("build","project", OpResolve) — there is no HostBuild("resolved-project")
-// seam) already carry — spec.DeployNode is a type alias for
-// spec.Deploy (charly_names.go). K1-UNBLOCK wave 1: extracted from charly/preempt.go so the
-// resource-arbiter plugin (candy/plugin-preempt) and any still-core caller needing the same
-// projection (e.g. a kind:vm exclusive-claimant lookup) share ONE implementation (R3) instead of
-// two independent copies.
+// seam) already carry -- spec.DeployNode is a type alias for spec.Deploy. The resource-arbiter
+// plugin (candy/plugin-preempt) and any core caller needing the same projection (e.g. a kind:vm
+// exclusive-claimant lookup) share ONE implementation (R3) rather than two independent copies.
 
 // MergedDeployTree merges an already-loaded project deploy tree with the per-host deploy-config
 // overlay (~/.config/charly/charly.yml) — exactly the merge the resource arbiter's holder/claimant
