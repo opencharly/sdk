@@ -16,14 +16,12 @@ import (
 // secret_provision.go defines) instead of calling ResolveCredential/DefaultCredentialStore
 // by name, so charly-core and a future out-of-process caller share ONE implementation (R3).
 //
-// The verb:enc OpExecute dispatch is now fully plugin-owned (candy/plugin-deploy-pod +
-// candy/plugin-pod drive verb:enc via their own InvokeProvider; the former core encExecViaPlugin
-// shim + the pod-config-enc-mounts seam are RETIRED). The keyring-unlock wait is likewise
-// plugin-side (candy/plugin-pod's pluginAwaitKeyringUnlock) — it is threaded into
-// ResolveEncPassphraseForMount below as an injected `waiter` closure, exactly like the
-// resolver/reset closures, so this package needs no knowledge of its shape beyond the func
-// signature it already declared. (Core's former awaitUnlock/credentialAwaiter +
-// awaitKeyringUnlockViaPlugin are DELETED, K-wave 2 cone CONTESTED.)
+// The verb:enc OpExecute dispatch is fully plugin-owned: candy/plugin-deploy-pod and
+// candy/plugin-pod drive verb:enc via their own InvokeProvider, with no core shim and no
+// pod-config-enc-mounts seam. The keyring-unlock wait is likewise plugin-side
+// (candy/plugin-pod's pluginAwaitKeyringUnlock) -- threaded into ResolveEncPassphraseForMount
+// below as an injected `waiter` closure, exactly like the resolver/reset closures, so this package
+// needs no knowledge of its shape beyond the func signature.
 
 // ResolveEncPassphrase resolves the gocryptfs passphrase for an image. Resolution order:
 // GOCRYPTFS_PASSWORD env var → credential store (keyring/config) → auto-generate or
@@ -77,9 +75,7 @@ var EncMountPollPeriod = 5 * time.Second
 // backend/reset/waiter are supplied by the caller: candy/plugin-pod passes its
 // pluginResolveSecretBackend()/pluginResetCredentialStore/pluginAwaitKeyringUnlock (the
 // keyring-unlock wait RPCs verb:credential `await-unlock` out-of-process in
-// candy/plugin-secrets — core's former resolveSecretBackend/resetDefaultCredentialStore/
-// awaitKeyringUnlockViaPlugin are DELETED, K-wave 2 cone CONTESTED); a future plugin caller
-// supplies its own InvokeProvider-backed
+// candy/plugin-secrets); another plugin caller supplies its own InvokeProvider-backed
 // equivalents. waiter may be nil (falls through to the bounded retry).
 func ResolveEncPassphraseForMount(boxName, backend string, cred CredentialAccess, reset func(), waiter func(ctx context.Context, boxName string, resolver func() (string, string), reset func()) (string, string, error)) (string, error) {
 	if os.Getenv("INVOCATION_ID") == "" {
