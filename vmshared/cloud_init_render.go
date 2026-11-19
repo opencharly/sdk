@@ -48,7 +48,7 @@ type CloudInitRuntimeParams = spec.CloudInitRuntimeParams
 //     left it optional and inferred `arch`/`alpine` from base_user, defaulting
 //     everything else to Arch/Fedora conventions — which rendered `openssh` and
 //     `enable --now sshd` onto Debian-family guests and left them unreachable. That
-//     inference is DELETED, not narrowed — the renderer no longer guesses a distro.
+//     inference does not exist — the renderer does not guess a distro.
 //
 //  3. Minimum runcmd: the sshd START prepended (after the pacman install command on
 //     pacman-family distros, per #2). On systemd it is

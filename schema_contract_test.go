@@ -9,7 +9,7 @@ import (
 
 // testSchemaFS is the minimal NON-EMPTY CUE schema every plugin MUST now ship.
 // The former "stub-gate relaxation" (an input-less plugin could pass a nil
-// schemaFS) is DELETED: there is no plugin without a CUE schema. These tests
+// schemaFS) does not exist: there is no plugin without a CUE schema. These tests
 // exercise the real contract instead of waiving it.
 func testSchemaFS() fs.FS {
 	return fstest.MapFS{"schema/plugin.cue": &fstest.MapFile{
