@@ -12,7 +12,7 @@ import (
 )
 
 // intermediates_compute.go -- the config-consuming half of the auto-intermediate-image
-// subsystem (W3/K3): ComputeIntermediates, processSiblingGroup, walkTrieScoped,
+// subsystem: ComputeIntermediates, processSiblingGroup, walkTrieScoped,
 // pickAutoName, createIntermediate, resolvePlatforms, and distroBuilderMap. It is a PURE
 // function over IntermediateDefaults (a plain scalar-field carrier -- no *Config, no
 // loader/registry access) plus the buildkit.ResolvedBox / CandyModel maps ComputeIntermediates

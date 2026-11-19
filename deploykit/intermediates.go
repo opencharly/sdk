@@ -10,11 +10,11 @@ import (
 )
 
 // intermediates.go -- the PURE-compute candy-graph/trie half of the
-// auto-intermediate-image subsystem (P8b). These functions operate over
+// auto-intermediate-image subsystem. These functions operate over
 // deploykit.CandyModel + buildkit.ResolvedBox (the candy-graph model), so they
 // belong beside the graph funcs in graph.go. The other half -- ComputeIntermediates /
 // processSiblingGroup / createIntermediate / walkTrieScoped / pickAutoName / resolvePlatforms /
-// distroBuilderMap -- lives in intermediates_compute.go in this SAME package (W3): it consumes
+// distroBuilderMap -- lives in intermediates_compute.go in this SAME package: it consumes
 // the scalar defaults through IntermediateDefaults instead of reading *Config, so the whole
 // subsystem is deploykit-resident. Behaviour is byte-identical to charly's own
 // intermediates.go (kit.SortStrings is the SAME lexicographic sort core aliased as sortStrings).

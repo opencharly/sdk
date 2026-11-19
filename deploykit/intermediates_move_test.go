@@ -15,7 +15,7 @@ import (
 // intermediates_move_test.go -- the auto-intermediate-image subsystem's
 // config-consuming half (ComputeIntermediates and everything it calls, in
 // intermediates_compute.go) lives in this package rather than in charly core, so its test suite
-// lives here too (W3, task #36). Candy fixtures use the SAME test-fake precedent as
+// lives here too. Candy fixtures use the SAME test-fake precedent as
 // candy_stage_test.go (NewSpecCandyModel over spec.CandyModel/spec.CandyView --
 // the production hydration constructor doubles as the test fake) rather than a concrete
 // *Candy struct.
