@@ -203,7 +203,21 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 	if cfg.Security.ShmSize != "" && cfg.PodName == "" && !IpcModeBlocksShmSize(cfg.Security.IpcMode) {
 		fmt.Fprintf(b, "ShmSize=%s\n", cfg.Security.ShmSize)
 	}
-	if len(cfg.BindMounts) > 0 {
+	switch {
+	case carriesCDIDevice(cfg) && len(cfg.BindMounts) > 0:
+		// A unit that CARRIES the CDI GPU device cannot run under keep-id: crun cannot apply
+		// the device's ~62 FILE mounts inside a keep-id user namespace, and the container dies
+		// at the first one — `mount_setattr /usr/bin/nvidia-cuda-mps-control: Operation not
+		// permitted: OCI permission denied`, exit 126 (opencharly/plugin-deploy-pod#81).
+		// keep-id exists to make a HOST-OWNED bind writable, and the one mapping that keeps that
+		// bind writable AND gets the device injected is userns=host with the workload as
+		// container root — which in a rootless pod is still the unprivileged host user, so files
+		// the workload creates land owned by that user. Measured on both halves (podman 6.2.0,
+		// crun 1.31): keep-id + device rc=126 on any image, userns=host + --user 0 rc=0 with the
+		// bind writable and the file host-owned.
+		b.WriteString("UserNS=host\n")
+		b.WriteString("User=0:0\n")
+	case len(cfg.BindMounts) > 0:
 		fmt.Fprintf(b, "UserNS=keep-id:uid=%d,gid=%d\n", cfg.UID, cfg.GID)
 	}
 	for _, e := range cfg.Env {
@@ -250,8 +264,15 @@ func emitInitRuntime(b *strings.Builder, cfg QuadletConfig) {
 	}
 }
 
+// carriesCDIDevice reports whether this unit receives the CDI GPU device. It is the ONE fact
+// behind both the `AddDevice=` line and the user-namespace mapping emitted below: a unit that
+// carries the device cannot run under keep-id (opencharly/plugin-deploy-pod#81). A privileged
+// unit gets every device through `--privileged` and is never given a CDI mount, so it is not
+// "carrying" one and keeps the mapping it had.
+func carriesCDIDevice(cfg QuadletConfig) bool { return cfg.GPU && !cfg.Security.Privileged }
+
 func emitContainerSecurity(b *strings.Builder, cfg QuadletConfig) {
-	if cfg.GPU && !cfg.Security.Privileged {
+	if carriesCDIDevice(cfg) {
 		b.WriteString("AddDevice=nvidia.com/gpu=all\n")
 	}
 	if cfg.Security.Privileged {
