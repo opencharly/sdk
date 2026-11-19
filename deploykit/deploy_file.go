@@ -74,10 +74,10 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 // reaches core through DeployStateHost.LoadUnifiedDeployConfig.
 //
 // ctx is REQUIRED: it carries the invocation's RunEnv (spec.WithRunEnv) so a concurrent
-// in-process bed roster reads its OWN overlay rather than the operator's process env. The
-// former trailing-variadic form silently fell back to the process env when omitted — the
-// fail-open default; it is removed (R5), so every caller (in-tree and any out-of-tree plugin
-// consumer) that omits ctx now fails to compile.
+// in-process bed roster reads its OWN overlay rather than the operator's process env. There is no
+// trailing-variadic form that falls back to the process env when omitted -- that was the fail-open
+// default -- so every caller (in-tree and any out-of-tree plugin consumer) that omits ctx fails
+// to compile.
 //
 // Every transform the old bespoke parser did — the `images:` legacy-key reject, the
 // deployment-tree / required-box: / preemptible / ephemeral-naming validation, and the
@@ -133,9 +133,8 @@ func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
 // an IN-PROCESS host caller passes nil and behaves exactly as before. A plugin caller that is
 // NOT guaranteed to hold the charly-init DeployStateHost registration (an out-of-process
 // command:deploy) passes its OWN loader-backed reader (loaderkit.LoadHostDeployConfigViaExecutor),
-// so SaveDeployConfig no longer depends on the DeployStateHost package var to re-check
-// the on-disk file. Follows the marshalNode-param precedent: the host-coupled leg is injected,
-// not hard-wired (#55 K4 config-write seam-collapse).
+// so SaveDeployConfig does not depend on the DeployStateHost package var to re-check the on-disk
+// file. Follows the marshalNode-param precedent: the host-coupled leg is injected, not hard-wired.
 //
 // NAMED EXIT for the nil-failsafeRead branch: it is DI serving the still-in-proc host callers
 // (enc_probe / status_flat / vm state, RemoveVmDeployEntry), NOT a transitional shim — the
@@ -458,20 +457,17 @@ func MergeDeployOntoMetadata(meta *spec.BoxMetadata, dc *DeployConfig, deployNam
 }
 
 // ExportAllBox exports all runtime-relevant fields for all enabled boxes in a RESOLVED project
-// envelope. Relocated from charly/deploy.go (K5-Unit-1, the #67 keystone): the former
-// `ExportAllBox(cfg *Config)` read the live *Config graph; this rewrite reads the
-// spec.ResolvedProject envelope the "resolved-project" HostBuild seam (K5-Unit-0) produces, so
-// the deploy state model is built from the SAME envelope inspect/list/validate consume — no
-// core *Config dep. The box-authored deploy-overlay surfaces (description / env / env_file /
-// security / network) ride #ResolvedBoxView (grown in this cutover). The former per-deploy
-// `version:` is GONE (the schema-versioning removal cutover): the box overlay carries no version.
+// envelope. It reads the spec.ResolvedProject envelope, so the deploy state model is built from the
+// SAME envelope inspect/list/validate consume -- no core *Config dependency. The box-authored
+// deploy-overlay surfaces (description / env / env_file / security / network) ride
+// #ResolvedBoxView. The box overlay carries no `version:`.
 func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 	dc := &DeployConfig{Deploy: make(map[string]DeployNode)}
 	if rp == nil {
 		return dc
 	}
-	// Deterministic name order (map iteration is random); matches the former cfg.allBoxNames()
-	// sort + the ResolvedProject.BuildTargets order.
+	// Deterministic name order (map iteration is random); matches the ResolvedProject.BuildTargets
+	// order.
 	names := make([]string, 0, len(rp.Boxes))
 	for name := range rp.Boxes {
 		names = append(names, name)
@@ -479,7 +475,7 @@ func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 	sort.Strings(names)
 	for _, name := range names {
 		view := rp.Boxes[name]
-		// Schema v4: Tunnel / DNS / Engine no longer sourced from BoxConfig (they're
+		// Schema v4: Tunnel / DNS / Engine are not sourced from BoxConfig (they are
 		// deploy-only). `acme_email` was retired from the contract entirely
 		// (opencharly/spec#379) — it is neither a box nor a deploy field any more.
 		entry := DeployNode{
@@ -489,7 +485,7 @@ func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 			Security:    view.Security,
 			Network:     view.Network,
 		}
-		// Only include if at least one field is set. Ports are no longer a box field — they're
+		// Only include if at least one field is set. Ports are not a box field -- they are
 		// inherited from candies and auto-allocated at deploy.
 		if entry.Description != "" ||
 			entry.Env != nil ||

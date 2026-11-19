@@ -12,26 +12,24 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// render_generator_from_project.go — the SHARED construction source for a deploykit.Generator
-// from a spec.ResolvedProject envelope (#67 / P11c). BOTH candy/plugin-build (the box-build
-// render DRIVE, #67) AND candy/plugin-deploy-pod (the pod-overlay render, P11c) call this ONE
-// helper — R3/DRY: ONE construction source, so the box build and the pod-overlay build construct
-// their deploykit.Generator identically from the resolved-project envelope. plugin-build's former
-// buildRenderGenerator was the sole caller; P11c extracts it here so plugin-deploy-pod reuses it
-// for the overlay render.
+// render_generator_from_project.go -- the SHARED construction source for a deploykit.Generator
+// from a spec.ResolvedProject envelope. BOTH candy/plugin-build (the box-build render DRIVE) AND
+// candy/plugin-deploy-pod (the pod-overlay render) call this ONE helper -- R3/DRY: ONE construction
+// source, so the box build and the pod-overlay build construct their deploykit.Generator identically
+// from the resolved-project envelope.
 //
 // K3 render-seam production move, COMPLETED in K-wave 2 cone R1: the render now reaches the host
 // for NOTHING. 5 of the original 9 host-coupled seams (RenderService, the detection/external builder
 // resolves, ValidateEgress, RewriteHeaderCopy) went first — PURE registry resolve+Invoke dispatch
 // (or pure data + host-fs I/O over the CandyModel envelope), RDD-spiked live on the external-builder
-// leg. LocalPkg followed (W3): its "host rebuilds from the live *Candy graph" claim was stale — the
-// caller already builds the step from dg.Candies/dg.Boxes. EmitPluginOp followed (P8b): its
-// "only core can type-assert a BUILTIN provider's concrete type" claim was a concrete-type leak, not
-// a seam. The LAST two, inline-builder + ensure-builders, fall here on the same finding: the inline
+// leg. LocalPkg's caller builds the step from dg.Candies/dg.Boxes. EmitPluginOp is a
+// concrete-type leak, not a seam. The LAST two, inline-builder + ensure-builders, fall here on the
+// same finding: the inline
 // resolve is the SAME OpResolve peer-dispatch resolveBuilderStage already runs for the detection and
 // external legs, and the connect is ops.InvokeProviderOpts.ExtraRef (the host's generic
-// connectPluginByWordRef Pass-2), which every plugin can request. So renderSeamCaller.hostBuild and
-// the whole HostBuild("render-seam") kind are DELETED; only InvokeProvider peer-dispatch remains.
+// connectPluginByWordRef Pass-2), which every plugin can request. So there is no
+// renderSeamCaller.hostBuild and no HostBuild("render-seam") kind; only InvokeProvider peer-dispatch
+// remains.
 
 // renderSeamCaller holds the two dispatch primitives every wired seam needs (the venue executor
 // + its context) so NewRenderGeneratorFromProject's own body stays a flat field-assignment list
@@ -86,11 +84,10 @@ func (c renderSeamCaller) validateEgress(kind, label, mode, data string) error {
 //
 // ExtraRef carries the builder's canonical plugin-candy ref so the host's InvokeProvider falls back
 // to connectPluginByWordRef's Pass-2 fetch for a build whose own candy closure vendors the plugin
-// nowhere — a box/<distro> submodule that triggers a builder purely by DETECTION. This REPLACES the
-// former ensure-builders host round-trip, which reached the identical two-pass
-// ScanAllCandyWithConfigOpts + loadProjectPlugins machinery through a bespoke second copy (R3);
-// connect is now on-demand per word at the moment of first use, and idempotent thereafter (the
-// host resolves the registry before ever re-scanning).
+// nowhere -- a box/<distro> submodule that triggers a builder purely by DETECTION. It takes the
+// place of a host ensure-builders round-trip: connect is on-demand per word at the moment of first
+// use, and idempotent thereafter (the host resolves the registry before re-scanning), so no second
+// copy of the ScanAllCandyWithConfigOpts + loadProjectPlugins machinery is needed (R3).
 func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolveInput, img *spec.ResolvedBox) (spec.BuilderResolveReply, error) {
 	var reply spec.BuilderResolveReply
 	env, err := json.Marshal(spec.BuildEnv{Distros: img.Tags, Image: img.Name})
@@ -181,7 +178,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	c := renderSeamCaller{ctx: ctx, ex: ex}
 
 	// EmitPluginOp: rendered FULLY plugin-side via a UNIFORM InvokeProvider(OpEmit) peer-dispatch
-	// (P8b seam-death — the RenderSeamEmitPluginOp host callback is DELETED). A state-provision
+	// (there is no RenderSeamEmitPluginOp host callback). A state-provision
 	// verb self-declares its act shell via EmitReply.ActScript (the render RUN-wraps it via
 	// EmitCmd), so no package-main concrete-type assert is needed: every verb — builtin or
 	// external — dispatches through the SAME Invoke(OpEmit) envelope. The FULL op rides op.Params
@@ -267,11 +264,11 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	// ResolveInlineBuilder: direct peer-dispatch (K-wave 2 cone R1) — the LAST render seam to shed
 	// its host round-trip. It is the SAME resolveBuilderStage the detection/external legs below use;
 	// only the reply field it reads (InlineFragment, spliced in-candy) and its emptiness rule differ.
-	// The former host seam's separate connect step is gone: resolveBuilderStage's ExtraRef carries
-	// the canonical plugin-candy ref, so the host connects on demand during this very Invoke.
+	// There is no separate connect step: resolveBuilderStage's ExtraRef carries the canonical
+	// plugin-candy ref, so the host connects on demand during this very Invoke.
 	dg.ResolveInlineBuilder = func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx2 *spec.BuildStageContext, img *spec.ResolvedBox) (string, error) {
 		// The resolve input carries the candy's INTRINSIC bare name, never the map key — they
-		// diverge for a REMOTE candy (keyed by its fully-qualified ref). The deleted host seam read
+		// diverge for a REMOTE candy (keyed by its fully-qualified ref). A host seam here would read
 		// it the same way (g.Candies[candyName].GetName()); the error messages keep using the key,
 		// also as before.
 		bare := candyName
@@ -305,8 +302,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 
 	// EmitBakedPlugins: direct call (K3 build-tail move, coneB-buildtail) — the build is
 	// 100% pure os/exec (proven by the already-moved ensureCharlyBinaryFresh), so this needs no
-	// host round-trip at all; the former "bake-plugins" HostBuild seam (charly/host_build_bake_plugins.go)
-	// is DELETED.
+	// host round-trip at all; there is no "bake-plugins" HostBuild seam.
 	dg.EmitBakedPlugins = func(b *strings.Builder, boxName string, candyOrder []string) error {
 		return EmitBakedPlugins(ctx, b, dg.BuildDir, boxName, candyOrder, dg.Candies)
 	}
