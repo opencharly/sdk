@@ -5,10 +5,8 @@ import "github.com/opencharly/spec/spec"
 // candy_for_plans.go — the pure plan→candy SELECTION shared (R3) by the plugin-side secret/artifact
 // resolvers — candy/plugin-fleet's secret/artifact resolution AND candy/plugin-deploy-pod's overlay
 // buildOverlay. Both pair it with the candy set already held in the resolved-project envelope
-// rather than running a host-side loader scan.
-// Both pair it with the candy set already held in the resolved-project envelope (dg.Candies) — no
-// host scan. Both need the SAME "which candies back this compiled plan set, in dependency order"
-// decision; only WHERE the candy map comes from differs (#55 K4).
+// (dg.Candies) — no host scan. Both need the SAME "which candies back this compiled plan set, in
+// dependency order" decision; only WHERE the candy map comes from differs.
 
 // SelectCandiesForPlans returns the candies backing plans — each plan's CandiesIncluded (topo order)
 // then its own Candy — deduped, in first-seen order, resolved against the supplied candies map. A
