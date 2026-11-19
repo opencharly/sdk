@@ -44,11 +44,11 @@ import (
 // E/M justification (the kernel/plugin boundary law): LoadUnifiedDeployConfig is a kind-blind
 // MECHANISM (M) — it loads ANY per-host charly.yml through the unified loader and returns its
 // ProjectDeployConfig, never branching on a deploy kind. It lives in the seam (not in deploykit
-// directly) ONLY because the LoadUnified orchestration has not yet relocated to sdk/loaderkit
-// : once K1 lands, plugin-fleet calls loaderkit.LoadUnified directly and this
-// seam dies entirely. The deploy-kind-specific marshal is NOT here — it is the caller's
-// responsibility, supplied as a callback to SaveDeployConfig (a kind-blind file shell). Tracked
-// K1-exit task: this seam field is deleted when K1 lands.
+// directly) ONLY because the LoadUnified orchestration has not yet relocated to sdk/loaderkit:
+// once that lands, plugin-fleet calls loaderkit.LoadUnified directly and this seam goes entirely.
+// The deploy-kind-specific marshal is NOT here -- it is the caller's responsibility, supplied as
+// a callback to SaveDeployConfig (a kind-blind file shell). This seam field is removed when the
+// LoadUnified orchestration lands.
 type StateHostMechanisms struct {
 	// LoadUnifiedDeployConfig loads a per-host charly.yml configDir through the unified
 	// loader and returns its ProjectDeployConfig (or nil, nil when absent / empty).
