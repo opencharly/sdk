@@ -92,10 +92,94 @@ func PickCandyVersion(bareRef string, cands []spec.CandyCandidate, diag func(spe
 	//     on: a real, same-scope, cross-tag content divergence.
 	if conflicts := scopeConflicts(cands); len(conflicts) > 0 && !candyContentsIdentical(cands) {
 		emitDiag(diag, spec.DiagInfo,
-			"candy %s resolved to multiple git tags with differing content within one scope (%s); using newest referenced %s (from %s)%s",
-			bareRef, strings.Join(conflicts, ", "), best.GitTag, best.Source, describeSkew(cands, best))
+			"candy %s resolved to multiple git tags with differing content within one scope (%s); using newest referenced %s (from %s)%s%s",
+			bareRef, strings.Join(conflicts, ", "), best.GitTag, best.Source, describeSkew(cands, best),
+			nonCalverRemedy(cands, best, conflicts))
 	}
 	return best
+}
+
+// nonCalverRemedy renders the ACTION a reader must take when a ref that is NOT a CalVer tag -- a
+// commit SHA, a branch -- lost the arbitration to a CalVer tag inside the SAME box scope. It is
+// APPENDED to the one scope-conflict message rather than emitted as a second diagnostic, so the
+// skew keeps exactly one line and every existing reader of that line still recognizes it.
+//
+// WHY THE MESSAGE AND NOT A DIFFERENT WINNER. newerCandidate's CalVer-over-non-CalVer preference is
+// deliberate and must stay: it is the fix for opencharly/charly#1179, where a STALE pinned commit
+// two hops away beat the release that carried the actual fix. Letting a SHA win again would reopen
+// that regression, and would let a shared scope compose an arbitrary revision -- strictly worse
+// than refusing. So the SHA loses, and the ONE thing missing is the sentence that says so: a
+// reader who pinned a SHA saw "resolved to multiple git TAGS ... using newest referenced
+// v2026.323.0252", which names neither the SHA's fate nor a way forward (opencharly/charly#1215,
+// measured while trying to bed-prove opencharly/layer-cuda#28).
+//
+// The remedy is the producer-first order, because it is the only correct way to adopt an unmerged
+// layer: the producer lands, merges and is tagged, and THEN the `require:` that names the tag moves
+// to it, so no scope ever names two tags at once.
+func nonCalverRemedy(cands []spec.CandyCandidate, best spec.CandyCandidate, conflicts []string) string {
+	// The explanation only exists for a TAG beating a NON-tag. When the winner is not a CalVer tag
+	// either, the skew is between two refs of the same kind and the generic sentence is the whole
+	// truth.
+	if _, ok := calver.ParseCalVer(strings.TrimPrefix(best.GitTag, "v")); !ok {
+		return ""
+	}
+	inConflict := make(map[string]bool, len(conflicts))
+	for _, s := range conflicts {
+		inConflict[s] = true
+	}
+	type loser struct{ ref, scope, kind string }
+	var losers []loser
+	for i := range cands {
+		c := cands[i]
+		if c.GitTag == best.GitTag && c.Source == best.Source {
+			continue
+		}
+		if _, ok := calver.ParseCalVer(strings.TrimPrefix(c.GitTag, "v")); ok {
+			continue // another real tag: the generic sentence already covers it
+		}
+		kind := "a ref that is not a CalVer tag"
+		if isCommitSHA(c.GitTag) {
+			kind = "a revision with no CalVer to order it"
+		}
+		for _, s := range c.Referrers {
+			if inConflict[s] {
+				losers = append(losers, loser{ref: c.GitTag, scope: s, kind: kind})
+			}
+		}
+	}
+	if len(losers) == 0 {
+		return ""
+	}
+	sort.Slice(losers, func(i, j int) bool {
+		if losers[i].scope != losers[j].scope {
+			return losers[i].scope < losers[j].scope
+		}
+		return losers[i].ref < losers[j].ref
+	})
+	var b strings.Builder
+	for _, l := range losers {
+		fmt.Fprintf(&b,
+			"; %s pins %s, which is %s and cannot be arbitrated against a release tag: it carries no recency the CalVer order can read, so %s wins and %s is never composed. Move the `require:` that names %s to a release containing %s FIRST (producer-first: land it, merge it, tag it, then move the pin), or stop naming %s in %s",
+			l.scope, l.ref, l.kind, best.GitTag, l.ref, best.GitTag, l.ref, best.GitTag, l.scope)
+	}
+	return b.String()
+}
+
+// isCommitSHA reports whether ref is a full 40-hex revision id -- the immutable pin the
+// producer-first order cannot arbitrate, as distinct from a branch name (also non-CalVer, and
+// named as such).
+func isCommitSHA(ref string) bool {
+	if len(ref) != 40 {
+		return false
+	}
+	for _, r := range ref {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // newerCandidate reports whether a is a strictly newer candidate than b.
