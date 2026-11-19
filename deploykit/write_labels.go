@@ -10,22 +10,20 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// write_labels.go — the FORMAT half of the render's OCI-label emission (#67, the build_resolve
-// RENDER-leg death). The former charly/generate.go writeLabels body split at the data/format
-// boundary: the HOST gather (charly buildBakedMetadata) reads the live *Candy/*Config graph +
-// the Collect* aggregators into a fully-baked *spec.BakedLabelSet (the EXACT wire data, in wire
-// form); this file FORMATS it into the LABEL lines byte-for-byte WITHOUT the live graph. Every
-// emission statement of the former writeLabels lives on exactly ONE side of the split, so the
-// two halves compose to byte-identical Containerfile labels (proven by the render-parity
-// byte-golden). The carrier rides buildkit.ResolvedBox.BakedMetadata (live path) /
+// write_labels.go -- the FORMAT half of the render's OCI-label emission: the emission splits at
+// the data/format boundary. The HOST gather (charly buildBakedMetadata) reads the live
+// *Candy/*Config graph + the Collect* aggregators into a fully-baked *spec.BakedLabelSet (the
+// EXACT wire data, in wire form); this file FORMATS it into the LABEL lines byte-for-byte WITHOUT
+// the live graph. Every emission statement lives on exactly ONE side of the split, so the two
+// halves compose to byte-identical Containerfile labels (proven by the render-parity byte-golden).
+// The carrier rides buildkit.ResolvedBox.BakedMetadata (live path) /
 // ResolvedBoxView.BakedMetadata (the plugin-build drive path, via NewSpecResolvedBox).
 //
-// This is the single render-home for label emission: charly's writeLabels is DELETED once the
-// live path wires buildBakedMetadata + Generator.WriteLabels (R5 timing: before the parity
-// byte-golden + bed acceptance run).
+// This is the single render-home for label emission; the live path wires buildBakedMetadata +
+// Generator.WriteLabels.
 
 // WriteLabels emits the image metadata LABEL block from a fully-baked *spec.BakedLabelSet.
-// It is the format-only mirror of the former charly writeLabels: it reads NO live graph, only
+// It is the format-only half of the pair: it reads NO live graph, only
 // the carrier, so it is placement-agnostic (the live render path and the plugin-build envelope
 // path feed it the same struct). LABELs are emitted LAST in the final stage (the caller places
 // the call after the final USER directive) so a test/label edit only reruns the LABEL
@@ -82,7 +80,7 @@ func (g *Generator) WriteLabels(b *strings.Builder, meta *spec.BakedLabelSet, bo
 	writeJSONLabel(b, spec.LabelBuilderProvide, meta.Build)
 
 	// JSON array labels (omitted when empty). Ports are inherited from the candy chain
-	// (CollectBoxPorts) — boxes no longer declare ports. The label carries bare container
+	// (CollectBoxPorts) -- ports are not a box field. The label carries bare container
 	// ports; the host mapping is resolved at deploy time.
 	writeJSONLabel(b, spec.LabelPort, meta.Port)
 	writeJSONLabel(b, spec.LabelPortProto, meta.PortProto)
@@ -245,8 +243,7 @@ func (g *Generator) WriteLabels(b *strings.Builder, meta *spec.BakedLabelSet, bo
 const maxLabelLineBytes = 60000
 
 // writeJSONLabel writes a JSON-encoded LABEL directive. Omits the label if the value is
-// nil/empty. The generic form is the verbatim relocation of the former charly/generate.go
-// writeJSONLabel (R3: one copy, now in the render home).
+// nil/empty. This is the ONE copy of the generic form (R3: one copy, in the render home).
 //
 // A value too long for one Dockerfile line is wrapped with the format's own line
 // continuation (a backslash immediately before a newline), which the parser removes — so the
