@@ -7,34 +7,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// bed_session.go — the check-bed HOST helpers relocated from charly/check_bed_run.go
-// (Cutover B unit 6b, the InvokeProvider-generalization family). At relocation time the caller
-// was core-only; candy/plugin-check/bed_persist.go was the first plugin to call
-// PersistBedDeployOverrides directly, and it remains the sole caller through #55 W3 B2-full's
-// complete check-bed dissolution — core held no direct caller of this file across the whole
-// migration. This is the SAME "portable orchestration in sdk, thin core call sites" pattern
-// already applied to the credential family: no provider-registry coupling was ever
-// load-bearing here except ONE classification — isExternalDeploySubstrate (a live
-// provider-registry query) — which the caller now computes ONCE and threads in as a plain
-// `externalInPlace bool` parameter (the team-lead's ruling: a plain Go parameter, not a new
-// wire surface — there is no cross-process consumer for this data today, so adding one would
-// be exactly the "seam a later wave deletes" anti-pattern). The HostRooted trait check
-// (formerly nodeTraits(&node).HostRooted, itself only a provider-registry fallback for an
-// UNSTAMPED node) reads node.Descent directly instead — every node these functions see comes
-// from a LoadUnified'd project, whose loader always stamps Descent (stampFleetDescents), so
-// this is a pure wire-field read, never a registry query.
+// bed_session.go -- the check-bed helpers. candy/plugin-check/bed_persist.go is the sole caller of
+// PersistBedDeployOverrides; core holds no direct caller of this file. This is the SAME "portable
+// orchestration in sdk, thin core call sites" pattern the credential family uses: no
+// provider-registry coupling is load-bearing here except ONE classification --
+// isExternalDeploySubstrate (a live provider-registry query) -- which the caller computes ONCE and
+// threads in as a plain `externalInPlace bool` parameter (a plain Go parameter, not a new wire
+// surface: there is no cross-process consumer for this data, so adding one would be exactly the
+// "seam a later wave deletes" anti-pattern). The HostRooted trait check reads node.Descent
+// directly -- every node these functions see comes from a LoadUnified'd project, whose loader
+// always stamps Descent (stampFleetDescents), so this is a pure wire-field read, never a registry
+// query.
 //
-// ResolveBedCheckLevel (formerly here, a thin wrapper over kit.DefaultCheckLevel/
-// kit.ResolveCheckLevel) DIED as dead code (#55 W3 B2-full, R1 sweep): its sole caller — core's
-// check_bed_run.go's bedCheckLevel — already documented having inlined to the spec.* helpers
-// directly ("now inlined to those spec helpers... importing zero deploykit"); the relocated
+// There is no ResolveBedCheckLevel here: its sole caller, core's check_bed_run.go's
+// bedCheckLevel, calls the spec.* helpers directly and imports zero deploykit; the
 // plugin-side bedCheckLevel (candy/plugin-check/bed_session.go) follows the SAME already-inlined
 // pattern, never calling back into this wrapper. Zero remaining callers, confirmed by grep.
 
-// The host-rooted descent predicate is now deploy.HostRooted (#55 U4 — a pure #Deploy-tree read
-// over the wire-stamped node.Descent, promoted so DeployNestedLocalChildren and this file's
-// bed-session apply path share ONE predicate over the spec value type). Callers below reference
-// deploy.HostRooted directly.
+// The host-rooted descent predicate is deploy.HostRooted -- a pure #Deploy-tree read over the
+// wire-stamped node.Descent, so DeployNestedLocalChildren and this file's bed-session apply path
+// share ONE predicate over the spec value type. Callers below reference deploy.HostRooted
+// directly.
 
 // PersistBedDeployOverrides seeds the per-host charly.yml with a kind:check bed's
 // project-declared deploy-shaped fields (port / volume / env / tunnel / security / network),
@@ -59,9 +52,9 @@ import (
 // read is the current-state re-read this load-mutate-save performs. A nil read falls back to
 // SaveDeployState's own DeployStateHost-backed read (the in-proc host path). A plugin caller
 // (out-of-process command:check / command:deploy) injects its OWN loader-backed reader
-// (loaderkit.LoadHostDeployConfigViaExecutor), so PersistBedDeployOverrides no longer requires the
-// DeployStateHost package var (#55 coneC-dsh — mirrors the SaveDeployConfig/SaveDeployState
-// reader-callback precedent).
+// (loaderkit.LoadHostDeployConfigViaExecutor), so PersistBedDeployOverrides does not require the
+// DeployStateHost package var -- the same reader-callback shape SaveDeployConfig and
+// SaveDeployState use.
 //
 // ctx carries the invocation's RunEnv (a bed's CHARLY_DEPLOY_CONFIG): SaveDeployState resolves the
 // overlay path from it, so a bed's persist writes the BED's temp overlay, never the operator's real
@@ -102,20 +95,17 @@ func PersistBedDeployOverrides(ctx context.Context, name string, node DeployNode
 	}, marshalNode, read, ctx)
 }
 
-// DeployNestedLocalChildren is now deploy.DeployNestedLocalChildren (#55 U4 — a pure dotted-path
-// tree walk over the spec value types, promoted with HostRooted). deploykit keeps a re-export
+// DeployNestedLocalChildren is deploy.DeployNestedLocalChildren -- a pure dotted-path tree walk
+// over the spec value types, beside HostRooted. deploykit keeps a re-export
 // forwarder (deploy_ops_aliases.go) so its charly callers compile unchanged.
 
 // WaitForVmSshReady + WaitForContainerReady (the deploy-venue readiness GATES) moved to
-// spec/exec (spec/exec/venue_wait.go, #55 K4) — pure process-driving pollers over spec/exec
-// executors + spec readiness primitives, with no bed-session coupling. candy/plugin-check's bed
-// runner calls specexec.WaitFor* directly.
+// spec/exec (spec/exec/venue_wait.go) -- pure process-driving pollers over spec/exec executors
+// and spec readiness primitives, with no bed-session coupling. candy/plugin-check's bed runner
+// calls specexec.WaitFor* directly.
 //
-// CORRECTION to this file's own former prediction (#55 W3 B2-full): PersistBedDeployOverrides
-// genuinely STAYS here — a plain library function any placement can call (ResolveBedCheckLevel,
-// its sibling, turned out to have zero remaining callers and was deleted as dead code, above).
-// But the flock/lease/env "lock/lease/persist family" this header once predicted would ALSO land
-// in deploykit landed somewhere more specific instead: directly in
+// PersistBedDeployOverrides stays here because it is a plain library function any placement can
+// call. The flock/lease/env "lock/lease/persist family" lives somewhere more specific: directly in
 // candy/plugin-check/bed_session.go, NOT here. The reason is placement-class, not
 // process-boundary: os.Setenv(CHARLY_REPO_OVERRIDE/…) only lands in the process
 // hostBuildCli's cli-reentry children fork from when the CALLER is compiled-in — a fact true of
