@@ -9,9 +9,9 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// TestGenerateInitFragments / TestGenerateRelayInitFragments were relocated
-// The logic these tests cover — GenerateInitFragments' fragment-assembly + port-relay
-// naming — lives in this package as real production code (candy/plugin-deploy-pod's
+// TestGenerateInitFragments / TestGenerateRelayInitFragments cover GenerateInitFragments'
+// fragment-assembly + port-relay naming, which lives in this package as real production
+// code (candy/plugin-deploy-pod's
 // overlay build reaches it directly). RenderService is stubbed with a minimal
 // fragment renderer so the test isolates GenerateInitFragments' own orchestration
 // (candy ordering, per-candy fragment files, port-relay fragments) from
