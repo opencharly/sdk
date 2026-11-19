@@ -419,7 +419,7 @@ func RemoveBySource[T Named](entries []T, boxName string) ([]T, bool) {
 }
 
 // RemoveByExactSource removes entries whose source matches the exact deploy key (no
-// cross-instance match)..
+// cross-instance match).
 func RemoveByExactSource[T Named](entries []T, source string) ([]T, bool) {
 	var result []T
 	removed := false
@@ -437,7 +437,7 @@ func RemoveByExactSource[T Named](entries []T, source string) ([]T, bool) {
 // (charly-<image>-) to the deploy's own prefix (DeployVolumePrefix), so every distinctly-named
 // deploy ALWAYS gets volume mounts distinct from any other deploy of the same image. No-op
 // when the deploy's prefix already equals the image prefix (the common `charly config <image>`
-// base deploy). Idempotent..
+// base deploy). Idempotent.
 func ScopeVolumesToDeployKey(meta *spec.BoxMetadata, deployName, instance string) {
 	if meta == nil || deployName == "" {
 		return
