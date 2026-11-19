@@ -1,6 +1,6 @@
 // candy_node.go — the candy box⊻layer routing restated on the PARSED node (parser
 // consolidation F2.1). The former charly-core genericNode candy constructor (node_candy.go: a
-// yaml-discValue key scan + a gn→pn re-conversion) is DELETED; this is the ONE implementation:
+// yaml-discValue key scan + a gn→pn re-conversion) does not exist; this is the ONE implementation:
 // CandyIsImage scans the canonical JSON body (pn.Body) for the box base⊻from marker, and
 // BuildCandy decodes through the SAME shared CUE entity decoder (DecodeNodeValue) every other
 // candy/kind decode goes through. Both are pure functions of the wire-safe spec.ParsedNode — no

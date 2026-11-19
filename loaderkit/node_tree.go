@@ -175,7 +175,7 @@ func BuildDeployNode(pn spec.ParsedNode, t spec.Threaded) (*spec.DeployNode, err
 
 	// Cutover C task 0 — the fold stamps Member.Position from the authored depth ALONE (the
 	// parse-preserved body-membership channel) and attaches the ONE ordered member list. The
-	// former root-kind branch (dn.Target == "" → alongside, else deploy-into) is DELETED: one
+	// root-kind branch (dn.Target == "" → alongside, else deploy-into) does not exist: one
 	// authored shape, one meaning, classified by position — never re-derived from the node's
 	// kind.
 	members, err := BuildResourceMemberChildren(pn, t)
@@ -339,7 +339,7 @@ func DecodeStandaloneTemplateJSON(pn spec.ParsedNode, t spec.Threaded) (json.Raw
 	return EntityBodyJSON(pn)
 }
 
-// ResourceChildren is DELETED (parser consolidation F1.2): its only caller was the host's
+// There is no ResourceChildren (parser consolidation F1.2): the one member walk below is the
 // deploy-shape composite (len(ResourceChildren(pn)) > 0), subsumed by IsDeployShape's member
 // channel above — the ONE member walk (BuildResourceMemberChildren) over the ONE predicate
 // (IsResourceDisc) is the single source of truth for member classification. Its former frozen

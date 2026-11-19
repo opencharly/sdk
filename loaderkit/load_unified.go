@@ -70,7 +70,7 @@ type LoadSeams struct {
 
 // GateSchemaVersion was the load-time schema-version equality gate: a config NEWER
 // than this binary supported → "update charly"; an OLDER/absent/non-CalVer version →
-// the `charly migrate` hint. It is DELETED (the schema-versioning removal cutover). A
+// the `charly migrate` hint. It does not exist (the schema-versioning removal cutover). A
 // denormalised CalVer in every authored file only ever disagreed with the real shape
 // contract — the CLOSED CUE schema, which rejects an unknown/removed field with a hard
 // `field not allowed` error — so a leftover `version:` is now exactly that error and
