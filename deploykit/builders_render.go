@@ -46,8 +46,8 @@ func (g *Generator) EmitPreMainCandyStages(b *strings.Builder, boxName string, i
 // kit.BuilderResolve -- not an in-core stage template); a non-externalized
 // builder emits no build-time multi-stage (a custom builder must be an external_builder
 // plugin). The externalized builder plugins are connected on-demand by the resolve Invoke itself
-// (ops.InvokeProviderOpts.ExtraRef — K-wave 2 cone R1 retired the separate EnsureBuildersConnected
-// pre-pass, whose two-pass scan+load was a second copy of the host's own connectPluginByWordRef).
+// (ops.InvokeProviderOpts.ExtraRef), so there is no separate EnsureBuildersConnected pre-pass
+// and no second copy of the host's own connectPluginByWordRef.
 // The reply is cached per (candy, builder) for EmitBuilderArtifacts.
 func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *buildkit.ResolvedBox, candyOrder []string) error {
 	if img.BuilderConfig == nil {
@@ -66,7 +66,7 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 		}
 		external := g.ExternalizedBuilders[builderName]
 		// Only an EXTERNALIZED (plugin) builder emits a build-time multi-stage — via its
-		// plugin's OpResolve (kit.BuilderResolve, C10). A non-externalized builder emits no
+		// plugin's OpResolve (kit.BuilderResolve). A non-externalized builder emits no
 		// stage here (a custom builder must be an external_builder plugin).
 		if !external {
 			continue
@@ -98,7 +98,7 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 // resolveDetectionBuilderReply builds the OpResolve render context host-side
 // (BuildStageContext + builderResolveInputFrom) for one (candy, builder) and
 // dispatches through the ResolveDetectionBuilderStage seam (registry ResolveBuilder
-// + OpResolve Invoke, charly-side). The C10 counterpart of the external_builder path,
+// + OpResolve Invoke, charly-side). The counterpart of the external_builder path,
 // sharing the SAME seam-served OpResolve Invoke (R3).
 func (g *Generator) resolveDetectionBuilderReply(builderName string, layer CandyModel, builderDef *buildkit.BuilderDef, img *buildkit.ResolvedBox, builderRef string) (spec.BuilderResolveReply, error) {
 	ctx := g.BuildStageContext(layer, builderName, builderDef, img, builderRef)
@@ -108,7 +108,7 @@ func (g *Generator) resolveDetectionBuilderReply(builderName string, layer Candy
 
 // BuilderResolveInputFrom builds the serializable spec.BuilderResolveInput a builder plugin's
 // OpResolve leg needs, from the host-computed BuildStageContext. RELOCATED to spec/spec
-// (buildwire_render.go, #55 coneK3tasks) so charly core can call it without an sdk/deploykit
+// (buildwire_render.go) so charly core can call it without an sdk/deploykit
 // import — charly/tasks.go's inline-builder seam now calls spec.BuilderResolveInputFrom
 // directly, shedding the LAST sdk-kit import. This deploykit re-export keeps the candy/plugin-
 // installstep callers (stepEmitBuilder) byte-stable (R3: ONE source in spec/spec, re-exported
@@ -116,8 +116,8 @@ func (g *Generator) resolveDetectionBuilderReply(builderName string, layer Candy
 // param typechecks against the *buildkit.BuilderDef the callers pass. Shared by the box-build
 // path (resolveDetectionBuilderReply above) AND the pod-overlay build-emit
 // (candy/plugin-installstep stepEmitBuilder) + the INLINE-builder resolve
-// (NewRenderGeneratorFromProject's dg.ResolveInlineBuilder — plugin-side since K-wave 2 cone R1,
-// where it replaced the deleted charly resolveInlineBuilderSeam), R3 — hence the re-export.
+// (NewRenderGeneratorFromProject's dg.ResolveInlineBuilder -- plugin-side), R3 -- hence the
+// re-export.
 var BuilderResolveInputFrom = spec.BuilderResolveInputFrom
 
 // EmitExternalBuilderStages emits the pre-main-FROM multi-stage block for every
@@ -176,7 +176,7 @@ func (g *Generator) EmitExternalBuilderArtifacts(b *strings.Builder, candyOrder 
 // EmitBuilderArtifacts copies builder artifacts/binaries into the main image. For an
 // EXTERNALIZED detection builder (pixi/npm/aur) the COPY lines come from the plugin's
 // cached OpResolve reply (detectionBuilderReplies, populated by EmitBuilderStages) — the
-// plugin owns the copy_artifact/copy_binary shape now (C10). For a custom (non-externalized)
+// plugin owns the copy_artifact/copy_binary shape . For a custom (non-externalized)
 // builder they come from the embedded builder: vocabulary copy_artifacts/copy_binary. Both
 // keep the structure: the `# Copy <builder> artifacts` header once per builder, then each
 // candy's artifacts, and the builder BINARY copied ONCE per builder (deduped across candies).

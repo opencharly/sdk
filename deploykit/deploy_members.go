@@ -1,7 +1,7 @@
 package deploykit
 
-// deploy_members.go — sibling `peer:` member bring-up/tear-down (#55 W3 A4, relocated from
-// charly/deploy_members.go). A DeployNode's `peer:` map declares companion deployments brought
+// deploy_members.go -- sibling `peer:` member bring-up/tear-down. A DeployNode's `peer:` map
+// declares companion deployments brought
 // up ALONGSIDE it on the shared `charly` network (NOT nested inside it) — members are reachable
 // by `${HOST:<name>}` and are never check-live'd themselves.
 //
