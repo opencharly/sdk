@@ -14,8 +14,8 @@ import (
 //
 // It moved for the same reason ParseCandyManifest did, one level up: it is the body of the local
 // candy scan, and while it lived in core, a plugin holding a perfectly good *spec.UnifiedFile still
-// had to round-trip to the host (`buildengine-scan-local`, `buildengine-namespaced` — both DELETED,
-// units 3 and 3b) to turn that uf into a ScannedCandy map. Its three dependencies were
+// had to round-trip to the host to turn that uf into a ScannedCandy map — the `buildengine-scan-local`
+// and `buildengine-namespaced` seams do not exist. Its three dependencies were
 // ScanCandyManifest, ScanInlineCandy, and the
 // candy-manifest parse — the first two already live in this package, and the third landed here in
 // unit 2, so nothing was left that a plugin could not do itself.
