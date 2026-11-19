@@ -45,8 +45,8 @@ var (
 )
 
 // EnvVarNameToPodmanSecretSlug converts an env var name to the slug used in the podman
-// secret name (lowercase + underscores → hyphens). Relocated from charly/validate.go
-// (Cutover B unit 6b) — its sole remaining caller was CollectCandySecretAccepts below.
+// secret name (lowercase + underscores -> hyphens). Its sole caller is CollectCandySecretAccepts
+// below.
 func EnvVarNameToPodmanSecretSlug(envVarName string) string {
 	return strings.ReplaceAll(strings.ToLower(envVarName), "_", "-")
 }
@@ -61,10 +61,9 @@ func EnvVarNameToPodmanSecretSlug(envVarName string) string {
 // Used by:
 //   - ProvisionPodmanSecrets — config-time CollectedSecret provisioning when
 //     --password=auto is in effect.
-//   - the plugin-side secret resolver (candy/plugin-deploy-pod's buildOverlay →
-//     ResolveSecretForCandy → ResolveCandySecret → EnsureCandySecret — the former charly-core
-//     ensureCandySecret in layer_secrets.go; #55 coneB-br2 relocated it plugin-side and DELETED
-//     layer_secrets.go) — deploy-time secret_requires resolution on host/VM/SSH targets when
+//   - the plugin-side secret resolver (candy/plugin-deploy-pod's buildOverlay ->
+//     ResolveSecretForCandy -> ResolveCandySecret -> EnsureCandySecret) -- deploy-time
+//     secret_requires resolution on host/VM/SSH targets when
 //     the value is missing (calls this directly, supplying its own CredentialAccess).
 func GenerateAndStoreSecret(service, key string, cred CredentialAccess) (val, source string) {
 	val = GenerateRandomSecretToken(32)

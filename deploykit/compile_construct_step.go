@@ -4,9 +4,8 @@ package deploykit
 // core-init()-set deploykit.CompileActOp func var with an explicit ctx/exec-threaded
 // dispatcher. The GENERIC (non-`plugin:`-verb) op lowering — the vast majority of a
 // candy's install timeline (mkdir/copy/write/link/download/setcap/build/command) — is
-// FULLY PORTABLE (no core-only dependency at all) and now lives here directly, in
-// buildGenericOpStep, moved verbatim from the tail of the former charly/
-// install_build_act.go:compileActOp. ONLY a `run: plugin: <word>` op needs the host's
+// FULLY PORTABLE (no core-only dependency at all) and lives here directly, in
+// buildGenericOpStep. ONLY a `run: plugin: <word>` op needs the host's
 // PROVIDER REGISTRY (a clause-M kernel mechanism) to decide how it lowers — that ONE
 // sub-case reaches back via the "construct-step" HostBuild seam
 // (spec.ConstructStepRequest/Reply, sdk/schema/seam.cue), so the wire round-trip is paid
@@ -30,8 +29,7 @@ const constructStepSeamKind = "construct-step"
 // constructOpStep lowers a single install-timeline op into the right InstallStep.
 // Non-`plugin:` verbs (the common case) never touch the wire: buildGenericOpStep is a
 // pure function of op/layer/img. A `plugin:` verb reaches the "construct-step" seam,
-// which runs the SAME registry-consult logic charly/install_build_act.go's
-// compileActOp used to run in-proc — a nil reply.Step means "not special, build the
+// which runs the SAME registry-consult logic -- a nil reply.Step means "not special, build the
 // generic OpStep" (the host already ran that decision; the caller does the
 // construction to avoid a redundant round-trip content-wise, not to re-decide).
 func constructOpStep(ctx context.Context, ex *sdk.Executor, op *spec.Op, layer CandyModel, img *ResolvedBox) (InstallStep, error) {
@@ -96,8 +94,7 @@ func constructOpStep(ctx context.Context, ex *sdk.Executor, op *spec.Op, layer C
 }
 
 // buildGenericOpStep lowers an install verb / command / non-typed plugin verb into the
-// generic OpStep (existing emit + Reverse). Moved verbatim from the tail of the former
-// charly/install_build_act.go:compileActOp — fully portable, no core-only dependency.
+// generic OpStep (existing emit + Reverse). Fully portable, no core-only dependency.
 // Snapshot layer.Vars() so the host/local renderer can emit `export K=V` (build-time
 // gets these via Containerfile ENV). Tokenize a home-relative `to:` so each EmitTarget
 // resolves it against the real destination home at emit.
