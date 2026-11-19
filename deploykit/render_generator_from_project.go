@@ -18,7 +18,7 @@ import (
 // source, so the box build and the pod-overlay build construct their deploykit.Generator identically
 // from the resolved-project envelope.
 //
-// The render reaches the host for NOTHING. Every former host-coupled seam -- RenderService, the
+// The render reaches the host for NOTHING. Every seam that would need it -- RenderService, the
 // detection/external builder resolves, ValidateEgress, RewriteHeaderCopy, LocalPkg, EmitPluginOp,
 // inline-builder and ensure-builders -- is PURE registry resolve+Invoke dispatch, or pure data plus
 // host-fs I/O over the CandyModel envelope, or a direct call: LocalPkg's caller builds the step from

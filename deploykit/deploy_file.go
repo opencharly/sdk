@@ -13,14 +13,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// deploy_file.go — the deploy STATE-MODEL load/save/merge/export body relocated out of
-// charly/deploy.go to sdk/deploykit. The
-// PURE helpers (LoadDeployFile / RemoveBoxDeploy) were already here; this cutover moved the
-// state-model bodies — LoadDeployConfig / SaveDeployConfig / LoadDeployConfigForRead /
-// LoadDeployConfigForWrite / MergeDeployOntoMetadata / CleanDeployEntry / SaveDeployState /
-// ExportAllBox — plus the SaveDeployStateInput type (deploy_state.go) and the pure helpers
-// (ScopeVolumesToDeployKey / DescriptionInfo / IsSameBaseBox / RemoveBySource /
-// RemoveByExactSource / Named).
+// deploy_file.go -- the deploy STATE-MODEL load/save/merge/export body. It holds the PURE helpers
+// (LoadDeployFile / RemoveBoxDeploy) and the state-model bodies -- LoadDeployConfig /
+// SaveDeployConfig / LoadDeployConfigForRead / LoadDeployConfigForWrite / MergeDeployOntoMetadata /
+// CleanDeployEntry / SaveDeployState / ExportAllBox -- plus the SaveDeployStateInput type
+// (deploy_state.go) and the pure helpers (ScopeVolumesToDeployKey / DescriptionInfo /
+// IsSameBaseBox / RemoveBySource / RemoveByExactSource / Named).
 //
 // ONE of these bodies reaches a core Mechanism the SDK cannot import — the unified LOADER
 // (LoadUnified → uf.ProjectDeployConfig), reached through the DeployStateHost seam below
