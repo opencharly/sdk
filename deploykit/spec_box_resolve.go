@@ -17,16 +17,15 @@ import (
 // place that bridges buildkit's ResolvedBox to a spec consumer (it already owns NewSpecResolvedBox
 // / ProjectResolvedBox); these siblings complete that bridge for the resolve direction.
 //
-// The box-resolve options are the SHARED spec.ResolveOpts (the loader scan/load options, relocated
-// to the dedicated spec module in the #55 loader cascade): deploykit imports spec, so these entry
-// points consume spec.ResolveOpts DIRECTLY — the former deploykit-local SpecResolveOpts twin (kept
-// only because the loader options once lived in loaderkit, which deploykit can't import) is dissolved
-// (#55 2b R3). charly's resolveVocabOpts fills the build vocabulary (DistroCfg/BuilderCfg) on the
-// spec.ResolveOpts before calling; only the box-resolve subset (the 5 fields below) is read here —
-// ExtraCandyRefs/InitCfg are consumed by the candy scan, never the box resolve.
+// The box-resolve options are the SHARED spec.ResolveOpts (the loader scan/load options). deploykit
+// imports spec, so these entry points consume spec.ResolveOpts DIRECTLY -- there is no
+// deploykit-local twin (R3: one shape). charly's resolveVocabOpts fills the build vocabulary
+// (DistroCfg/BuilderCfg) on the spec.ResolveOpts before calling; only the box-resolve subset (the 5
+// fields below) is read here -- ExtraCandyRefs/InitCfg are consumed by the candy scan, never the box
+// resolve.
 
 // specToBuildkit projects the box-resolve subset of a spec.ResolveOpts onto the buildkit.ResolveOpts
-// the pure resolve consumes. Byte-equivalent to the former SpecResolveOpts.toBuildkit tail.
+// the pure resolve consumes.
 func specToBuildkit(o spec.ResolveOpts) buildkit.ResolveOpts {
 	return buildkit.ResolveOpts{
 		IncludeDisabled:      o.IncludeDisabled,
@@ -37,13 +36,10 @@ func specToBuildkit(o spec.ResolveOpts) buildkit.ResolveOpts {
 	}
 }
 
-// ResolveSpecBox / ResolveAllSpecBoxes / WrapSpecBoxes / SpecBoxes are DELETED (K-wave 2 cone R1).
-// They were the HOST side of this bridge — the box resolve charly core used to run for the
-// render-seam floor's Generator cache. #55 coneB2 Class B had already inverted that (the plugin
-// resolves the boxes and pushed them to the host over #ResolvedProjectRequest.boxes), which left
-// three of the four with no callers at all; cone R1 then deleted the render seam itself, orphaning
-// the fourth (SpecBoxes) and the wire field it fed. Only specToBuildkit + FillNamespaceBoxViews
-// survive here, both driven plugin-side by candy/plugin-build.
+// This file carries the box-resolve bridge the PLUGIN drives: specToBuildkit and
+// FillNamespaceBoxViews, both called from candy/plugin-build. The box resolve runs plugin-side and
+// pushes its result to the host over #ResolvedProjectRequest.boxes -- there is no host-side
+// ResolveSpecBox / ResolveAllSpecBoxes / WrapSpecBoxes / SpecBoxes and no render-seam floor to feed.
 
 // FillNamespaceBoxViews resolves + render-preps every box in a namespace's own config and merges
 // the resulting namespace-QUALIFIED spec.ResolvedBoxView into rp.Boxes (keyed child+"."+name),
@@ -52,7 +48,7 @@ func specToBuildkit(o spec.ResolveOpts) buildkit.ResolveOpts {
 // render-prep DRIVE (buildkit.ResolveBox + RenderPrepBox + ProjectResolvedBox) the namespaced-box
 // fill needs — relocated out of charly core (#55 Cluster-B) because it writes buildkit host-render
 // caches. opts must already carry the project build vocabulary (charly's resolveVocabOpts fills it
-// before calling). Byte-equivalent to the former in-core inner block of the deleted host namespaced-box fill.
+// before calling).
 func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReader, initCfg *spec.InitConfig, child, calver, dir string, opts spec.ResolveOpts, rp *spec.ResolvedProject) {
 	bkopts := specToBuildkit(opts)
 	// The init `depends_candy:` injection, for the NAMESPACED box set. This is the THIRD box-
@@ -94,8 +90,7 @@ func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReade
 			}
 		}
 		// Best-effort: a namespaced box whose render-prep fails is projected WITHOUT the render
-		// caches rather than dropped (it just can't serve as a builder/base stage) — matches the
-		// former in-core tolerance.
+		// caches rather than dropped (it just can't serve as a builder/base stage).
 		_ = tempGen.RenderPrepBox(name)
 		view := ProjectResolvedBox(resolved)
 		if rp.Boxes == nil {
