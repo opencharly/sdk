@@ -183,7 +183,7 @@ func TestRemoveVmDeployEntry_RemovesDeployKeyedBedEntry(t *testing.T) {
 
 // TestSaveVmDeployState_NamespacedIdentityKeyRoundTrips pins that a namespaced deploy's vm_state is
 // keyed by its dotted IDENTITY (the same string the tree/config/CLI use) and round-trips — dots are
-// legal in the key, so the former `vm:<dashed>` projection + dotted-twin self-heal are gone.
+// legal in the key, so no `vm:<dashed>` projection and no dotted-twin self-heal are needed.
 func TestSaveVmDeployState_NamespacedIdentityKeyRoundTrips(t *testing.T) {
 	save := newFakeVmDeployStateHost(t)
 
@@ -347,11 +347,11 @@ func TestSaveVmDeployState_ReverseOrderingRoundTrips(t *testing.T) {
 // TestSplitVmAddress_LedgerIdentityRegression is the regression test for the FINAL/K5 unit 6a
 // RCA #9 live-probe-caught bug: `deploy del vm:<dotted-name>` silently no-op'd because
 // ComputeDeployID hashes the deploy name VERBATIM, and the raw "vm:"-prefixed CLI form hashed to a
-// COMPLETELY DIFFERENT ID than the plain form the add-time tree walk used to record the ledger
-// entry (verified live: 6413f8070aaa6087 vs d81fff596411fea4 for the exact same logical
-// deployment). Proves vmshared.SplitVmAddress's stripped form produces the IDENTICAL deployID as
-// the plain add-time form — the fix hostBuildDeployNodeDelDispatch relies on. Lives here (moved
-// from charly/vm_deploy_state_test.go) rather than sdk/vmshared (SplitVmAddress's own package)
+// COMPLETELY DIFFERENT ID than the plain form the add-time tree walk records in the ledger
+// (verified live: 6413f8070aaa6087 vs d81fff596411fea4 for the exact same logical deployment).
+// Proves vmshared.SplitVmAddress's stripped form produces the IDENTICAL deployID as the plain
+// add-time form -- the invariant hostBuildDeployNodeDelDispatch relies on. Lives here rather
+// than sdk/vmshared (SplitVmAddress's own package)
 // because it exercises the ComputeDeployID interaction specifically — vmshared cannot import
 // deploykit (deploykit already imports vmshared; the reverse would cycle).
 func TestSplitVmAddress_LedgerIdentityRegression(t *testing.T) {

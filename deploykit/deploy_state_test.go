@@ -34,10 +34,10 @@ import (
 
 // TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject pins the #67 keystone:
 // ExportAllBox reads the box-authored deploy-overlay surfaces (description /
-// env / env_file / security / network) off the spec.ResolvedProject envelope — NOT the
-// live *Config graph (the former shape). A box with at least one set field is emitted; a
-// fully-zero box is skipped (the "only include if at least one field is set" guard). The
-// former per-deploy `version:` is GONE (the schema-versioning removal cutover).
+// env / env_file / security / network) off the spec.ResolvedProject envelope -- NOT a
+// live *Config graph. A box with at least one set field is emitted; a fully-zero box is
+// skipped (the "only include if at least one field is set" guard), and a box overlay carries
+// no `${version}`.
 func TestExportAllBox_ProjectsBoxAuthoredOverlayFromResolvedProject(t *testing.T) {
 	sec := &spec.Security{Privileged: true, CapAdd: []string{"NET_ADMIN"}}
 	rp := &spec.ResolvedProject{
@@ -437,9 +437,8 @@ func vmDescent() *spec.DescentDescriptor {
 // lookup identifies a host-libvirt vm by its loader-STAMPED descent trait, never
 // by a comparison against the substrate kind WORD. A persisted
 // vm node carries no `target:` (the node-form discriminator supplies it at load)
-// but DOES carry the stamped descent — the exact shape the former word-sniff
-// could not resolve. Fails without the change (the word-sniff returns not-found
-// for a Target-less node).
+// but DOES carry the stamped descent -- the shape a word-sniff cannot resolve. Fails
+// without the change (a word-sniff returns not-found for a Target-less node).
 func TestFindVmDeployNode_ReadsStampedDescentNotTargetWord(t *testing.T) {
 	// Target deliberately ABSENT; From set (the `vm:` cross-ref a persisted vm
 	// deploy always carries) so both the name-key and the entity-scan arms resolve.
@@ -454,8 +453,8 @@ func TestFindVmDeployNode_ReadsStampedDescentNotTargetWord(t *testing.T) {
 	}
 
 	// The complement: an ssh-venue node WITHOUT the exclusive lease (the kubevirt
-	// substrate) is NOT a host-libvirt vm — IsVmVenue excludes it exactly as the
-	// former substrate-word sniff (kubevirt's Target is its own word) did.
+	// substrate) is NOT a host-libvirt vm -- IsVmVenue excludes it on the trait, where a
+	// substrate-word sniff would have matched kubevirt's Target as its own word.
 	kubevirt := DeployNode{Descent: spec.DescentFromTraits(&spec.DeployTraits{Venue: "ssh"}), From: "eval-vm"}
 	if _, ok, _ := FindVmDeployNode(map[string]DeployNode{"kv": kubevirt}, "caller", "eval-vm"); ok {
 		t.Fatal("a kubevirt node (ssh venue, no exclusive lease) must NOT resolve as a host-libvirt vm")

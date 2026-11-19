@@ -6,16 +6,13 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// secret_candy_resolve.go — the candy `secret_requires:`/`secret_accepts:` resolver for
-// host/vm/ssh install-plan deploy targets (relocated from charly/layer_secrets.go, #118
-// coneB-p8bremainder; charly/layer_secrets.go is now DELETED #55 coneB-br2): the plugin-side path
+// secret_candy_resolve.go -- the candy `secret_requires:`/`secret_accepts:` resolver for
+// host/vm/ssh install-plan deploy targets. The plugin-side path
 // (candy/plugin-deploy-pod's buildOverlay) uses deploykit.SelectCandiesForPlans over the
-// resolved-project envelope's candy map (dg.Candies) instead of CandyForPlan's core scan, so the
-// former core-only dependency is gone. EnsureCandySecret/ResolveCandySecret/ResolveSecretForCandy had NO core-only
-// dependency beyond the credential-store access GenerateAndStoreSecret (above, in
-// secret_provision.go) already takes as an INJECTED CredentialAccess — so this move is the SAME
-// R3 pattern that file's own doc comment names ensureCandySecret as anticipating ("calls this
-// directly, supplying its own CredentialAccess").
+// resolved-project envelope's candy map (dg.Candies) instead of CandyForPlan's core scan.
+// EnsureCandySecret/ResolveCandySecret/ResolveSecretForCandy need NO dependency beyond the
+// credential-store access GenerateAndStoreSecret (above, in secret_provision.go) already takes
+// as an INJECTED CredentialAccess -- the SAME R3 pattern that file's doc comment names.
 //
 // Container targets have their own path (ProvisionPodmanSecrets) that mounts secrets as podman
 // secrets / env at container-run time, running AFTER build with no candy-task env injection.
@@ -43,9 +40,9 @@ import (
 // lands in the active backend; the second caller's cred.Resolve reads the persisted value.
 func EnsureCandySecret(dep spec.EnvDependency, required bool, cred CredentialAccess) (val, source string) {
 	// ONE rule for the coordinate: SecretKeyForDep owns the split (explicit `key:` wins,
-	// everything before the LAST "/" is the service; otherwise the historical default). This
-	// function used to carry its own copy of that predicate, which is how a read and a write drift
-	// apart — the class opencharly/sdk#526 and opencharly/pod-openwebui#19 both live in.
+	// everything before the LAST "/" is the service; otherwise the historical default). A local
+	// copy of that predicate is how a read and a write drift apart -- the class
+	// opencharly/sdk#526 and opencharly/pod-openwebui#19 both live in.
 	service, key := SecretKeyForDep(dep)
 	// Pass dep.Name as envVar so an operator can override the persisted value via
 	// `export K3S_CLUSTER_TOKEN=…` before invoking deploy (matches the cred.Resolve pattern

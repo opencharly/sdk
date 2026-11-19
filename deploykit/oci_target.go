@@ -30,9 +30,9 @@ import (
 // #StepEmitRequest{Word:"oci-emit-step"}). (Corrected in K-wave 2 cone R1: this line and the one
 // below named "render-seam", which was never the kind this seam dispatched on; the render-seam
 // HostBuild kind is deleted outright now, so the stale name could only mislead.)
-// The host seam reuses the EXACT former in-core emitStep/spliceClassStepEmit/stepProviderFor
-// funcs, so the rendered fragment is byte-identical to the pre-move core render (byte-parity by
-// construction, mirroring #67's render-seam contract). See P11c-VERDICT.md for the full design.
+// The host seam reuses the SAME emitStep/spliceClassStepEmit/stepProviderFor funcs, so the
+// rendered fragment is byte-identical to the core render (byte-parity by construction). See
+// P11c-VERDICT.md for the full design.
 //
 // The walker carries ONLY the scalars it reads itself — Dir (the host cache key for the seam),
 // Home (for ResolveHome), Distros (the per-step distros threaded onto the class:step OpEmit) —
@@ -60,7 +60,7 @@ type OCITarget struct {
 
 	// Distros is the overlay base image's distro tag set (Box.Tags) — threaded onto each step's
 	// EmitStepOp seam call so the host class:step OpEmit can gate a plugin's build-emit on the
-	// image's distro set (the SAME datum the former in-core OCITarget passed to spliceClassStepEmit).
+	// image's distro set (the SAME datum spliceClassStepEmit reads).
 	Distros []string
 
 	// EmitStepOp is the host-coupled step-render seam: it renders ONE InstallStep's
@@ -171,8 +171,8 @@ func (t *OCITarget) emitPlan(plan *spec.InstallPlan) error {
 	return nil
 }
 
-// emitStep dispatches one step to the host seam (the core provider-registry dispatch). The
-// former in-core type-switch is gone: the 12 compiler-emitted plugin-served kinds + the
+// emitStep dispatches one step to the host seam (the core provider-registry dispatch). There is
+// no core type-switch: the 12 compiler-emitted plugin-served kinds + the
 // authored external step route through spliceClassStepEmit, and ExternalPlugin through its
 // StepProvider.EmitOCI — BOTH behind the EmitStepOp seam. A nil seam (tests / a no-op render)
 // returns "" so the walker produces only the layer header + home resolution.

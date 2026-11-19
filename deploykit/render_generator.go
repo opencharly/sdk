@@ -110,9 +110,7 @@ type Generator struct {
 	// the plugin) and egress-gates the unit text. NewRenderGeneratorFromProject wires
 	// this to renderSeamCaller.renderService (render_generator_from_project.go) — direct
 	// kind:init + verb:egress InvokeProvider peer dispatch, no host round-trip (both are
-	// compiled-in). The former charly-core RenderService this comment used to describe is
-	// DELETED (#55 W3 B4) — the core deploy-time render-service HostBuild seam is gone too;
-	// compile_service_steps.go's renderServiceViaSeam reuses THIS SAME
+	// compiled-in). compile_service_steps.go's renderServiceViaSeam reuses THIS SAME
 	// renderSeamCaller.renderService now, so both the build-time (this field) and
 	// deploy-time paths share one implementation. Used by GenerateInitFragments
 	// (fragment_assembly model).
@@ -165,8 +163,7 @@ type Generator struct {
 	// binaries into the FINAL image at /usr/lib/charly/plugins/. The deploykit render
 	// calls this seam post-main-FROM (after EmitExternalBuilderArtifacts). The host
 	// (live path) wires the charly emitBakedPlugins closure; plugin-build calls
-	// deploykit.EmitBakedPlugins directly (the former HostBuild("bake-plugins") is DELETED).
-	// Used by generateContainerfile (#67 render-DRIVE move).
+	// deploykit.EmitBakedPlugins directly. Used by generateContainerfile.
 	EmitBakedPlugins func(b *strings.Builder, boxName string, candyOrder []string) error
 
 	// CollectBoxVolume returns an image's aggregated volume mounts. Wraps the core
