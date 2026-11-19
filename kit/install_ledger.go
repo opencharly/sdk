@@ -7,10 +7,9 @@ package kit
 // lives in the `ledger:` section of the PER-HOST charly.yml
 // (~/.config/charly/charly.yml) — the single home for local system state
 // (deployments under `deploy:`, install records under `ledger:`, local system
-// info under `system:`, cache status under `cache:`). The former per-deploy JSON
-// files under ~/.config/opencharly/installed/ (deploys/<id>.json +
-// layers/<candy>.json) are DELETED by this cutover — one file, one schema, one
-// validation path.
+// info under `system:`, cache status under `cache:`). There is one file, one
+// schema, one validation path — no per-deploy JSON files under
+// ~/.config/opencharly/installed/.
 //
 // Refcounting lives in the candy records: `deployed_by` is the set of deploy IDs
 // that include this candy. Uninstalling one deploy decrements the set; only when
@@ -36,11 +35,9 @@ import (
 // section of the per-host charly.yml. Extracted so tests can redirect to a temp
 // file.
 //
-// The legacy per-deploy JSON-file layout (~/.config/opencharly/installed/) is
-// DELETED by this cutover. The consumers (plugin-fleet, plugin-substrate) migrate
-// to ConfigFile in the same wave (their PRs land with the new sdk pin); a stale
-// consumer fails to COMPILE against this shape — a loud failure, never a silent
-// wrong answer.
+// There is no per-deploy JSON-file layout under ~/.config/opencharly/installed/.
+// A consumer that still expects one fails to COMPILE against this shape — a loud
+// failure, never a silent wrong answer.
 type LedgerPaths struct {
 	ConfigFile string // the per-host charly.yml path
 	LockFile   string // the advisory lock path

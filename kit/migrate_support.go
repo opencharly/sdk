@@ -19,7 +19,7 @@ const (
 	DefaultCandyDir = spec.DefaultCandyDir // discovered candy/<name>/ directory
 )
 
-// The former LedgerSchemaVersion constant is DELETED (the schema-versioning removal
-// cutover): a ledger-record FORMAT version compared against a build constant was the
-// same class of arbitrary check as the project-schema stamp. The ledger is read and
-// written by ONE binary version; there is no cross-version ledger to arbitrate.
+// There is no LedgerSchemaVersion constant: a ledger-record FORMAT version compared
+// against a build constant would be the same class of arbitrary check as the
+// project-schema stamp. The ledger is read and written by ONE binary version; there
+// is no cross-version ledger to arbitrate.

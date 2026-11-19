@@ -84,7 +84,7 @@ func BuildCapabilities(calver string, provided []ProvidedCapability, schemaFS fs
 // placement). A plugin with no dependencies calls BuildCapabilities, which forwards a
 // nil requires — byte-identical to before.
 func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability, requires []Requirement, schemaFS fs.FS, dir string) (*pb.Capabilities, error) {
-	// NO SCHEMA-LESS PLUGINS (the former "stub-gate relaxation" is DELETED). Every
+	// NO SCHEMA-LESS PLUGINS (there is no stub-gate relaxation). Every
 	// plugin MUST serve a non-empty, self-contained CUE schema — its single source
 	// for typed params, charly.yml/env configuration, runtime validation, and Go
 	// code generation. There is no input-less exemption: a plugin whose capability
