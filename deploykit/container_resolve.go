@@ -11,9 +11,7 @@ import (
 // container_resolve.go — the deploy-key → running-container resolvers (K4: relocated from the
 // deleted charly/container.go and charly/volume_cp_tags_cmd.go). Homed in deploykit (not kit)
 // because they need ResolveBoxEngineForDeploy, a deploykit-only mechanism (kit cannot import
-// deploykit). The dedup is DONE (an R1 finding had tracked it as incomplete:
-// bare core duplicates of ResolveContainer/ResolveSidecarContainer still called by
-// check_members.go/cmd.go/etc.) is DONE: both charly/container.go and charly/volume_cp_tags_cmd.go
+// deploykit). The dedup is DONE: both charly/container.go and charly/volume_cp_tags_cmd.go
 // are deleted, no bare `func resolveContainer`/`func resolveSidecarContainer` remains anywhere in
 // charly core — charly core itself calls NEITHER function directly any more (an R1 fix, #55 W3
 // neither charly/check_endpoint_resolve.go nor check_venue_resolve.go has ever imported
