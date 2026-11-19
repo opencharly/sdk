@@ -6,28 +6,21 @@ package deploykit
 //
 // The filtering/scope/packaged-vs-custom decision logic is FULLY PORTABLE (a pure
 // function of the candy's service: list + the target distro/init) and lives here
-// directly. Rendering a systemd CUSTOM entry's unit text no longer needs a host round
-// trip at all (#55 W3 B4): the former core RenderService's "TWO
-// registry consults a plugin cannot do itself" framing was stale — kind:init's
-// OpResolve and verb:egress's OpValidate are BOTH compiled-in (charly.yml), so any
-// connected plugin reaches them via a direct InvokeProvider peer-dispatch call. The
-// former "render-service" HostBuild CLI-reentry seam (charly/host_build_render_service.go)
-// is DELETED. renderServiceViaSeam below is a THIN wrapper over
-// render_generator_from_project.go's renderSeamCaller.renderService — an R3 find made
-// mid-cutover: that caller ALREADY implemented this EXACT InvokeProvider sequence for
-// the build-time init-assembly path (the K3 render-seam production move), so this
-// deploy-time call site reuses it rather than duplicating the marshal/dispatch/decode
-// boilerplate a second time in the same package. R8 byte-proof:
-// render_service_seam_roundtrip_test.go drives this SAME rendering sequence against
-// REAL compiled-in candy/plugin-init + candy/plugin-egress providers (not canned
-// replies) — byte-identical output confirmed before/after this cutover (team-lead's
-// bed proof, check-local-vm, independently re-verifies the live end-to-end path).
+// directly. Rendering a systemd CUSTOM entry's unit text needs no host round trip: kind:init's
+// OpResolve and verb:egress's OpValidate are BOTH compiled-in (charly.yml), so any connected plugin
+// reaches them via a direct InvokeProvider peer-dispatch call. renderServiceViaSeam below is a THIN
+// wrapper over render_generator_from_project.go's renderSeamCaller.renderService -- that caller
+// already implements this EXACT InvokeProvider sequence for the build-time init-assembly path, so
+// this deploy-time call site reuses it rather than duplicating the marshal/dispatch/decode
+// boilerplate a second time in the same package. R8 proof:
+// render_service_seam_roundtrip_test.go drives this SAME rendering sequence against REAL
+// compiled-in candy/plugin-init + candy/plugin-egress providers (not canned replies), and
+// check-local-vm independently re-verifies the live end-to-end path.
 //
-// The former LoadBuildConfigForBox fallback (a per-call lazy lookup "for a caller that
-// compiles outside the deploy-compile seam") is DELETED, not ported: it was already
-// dead in production (candy/plugin-fleet's compileDeployPlans always receives
-// hostCtx.ActiveInit pre-resolved by charly/deploy_compile_seam.go's
-// preresolveActiveInitInto BEFORE calling BuildDeployPlan) and every test exercising
+// There is no LoadBuildConfigForBox fallback (a per-call lazy lookup "for a caller that compiles
+// outside the deploy-compile seam"): candy/plugin-fleet's compileDeployPlans always receives
+// hostCtx.ActiveInit pre-resolved by charly/deploy_compile_seam.go's preresolveActiveInitInto
+// BEFORE calling BuildDeployPlan, so such a fallback would be dead in production. Every test exercising
 // it relied on it FAILING (an empty temp dir with no charly.yml) — never on it
 // succeeding. Preferring the preresolved ActiveInit is therefore the ONLY path now,
 // matching what production always did.
