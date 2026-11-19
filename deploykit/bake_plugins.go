@@ -17,21 +17,15 @@ import (
 // bakedPluginDir (/usr/lib/charly/plugins/), so a DEPLOYED container (which has neither the candy
 // source nor a go toolchain) can run an external plugin its in-container charly needs at runtime.
 //
-// Relocated from charly/generate.go's (*Generator).emitBakedPlugins. THIS FILE NOW HOLDS ONLY THE
-// CONSTANTS AND THE EMIT LOGIC, wired by NewRenderGeneratorFromProject. The BUILD it used to carry
-// moved to sdk/buildcache in this PR, so THIS path calls the one implementation; the runtime plugin
-// loader still owns its own cluster AT THIS COMMIT and is repointed onto the same implementation in
-// the pair's SECOND PR (see below).
+// THIS FILE HOLDS THE CONSTANTS AND THE EMIT LOGIC, wired by NewRenderGeneratorFromProject. The
+// BUILD lives in sdk/buildcache, so THIS path calls the one implementation.
 //
-// DELETED FROM HERE (this cutover, sdk PR): the local buildPluginBinary copy and its
-// safePluginBinName/pluginBuildCacheDir/pluginSourceTag helpers, plus the five helpers that existed
-// only to serve that build. The former "bake-plugins" HostBuild round-trip
-// (charly/host_build_bake_plugins.go) was already deleted earlier: EmitBakedPlugins runs
-// in-process, with zero host round-trip.
+// Only the emit logic is here: no local buildPluginBinary copy and none of its
+// safePluginBinName/pluginBuildCacheDir/pluginSourceTag helpers. EmitBakedPlugins runs in-process,
+// with zero host round-trip.
 //
-// The package-main cluster in charly/charly/plugin_loader.go (which the old comment here called a
-// necessary duplicate, because the two modules cannot share private code and the runtime plugin
-// LOADER needs its own bakedPluginBinary fallback) is deleted in the pair's SECOND PR, together
+// The package-main cluster in charly/charly/plugin_loader.go is repointed onto the same
+// implementation, together
 // with the repoint of its two build arms onto buildcache.Build.
 
 // bakedPluginDir is the FHS system path a candy's `bake_plugin:` step copies a pre-built provider
@@ -70,22 +64,18 @@ func bakedPluginFileName(name string) string {
 	return buildcache.SafePluginBinName(filepath.Base(name))
 }
 
-// FORMERLY HERE: a local `buildPluginBinary` copy, DELETED. It was a duplicate of
-// charly/charly/plugin_loader.go's function of the same name and was NOT byte-identical to it —
-// this file's comment claimed it was, and the claim was measurably false: the package-main copy
-// grew CONTENT-STAMP REUSE (a stamp over the candy's source tree plus its transitive local
-// `replace` targets, the toolchain and the build env, letting an unchanged plugin skip its
-// rebuild) and this copy never did. Two live clusters for one concept, differing in exactly the
-// freshness behaviour that matters, is the R2 duplication the one canonical home removes.
+// There is no local `buildPluginBinary` copy here: it would be a second cluster for one concept,
+// and two clusters differ in exactly the freshness behaviour that matters. The single
+// implementation carries CONTENT-STAMP REUSE -- a stamp over the candy's source tree plus its
+// transitive local `replace` targets, the toolchain and the build env, letting an unchanged plugin
+// skip its rebuild.
 //
-// EmitBakedPlugins now calls sdk/buildcache — the single implementation — so the bake path and the
-// loader path share ONE key, ONE build and ONE set of freshness rules.
+// EmitBakedPlugins calls sdk/buildcache -- the single implementation -- so the bake path and the
+// loader path share ONE key, ONE build and ONE set of freshness rules (R2: one canonical home).
 
 // EmitBakedPlugins bakes each composing candy's `bake_plugin:` out-of-tree plugin binaries into the
 // FINAL image, staging under .build/<boxName>/.plugins/ and writing the COPY + chmod Containerfile
-// fragment into b. Byte-identical logic to the former charly/generate.go
-// (*Generator).emitBakedPlugins, adapted to run over (candies, buildDir) directly — no Generator,
-// no host round-trip.
+// fragment into b. It runs over (candies, buildDir) directly -- no Generator, no host round-trip.
 func EmitBakedPlugins(ctx context.Context, b *strings.Builder, buildDir, boxName string, candyOrder []string, candies map[string]CandyModel) error {
 	baked := map[string]struct{}{}
 	envEmitted := false
@@ -136,8 +126,8 @@ func EmitBakedPlugins(ctx context.Context, b *strings.Builder, buildDir, boxName
 				// THE ONE FORMAT (opencharly/charly#1131). A plugin tree — baked into an image HERE, or
 				// delivered at a venue by a class:step — is read by ONE reader, so its
 				// `<leaf>.providers` manifest has exactly one spelling: spec.PluginManifest, beside the
-				// constant that names the file. This line used to carry its own strings.Join; a
-				// delivering step would have been the third copy.
+				// constant that names the file. This line carries no strings.Join of its own; a
+				// delivering step with one would be a third copy.
 				// The enclosing guard (providers > 0) is what decides whether a manifest exists at all;
 				// this call only renders its bytes, so it can never see the empty case. Making that case
 				// an error would be a POLICY change with its own blast radius, not this repoint.
