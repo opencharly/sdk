@@ -12,26 +12,21 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// render_generator_from_project.go — the SHARED construction source for a deploykit.Generator
-// from a spec.ResolvedProject envelope (#67 / P11c). BOTH candy/plugin-build (the box-build
-// render DRIVE, #67) AND candy/plugin-deploy-pod (the pod-overlay render, P11c) call this ONE
-// helper — R3/DRY: ONE construction source, so the box build and the pod-overlay build construct
-// their deploykit.Generator identically from the resolved-project envelope. plugin-build's former
-// buildRenderGenerator was the sole caller; P11c extracts it here so plugin-deploy-pod reuses it
-// for the overlay render.
+// render_generator_from_project.go -- the SHARED construction source for a deploykit.Generator
+// from a spec.ResolvedProject envelope. BOTH candy/plugin-build (the box-build render DRIVE) AND
+// candy/plugin-deploy-pod (the pod-overlay render) call this ONE helper -- R3/DRY: ONE construction
+// source, so the box build and the pod-overlay build construct their deploykit.Generator identically
+// from the resolved-project envelope.
 //
-// K3 render-seam production move, COMPLETED in K-wave 2 cone R1: the render now reaches the host
-// for NOTHING. 5 of the original 9 host-coupled seams (RenderService, the detection/external builder
-// resolves, ValidateEgress, RewriteHeaderCopy) went first — PURE registry resolve+Invoke dispatch
-// (or pure data + host-fs I/O over the CandyModel envelope), RDD-spiked live on the external-builder
-// leg. LocalPkg followed (W3): its "host rebuilds from the live *Candy graph" claim was stale — the
-// caller already builds the step from dg.Candies/dg.Boxes. EmitPluginOp followed (P8b): its
-// "only core can type-assert a BUILTIN provider's concrete type" claim was a concrete-type leak, not
-// a seam. The LAST two, inline-builder + ensure-builders, fall here on the same finding: the inline
-// resolve is the SAME OpResolve peer-dispatch resolveBuilderStage already runs for the detection and
-// external legs, and the connect is ops.InvokeProviderOpts.ExtraRef (the host's generic
-// connectPluginByWordRef Pass-2), which every plugin can request. So renderSeamCaller.hostBuild and
-// the whole HostBuild("render-seam") kind are DELETED; only InvokeProvider peer-dispatch remains.
+// The render reaches the host for NOTHING. Every seam that would need it -- RenderService, the
+// detection/external builder resolves, ValidateEgress, RewriteHeaderCopy, LocalPkg, EmitPluginOp,
+// inline-builder and ensure-builders -- is PURE registry resolve+Invoke dispatch, or pure data plus
+// host-fs I/O over the CandyModel envelope, or a direct call: LocalPkg's caller builds the step from
+// dg.Candies/dg.Boxes, EmitPluginOp is a concrete-type leak rather than a seam, and the inline resolve
+// is the SAME OpResolve peer-dispatch resolveBuilderStage runs for the detection and external legs.
+// The connect is ops.InvokeProviderOpts.ExtraRef (the host's generic connectPluginByWordRef Pass-2),
+// which every plugin can request. So there is no renderSeamCaller.hostBuild and no
+// HostBuild("render-seam") kind; only InvokeProvider peer-dispatch remains.
 
 // renderSeamCaller holds the two dispatch primitives every wired seam needs (the venue executor
 // + its context) so NewRenderGeneratorFromProject's own body stays a flat field-assignment list
@@ -43,8 +38,7 @@ type renderSeamCaller struct {
 
 // invoke marshals params, InvokeProvider's (class, word, op) directly (peer-dispatch — no
 // HostBuild round-trip), and decodes the reply into out. Used by the seams that are pure
-// providerRegistry.resolve+Invoke dispatch — proven to need no host callback at all (K3 render-
-// seam production move, RDD-spiked live on the external-builder leg).
+// providerRegistry.resolve+Invoke dispatch — proven to need no host callback at all.
 func (c renderSeamCaller) invoke(class, word, op string, params, out any) error {
 	pj, err := json.Marshal(params)
 	if err != nil {
@@ -62,8 +56,7 @@ func (c renderSeamCaller) invoke(class, word, op string, params, out any) error 
 	return nil
 }
 
-// validateEgress peer-dispatches to verb:egress's OpValidate (K3 — the render-seam's host
-// egressValidate call was itself plain providerRegistry.resolve+Invoke, no host-only state).
+// validateEgress peer-dispatches to verb:egress's OpValidate.
 func (c renderSeamCaller) validateEgress(kind, label, mode, data string) error {
 	var reply struct {
 		Error string `json:"error"`
@@ -79,18 +72,17 @@ func (c renderSeamCaller) validateEgress(kind, label, mode, data string) error {
 }
 
 // resolveBuilderStage is the SHARED OpResolve Invoke+decode for the builder BUILDER leg (R3),
-// direct peer-dispatch (K3, RDD-spiked live on the external leg): marshal the render context as
+// direct peer-dispatch: marshal the render context as
 // params + a spec.BuildEnv descriptor as env, InvokeProvider the builder's OpResolve, decode the
 // reply UNVALIDATED — the caller enforces the emptiness rule appropriate to its path. It serves ALL
-// THREE builder legs: detection, external_builder:, and (since K-wave 2 cone R1) inline.
+// THREE builder legs: detection, external_builder:, and inline.
 //
 // ExtraRef carries the builder's canonical plugin-candy ref so the host's InvokeProvider falls back
 // to connectPluginByWordRef's Pass-2 fetch for a build whose own candy closure vendors the plugin
-// nowhere — a box/<distro> submodule that triggers a builder purely by DETECTION. This REPLACES the
-// former ensure-builders host round-trip, which reached the identical two-pass
-// ScanAllCandyWithConfigOpts + loadProjectPlugins machinery through a bespoke second copy (R3);
-// connect is now on-demand per word at the moment of first use, and idempotent thereafter (the
-// host resolves the registry before ever re-scanning).
+// nowhere -- a box/<distro> submodule that triggers a builder purely by DETECTION. It takes the
+// place of a host ensure-builders round-trip: connect is on-demand per word at the moment of first
+// use, and idempotent thereafter (the host resolves the registry before re-scanning), so no second
+// copy of the ScanAllCandyWithConfigOpts + loadProjectPlugins machinery is needed (R3).
 func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolveInput, img *spec.ResolvedBox) (spec.BuilderResolveReply, error) {
 	var reply spec.BuilderResolveReply
 	env, err := json.Marshal(spec.BuildEnv{Distros: img.Tags, Image: img.Name})
@@ -116,10 +108,9 @@ func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolv
 }
 
 // renderService materializes a ServiceEntry via candy/plugin-init's OpResolve + egress-gates it —
-// direct peer-dispatch (K3). BuildServiceRenderContext is the SAME pure projection
+// direct peer-dispatch. BuildServiceRenderContext is the SAME pure projection
 // compile_service_steps.go's deploy-time renderServiceViaSeam uses — that call site is now a
-// THIN wrapper delegating HERE (#55 W3 B4, R3: one shared implementation for both the build-time
-// and deploy-time render-service paths, not two).
+// THIN wrapper delegating HERE.
 func (c renderSeamCaller) renderService(entry *spec.ServiceEntry, def *spec.ResolvedInit, ctx spec.ServiceRenderContext) (*spec.RenderedService, error) {
 	if entry == nil {
 		return nil, fmt.Errorf("RenderService: nil entry")
@@ -181,7 +172,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 	c := renderSeamCaller{ctx: ctx, ex: ex}
 
 	// EmitPluginOp: rendered FULLY plugin-side via a UNIFORM InvokeProvider(OpEmit) peer-dispatch
-	// (P8b seam-death — the RenderSeamEmitPluginOp host callback is DELETED). A state-provision
+	// (there is no RenderSeamEmitPluginOp host callback). A state-provision
 	// verb self-declares its act shell via EmitReply.ActScript (the render RUN-wraps it via
 	// EmitCmd), so no package-main concrete-type assert is needed: every verb — builtin or
 	// external — dispatches through the SAME Invoke(OpEmit) envelope. The FULL op rides op.Params
@@ -235,7 +226,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return result, nil
 	}
 
-	// ValidateEgress / ValidateTextEgress: direct peer-dispatch (K3).
+	// ValidateEgress / ValidateTextEgress: direct peer-dispatch.
 	dg.ValidateEgress = func(kind, label string, data []byte) error {
 		return c.validateEgress(kind, label, "bytes", string(data))
 	}
@@ -243,7 +234,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return c.validateEgress("rendered_text", label, "text", text)
 	}
 
-	// RenderService: direct peer-dispatch (K3).
+	// RenderService: direct peer-dispatch.
 	dg.RenderService = c.renderService
 
 	// ExternalizedBuilders: from the envelope (the registry D-FACT).
@@ -256,22 +247,21 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return rewriteHeaderCopyForRemote(dg.Candies, dir, dg.BuildDir, headerCopy)
 	}
 
-	// RenderLocalPkgImageInstall: direct call, NO host round-trip (W3 — the render-seam claim
-	// of a genuine host dependency here was STALE). The caller (candy_steps.go) already builds
+	// RenderLocalPkgImageInstall: direct call, NO host round-trip. The caller (candy_steps.go) already builds
 	// the step via CompileLocalPkgStep(layer, img, HostContext{}) using dg.Candies/dg.Boxes —
 	// data ALREADY present in this envelope-hydrated Generator — so RenderLocalPkgImageInstall
 	// needs nothing the host has that the plugin doesn't; it operates purely on the step it's
 	// given (deploykit.RenderLocalPkgImageInstall, sdk/deploykit/localpkg.go).
 	dg.RenderLocalPkgImageInstall = RenderLocalPkgImageInstall
 
-	// ResolveInlineBuilder: direct peer-dispatch (K-wave 2 cone R1) — the LAST render seam to shed
+	// ResolveInlineBuilder: direct peer-dispatch — the LAST render seam to shed
 	// its host round-trip. It is the SAME resolveBuilderStage the detection/external legs below use;
 	// only the reply field it reads (InlineFragment, spliced in-candy) and its emptiness rule differ.
-	// The former host seam's separate connect step is gone: resolveBuilderStage's ExtraRef carries
-	// the canonical plugin-candy ref, so the host connects on demand during this very Invoke.
+	// There is no separate connect step: resolveBuilderStage's ExtraRef carries the canonical
+	// plugin-candy ref, so the host connects on demand during this very Invoke.
 	dg.ResolveInlineBuilder = func(candyName, builderName string, bDef *buildkit.BuilderDef, ctx2 *spec.BuildStageContext, img *spec.ResolvedBox) (string, error) {
 		// The resolve input carries the candy's INTRINSIC bare name, never the map key — they
-		// diverge for a REMOTE candy (keyed by its fully-qualified ref). The deleted host seam read
+		// diverge for a REMOTE candy (keyed by its fully-qualified ref). A host seam here would read
 		// it the same way (g.Candies[candyName].GetName()); the error messages keep using the key,
 		// also as before.
 		bare := candyName
@@ -289,8 +279,7 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return reply.InlineFragment, nil
 	}
 
-	// ResolveDetectionBuilderStage / ResolveExternalBuilderStage: direct peer-dispatch (K3,
-	// RDD-spiked live on the external leg).
+	// ResolveDetectionBuilderStage / ResolveExternalBuilderStage: direct peer-dispatch.
 	dg.ResolveDetectionBuilderStage = c.resolveBuilderStage
 	dg.ResolveExternalBuilderStage = func(word, candyName string, img *spec.ResolvedBox) (spec.BuilderResolveReply, error) {
 		reply, err := c.resolveBuilderStage(word, spec.BuilderResolveInput{Candy: candyName}, img)
@@ -303,10 +292,9 @@ func NewRenderGeneratorFromProject(ctx context.Context, ex *sdk.Executor, rp *sp
 		return reply, nil
 	}
 
-	// EmitBakedPlugins: direct call (K3 build-tail move, coneB-buildtail) — the build is
+	// EmitBakedPlugins: direct call — the build is
 	// 100% pure os/exec (proven by the already-moved ensureCharlyBinaryFresh), so this needs no
-	// host round-trip at all; the former "bake-plugins" HostBuild seam (charly/host_build_bake_plugins.go)
-	// is DELETED.
+	// host round-trip at all; there is no "bake-plugins" HostBuild seam.
 	dg.EmitBakedPlugins = func(b *strings.Builder, boxName string, candyOrder []string) error {
 		return EmitBakedPlugins(ctx, b, dg.BuildDir, boxName, candyOrder, dg.Candies)
 	}
