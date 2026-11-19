@@ -17,8 +17,7 @@ import (
 //
 // There is no separate `Capabilities` type: a bare alias is ZERO-ALIASES residue per the
 // kernel/plugin boundary law — an alias is always an R-item regardless of what it aliases —
-// so every consumer uses
-// references spec.BoxMetadata directly.
+// so every consumer references spec.BoxMetadata directly.
 
 // CapabilityLabelMap names every OCI label that participates in the capabilities
 // contract. Maintained alongside spec.BoxMetadata — adding a field to spec.BoxMetadata

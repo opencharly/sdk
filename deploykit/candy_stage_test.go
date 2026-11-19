@@ -9,9 +9,8 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// TestCandyCopySource covers the real production logic —
-// CandyCopySource's local-vs-remote build-context path resolution — lives in
-// this package and stays real production code (used by EmitScratchStages,
+// TestCandyCopySource covers CandyCopySource's local-vs-remote build-context path
+// resolution, which lives in this package as real production code (used by EmitScratchStages,
 // GenerateInitFragments's stage_fragment_copy rendering, and the pod-overlay
 // build path).
 func TestCandyCopySource(t *testing.T) {

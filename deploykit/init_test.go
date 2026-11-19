@@ -10,9 +10,8 @@ import (
 )
 
 // TestGenerateInitFragments / TestGenerateRelayInitFragments were relocated
-// here from charly/generate_test.go (K3, Bucket-1 dissolution): the thin
-// the logic these tests cover — GenerateInitFragments' fragment-assembly + port-relay naming —
-// lives in this package as real production code (candy/plugin-deploy-pod's
+// The logic these tests cover — GenerateInitFragments' fragment-assembly + port-relay
+// naming — lives in this package as real production code (candy/plugin-deploy-pod's
 // overlay build reaches it directly). RenderService is stubbed with a minimal
 // fragment renderer so the test isolates GenerateInitFragments' own orchestration
 // (candy ordering, per-candy fragment files, port-relay fragments) from

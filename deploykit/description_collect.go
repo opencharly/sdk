@@ -65,9 +65,9 @@ func BakeableSteps(plan []spec.Step) []spec.Step {
 		}
 		// DELIBERATE collect-time stamp: write the keyword-derived do-mode onto the baked COPY so
 		// the ai.opencharly.description label carries intent_do. A validate-time side effect would
-		// not survive the bake serialization; the validate
-		// ENGINE moved to candy/plugin-box (K3-D+) it began stamping only its envelope copy, so the
-		// bake must now stamp its own output.
+		// not survive the bake serialization, because the validate ENGINE
+		// (candy/plugin-box) stamps only its envelope copy, so the
+		// bake must stamp its own output.
 		stampStepIntentDo(&s)
 		out = append(out, s)
 	}
