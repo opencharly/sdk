@@ -2,8 +2,8 @@
 // (P11a). GenerateQuadlet + its pure closure render a systemd quadlet .container
 // file from a QuadletConfig; the compiled-in candy/plugin-deploy-pod builds the
 // QuadletConfig from the host config-resolve seam and calls this. A PURE render
-// mechanism (M under the kernel/plugin boundary law): no host I/O, no globals —
-// byte-identical to the former core generateQuadlet (S4 parity spike). VolumeMount
+// mechanism (M under the kernel/plugin boundary law): no host I/O, no globals.
+// VolumeMount
 // is a resolved runtime type owned in this package (deploy_volume.go); the tunnel
 // wire types are spec.TunnelConfig/TunnelPort (CUE-sourced, P11 wire-mandate repair);
 // SecurityConfig is vmshared's; ResolvedSidecar is the host-adapted deploykit runtime
@@ -476,7 +476,7 @@ func FormatCPUQuota(cpus string) string {
 // Relocated from charly core with the P11 config-write move (the deploy:pod plugin writes it);
 // cfgPath (the cloudflared config path) is passed in by the host — the resolution helper
 // tunnelConfigPath stays core, so this generator is pure. Returns "" for a non-cloudflare (or
-// nil) tunnel. Byte-identical to the former core generateTunnelUnit given the same cfgPath.
+// nil) tunnel, and is pure given the same cfgPath.
 func GenerateTunnelUnit(cfg QuadletConfig, cfgPath string) string {
 	if cfg.Tunnel == nil || cfg.Tunnel.Provider != "cloudflare" {
 		return ""

@@ -115,7 +115,7 @@ func TestCollectBuilderRuntimeEnv_NilBuilderConfig(t *testing.T) {
 // TestBuildStageContext_ImportedNamespaceCopySource is the R7 guard for the
 // BuildStageContext call-site collapse (opencharly/sdk#477). A candy declared in an imported
 // namespace is Remote and carries NO RepoPath (it was never fetched through an @github ref),
-// so the former `CandyCopySource(CandyMapKey(layer))` re-derivation produced an EMPTY map key
+// so a `CandyCopySource(CandyMapKey(layer))` re-derivation produces an EMPTY map key
 // and looked up no layer at all. The builder stage's COPY source must come from the same
 // origin→path mapping every other COPY site uses.
 func TestBuildStageContext_ImportedNamespaceCopySource(t *testing.T) {

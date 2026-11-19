@@ -11,7 +11,7 @@ import (
 // at `<repo root>/.agents/skills/<name>/SKILL.md` — the repo root, because that is the directory a
 // harness rooted at the repo discovers natively, and it is the base the marketplace corpus reader
 // already resolves against (`plugin-marketplace/…/skillfile.go`, which joins the entity's
-// SourceRoot — the REF root — with the owner's declared tree). The label collector used to resolve
+// SourceRoot — the REF root — with the owner's declared tree). A label collector resolving
 // the same file against `<owner candy SourceDir>`, which is the same directory ONLY when the candy
 // sits at its repo's root. For a candy under `candy/<name>/` the two bases diverge, and the corpus
 // and the label then read two different trees:

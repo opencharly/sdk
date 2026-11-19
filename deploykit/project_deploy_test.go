@@ -9,7 +9,7 @@ import (
 // TestProjectDeployConfig_NamespaceQualified is the regression for the qualified
 // projection: a namespaced deploy must appear under its `ns.name` key so a
 // merged-root consumer (`charly deploy add charly.check-vm`) resolves it. On the
-// former root-scope `uf.Deploy` projection the key is absent and the walk defaults
+// a root-scope `uf.Deploy` projection the key is absent and the walk defaults
 // the target to "pod".
 func TestProjectDeployConfig_NamespaceQualified(t *testing.T) {
 	disp := true

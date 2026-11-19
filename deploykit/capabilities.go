@@ -15,9 +15,9 @@ import (
 // at deploy time, with no dependence on the source repo's charly.yml. The self-deploy
 // invariant (`charly deploy from-box`) depends on this list being complete.
 //
-// The former charly-core `Capabilities` name was a bare `type Capabilities =
-// spec.BoxMetadata` alias (ZERO-ALIASES residue per the kernel/plugin boundary law — an
-// alias is always an R-item regardless of what it aliases) — deleted; every consumer now
+// There is no separate `Capabilities` type: a bare alias is ZERO-ALIASES residue per the
+// kernel/plugin boundary law — an alias is always an R-item regardless of what it aliases —
+// so every consumer uses
 // references spec.BoxMetadata directly.
 
 // CapabilityLabelMap names every OCI label that participates in the capabilities

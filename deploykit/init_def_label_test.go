@@ -52,7 +52,7 @@ func TestInitDefLabel_RoundTrip(t *testing.T) {
 
 	// Parse path: container.ExtractMetadata reads the label value podman returns
 	// (raw JSON). Override container.InspectLabels directly — the deploykit-level
-	// re-export var is a value-copy that no longer affects the relocated body
+	// re-export var is a value-copy that does not affect the implementation
 	// (see sdk/deploykit/read_labels.go).
 	orig := container.InspectLabels
 	defer func() { container.InspectLabels = orig }()

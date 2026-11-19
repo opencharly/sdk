@@ -164,7 +164,7 @@ func (e *localPkgRecExec) ResolveHome(context.Context, string) (string, error) {
 
 // TestLocalPkgGlobFromDownload proves the package-file glob is DERIVED from the
 // download_template URL's extension chain (the one stable signal shared by the
-// download leg, the build leg, and the install leg now that PkgGlob is gone).
+// download leg, the build leg, and the install leg, with no authored PkgGlob field).
 func TestLocalPkgGlobFromDownload(t *testing.T) {
 	for _, tc := range []struct {
 		url  string

@@ -12,7 +12,7 @@ import (
 // installs that init's own runtime: `supervisord` → depends_candy: supervisord (a container carries
 // no init, so it must be installed); `systemd` → NO depends_candy (already present on every machine
 // venue). Declaring a `service:` in a candy is what SELECTS an init and assembles its config — but
-// nothing used to INSTALL the selected init's binary, so a box composing only service candies built
+// nothing installs the selected init's binary unless the init candy is injected, so a box composing only service candies builds
 // and validated clean, baked ai.opencharly.init="supervisord" and an assembled /etc/supervisord.conf,
 // and then failed at deploy `[start]` because /usr/bin/supervisord did not exist.
 //

@@ -5,7 +5,7 @@ package deploykit
 // opencharly/sdk#526 and opencharly/pod-openwebui#19 both live in this seam: a secret's coordinate
 // is computed in more than one place, and the copies drift. sdk carried TWO — the exported
 // SecretKeyForDep and an inline copy inside EnsureCandySecret — with a subtle difference between
-// them (`idx >= 0` vs `idx > 0` on the override split). The inline copy is gone; these tests pin
+// them (`idx >= 0` vs `idx > 0` on the override split). There is one rule; these tests pin
 // the one rule AND the property that made the duplication dangerous: the RESOLVER must query the
 // same coordinate the rule names.
 

@@ -76,7 +76,7 @@ func requireUsableEngine(t *testing.T) {
 }
 
 // TestEngineUsable_EmptyPathIsNotUsable is the negative half of the proof: with an emptied PATH no
-// engine is usable, which is the state the three guards used to handle by presence and the state a
+// engine is usable, which is the state three guards would handle by presence and the state a
 // present-but-broken engine shares. It fails without engineUsable, because there was nothing to call.
 func TestEngineUsable_EmptyPathIsNotUsable(t *testing.T) {
 	withEmptyPATH(t)

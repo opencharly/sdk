@@ -9,9 +9,7 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// TestCandyCopySource was relocated here from charly/refs_test.go (K3,
-// Bucket-1 dissolution): the thin charly-core wrapper (Generator.candyCopySource)
-// it exercised had zero non-test callers and was deleted, but the real logic —
+// TestCandyCopySource covers the real production logic —
 // CandyCopySource's local-vs-remote build-context path resolution — lives in
 // this package and stays real production code (used by EmitScratchStages,
 // GenerateInitFragments's stage_fragment_copy rendering, and the pod-overlay

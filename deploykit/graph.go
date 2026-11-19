@@ -11,8 +11,7 @@ import (
 // This is the build-mode candy/box dependency-graph subsystem, relocated from
 // charly core into sdk/deploykit (P8) so the render engine (which resolves candy
 // install order) lives outside charly. It operates over deploykit.CandyModel and
-// buildkit.ResolvedBox. Behaviour is byte-identical to the former charly/graph.go
-// (sortStrings → slices.Sort is the same lexicographic order).
+// buildkit.ResolvedBox. sortStrings is slices.Sort — the same lexicographic order.
 
 // CycleError represents a circular dependency error
 type CycleError struct {

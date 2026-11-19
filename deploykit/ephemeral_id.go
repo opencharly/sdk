@@ -8,10 +8,8 @@ package deploykit
 // registry — the same node-form marshal the deploy-state writes require),
 // registerTransientTimer/cancelTransientTimer (systemd-run / systemctl self-exec), and
 // teardownChildrenRec's nested `charly deploy del` self-exec — are genuinely host-only leaves,
-// registered FINAL/K5 credential/loader-family inventory (the SAME pattern the former
-// layer_secrets.go's ensureCandySecret documented — now sdk/deploykit/secret_candy_resolve.go's
-// EnsureCandySecret, #55 coneB-br2 relocated the resolver plugin-side and DELETED layer_secrets.go),
-// not moved here.
+// registered FINAL/K5 credential/loader-family inventory (the SAME pattern
+// sdk/deploykit/secret_candy_resolve.go's EnsureCandySecret documents), not moved here.
 
 import (
 	"bytes"

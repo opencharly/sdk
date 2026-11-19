@@ -56,7 +56,7 @@ func SecretDepNames(meta *spec.BoxMetadata) []string {
 	return names
 }
 
-// SecretKeyForDep returns the (service, key) tuple used to look up a secret
+// SecretKeyForDep returns the (service, key) tuple that locates a secret
 // in the credential store. When the candy author set an explicit `key:
 // charly/api-key/openrouter` override, that's parsed into its two segments;
 // otherwise the default (charly/secret, dep.Name) is returned. The format is

@@ -149,7 +149,7 @@ func TestCollectSkills_ProseComesFromTheFile(t *testing.T) {
 }
 
 // TestCollectSkills_BodylessSkillFailsLoud pins the LOUD half: a node with neither an in-line body
-// nor a file used to project an entry whose prose was simply missing. It is an error now, because
+// nor a file projects an entry whose prose is simply missing. It is an error, because
 // such an entry is indistinguishable from a skill that never had a body.
 func TestCollectSkills_BodylessSkillFailsLoud(t *testing.T) {
 	layers := map[string]spec.CandyReader{

@@ -403,7 +403,7 @@ func IsSameBaseBox(source, boxName string) bool {
 }
 
 // RemoveBySource removes all entries injected by the given image (same base, any instance).
-// Returns the filtered list and whether anything was removed.
+// Returns the filtered list and whether any entry matched.
 func RemoveBySource[T Named](entries []T, boxName string) ([]T, bool) {
 	var result []T
 	removed := false

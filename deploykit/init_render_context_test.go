@@ -10,7 +10,7 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// GenerateInitFragments used to hand-build a 13-field ServiceRenderContext from the
+// Hand-building a 13-field ServiceRenderContext from the
 // entry. RenderService then applies BuildServiceRenderContext, which OVERWRITES every
 // entry-derived field — so all of that was dead — except After/Before, which it
 // APPENDS. Pre-seeding those double-listed every ordering directive.

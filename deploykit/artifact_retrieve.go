@@ -38,7 +38,7 @@ import (
 // deployName is the deploy-yml name (e.g., "vm:k3s-srv") — exposed to
 // rewrite-path expansion as ${deploy_name}. envVars is an additional
 // substitution context (e.g., K3S_SERVER_HOSTNAME from the deploy.env
-// block, used to rewrite server URLs in a retrieved kubeconfig). readiness
+// block, which rewrites server URLs in a retrieved kubeconfig). readiness
 // is the pre-resolved WaitCapped bound source (see the file header).
 func RetrieveCandyArtifacts(
 	ctx context.Context,

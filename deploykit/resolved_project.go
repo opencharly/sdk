@@ -131,8 +131,8 @@ func ProjectBoxAggregates(cfg *spec.Config, layers map[string]spec.CandyReader, 
 
 // FillBoxPlans populates out with the include-ready FLATTENED acceptance plan for every box
 // reachable from cfg (its own boxes + every import namespace, recursively), keyed by QUALIFIED
-// name (`fedora.jupyter`). It mirrors the former in-core `include: box:<name>` arm EXACTLY: the
-// SAME CollectDescriptions base-chain walk (candy-chain bakeable steps + the box-level bakeable
+// name (`fedora.jupyter`). It is EXACTLY the `include: box:<name>` arm: the SAME
+// CollectDescriptions base-chain walk (candy-chain bakeable steps + the box-level bakeable
 // plan) flattened over the three sections, so the relocated plugin box arm reads a byte-equivalent
 // plan without the resolve engine. Only boxes with a non-empty plan are recorded.
 //
