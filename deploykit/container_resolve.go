@@ -11,14 +11,12 @@ import (
 // container_resolve.go — the deploy-key → running-container resolvers (K4: relocated from the
 // deleted charly/container.go and charly/volume_cp_tags_cmd.go). Homed in deploykit (not kit)
 // because they need ResolveBoxEngineForDeploy, a deploykit-only mechanism (kit cannot import
-// deploykit). The dedup this file's header used to track as incomplete (a 2026-07-20 R1 finding:
-// bare core duplicates of ResolveContainer/ResolveSidecarContainer still called by
-// check_members.go/cmd.go/etc.) is DONE: both charly/container.go and charly/volume_cp_tags_cmd.go
+// deploykit). The dedup is DONE: both charly/container.go and charly/volume_cp_tags_cmd.go
 // are deleted, no bare `func resolveContainer`/`func resolveSidecarContainer` remains anywhere in
 // charly core — charly core itself calls NEITHER function directly any more (an R1 fix, #55 W3
-// B7: this comment's former "charly's check_endpoint_resolve.go/check_venue_resolve.go" claim was
-// stale even before B7 — neither file has ever imported deploykit.ResolveContainer directly, only
-// described it in a comment about what the PLUGIN does); every ACTUAL caller (candy/plugin-check
+// neither charly/check_endpoint_resolve.go nor check_venue_resolve.go has ever imported
+// deploykit.ResolveContainer directly, only described it in a comment about what the PLUGIN
+// does); every ACTUAL caller (candy/plugin-check
 // [venue.go's resolveCheckVenue + the ${HOST:} member resolution, members.go]/plugin-cmd/
 // plugin-pod/plugin-adb/plugin-deploy-pod) imports THESE functions directly. This is the ONE
 // shared implementation.

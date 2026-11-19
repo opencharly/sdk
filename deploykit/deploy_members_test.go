@@ -8,7 +8,7 @@ package deploykit
 // registry access, matching candy/plugin-check's own registry-free twin) — every node
 // BringUpMembers/TearDownMembers sees in practice comes from an already-loaded, Descent-stamped
 // project, so fixtures here stamp Descent directly instead of relying on a registry fallback that
-// no longer exists at this layer.
+// does not exist at this layer.
 
 import (
 	"context"

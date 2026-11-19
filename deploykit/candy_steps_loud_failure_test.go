@@ -11,7 +11,7 @@ import (
 
 // candy_steps_loud_failure_test.go — the emitted-install integrity gate.
 //
-// WriteCandySteps used to swallow every reason a resolved package set could
+// WriteCandySteps must not swallow any reason a resolved package set could
 // fail to render: a nil DistroDef, a primary build format with no definition in
 // the box's distro, and (the one that actually shipped) a text/template error
 // from the format's phase.install.container template, dropped by an `if err == nil` with no
@@ -133,7 +133,7 @@ func pluginCandy(emit func(op *spec.Op, img *spec.ResolvedBox) (string, bool, er
 	return g
 }
 
-// The fifth swallowed failure: WriteCandySteps calls EmitTasks and used to write
+// The fifth failure mode: WriteCandySteps calls EmitTasks and must not write
 // its error into the Containerfile as `# emitTasks error: …`. A comment is not a
 // failure — podman builds it happily, the image ships without those steps, and
 // the defect surfaces later as a missing file at runtime. Exactly the shape of

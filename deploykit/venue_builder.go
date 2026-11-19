@@ -28,9 +28,8 @@ import (
 //     over the executor.
 //
 // The dep-builder engine itself (BuildDepPkgsOnHost -> kit.BuilderRun -> podman) was already a
-// PURE sdk/deploykit function (W3); this file's own former core dependency — the injected
-// image-resolve/ensure closures charly's resolveImageRefForEnsure/dispatchBuildEnsure supplied —
-// is now taken as explicit resolveImage/ensureImage parameters (the SAME shape BuildDepPkgsOnHost
+// PURE sdk/deploykit function; the image-resolve/ensure closures it depends on are taken as
+// explicit resolveImage/ensureImage parameters (the SAME shape BuildDepPkgsOnHost
 // already uses), so the whole orchestration is venue-agnostic and core-free. charly's
 // buildEngineContext (the caller-side struct these closures close over) STAYS core — it carries
 // *Config/*Generator, core-only types — the caller builds the two closures from it and passes

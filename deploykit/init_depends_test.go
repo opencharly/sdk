@@ -88,7 +88,7 @@ func boxCandy(t *testing.T, cfg *spec.Config, name string) []string {
 
 // TestInjectInitDependsCandy_ContainerInjectsSupervisord is the CONTAINER direction: a box composing
 // a tool candy plus a service candy — and NOT naming an init — resolves to supervisord and must gain
-// the supervisord candy. This is the exact shape that used to build clean, bake
+// the supervisord candy. This is the exact shape that would build clean, bake
 // ai.opencharly.init="supervisord" and an assembled /etc/supervisord.conf, and then fail at deploy
 // `[start]` with no supervisord binary in the image.
 func TestInjectInitDependsCandy_ContainerInjectsSupervisord(t *testing.T) {

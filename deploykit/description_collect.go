@@ -34,8 +34,8 @@ import (
 // MergeDeployDescriptions (the per-host deploy-plan overlay onto a baked LabelDescriptionSet)
 // lives in sdk/kit (description_merge.go) — pure over LabelDescriptionSet/spec.Step, zero core
 // state. Its sole caller, the "live" gather engine's pod path, is plugin-side too
-// (candy/plugin-check/live_gather.go's pluginCheckLivePod, K1-unblock wave arm 1 — the former
-// charly/check_cmd.go's checkLivePod, deleted) and calls kit.MergeDeployDescriptions directly.
+// (candy/plugin-check/live_gather.go's pluginCheckLivePod) and calls kit.MergeDeployDescriptions
+// directly.
 
 // stampStepIntentDo writes the keyword-derived do-mode onto a verb-carrying step's Op.IntentDo
 // (via the shared spec.StepDoMode derivation), so the baked ai.opencharly.description label
@@ -64,10 +64,10 @@ func BakeableSteps(plan []spec.Step) []spec.Step {
 			continue
 		}
 		// DELIBERATE collect-time stamp: write the keyword-derived do-mode onto the baked COPY so
-		// the ai.opencharly.description label carries intent_do. This was formerly a side effect of
-		// the in-core validate mutating the shared structs the bake serialized; when the validate
-		// ENGINE moved to candy/plugin-box (K3-D+) it began stamping only its envelope copy, so the
-		// bake must now stamp its own output.
+		// the ai.opencharly.description label carries intent_do. A validate-time side effect would
+		// not survive the bake serialization, because the validate ENGINE
+		// (candy/plugin-box) stamps only its envelope copy, so the
+		// bake must stamp its own output.
 		stampStepIntentDo(&s)
 		out = append(out, s)
 	}

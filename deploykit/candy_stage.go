@@ -50,8 +50,7 @@ func (g *Generator) candyCopySource(layer CandyModel, name string) string {
 	// charly.yml's directory as SourceDir, and a `discover:` entry can point at a path other
 	// than candy/. candyOrigin already proved this directory is inside the build root, so rel
 	// IS the COPY source — there is no second outside-root guard to duplicate its verdict.
-	// (Not a `directory:` redirect — that field was removed and is now a hard load error,
-	// charly/layers.go.)
+	// (Not a `directory:` redirect — that field is a hard load error.)
 	return rel
 }
 

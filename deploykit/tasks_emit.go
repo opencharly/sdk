@@ -455,8 +455,7 @@ func EmitCmd(b *strings.Builder, t vmshared.Op, layerStage string, img *buildkit
 
 // Build-mode Containerfile emit helpers, relocated verbatim from charly/tasks.go
 // (P8). Op = vmshared.Op; ResolvedBox = buildkit.ResolvedBox. Behaviour is
-// byte-identical to the former charly package-main helpers; charly keeps thin
-// var-alias shims (var buildArchExports = deploykit.BuildArchExports, …) so the
+// charly keeps thin var-alias shims (var buildArchExports = deploykit.BuildArchExports, …) so the
 // other build/check/deploy callers stay unchanged until they relocate.
 
 // BuildArchExports emits the shell prelude that maps `uname -m` to a Go-style
