@@ -1,7 +1,7 @@
 package deploykit
 
-// deploy_members.go — sibling `peer:` member bring-up/tear-down (#55 W3 A4, relocated from
-// charly/deploy_members.go). A DeployNode's `peer:` map declares companion deployments brought
+// deploy_members.go -- sibling `peer:` member bring-up/tear-down. A DeployNode's `peer:` map
+// declares companion deployments brought
 // up ALONGSIDE it on the shared `charly` network (NOT nested inside it) — members are reachable
 // by `${HOST:<name>}` and are never check-live'd themselves.
 //
@@ -9,25 +9,19 @@ package deploykit
 // ADJACENT per-member deploy-override PERSIST immediately before calling bring-up, and
 // candy/plugin-check/venue.go independently re-implements a registry-free nodeTraits twin. The
 // audit found the ACTUAL duplication risk was narrower than "the whole engine" — it was the
-// venue-CLASSIFICATION predicate (isVmMember/isPodMember, formerly reading core's private
-// nodeTraits): a naive lift would have added a FOURTH copy. Resolved by promoting
-// deploy.IsVmVenue/deploy.IsContainerVenue (mirroring the already-promoted deploy.HostRooted, #55 U4)
-// as the ONE shared predicate — every node BringUpMembers/TearDownMembers sees comes from an
-// already-loaded, Descent-stamped project (foldMembers marks only the folded top-level copy), so
-// the registry-fallback branch core's OWN nodeTraits carried is dead weight here, exactly as it
-// already was for candy/plugin-check's own registry-free twin.
+// venue-CLASSIFICATION predicate (isVmMember/isPodMember): a naive lift would have added a
+// FOURTH copy. It is resolved by deploy.IsVmVenue/deploy.IsContainerVenue (beside the equally
+// shared deploy.HostRooted) as the ONE shared predicate -- every node BringUpMembers/
+// TearDownMembers sees comes from an already-loaded, Descent-stamped project (foldMembers marks
+// only the folded top-level copy), so a registry-fallback branch would be dead weight here,
+// exactly as it is for candy/plugin-check's own registry-free twin.
 //
 // BringUpMembers/TearDownMembers shell out via spec/proc.RunCharlySubcommand (a `charly <verb>`
-// re-entrant CLI call in the SAME process the caller runs in — NOT the HostBuild("cli")
-// reverse-channel reentry an out-of-process plugin would need) and spec/hostenv +
-// spec/exec's readiness gates — all plugin-importable fabric, no host-private state. Both
-// consumers call these directly now, no HostBuild seam either way: the operator path
-// (candy/plugin-fleet's walk, since this commit — the former "deploy-members-up"/
-// "deploy-members-down" HostBuild seam is deleted) and the check-bed runner
-// (candy/plugin-check/bed_run.go, since the immediately-following unit #55 W3 B2-full, which
-// also deleted charly/deploy_members.go's transitional core copy this file's A4 landing had
-// briefly needed for one commit cycle — the former "check-bed" HostBuild seam it served is gone
-// too).
+// re-entrant CLI call in the SAME process the caller runs in -- NOT a HostBuild("cli")
+// reverse-channel reentry) and spec/hostenv + spec/exec's readiness gates -- all
+// plugin-importable fabric, no host-private state. Both consumers call these directly, with no
+// HostBuild seam either way: the operator path (candy/plugin-fleet's walk) and the check-bed
+// runner (candy/plugin-check/bed_run.go).
 
 import (
 	"context"
