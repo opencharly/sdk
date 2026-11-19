@@ -24,8 +24,8 @@ import (
 // safePluginBinName/pluginBuildCacheDir/pluginSourceTag helpers. EmitBakedPlugins runs in-process,
 // with zero host round-trip.
 //
-// The runtime plugin LOADER is a separate cluster in another repository; this file makes no claim
-// about it.
+// Two constants below mirror names charly/plugin_loader.go owns (a path and an env var), and each
+// says so where it is declared; nothing here claims what that loader does with them.
 
 // bakedPluginDir is the FHS system path a candy's `bake_plugin:` step copies a pre-built provider
 // binary to at image-build time. Byte-identical to charly/plugin_loader.go's constant.
