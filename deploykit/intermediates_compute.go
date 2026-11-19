@@ -28,7 +28,7 @@ import (
 // copied across a namespace boundary.
 
 // IntermediateDefaults carries the scalar `defaults:` fields ComputeIntermediates
-// needs from the project config -- exactly the fields a *Config read off cfg.Defaults.*. A plain data
+// needs from the project config -- the `cfg.Defaults.*` fields, and nothing else. A plain data
 // carrier (no loader/registry access), so ComputeIntermediates stays a pure
 // function of its inputs.
 type IntermediateDefaults struct {
