@@ -14,7 +14,7 @@ import (
 )
 
 // deploy_file.go — the deploy STATE-MODEL load/save/merge/export body relocated out of
-// charly/deploy.go to sdk/deploykit (K5-Unit-1, the S-K5 keystone that unblocks P13). The
+// charly/deploy.go to sdk/deploykit. The
 // PURE helpers (LoadDeployFile / RemoveBoxDeploy) were already here; this cutover moved the
 // state-model bodies — LoadDeployConfig / SaveDeployConfig / LoadDeployConfigForRead /
 // LoadDeployConfigForWrite / MergeDeployOntoMetadata / CleanDeployEntry / SaveDeployState /
@@ -28,8 +28,8 @@ import (
 // primitive (kit.AcquireFileLock) called directly; the deploy-kind-specific marshal (the
 // struct-body → compact node-form transform)
 // is the caller's responsibility, supplied as a callback to the kind-blind SaveDeployConfig
-// shell. ExportAllBox is the #67 keystone: it takes the spec.ResolvedProject envelope the
-// "resolved-project" HostBuild seam produces (K5-Unit-0) and projects the box-authored
+// shell. ExportAllBox takes the spec.ResolvedProject envelope the
+// "resolved-project" HostBuild seam produces and projects the box-authored
 // deploy-overlay fields into a DeployConfig — no live *Config graph. The per-host ledger is
 // read/written by compiled-in command plugins via the config-resolve / config-persist host
 // seams (the plugin-vm precedent); these bodies are the shared library those seams and the
@@ -45,7 +45,7 @@ import (
 // MECHANISM (M) — it loads ANY per-host charly.yml through the unified loader and returns its
 // ProjectDeployConfig, never branching on a deploy kind. It lives in the seam (not in deploykit
 // directly) ONLY because the LoadUnified orchestration has not yet relocated to sdk/loaderkit
-// (K1, task #31): once K1 lands, plugin-fleet calls loaderkit.LoadUnified directly and this
+// : once K1 lands, plugin-fleet calls loaderkit.LoadUnified directly and this
 // seam dies entirely. The deploy-kind-specific marshal is NOT here — it is the caller's
 // responsibility, supplied as a callback to SaveDeployConfig (a kind-blind file shell). Tracked
 // K1-exit task: this seam field is deleted when K1 lands.
@@ -70,7 +70,7 @@ func RegisterDeployStateHost(h *StateHostMechanisms) {
 
 // LoadDeployConfig reads the per-host deploy overlay (~/.config/charly/charly.yml) through the
 // unified loader — the SAME LoadUnified path as every project charly.yml. Returns nil, nil if
-// the file doesn't exist. Relocated from charly/deploy.go (K5-Unit-1); the LoadUnified hop
+// the file doesn't exist. Relocated from charly/deploy.go; the LoadUnified hop
 // reaches core through DeployStateHost.LoadUnifiedDeployConfig.
 //
 // ctx is REQUIRED: it carries the invocation's RunEnv (spec.WithRunEnv) so a concurrent
@@ -126,7 +126,7 @@ func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
 // transform) is the caller's responsibility — supplied via marshalNode, which returns the
 // MIGRATED node-form body for one DeployNode (the value placed under the entry's name key).
 // This keeps SaveDeployConfig kind-blind: no per-kind map, no target-vocabulary switch, no
-// deploy-kind-specific struct knowledge. Relocated from charly/deploy.go (K5-Unit-1).
+// deploy-kind-specific struct knowledge. Relocated from charly/deploy.go.
 //
 // failsafeRead is the config re-read the write path performs for its data-safety guard (below).
 // A nil failsafeRead falls back to LoadDeployConfig — the DeployStateHost-backed host read, so
@@ -276,7 +276,7 @@ func removeDeployKeys(m *yaml.Node) {
 // with nil → feature degrades invisibly), this helper SURFACES the load error as a stderr
 // warning while still returning nil — preserving the existing caller nil-check contract but
 // giving the operator visibility into why a command behaved as if charly.yml were absent.
-// Relocated from charly/deploy.go (K5-Unit-1).
+// Relocated from charly/deploy.go.
 //
 // label is a short human-readable diagnostic included in the warning message so the operator can
 // trace which code path noticed the problem (e.g. "charly status", "config injectEnvProvides").
@@ -302,7 +302,7 @@ func LoadDeployConfigForRead(label string, ctx context.Context) *DeployConfig {
 // LoadDeployConfigForWrite loads charly.yml for mutation. Unlike the historical
 // `dc, _ := LoadDeployConfig()` pattern (silently discards validation errors → writer constructs
 // an empty config → SaveDeployConfig truncates the file), this helper PROPAGATES the load error
-// so writers can ABORT instead of destroying data. Relocated from charly/deploy.go (K5-Unit-1).
+// so writers can ABORT instead of destroying data. Relocated from charly/deploy.go.
 //
 // label is a short human-readable diagnostic included in the error message (e.g.
 // "saveDeployState"). ctx carries the invocation's RunEnv. Returns (nil, error) when the file
@@ -324,7 +324,7 @@ func LoadDeployConfigForWrite(label string, ctx context.Context) (*DeployConfig,
 
 // MergeDeployOntoMetadata applies a per-host charly.yml entry's overrides (ports, env,
 // security, tunnel, secrets, …) onto label-derived image metadata. Field-level replace
-// semantics. Relocated from charly/deploy.go (K5-Unit-1).
+// semantics. Relocated from charly/deploy.go.
 //
 // The overlay entry is keyed by deployName — the charly.yml key base the caller is operating
 // on (the bed / instance / Pattern-B name), NOT meta.Image (the baked ai.opencharly.box
