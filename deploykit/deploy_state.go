@@ -347,13 +347,12 @@ func MergeEnvVars(existing, newVars map[string]string) map[string]string {
 	return out
 }
 
-// --- DeployConfig state container (moved from charly/deploy.go, P4) ---
+// --- DeployConfig state container ---
 // DeployConfig represents per-machine deployment overrides (~/.config/charly/charly.yml).
-// SPIKE (value-type relocation): the value type lives in spec.DeployConfig
-// (spec/spec/deploy_config.go) — every field already resolved to a spec.* type, so
-// the type carried zero deploykit-only content. This is now a zero-churn alias;
-// the two pure methods (Lookup/LookupKey) moved with it. The three methods that
-// reach sdk/kit (DeployedContainerNames/OccupiedHostPorts/GlobalEnvForImage) stay
+// The value type IS spec.DeployConfig (spec/spec/deploy_config.go): every field is a spec.*
+// type, so it carries zero deploykit-only content. This is a zero-churn alias; the two pure
+// methods (Lookup/LookupKey) live with it. The three methods that reach sdk/kit
+// (DeployedContainerNames/OccupiedHostPorts/GlobalEnvForImage) stay
 // below as free functions (deploy_derive.go) — spec can never import sdk/kit.
 type DeployConfig = spec.DeployConfig
 
