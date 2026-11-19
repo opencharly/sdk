@@ -419,8 +419,8 @@ func CompileShellHookStep(layer CandyModel, _ *ResolvedBox) *ShellHookStep {
 	envCfg, _ := layer.EnvConfig()
 	// A layer that SERVES PLUGINS needs the hook even when it declares no env at all — otherwise
 	// the venue's shell never learns where the delivered tree is, and a plugin verb in a plan step
-	// fails as an unknown command. The guard below is the one that used to veto that silently: it
-	// was written when env was this function's only subject.
+	// fails as an unknown command. The guard below must NOT veto that silently: it was written when
+	// env was this function's only subject.
 	providers := layer.GetPluginProviders()
 	if envCfg == nil && len(providers) == 0 {
 		return nil
@@ -726,8 +726,8 @@ func AppendShellPathLines(body string, paths []string, shell, home string) strin
 // specific) and letting later writes win yields most-specific-wins for the Raw
 // extras while packages union regardless of order. fedora/arch reach their
 // packages via the bare-distro tag (img.Distro = [fedora] / [arch]); there is no
-// format-section fallback — the deb collapse that caused non-deterministic repo
-// selection is gone (per-distro tag sections never share a mutable section).
+// format-section fallback -- per-distro tag sections never share a mutable section, so repo
+// selection cannot collapse non-deterministically.
 func CompileSystemPackageSteps(layer CandyModel, img *ResolvedBox, _ HostContext) []InstallStep {
 	if img.DistroDef == nil {
 		return nil
@@ -1070,10 +1070,10 @@ func StringSliceFromYAML(v any) ([]string, bool) {
 //
 // For systemd targets, the compiler ALSO pre-populates UnitText/UnitPath
 // on the ServiceCustomStep by calling RenderService, so executors don't
-// need a runtime lazy-render step. This consolidates what used to live
-// in three different places (the deleted in-proc VM-target lazy fallback,
-// the OCI build's per-entry routing, and the legacy nothing-rendered
-// path on the local deploy target) into ONE compile-time filter.
+// need a runtime lazy-render step. This consolidates what would otherwise be
+// three separate places (a VM-target lazy fallback, the OCI build's per-entry
+// routing, and a nothing-rendered path on the local deploy target) into ONE
+// compile-time filter.
 // ServiceRenderDistros returns the distro tag chain a service entry's distro:
 // filter is matched against for a deploy target. img.Distro is the AUTHORITATIVE
 // deploy-target chain and always wins (mirrors PrimaryDistroTag): the caller's synthetic-box
