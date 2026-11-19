@@ -12,24 +12,22 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// intermediates_move_test.go — migrated from charly/intermediates_test.go +
-// charly/intermediates_determinism_test.go (W3, task #36): the auto-
-// intermediate-image subsystem's HOST-COUPLED half (ComputeIntermediates and
-// everything it calls — formerly charly/intermediates.go, now
-// intermediates_compute.go in this package) moved out of charly core, so its
-// test suite moves too. Candy fixtures use the SAME test-fake precedent as
-// candy_stage_test.go (NewSpecCandyModel over spec.CandyModel/spec.CandyView —
-// the production hydration constructor doubles as the test fake) instead of
-// the concrete charly *Candy struct the tests used before the move.
+// intermediates_move_test.go -- the auto-intermediate-image subsystem's
+// config-consuming half (ComputeIntermediates and everything it calls, in
+// intermediates_compute.go) lives in this package rather than in charly core, so its test suite
+// lives here too. Candy fixtures use the SAME test-fake precedent as
+// candy_stage_test.go (NewSpecCandyModel over spec.CandyModel/spec.CandyView --
+// the production hydration constructor doubles as the test fake) rather than a concrete
+// *Candy struct.
 //
-// Fixture-fidelity notes (verified against the pre-move behaviour, R7):
+// Fixture-fidelity notes (R7 -- the fixtures exercise the same graph membership the
+// production path does):
 //   - HasContent()/HasInstallFiles() only matter for graph membership when a
 //     candy ALSO declares IncludedCandy (ExpandCandy's composing-candy content
 //     gate, graph.go); a "regular" candy (no IncludedCandy) is always included
-//     regardless. None of the pre-move fixtures using a bare HasPixiToml /
-//     HasPackageJson / plan-only marker were ever reached via IncludedCandy,
-//     so those flags are omitted here where they were never actually
-//     exercised by the tests' assertions.
+//     regardless. A bare HasPixiToml / HasPackageJson / plan-only marker is never reached
+//     via IncludedCandy, so those flags are omitted here -- the assertions never exercise
+//     them.
 //   - PixiManifest() is a REAL filesystem probe against SourceDir in the
 //     specCandyAdapter (unlike the production *Candy, which reads a cached
 //     bool field) — so a fixture that needs PixiManifest() != "" gets a real
@@ -1178,8 +1176,7 @@ func TestSortedSiblingKeys(t *testing.T) {
 }
 
 // sortedResultNames returns a resolved-box map's keys, sorted — used only for
-// deterministic test logging (mirrors the pre-move test file's resultNames +
-// inline sort-and-log helper).
+// deterministic test logging -- keys sorted, then logged.
 func sortedResultNames(m map[string]*buildkit.ResolvedBox) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
