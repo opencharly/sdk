@@ -7,19 +7,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// bed_session.go — the check-bed HOST helpers relocated from charly/check_bed_run.go
-// candy/plugin-check/bed_persist.go is the sole caller of PersistBedDeployOverrides; core holds
-// no direct caller of this file. This is the SAME "portable orchestration in sdk, thin core call
-// sites" pattern
-// already applied to the credential family: no provider-registry coupling was ever
-// load-bearing here except ONE classification — isExternalDeploySubstrate (a live
-// provider-registry query) — which the caller now computes ONCE and threads in as a plain
-// `externalInPlace bool` parameter (the team-lead's ruling: a plain Go parameter, not a new
-// wire surface — there is no cross-process consumer for this data today, so adding one would
-// be exactly the "seam a later wave deletes" anti-pattern). The HostRooted trait check reads
-// node.Descent directly -- every node these functions see comes
-// from a LoadUnified'd project, whose loader always stamps Descent (stampFleetDescents), so
-// this is a pure wire-field read, never a registry query.
+// bed_session.go -- the check-bed helpers. candy/plugin-check/bed_persist.go is the sole caller of
+// PersistBedDeployOverrides; core holds no direct caller of this file. This is the SAME "portable
+// orchestration in sdk, thin core call sites" pattern the credential family uses: no
+// provider-registry coupling is load-bearing here except ONE classification --
+// isExternalDeploySubstrate (a live provider-registry query) -- which the caller computes ONCE and
+// threads in as a plain `externalInPlace bool` parameter (a plain Go parameter, not a new wire
+// surface: there is no cross-process consumer for this data, so adding one would be exactly the
+// "seam a later wave deletes" anti-pattern). The HostRooted trait check reads node.Descent
+// directly -- every node these functions see comes from a LoadUnified'd project, whose loader
+// always stamps Descent (stampFleetDescents), so this is a pure wire-field read, never a registry
+// query.
 //
 // There is no ResolveBedCheckLevel here: its sole caller, core's check_bed_run.go's
 // bedCheckLevel, calls the spec.* helpers directly and imports zero deploykit; the
