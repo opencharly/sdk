@@ -6,12 +6,14 @@ import (
 	"testing"
 )
 
-// TestBuildActivityDir_HonoursTheOneCacheEnv pins the D-STORE-1 / TODO 7.2 boundary for
-// this path: `CHARLY_CACHE_DIR` is the SINGLE override of the cache root, so every
-// caller-built cache path must land under it. A hand-built `$XDG_CACHE_HOME/charly`
-// passes the no-override case and silently fails this one.
-func TestBuildActivityDir_HonoursTheOneCacheEnv(t *testing.T) {
+// TestBuildActivityDir_HonoursTheCacheRootOverride pins the D-STORE-1 / TODO 7.2 boundary
+// for this path: the cache root is relocated by its own overrides (`CHARLY_CACHE_HOME`, or
+// the compatibility `CHARLY_CACHE_DIR`), so every caller-built cache path must land under
+// the one that is set. A hand-built `$XDG_CACHE_HOME/charly` passes the no-override case
+// and silently fails this one.
+func TestBuildActivityDir_HonoursTheCacheRootOverride(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("CHARLY_CACHE_HOME", "")
 	t.Setenv("CHARLY_CACHE_DIR", root)
 
 	dir, err := BuildActivityDir()
