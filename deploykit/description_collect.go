@@ -85,13 +85,21 @@ func CollectDescriptions(cfg *spec.Config, layers map[string]spec.CandyReader, b
 			continue
 		}
 		baked := BakeableSteps(layer.PlanSteps())
-		if layer.GetDescription() == "" && len(baked) == 0 {
+		// vars rides the description so a bed's check runner can substitute `${NAME}`
+		// from (candy var: ∪ auto-exports) — the union #Op's config: comment already
+		// states for generate time, and which `check:` steps never received. It is the
+		// RESOLVED carrier: BoxMetadata.Vars has a consumer and no producer, because a
+		// container's metadata is decoded from OCI labels and var: is deliberately not
+		// one (opencharly/spec#403, opencharly/sdk#600, opencharly/plugin-pipeline#70).
+		vars := layer.Vars()
+		if layer.GetDescription() == "" && len(baked) == 0 && len(vars) == 0 {
 			continue
 		}
 		set.Candy = append(set.Candy, spec.LabeledDescription{
 			Origin:      "candy:" + candyName,
 			Description: layer.GetDescription(),
 			Plan:        baked,
+			Vars:        vars,
 		})
 	}
 
