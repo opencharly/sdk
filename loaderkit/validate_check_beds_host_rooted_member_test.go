@@ -15,7 +15,10 @@ import (
 // Descent directly — the same shape spec/deploy's own deploy_ops_member_test.go uses. The
 // predicate's trait source is proven there (spec/descent.go); this test pins the GUARD.
 
-// hostRooted / containerVenue / sshVenue are the three stamped descents the guard distinguishes.
+// hostRootedDescent / containerDescent are the TWO stamped descents the guard distinguishes, and the
+// predicate is binary: host-rooted (a local or SSH-shell venue, whose own root executor runs on the
+// machine running charly) or not (here, a container venue, whose image-backed runtime is its own
+// root). There is deliberately no third fixture: the trait the guard reads has two values.
 func hostRootedDescent() *spec.DescentDescriptor {
 	return &spec.DescentDescriptor{Transport: "none", Venue: "shell", HostRooted: true}
 }
