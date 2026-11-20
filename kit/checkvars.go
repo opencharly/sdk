@@ -192,6 +192,19 @@ func buildTimeVars(meta *spec.BoxMetadata, instance string) map[string]string {
 	if instance != "" {
 		env["INSTANCE"] = instance
 	}
+	// The candy's OWN declared variables, LAST so a declaration wins over the derived
+	// defaults above (a candy that declares USER means it). This is the `candy var:`
+	// half of the union `#Op`'s config: comment already states --
+	// "substitutes ${VAR} refs in content: at generate time (candy var: ∪ auto-exports)"
+	// -- which `check:` steps never received. Without it a bed can declare a variable
+	// the runner KNOWS (its unresolved classifier sees the declaration, so the step
+	// SKIPs rather than failing DEAD) and can never SUPPLY a value for.
+	//
+	// spec#403 carried var: onto BoxMetadata for exactly this; before it there was no
+	// field to read.
+	for name, value := range meta.Vars {
+		env[name] = value
+	}
 	return env
 }
 
