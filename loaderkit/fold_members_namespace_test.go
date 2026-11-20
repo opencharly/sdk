@@ -303,7 +303,7 @@ func TestFoldMembers_MemberShadowingRootDeployIsAnError(t *testing.T) {
 // the fold must dedupe the ref difference exactly as it dedupes a diamond, not call it a collision.
 func TestFoldMembers_SameRepoDifferentRefsFoldsOnce(t *testing.T) {
 	const cacheRoot = "/cache/repos"
-	t.Setenv("CHARLY_REPO_CACHE", cacheRoot)
+	t.Setenv("CHARLY_CACHE_DIR", "/cache") // RepoCacheDir() appends /repos: D-STORE-1 admits ONE override
 	const repo = "github.com/opencharly/distro-cachyos"
 	dir := func(ref string) string {
 		return cacheRoot + "/" + repo + "@" + ref + ".view.da6451d8a8f0b1c1"
@@ -366,7 +366,7 @@ func TestFoldMembers_SameRepoDifferentRefsFoldsOnce(t *testing.T) {
 // global address must still hard-error.
 func TestFoldMembers_DifferentReposSameCacheStillCollide(t *testing.T) {
 	const cacheRoot = "/cache/repos"
-	t.Setenv("CHARLY_REPO_CACHE", cacheRoot)
+	t.Setenv("CHARLY_CACHE_DIR", "/cache") // RepoCacheDir() appends /repos: D-STORE-1 admits ONE override
 	mk := func(repo, ref string) *spec.UnifiedFile {
 		return &spec.UnifiedFile{
 			RootDir: cacheRoot + "/" + repo + "@" + ref + ".view.da6451d8a8f0b1c1",
@@ -400,7 +400,7 @@ func TestFoldMembers_DifferentReposSameCacheStillCollide(t *testing.T) {
 // ref are the same, because the subpath can declare a different tree.
 func TestFoldMembers_SameRepoDifferentSubpathStillCollide(t *testing.T) {
 	const cacheRoot = "/cache/repos"
-	t.Setenv("CHARLY_REPO_CACHE", cacheRoot)
+	t.Setenv("CHARLY_CACHE_DIR", "/cache") // RepoCacheDir() appends /repos: D-STORE-1 admits ONE override
 	mk := func(ref, sub string) *spec.UnifiedFile {
 		return &spec.UnifiedFile{
 			RootDir: cacheRoot + "/github.com/opencharly/distro-cachyos@" + ref + ".view.da6451d8a8f0b1c1/" + sub,
@@ -435,7 +435,7 @@ func TestFoldMembers_SameRepoDifferentSubpathStillCollide(t *testing.T) {
 // mounts, so they return "" and fall back to the exact RootDir identity.
 func TestLogicalRepoMount(t *testing.T) {
 	const cacheRoot = "/cache/repos"
-	t.Setenv("CHARLY_REPO_CACHE", cacheRoot)
+	t.Setenv("CHARLY_CACHE_DIR", "/cache") // RepoCacheDir() appends /repos: D-STORE-1 admits ONE override
 	const view = ".view.da6451d8a8f0b1c1"
 	cases := []struct {
 		name string
