@@ -130,6 +130,13 @@ var DeployOnlyCapabilityFields = map[string]bool{
 	"Tunnel": true,
 	"DNS":    true,
 	"Engine": true,
+	// Vars is a candy's declared substitution variables (spec#403), consumed when a
+	// check step renders its `${NAME}`. It is AUTHORING data read from the resolved
+	// project, not an image-declaration capability: there is nothing for a pushed
+	// image to advertise, and `charly deploy from-box` reconstructs a deployment, not
+	// the source a bed tests. Exempt for the same reason the three above are —
+	// populated from charly.yml overlays, no OCI round-trip.
+	"Vars": true,
 }
 
 // CheckCapabilityLabelCompleteness returns an error listing any spec.BoxMetadata exported

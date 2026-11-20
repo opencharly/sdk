@@ -166,6 +166,15 @@ func ResolveCheckVarsRuntime(meta *spec.BoxMetadata, deploy *vmshared.DeployNode
 
 // buildTimeVars populates the BoxMetadata-derived subset of the variable
 // map. This is the only part of the map available at `charly check box` time.
+//
+// It produces SEVEN keys from two sources: six read off *spec.BoxMetadata
+// (meta.User -> USER, meta.Home -> HOME, meta.UID -> UID, meta.GID -> GID,
+// meta.Box -> IMAGE, meta.DNS -> DNS) and INSTANCE from this function's own
+// `instance` argument -- which is NOT a metadata field, despite sitting in the
+// same map. meta.Vars then adds the candy's own declared variables on top.
+//
+// Stated as a count AND a provenance because writing one without the other is
+// how a caller comes to believe INSTANCE is read from somewhere it is not.
 func buildTimeVars(meta *spec.BoxMetadata, instance string) map[string]string {
 	env := map[string]string{}
 	if meta == nil {
@@ -191,6 +200,19 @@ func buildTimeVars(meta *spec.BoxMetadata, instance string) map[string]string {
 	}
 	if instance != "" {
 		env["INSTANCE"] = instance
+	}
+	// The candy's OWN declared variables, LAST so a declaration wins over the derived
+	// defaults above (a candy that declares USER means it). This is the `candy var:`
+	// half of the union `#Op`'s config: comment already states --
+	// "substitutes ${VAR} refs in content: at generate time (candy var: ∪ auto-exports)"
+	// -- which `check:` steps never received. Without it a bed can declare a variable
+	// the runner KNOWS (its unresolved classifier sees the declaration, so the step
+	// SKIPs rather than failing DEAD) and can never SUPPLY a value for.
+	//
+	// spec#403 carried var: onto BoxMetadata for exactly this; before it there was no
+	// field to read.
+	for name, value := range meta.Vars {
+		env[name] = value
 	}
 	return env
 }
