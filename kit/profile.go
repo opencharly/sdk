@@ -37,7 +37,7 @@ func DetectShellFromPath(shellPath string) ShellKind {
 
 // EnvdDir returns the directory where per-candy env files live under a home.
 func EnvdDir(home string) string {
-	return filepath.Join(home, ".config", "opencharly", "env.d")
+	return filepath.Join(home, ".config", "charly", "env.d")
 }
 
 // EnvdFilePath returns the env file path for a given candy under a home.
@@ -94,7 +94,7 @@ func ShellInitFilePath(shell ShellKind, home string) string {
 	case ShellZsh:
 		return filepath.Join(home, ".zshenv")
 	case ShellFish:
-		return filepath.Join(home, ".config", "fish", "conf.d", "opencharly.fish")
+		return filepath.Join(home, ".config", "fish", "conf.d", "charly.fish")
 	case ShellBash:
 		return filepath.Join(home, ".bashrc")
 	default:

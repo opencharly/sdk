@@ -473,7 +473,10 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, builderName string, 
 		return nil, err
 	}
 	bindMounts["/tmp/aur-pkgs"] = hostStage
-	envVars := kit.UserScopeEnv(hostHome)
+	envVars, err := kit.UserScopeEnv(hostHome)
+	if err != nil {
+		return nil, err
+	}
 
 	// RenderBuilderScript runs AS ROOT inside the builder (RunAsRoot=true): for
 	// aur it writes the NOPASSWD-wheel sudoers, adds `user` to wheel, then

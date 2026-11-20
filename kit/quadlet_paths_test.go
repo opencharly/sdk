@@ -78,28 +78,62 @@ func TestQuadletFilenameInstance(t *testing.T) {
 }
 
 func TestQuadletDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
 	got, err := QuadletDir()
 	if err != nil {
 		t.Fatalf("QuadletDir() error: %v", err)
 	}
 
-	home, _ := os.UserHomeDir()
 	want := filepath.Join(home, ".config", "containers", "systemd")
 	if got != want {
 		t.Errorf("QuadletDir() = %q, want %q", got, want)
 	}
 }
 
+func TestQuadletDirFollowsXDGConfigHome(t *testing.T) {
+	config := filepath.Join(t.TempDir(), "xdg-config")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", config)
+
+	got, err := QuadletDir()
+	if err != nil {
+		t.Fatalf("QuadletDir() error: %v", err)
+	}
+	if want := filepath.Join(config, "containers", "systemd"); got != want {
+		t.Errorf("QuadletDir() = %q, want the XDG config base %q", got, want)
+	}
+}
+
 func TestSystemdUserDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
 	got, err := SystemdUserDir()
 	if err != nil {
 		t.Fatalf("SystemdUserDir() error: %v", err)
 	}
 
-	home, _ := os.UserHomeDir()
 	want := filepath.Join(home, ".config", "systemd", "user")
 	if got != want {
 		t.Errorf("SystemdUserDir() = %q, want %q", got, want)
+	}
+}
+
+func TestSystemdUserDirFollowsXDGConfigHome(t *testing.T) {
+	config := filepath.Join(t.TempDir(), "xdg-config")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", config)
+
+	got, err := SystemdUserDir()
+	if err != nil {
+		t.Fatalf("SystemdUserDir() error: %v", err)
+	}
+	if want := filepath.Join(config, "systemd", "user"); got != want {
+		t.Errorf("SystemdUserDir() = %q, want the XDG config base %q", got, want)
 	}
 }
 
@@ -114,10 +148,9 @@ func TestQuadletExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Override HOME so QuadletDir resolves to our temp dir
-	origHome := os.Getenv("HOME")
-	_ = os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome) //nolint:errcheck
+	// Override the XDG config base so QuadletDir resolves to our temp dir.
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, ".config"))
 
 	exists, err := QuadletExists("testimg")
 	if err != nil {

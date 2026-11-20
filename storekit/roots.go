@@ -7,20 +7,20 @@
 // contract surfaces and never an sdk mechanism kit, so a root resolved ONLY here was a root the
 // host could not reach: it hand-built `$XDG_CACHE_HOME/charly` and `$XDG_RUNTIME_DIR/charly` and
 // therefore could not see `CHARLY_CACHE_DIR`, which is exactly the defect
-// opencharly/charly#1119 records. `github.com/opencharly/spec/storeroot` now owns the four roots
+// opencharly/charly#1119 records. `github.com/opencharly/spec/storeroot` now owns the roots
 // and the single override; `Dir` and `CacheDir` below delegate to it, so every plugin that
-// imports this package gets the same four roots and the same strings as before, and the host
+// imports this package gets the same roots and the same strings as before, and the host
 // reaches the SAME implementation through a surface it may import.
 //
-// There are FOUR roots, and an artifact lives in the CACHE root like every other cached item:
-// D-STORE-3's store holds "every cached item … including artifacts", and `CHARLY_CACHE_DIR` is the
-// ONE override that relocates it. A fifth, durable data root was proposed and REVERTED
-// (opencharly/spec#375, opencharly/opencharly#1098) precisely because a second layout in a second
-// root is what D-STORE-1 and D-STORE-3 forbid.
+// The roots are configuration, data, cache, state and runtime. An artifact lives in the CACHE
+// root like every other cached item: D-STORE-3's store holds "every cached item … including
+// artifacts", and `CHARLY_CACHE_DIR` is the ONE override that relocates it. The DATA root is
+// durable user data that cannot be re-derived (D-STORE-12); `charly clean` never evicts it, and
+// it is not a second cache layout.
 //
 // A roots or store implementation living anywhere else is still the deviation this package exists
 // to end: before it, the cache root was resolved inside `spec/cache` (under the CONFIG root,
-// contrary to D-STORE-1 — opencharly/spec#233) and four other packages built their own `.cache`
+// contrary to D-STORE-1 — opencharly/spec#233) and other packages built their own `.cache`
 // paths by hand.
 //
 // BUILDING THIS PACKAGE BEFORE `spec`'S TAG EXISTS — the same-module trap: a `go.work` cannot
@@ -61,7 +61,7 @@ import (
 	"github.com/opencharly/spec/storeroot"
 )
 
-// Root names one of the four roots — a RE-EXPORT of the contract module's type, not a second
+// Root names one of the roots — a RE-EXPORT of the contract module's type, not a second
 // declaration, so a `storekit.Root` value IS a `storeroot.Root` value and the two can never
 // drift into different root sets.
 type Root = storeroot.Root
@@ -69,6 +69,8 @@ type Root = storeroot.Root
 const (
 	// RootConfig — `$XDG_CONFIG_HOME/charly`: what the USER sets.
 	RootConfig = storeroot.RootConfig
+	// RootData — `$XDG_DATA_HOME/charly`: durable user data that cannot be re-derived.
+	RootData = storeroot.RootData
 	// RootCache — `$XDG_CACHE_HOME/charly`: everything content-addressed and re-derivable.
 	// The single `CHARLY_CACHE_DIR` override relocates this one and therefore every store.
 	RootCache = storeroot.RootCache
@@ -80,14 +82,29 @@ const (
 	RootRuntime = storeroot.RootRuntime
 )
 
-// Dir resolves one of the four roots. It is THE resolver — no caller builds a `.cache` path by
+// Dir resolves one of the roots. It is THE resolver — no caller builds a `.cache` path by
 // hand — and it resolves through the contract module (`spec/storeroot`), so the host and every
 // plugin get the same answer from the same code.
 func Dir(r Root) (string, error) { return storeroot.Dir(r) }
 
+// Base resolves the unsuffixed XDG base a root lives under (for another application's directory).
+func Base(r Root) (string, error) { return storeroot.Base(r) }
+
+// BaseDirs returns the raw search path for a root that has one (configuration or data).
+func BaseDirs(r Root) ([]string, error) { return storeroot.BaseDirs(r) }
+
+// Dirs returns the root search path with charly's own tree first (configuration or data).
+func Dirs(r Root) ([]string, error) { return storeroot.Dirs(r) }
+
+// Search finds a relative file across the root's search path.
+func Search(r Root, rel string) (string, bool, error) { return storeroot.Search(r, rel) }
+
 // CacheDir resolves the cache root: `$XDG_CACHE_HOME/charly`, or `CHARLY_CACHE_DIR` when set.
 // Every named store lives under it.
 func CacheDir() (string, error) { return storeroot.CacheDir() }
+
+// DataDir resolves the durable data root (`$XDG_DATA_HOME/charly`).
+func DataDir() (string, error) { return storeroot.DataDir() }
 
 // StoreDir returns the directory of the named store `name` under the cache root. A store name
 // is a single path element: it may not contain a separator, so a store can never escape the

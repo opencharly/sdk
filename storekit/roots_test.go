@@ -19,6 +19,7 @@ package storekit
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/opencharly/spec/storeroot"
@@ -31,6 +32,7 @@ func pinRootsEnv(t *testing.T, home string) {
 	t.Helper()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "xdg-data"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "xdg-cache"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "xdg-state"))
 	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "xdg-run"))
@@ -47,6 +49,7 @@ func TestDirReExportPinsEveryRoot(t *testing.T) {
 
 	want := map[Root]string{
 		RootConfig:  filepath.Join(home, "xdg-config", "charly"),
+		RootData:    filepath.Join(home, "xdg-data", "charly"),
 		RootCache:   filepath.Join(home, "xdg-cache", "charly"),
 		RootState:   filepath.Join(home, "xdg-state", "charly"),
 		RootRuntime: filepath.Join(home, "xdg-run", "charly"),
@@ -147,6 +150,49 @@ func TestRootConstsAreTheContractRoots(t *testing.T) {
 	if inferred != storeroot.RootCache {
 		t.Errorf("the type inferred from storekit.RootCache does not compare to storeroot.RootCache (%q vs %q) — the re-export must be an ALIAS", inferred, storeroot.RootCache)
 	}
+}
+
+// TestDataRootAndSearchReExports pins the new data root and search-path re-exports against the
+// contract resolver, so the SDK cannot silently keep a second root set.
+func TestDataRootAndSearchReExports(t *testing.T) {
+	home := t.TempDir()
+	pinRootsEnv(t, home)
+	t.Setenv("XDG_DATA_DIRS", "/d1:/d2")
+	t.Setenv("XDG_CONFIG_DIRS", "/c1:/c2")
+
+	if RootData != storeroot.RootData {
+		t.Fatalf("storekit.RootData = %q, storeroot.RootData = %q — the re-export must be an ALIAS", RootData, storeroot.RootData)
+	}
+	if got, err := DataDir(); err != nil || got != filepath.Join(home, "xdg-data", "charly") {
+		t.Errorf("DataDir() = %q, %v; want the data root", got, err)
+	}
+	if got, err := Base(RootConfig); err != nil || got != filepath.Join(home, "xdg-config") {
+		t.Errorf("Base(RootConfig) = %q, %v; want the unsuffixed config base", got, err)
+	}
+	if got, want := mustBaseDirs(t, RootData), []string{"/d1", "/d2"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("BaseDirs(RootData) = %v, want %v", got, want)
+	}
+	if got, want := mustDirs(t, RootData), []string{filepath.Join(home, "xdg-data", "charly"), "/d1/charly", "/d2/charly"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Dirs(RootData) = %v, want %v", got, want)
+	}
+}
+
+func mustBaseDirs(t *testing.T, root Root) []string {
+	t.Helper()
+	got, err := BaseDirs(root)
+	if err != nil {
+		t.Fatalf("BaseDirs(%s): %v", root, err)
+	}
+	return got
+}
+
+func mustDirs(t *testing.T, root Root) []string {
+	t.Helper()
+	got, err := Dirs(root)
+	if err != nil {
+		t.Fatalf("Dirs(%s): %v", root, err)
+	}
+	return got
 }
 
 // TestRuntimeRootFallsBackToTheStateRoot pins the ONE inherited fallback through the re-export: a

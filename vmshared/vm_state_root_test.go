@@ -11,18 +11,35 @@ import (
 // original hardcoded literal every call site used before this fix — the batch item 6 fix must be
 // a pure override addition, zero behavior change for the common single-worktree case.
 func TestVmStateRoot_DefaultUnchanged(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv(VmStateDirEnv, "")
 	got, err := VmStateRoot()
 	if err != nil {
 		t.Fatalf("VmStateRoot() error = %v", err)
 	}
-	home, herr := os.UserHomeDir()
-	if herr != nil {
-		t.Fatalf("os.UserHomeDir() error = %v", herr)
-	}
 	want := filepath.Join(home, ".local", "share", "charly", "vm")
 	if got != want {
 		t.Errorf("VmStateRoot() = %q, want %q", got, want)
+	}
+}
+
+// TestVmStateRoot_FollowsXDGDataHome is the R7 control for the data-root migration:
+// the pre-change code used os.UserHomeDir() + .local/share and ignored
+// XDG_DATA_HOME, so this path was outside the relocated data tree.
+func TestVmStateRoot_FollowsXDGDataHome(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "xdg-data")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv(VmStateDirEnv, "")
+
+	got, err := VmStateRoot()
+	if err != nil {
+		t.Fatalf("VmStateRoot() error = %v", err)
+	}
+	if want := filepath.Join(data, "charly", "vm"); got != want {
+		t.Errorf("VmStateRoot() = %q, want the XDG data root %q", got, want)
 	}
 }
 

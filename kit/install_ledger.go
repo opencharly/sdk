@@ -9,7 +9,7 @@ package kit
 // (deployments under `deploy:`, install records under `ledger:`, local system
 // info under `system:`, cache status under `cache:`). There is one file, one
 // schema, one validation path — no per-deploy JSON files under
-// ~/.config/opencharly/installed/.
+// ~/.config/charly/installed/.
 //
 // Refcounting lives in the candy records: `deployed_by` is the set of deploy IDs
 // that include this candy. Uninstalling one deploy decrements the set; only when
@@ -35,7 +35,7 @@ import (
 // section of the per-host charly.yml. Extracted so tests can redirect to a temp
 // file.
 //
-// There is no per-deploy JSON-file layout under ~/.config/opencharly/installed/.
+// There is no per-deploy JSON-file layout under ~/.config/charly/installed/.
 // A consumer that still expects one fails to COMPILE against this shape — a loud
 // failure, never a silent wrong answer.
 type LedgerPaths struct {
@@ -87,7 +87,7 @@ type LedgerLock struct {
 // never persisted, so the next run re-stalled. Deterministic, 7/7-reproducible deploy-del hang.
 //
 // The dedicated file restores the genesis semantics (the pre-sdk ledger lock was a dedicated
-// ~/.config/opencharly/installed/.lock — NEVER the config lock): the transaction lock orders
+// ~/.config/charly/installed/.lock — NEVER the config lock): the transaction lock orders
 // deploy flows against EACH OTHER; brief config-file writers stay ordered by charly.yml.lock and
 // legitimately interleave inside a transaction (each RMW re-reads the current file under the
 // config lock and preserves the other sections).

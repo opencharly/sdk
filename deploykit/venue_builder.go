@@ -148,7 +148,10 @@ func RunVenueHomeArtifactBuilder(ctx context.Context, dexec DeployExecutor, venu
 	defer func() { _ = os.RemoveAll(stageHost); proc.UnregisterTempCleanup(stageHost) }()
 
 	bindMounts := map[string]string{venueHome: stageHost}
-	envVars := kit.UserScopeEnv(venueHome)
+	envVars, err := kit.UserScopeEnv(venueHome)
+	if err != nil {
+		return err
+	}
 	script, err := RenderBuilderScript(s, venueHome)
 	if err != nil {
 		return err

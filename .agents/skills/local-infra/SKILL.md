@@ -21,7 +21,7 @@ The `InstallPlan` IR (see `/charly-internals:install-plan`) is the central data 
 | `spec/exec/deploy_executor_ssh.go` | Credential-free `SSHExecutor` (no `-i`, no host-key overrides) | `SSHExecutor` |
 | `spec/exec/deploy_executor.go` | `ShellExecutor` — local shell venue | `ShellExecutor` |
 | `sdk/vmshared/hostdistro.go` | Detect host distro from `/etc/os-release`; glibc preflight | `HostDistro`, `DetectHostDistro`, `DetectHostGlibc`, `CompareGlibc`, `distroIDAliases` |
-| `sdk/kit/install_ledger.go` | Flock-serialized JSON ledger at `~/.config/opencharly/installed/` (moved from `charly/install_ledger.go`) | `LedgerPaths`, `LedgerLock`, `DeployRecord`, `CandyRecord`, `StepRecord`, `AcquireLedgerLock`, `AddCandyDeployment`, `RemoveCandyDeployment` |
+| `sdk/kit/install_ledger.go` | Flock-serialized JSON ledger at `~/.config/charly/installed/` (moved from `charly/install_ledger.go`) | `LedgerPaths`, `LedgerLock`, `DeployRecord`, `CandyRecord`, `StepRecord`, `AcquireLedgerLock`, `AddCandyDeployment`, `RemoveCandyDeployment` |
 | `spec/exec/builder_run.go` | `podman run <builder>` wrapper for compile-needing layers (moved from `charly/builder_run.go`) | `BuilderRun`, `BuilderRunOpts`, `UserScopeBindMounts`, `UserScopeEnv` |
 | `sdk/kit/profile.go` | bash/zsh/fish detection + managed-block fencing + env.d I/O (the former `charly/shell_profile.go` is DELETED, K-wave 2) | `ShellKind`, `DetectShellFromPath`, `EnvdDir`, `RenderEnvdBody`, `RemoveEnvdFile`, `ManagedBlockBody`, `RemoveManagedBlockAt` (the per-candy `shell_snippet:` teardown strip, called by `reverseRemoveManaged`), `ShellInitFilePath` (the block-SPLICE itself is kit's, `sdk/kit/profile.go`) |
 | `sdk/kit/reverse_ops.go` | Execute `ReverseOp` slices in LIFO order via per-kind handlers + render each `ReverseOpPackageRemove`'s host removal command from the format's `uninstall_template` at record time (moved from `charly/reverse_ops.go`) | `runReverseOps`, `ReverseExecutor` interface, 15 reverse handlers, `fillReverseUninstallCmds` (called by `candy/plugin-fleet`'s `recordDeploy`, S3b, before ledger-persist — the aur builder emits an EMPTY `UninstallCmd` and defers to this host render; `reversePackageRemove` errors loudly on an empty command at teardown) |
@@ -38,7 +38,7 @@ For VM destinations the Host field is the managed alias `charly-<vmname>`, writt
 
 ## Managed ssh-config fragment
 
-Pattern mirrors `sdk/kit/profile.go` (the env.d managed block in `~/.profile` / `~/.zshenv` / `~/.config/fish/conf.d/opencharly.fish` — the former `charly/shell_profile.go` is DELETED, K-wave 2):
+Pattern mirrors `sdk/kit/profile.go` (the env.d managed block in `~/.profile` / `~/.zshenv` / `~/.config/fish/conf.d/charly.fish` — the former `charly/shell_profile.go` is DELETED, K-wave 2):
 
 - Fence markers: `# opencharly:begin (managed by charly; do not edit inside this block)` … `# opencharly:end`.
 - `WriteVmSshStanza` writes/replaces a Host stanza inside the managed block at `~/.config/charly/ssh_config`. Multiple stanzas coexist, sorted by alias for deterministic output.
@@ -47,7 +47,7 @@ Pattern mirrors `sdk/kit/profile.go` (the env.d managed block in `~/.profile` / 
 - `RemoveSshConfigInclude` strips the Include line; when `~/.ssh/config` becomes empty after stripping, the file is deleted.
 - `VmSshAlias("check-arch-vm")` → `"charly-check-arch-vm"`. Unique within the managed fragment.
 
-## Ledger at `~/.config/opencharly/installed/`
+## Ledger at `~/.config/charly/installed/`
 
 Every target:local deploy writes a `DeployRecord` and per-layer `CandyRecord`s with `deployed_by:` refcount semantics. See the file map above for the JSON shapes.
 

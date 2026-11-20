@@ -65,7 +65,7 @@ func TestWalkPlans_PerKindDispatch(t *testing.T) {
 			// Plugin-renderable: Op write → PutFile at the authored dest, root by scope.
 			{Kind: "Op", Scope: spec.ScopeSystem, CandyName: "c", Op: &spec.Op{Write: "/etc/m", Content: "hi\n", Mode: "0644"}, ReverseOps: rev},
 			// Plugin-renderable: ShellHook → env.d PutFile + triggers the managed-block finalizer.
-			{Kind: "ShellHook", Scope: spec.ScopeUserProfile, CandyName: "c", EnvFile: "/home/u/.config/opencharly/env.d/c.env", EnvVars: map[string]string{"FOO": "bar"}, ReverseOps: rev},
+			{Kind: "ShellHook", Scope: spec.ScopeUserProfile, CandyName: "c", EnvFile: "/home/u/.config/charly/env.d/c.env", EnvVars: map[string]string{"FOO": "bar"}, ReverseOps: rev},
 			// Plugin-renderable: ServiceCustom → PutFile unit + systemctl enable.
 			{Kind: "ServiceCustom", TargetScope: spec.ScopeSystem, Name: "u.service", UnitText: "[Unit]\n", UnitPath: "/etc/systemd/system/u.service", Enable: true, ReverseOps: rev},
 			// Plugin-renderable: RepoChange → PutFile root.
@@ -91,7 +91,7 @@ func TestWalkPlans_PerKindDispatch(t *testing.T) {
 		}
 	}
 	// ShellHook env.d file placed at the host-resolved EnvFile.
-	if _, ok := exec.puts["/home/u/.config/opencharly/env.d/c.env"]; !ok {
+	if _, ok := exec.puts["/home/u/.config/charly/env.d/c.env"]; !ok {
 		t.Errorf("ShellHook: env.d file not placed; puts=%v", keysOf(exec.puts))
 	}
 	// ServiceCustom unit placed root + enabled via systemctl.
