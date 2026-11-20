@@ -169,11 +169,12 @@ func blobSet(t *testing.T, parts imageParts) map[string]bool {
 }
 
 // TestImageStoreIsTheRegistryStoreUnderTheCacheRoot pins D-STORE-1: the store is a NAMED store
-// under the ONE cache root, so the single override relocates it — and the retired
+// under the ONE cache root, so the cache root's overrides relocate it — and the retired
 // `CHARLY_IMAGE_STORE_DIR` no longer does anything (R5: the second relocation lever is gone, not
 // left dormant).
 func TestImageStoreIsTheRegistryStoreUnderTheCacheRoot(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("CHARLY_CACHE_HOME", "")
 	t.Setenv("CHARLY_CACHE_DIR", root)
 	t.Setenv("CHARLY_IMAGE_STORE_DIR", "")
 
@@ -191,7 +192,7 @@ func TestImageStoreIsTheRegistryStoreUnderTheCacheRoot(t *testing.T) {
 	if got, err := ImageStoreDir(); err != nil {
 		t.Fatalf("ImageStoreDir: %v", err)
 	} else if got != dir {
-		t.Errorf("ImageStoreDir() = %q with the retired CHARLY_IMAGE_STORE_DIR set, want %q — the cache root's override is the ONE override", got, dir)
+		t.Errorf("ImageStoreDir() = %q with the retired CHARLY_IMAGE_STORE_DIR set, want %q — the cache root's overrides are the only relocation levers", got, dir)
 	}
 }
 

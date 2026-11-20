@@ -7,16 +7,18 @@
 // contract surfaces and never an sdk mechanism kit, so a root resolved ONLY here was a root the
 // host could not reach: it hand-built `$XDG_CACHE_HOME/charly` and `$XDG_RUNTIME_DIR/charly` and
 // therefore could not see `CHARLY_CACHE_DIR`, which is exactly the defect
-// opencharly/charly#1119 records. `github.com/opencharly/spec/storeroot` now owns the roots
-// and the single override; `Dir` and `CacheDir` below delegate to it, so every plugin that
-// imports this package gets the same roots and the same strings as before, and the host
-// reaches the SAME implementation through a surface it may import.
+// opencharly/charly#1119 records. `github.com/opencharly/spec/storeroot` now owns the roots,
+// their charly-only overrides and the `CHARLY_CACHE_DIR` compatibility override; `Dir` and
+// `CacheDir` below delegate to it, so every plugin that imports this package gets the same
+// roots and the same strings as before, and the host reaches the SAME implementation through a
+// surface it may import.
 //
 // The roots are configuration, data, cache, state and runtime. An artifact lives in the CACHE
 // root like every other cached item: D-STORE-3's store holds "every cached item … including
-// artifacts", and `CHARLY_CACHE_DIR` is the ONE override that relocates it. The DATA root is
-// durable user data that cannot be re-derived (D-STORE-12); `charly clean` never evicts it, and
-// it is not a second cache layout.
+// artifacts", and the cache root's overrides — `CHARLY_CACHE_HOME` for charly alone, then the
+// kept `CHARLY_CACHE_DIR` — are what relocate it. The DATA root is durable user data that
+// cannot be re-derived (D-STORE-12); `charly clean` never evicts it, and it is not a second
+// cache layout.
 //
 // A roots or store implementation living anywhere else is still the deviation this package exists
 // to end: before it, the cache root was resolved inside `spec/cache` (under the CONFIG root,

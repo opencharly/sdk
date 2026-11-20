@@ -3,8 +3,9 @@ package kit
 // cache_root_one_test.go — D-STORE-1's "one resolver" clause, on the one place this package built a
 // cache path by hand.
 //
-// DESIGN.md:2482 (D-STORE-1): cache is `$XDG_CACHE_HOME/charly` with the SINGLE override
-// `CHARLY_CACHE_DIR`, and the resolver is the contract surface's (`spec/storeroot`, re-exported by
+// DESIGN.md (D-STORE-1): cache is `$XDG_CACHE_HOME/charly`, relocated for charly alone by
+// `CHARLY_CACHE_HOME` or by the kept `CHARLY_CACHE_DIR`, and the resolver is the contract
+// surface's (`spec/storeroot`, re-exported by
 // `sdk/storekit`) — "no caller builds a `.cache` path by hand". This test drives the real fetch
 // entry point and asserts WHICH directory it created: the resolver's, never `$HOME/.cache/charly`.
 //
@@ -22,6 +23,7 @@ func TestFetchArtifactCacheRootFollowsTheOneCacheRoot(t *testing.T) {
 	home := t.TempDir()
 	cacheRoot := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("CHARLY_CACHE_HOME", "")
 	t.Setenv("CHARLY_CACHE_DIR", cacheRoot)
 
 	// Port 1 on loopback refuses immediately; the error is expected and irrelevant.
@@ -33,6 +35,6 @@ func TestFetchArtifactCacheRootFollowsTheOneCacheRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".cache", "charly", "vm-images")); err == nil {
 		t.Fatalf("a hand-built %s/.cache/charly/vm-images was created — D-STORE-1 has ONE resolver "+
-			"and CHARLY_CACHE_DIR is its only override", home)
+			"and the cache root's overrides are the only relocation levers", home)
 	}
 }

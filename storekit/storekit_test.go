@@ -12,26 +12,41 @@ import (
 )
 
 // storekit_test.go — the roots and the store. Every assertion here is about a PROPERTY the
-// operator's one-store mandate names: one root, one override, content-addressed bytes, and a
-// view that shares the store's bytes rather than copying them.
+// operator's one-store mandate names: one root, the cache root's overrides, content-addressed
+// bytes, and a view that shares the store's bytes rather than copying them.
 
-// TestCacheRootHonoursTheOneOverride pins D-STORE-1's single override: `CHARLY_CACHE_DIR`
-// relocates the cache root (and therefore every named store) and is the ONLY environment
-// variable involved.
-func TestCacheRootHonoursTheOneOverride(t *testing.T) {
-	t.Setenv("CHARLY_CACHE_DIR", "/tmp/explicit-charly-cache")
+// TestCacheRootHonoursTheCacheOverrides pins D-STORE-1's cache overrides through the re-export:
+// `CHARLY_CACHE_DIR` relocates the cache root (and therefore every named store) when no
+// charly-only override is set, and `CHARLY_CACHE_HOME` wins when both are. The spec module pins
+// the precedence itself; this arm proves the re-export reaches it.
+func TestCacheRootHonoursTheCacheOverrides(t *testing.T) {
+	t.Run("CHARLY_CACHE_DIR relocates every named store", func(t *testing.T) {
+		t.Setenv("CHARLY_CACHE_HOME", "")
+		t.Setenv("CHARLY_CACHE_DIR", "/tmp/explicit-charly-cache")
+		assertCacheRootAndStore(t, "/tmp/explicit-charly-cache")
+	})
+
+	t.Run("CHARLY_CACHE_HOME wins when both are set", func(t *testing.T) {
+		t.Setenv("CHARLY_CACHE_DIR", "/tmp/explicit-charly-cache")
+		t.Setenv("CHARLY_CACHE_HOME", "/tmp/charly-cache-home")
+		assertCacheRootAndStore(t, "/tmp/charly-cache-home")
+	})
+}
+
+func assertCacheRootAndStore(t *testing.T, wantRoot string) {
+	t.Helper()
 	got, err := CacheDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "/tmp/explicit-charly-cache" {
-		t.Fatalf("CacheDir() = %q, want the CHARLY_CACHE_DIR override", got)
+	if got != wantRoot {
+		t.Fatalf("CacheDir() = %q, want %q", got, wantRoot)
 	}
 	dir, err := StoreDir("artifacts")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir != filepath.Join("/tmp/explicit-charly-cache", "artifacts") {
+	if dir != filepath.Join(wantRoot, "artifacts") {
 		t.Fatalf("StoreDir = %q, want it under the overridden root", dir)
 	}
 }
@@ -41,6 +56,7 @@ func TestCacheRootHonoursTheOneOverride(t *testing.T) {
 // ends).
 func TestCacheRootDefaultsUnderXDGCache(t *testing.T) {
 	t.Setenv("CHARLY_CACHE_DIR", "")
+	t.Setenv("CHARLY_CACHE_HOME", "")
 	t.Setenv("XDG_CACHE_HOME", "/tmp/xdg-cache")
 	got, err := CacheDir()
 	if err != nil {

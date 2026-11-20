@@ -5,10 +5,11 @@ package storekit
 // The store is the `registry` NAMED STORE under the ONE cache root — `<cache root>/registry`,
 // addressed through `StoreDir` — and every decision below is a contract row:
 //
-//   - D-STORE-1: one root, one override. Named stores live under the cache root, so a disposable
-//     target isolates with `CHARLY_CACHE_DIR` and this store follows it. There is NO second
-//     override for an image store: a bed that relocated only images would be a second root
-//     resolver wearing an environment variable.
+//   - D-STORE-1: one root, no image-store override. Named stores live under the cache root, so a
+//     disposable target isolates with the cache root's overrides (`CHARLY_CACHE_HOME`, then the
+//     compatibility `CHARLY_CACHE_DIR`) and this store follows them. There is NO separate
+//     image-store override: a bed that relocated only images would be a second root resolver
+//     wearing an environment variable.
 //   - D-STORE-3: one content-addressed store holds every cached item INCLUDING artifacts, and "a
 //     store tree is that layout and nothing else". This is a named store like any other, not a
 //     second layout in a second root; its entries are immutable blobs behind an atomically

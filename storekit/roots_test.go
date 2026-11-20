@@ -4,7 +4,7 @@ package storekit
 //
 // `Dir` and `CacheDir` no longer compute anything: they delegate to the contract module's ONE
 // resolver (`github.com/opencharly/spec/storeroot`), so that the plugin HOST — which may import
-// only `spec/*` — and every plugin reach the same four roots from the same code.
+// only `spec/*` — and every plugin reach the same roots from the same code.
 //
 // The package's pre-existing tests pin the cache root's default and its override, the four root
 // NAMES, the runtime→state fallback and that an unknown root errors — so a `Dir` that stopped
@@ -37,9 +37,16 @@ func pinRootsEnv(t *testing.T, home string) {
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "xdg-state"))
 	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "xdg-run"))
 	t.Setenv("CHARLY_CACHE_DIR", "")
+	for _, v := range []string{
+		"CHARLY_CONFIG_HOME", "CHARLY_CONFIG_DIRS",
+		"CHARLY_DATA_HOME", "CHARLY_DATA_DIRS",
+		"CHARLY_STATE_HOME", "CHARLY_CACHE_HOME", "CHARLY_RUNTIME_DIR",
+	} {
+		t.Setenv(v, "")
+	}
 }
 
-// TestDirReExportPinsEveryRoot pins all four roots by their EXPECTED path, and requires the
+// TestDirReExportPinsEveryRoot pins every root by its EXPECTED path, and requires the
 // re-export to agree with the contract resolver for each one. Both halves matter: the table is
 // an independent statement of where the roots are, and the agreement is the claim that this
 // package re-exports rather than reimplements.
