@@ -5,7 +5,8 @@ package kit
 // This is the test that fails without the change. The defect it guards: `#Op`'s
 // `config:` comment states the rule a candy's variables follow — substitution is
 // "candy var: ∪ auto-exports" — and `check:` steps never received that union.
-// buildTimeVars read nine BoxMetadata fields and var was not among them, so a bed
+// buildTimeVars produced seven keys — six off BoxMetadata (User, Home, UID, GID, Box,
+// DNS) plus INSTANCE from its own argument — and a candy's var: was not among them, so a bed
 // could declare a variable the runner KNEW (its unresolved classifier sees the
 // declaration, so the step SKIPs rather than failing DEAD) and could never SUPPLY a
 // value for. spec#403 carried var: onto BoxMetadata; this is the sdk leg that reads it.
