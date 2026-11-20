@@ -130,7 +130,7 @@ func TestCompileOpSteps_FiltersToRunStepsOnly(t *testing.T) {
 }
 
 // TestCompileOpSteps_SkipsExplicitBuildMarker proves an explicit `build:` run: step
-// (e.g. `build: all`, the ordering marker the dsh-tui candy uses to force its
+// (e.g. `build: all`, the ordering marker a candy uses to force its
 // package.json's npm builder to run before a later `dsh plugin add` step) lowers to NO
 // deploy step. Op.Build is a POSITION MARKER: the builder itself is emitted from
 // manifest detection (compileBuilderSteps, plan step 2) and hoisted ahead of every task

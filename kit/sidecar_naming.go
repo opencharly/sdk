@@ -1,11 +1,10 @@
 package kit
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/opencharly/spec/spec"
+	"github.com/opencharly/spec/storeroot"
 )
 
 // sidecar_naming.go — the host-FS sidecar helper (SidecarConfigDir) STAYS here; the pure
@@ -25,9 +24,9 @@ var (
 // config files live (e.g. charly-foo-tailscale-serve.json), used by the
 // `charly config remove` sidecar-config sweep.
 func SidecarConfigDir() (string, error) {
-	configDir, err := os.UserConfigDir()
+	root, err := storeroot.Dir(storeroot.RootConfig)
 	if err != nil {
-		return "", fmt.Errorf("determining config directory: %w", err)
+		return "", err
 	}
-	return filepath.Join(configDir, "charly", "sidecar"), nil
+	return filepath.Join(root, "sidecar"), nil
 }

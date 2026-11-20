@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/opencharly/spec/storeroot"
 )
 
 // vm_state_root.go — the ONE root-path resolver for per-VM host state
@@ -39,9 +41,9 @@ func VmStateRoot() (string, error) {
 		}
 		return raw, nil
 	}
-	home, err := os.UserHomeDir()
+	root, err := storeroot.Dir(storeroot.RootData)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "share", "charly", "vm"), nil
+	return filepath.Join(root, "vm"), nil
 }

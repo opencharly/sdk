@@ -18,6 +18,7 @@ import (
 	"github.com/google/renameio/v2"
 	sdk "github.com/opencharly/sdk"
 	"github.com/opencharly/spec/spec"
+	"github.com/opencharly/spec/storeroot"
 )
 
 const (
@@ -41,15 +42,11 @@ type Store struct{ Dir string }
 
 func OpenStore(dir string) (*Store, error) {
 	if dir == "" {
-		state := os.Getenv("XDG_STATE_HOME")
-		if state == "" {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return nil, err
-			}
-			state = filepath.Join(home, ".local", "state")
+		state, err := storeroot.Dir(storeroot.RootState)
+		if err != nil {
+			return nil, err
 		}
-		dir = filepath.Join(state, "charly", "agents")
+		dir = filepath.Join(state, "agents")
 	}
 	for _, sub := range []string{"sessions", "runs", "events", "terminal", "teams", "federation", "incidents", "rcas", "recoveries", "evidence"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {

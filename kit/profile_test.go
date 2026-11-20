@@ -2,8 +2,24 @@ package kit
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
+
+// TestEnvdDirAndFishUseCharly is the R7 control for the directory rename: the
+// pre-change helpers used opencharly/env.d and opencharly.fish.
+func TestEnvdDirAndFishUseCharly(t *testing.T) {
+	home := t.TempDir()
+	if got, want := EnvdDir(home), filepath.Join(home, ".config", "charly", "env.d"); got != want {
+		t.Errorf("EnvdDir() = %q, want %q", got, want)
+	}
+	if got, want := EnvdFilePath(home, "example"), filepath.Join(home, ".config", "charly", "env.d", "example.env"); got != want {
+		t.Errorf("EnvdFilePath() = %q, want %q", got, want)
+	}
+	if got, want := ShellInitFilePath(ShellFish, home), filepath.Join(home, ".config", "fish", "conf.d", "charly.fish"); got != want {
+		t.Errorf("ShellInitFilePath(fish) = %q, want %q", got, want)
+	}
+}
 
 // TestRemoveEnvdFile proves removal is silent-success both when the file
 // exists and when it's already gone (double-remove). The file is created

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/opencharly/spec/storeroot"
 )
 
 // direct_deploy.go — the direct-mode deploy marker probe (K4 lane B: relocated from
@@ -16,11 +18,11 @@ import (
 // directory for direct-mode deploys (the equivalent of
 // ~/.config/containers/systemd/ for quadlet deploys).
 func DirectDeployMarkerDir() (string, error) {
-	home, err := os.UserHomeDir()
+	root, err := storeroot.Dir(storeroot.RootConfig)
 	if err != nil {
-		return "", fmt.Errorf("resolving user home: %w", err)
+		return "", fmt.Errorf("resolving config root: %w", err)
 	}
-	return filepath.Join(home, ".config", "charly", "direct"), nil
+	return filepath.Join(root, "direct"), nil
 }
 
 // DirectDeployMarkerPath returns the marker JSON path for a deploy.
