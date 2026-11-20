@@ -8,7 +8,7 @@ import (
 )
 
 // TestSpecCandyAdapter_HasInit_PerInitLookup is the W9 mutation-site-inventory finding's
-// regression proof: specCandyAdapter.HasInit(initName) used to IGNORE initName entirely,
+// regression proof: specCandyAdapter.HasInit(initName) must not ignore initName,
 // approximating "does this candy trigger init system X" as `len(ServiceFiles)>0 ||
 // len(Service)>0` — true for ANY init the candy uses, whether or not it matches X. The
 // FIX reads CandyView.InitSystems[initName] directly (the same per-init map the live

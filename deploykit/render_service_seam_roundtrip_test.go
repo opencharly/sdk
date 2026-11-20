@@ -9,8 +9,8 @@ package deploykit
 // produces. This is a deliberate, blessed exception to the "one candy per module" test-isolation
 // norm (team-lead ruling, #55 W3 B4).
 //
-// R8 PROOF RECORD: this harness was written and run BEFORE the cutover, against the former
-// ex.HostBuild("render-service", ...) mechanism renderServiceViaSeam used — same fixture, same
+// R8 PROOF RECORD: this harness runs against renderServiceViaSeam's rendering sequence — same
+// fixture, same
 // real providers, same assertions as below. That run produced the EXACT UnitText/UnitPath this
 // test now asserts. After the cutover (renderServiceViaSeam rewired to two direct InvokeProvider
 // calls — kind:init OpResolve, then verb:egress OpValidate — reusing

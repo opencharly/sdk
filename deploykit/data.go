@@ -35,7 +35,7 @@ const (
 	DataProvisionForce DataProvisionMode = "force"
 )
 
-// SeederHelperImage is a small runnable image used to copy data from a
+// SeederHelperImage is a small runnable image that copies data from a
 // FROM-scratch data image into a named volume. Pulled lazily on first use.
 // busybox:stable has cp + sh and is ~2MB.
 const SeederHelperImage = "docker.io/library/busybox:stable"

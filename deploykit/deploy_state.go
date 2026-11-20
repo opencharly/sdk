@@ -188,9 +188,9 @@ func RejectImageRefAsDeployName(box string) error {
 // node a LoadUnified'd project OR a per-host overlay read produces
 // (loaderkit.StampDeployDescents re-derives it from the substrate plugin's
 // declared #DeployTraits on every load), and IsVmVenue deliberately excludes the
-// ssh-venue kubevirt substrate (no exclusive lease) — exactly the set the former
-// substrate-word sniff selected. Boundary law: consult the trait, not the
-// word. This closes C6 — the residual `.Target` word-read is DELETED.
+// ssh-venue kubevirt substrate (no exclusive lease) -- exactly the set a substrate-word sniff
+// would select, but reached by trait. Boundary law: consult the trait, not the word; there is no
+// `.Target` word-read.
 //
 // Keying by the deploy NAME first is load-bearing: a bed whose key differs
 // from its vm entity (e.g. check-k3s-vm -> vm: k3s-vm) is found by its key,
@@ -347,13 +347,12 @@ func MergeEnvVars(existing, newVars map[string]string) map[string]string {
 	return out
 }
 
-// --- DeployConfig state container (moved from charly/deploy.go, P4) ---
+// --- DeployConfig state container ---
 // DeployConfig represents per-machine deployment overrides (~/.config/charly/charly.yml).
-// SPIKE (value-type relocation, #55 cluster 2): relocated to spec.DeployConfig
-// (spec/spec/deploy_config.go) — every field already resolved to a spec.* type, so
-// the type carried zero deploykit-only content. This is now a zero-churn alias;
-// the two pure methods (Lookup/LookupKey) moved with it. The three methods that
-// reach sdk/kit (DeployedContainerNames/OccupiedHostPorts/GlobalEnvForImage) stay
+// The value type IS spec.DeployConfig (spec/spec/deploy_config.go): every field is a spec.*
+// type, so it carries zero deploykit-only content. This is a zero-churn alias; the two pure
+// methods (Lookup/LookupKey) live with it. The three methods that reach sdk/kit
+// (DeployedContainerNames/OccupiedHostPorts/GlobalEnvForImage) stay
 // below as free functions (deploy_derive.go) — spec can never import sdk/kit.
 type DeployConfig = spec.DeployConfig
 
@@ -391,23 +390,20 @@ func MergeDeployConfigs(configs ...*DeployConfig) *DeployConfig {
 // through the seam var in deploy_file.go (DeployStateHost), filled by charly at init.
 
 // Named is the interface for provides entries (shared pipeline logic). spec.EnvProvideEntry and
-// MCPProvideEntry both satisfy it via their GetName/GetSource methods. Relocated from
-// charly/provides.go so RemoveBySource/RemoveByExactSource (used by CleanDeployEntry) stay in
-// the same package as their caller.
+// MCPProvideEntry both satisfy it via their GetName/GetSource methods. It lives in the same
+// package as RemoveBySource/RemoveByExactSource (used by CleanDeployEntry), their caller.
 type Named interface {
 	GetName() string
 	GetSource() string
 }
 
 // IsSameBaseBox returns true if source is the same base image (with or without instance).
-// Relocated from charly/deploy.go (used by RemoveBySource).
 func IsSameBaseBox(source, boxName string) bool {
 	return source == boxName || strings.HasPrefix(source, boxName+"/")
 }
 
 // RemoveBySource removes all entries injected by the given image (same base, any instance).
-// Returns the filtered list and whether anything was removed. Relocated from
-// charly/provides.go.
+// Returns the filtered list and whether any entry matched.
 func RemoveBySource[T Named](entries []T, boxName string) ([]T, bool) {
 	var result []T
 	removed := false
@@ -422,7 +418,7 @@ func RemoveBySource[T Named](entries []T, boxName string) ([]T, bool) {
 }
 
 // RemoveByExactSource removes entries whose source matches the exact deploy key (no
-// cross-instance match). Relocated from charly/provides.go.
+// cross-instance match).
 func RemoveByExactSource[T Named](entries []T, source string) ([]T, bool) {
 	var result []T
 	removed := false
@@ -440,8 +436,7 @@ func RemoveByExactSource[T Named](entries []T, source string) ([]T, bool) {
 // (charly-<image>-) to the deploy's own prefix (DeployVolumePrefix), so every distinctly-named
 // deploy ALWAYS gets volume mounts distinct from any other deploy of the same image. No-op
 // when the deploy's prefix already equals the image prefix (the common `charly config <image>`
-// base deploy). Idempotent. Relocated from charly/deploy.go (reads *spec.BoxMetadata, no core
-// dep — folds cleanly into the kit).
+// base deploy). Idempotent.
 func ScopeVolumesToDeployKey(meta *spec.BoxMetadata, deployName, instance string) {
 	if meta == nil || deployName == "" {
 		return
@@ -459,9 +454,9 @@ func ScopeVolumesToDeployKey(meta *spec.BoxMetadata, deployName, instance string
 }
 
 // SaveDeployState persists deployment parameters to charly.yml (best-effort). Merges onto any
-// existing entry to preserve fields from charly deploy import. Relocated from charly/deploy.go
-// (K5-Unit-1); the process-shared flock is a kind-blind kit primitive (kit.AcquireFileLock on
-// the deploy-config path) and the loader reaches core through the DeployStateHost seam
+// existing entry to preserve fields from charly deploy import. The process-shared flock is a
+// kind-blind kit primitive (kit.AcquireFileLock on the deploy-config path) and the loader reaches
+// core through the DeployStateHost seam
 // (LoadUnifiedDeployConfig). marshalNode is the deploy-kind-specific node-form serializer the
 // caller supplies (the callback SaveDeployConfig invokes per entry).
 //
@@ -473,8 +468,8 @@ func SaveDeployState(boxName, instance string, input SaveDeployStateInput, marsh
 	// data-safety guard (a nil-read caller with no DeployStateHost registered is not compiled to
 	// touch the ledger, so the write is skipped rather than clobbering an unreadable file). A
 	// plugin caller (out-of-process command:deploy) injects its OWN loader-backed reader, so
-	// SaveDeployState no longer requires the DeployStateHost package var (#55 K4 config-write
-	// seam-collapse). NAMED EXIT: the nil-read branch is DI serving the still-in-proc host callers
+	// SaveDeployState does not require the DeployStateHost package var. NAMED EXIT: the nil-read
+	// branch is DI serving the still-in-proc host callers
 	// (bed_session / CleanDeployEntry) — NOT a transitional shim; it dies when the last migrates
 	// plugin-side in its own deferred cone.
 	loadBase := read
@@ -609,12 +604,12 @@ func applyDeployState(dc *DeployConfig, boxName, instance string, input SaveDepl
 
 // CleanDeployEntry removes an image's entry from charly.yml (best-effort). Also removes global
 // service env vars injected by this image. If charly.yml becomes empty after removal, the file is
-// deleted. Relocated from charly/deploy.go (K5-Unit-1); the flock is a kind-blind kit primitive
+// deleted. The flock is a kind-blind kit primitive
 // (kit.AcquireFileLock) and the loader reaches core through the DeployStateHost seam. marshalNode
 // is the deploy-kind-specific node-form serializer the caller supplies.
 // CleanDeployEntry removes an image's entry from charly.yml (best-effort). Also removes global
 // service env vars injected by this image. If charly.yml becomes empty after removal, the file is
-// deleted. Relocated from charly/deploy.go (K5-Unit-1); the flock is a kind-blind kit primitive
+// deleted. The flock is a kind-blind kit primitive
 // (kit.AcquireFileLock) and the loader reaches core through the DeployStateHost seam. marshalNode
 // is the deploy-kind-specific node-form serializer the caller supplies.
 //
@@ -623,9 +618,9 @@ func applyDeployState(dc *DeployConfig, boxName, instance string, input SaveDepl
 // "DeployStateHost==nil → skip" guard (a nil-read caller with no DeployStateHost registered is not
 // compiled to touch the ledger, so the clean is skipped rather than clobbering an unreadable
 // file). A plugin caller (out-of-process command:pod) injects its OWN loader-backed reader
-// (loaderkit.LoadHostDeployConfigViaExecutor), so CleanDeployEntry no longer requires the
-// DeployStateHost package var (#55 coneC-dsh — mirrors the SaveDeployConfig/SaveDeployState
-// reader-callback precedent). The reader is ALSO threaded as SaveDeployConfig's failsafeRead so the
+// (loaderkit.LoadHostDeployConfigViaExecutor), so CleanDeployEntry does not require the
+// DeployStateHost package var -- the same reader-callback shape SaveDeployConfig and
+// SaveDeployState use. The reader is ALSO threaded as SaveDeployConfig's failsafeRead so the
 // data-safety re-check uses the same loader-backed read, not the DeployStateHost-backed one.
 func CleanDeployEntry(boxName, instance string, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), read func() (*DeployConfig, error), ctx context.Context) {
 	loadBase := read

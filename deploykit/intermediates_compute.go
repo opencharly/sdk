@@ -83,7 +83,7 @@ func ComputeIntermediates(boxes map[string]*buildkit.ResolvedBox, layers map[str
 		}
 	}
 
-	// Default UID — used to decide whether an intermediate needs a UID
+	// Default UID — decides whether an intermediate needs a UID
 	// suffix in its name to avoid collision with the default-UID sibling.
 	defaultUID := 1000
 	if defaults.UID != nil {

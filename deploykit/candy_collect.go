@@ -4,8 +4,7 @@ import "github.com/opencharly/sdk/buildkit"
 
 // CollectAllBoxCandies returns an image's complete candy set (its own resolved
 // candies plus every candy inherited through the full base chain), in first-seen
-// order. Relocated from charly core (P8); byte-identical to the former
-// charly/intermediates.go collectAllBoxCandies.
+// order.
 //
 // walked is an IMAGE-visited guard for the base-chain recursion: a base edge may
 // form a cycle (A.base=B, B.base=A) — caught + reported by ResolveBoxOrder, but

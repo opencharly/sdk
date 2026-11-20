@@ -7,7 +7,7 @@ import (
 
 // TestRejectImageRefAsDeployName_NamesTheWorkingVerb pins the REMEDIATION, not just the refusal.
 //
-// The message used to send the operator to `charly deploy add <name> <ref>`, which REJECTS a
+// Sending the operator to `charly deploy add <name> <ref>` would REJECT a
 // registry image ref ("not found as a box or candy" — measured on plugin-fleet#51). An error that
 // names a verb which cannot work costs the operator a second failure, so the remediation is
 // asserted here by its own test: a user-visible sentence is the artifact.

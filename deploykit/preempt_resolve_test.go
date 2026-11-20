@@ -6,8 +6,8 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// preempt_resolve_test.go — proves the K1-unblock wave-1 helpers reproduce the former
-// charly/preempt.go behavior (gatherPreemptibleHolders/lookupVMClaimant/holderAddrFor/
+// preempt_resolve_test.go — proves the helpers reproduce the preempt gathering
+// behavior (gatherPreemptibleHolders/lookupVMClaimant/holderAddrFor/
 // gpu-vendor projection) as pure functions of an already-materialized deploy tree, with zero
 // LoadUnified dependency.
 

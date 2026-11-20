@@ -7,8 +7,7 @@ import (
 // project_deploy.go — the ONE loader-result method that could NOT travel to spec with UnifiedFile:
 // spec is types-only and must never import a mechanism kit, but this projection returns a
 // *deploykit.DeployConfig. So it is a deploykit FREE FUNCTION (was uf.ProjectDeployConfig() in
-// loaderkit; #55 Phase B). Every former caller changes uf.ProjectDeployConfig() →
-// deploykit.ProjectDeployConfig(uf).
+// loaderkit). Every caller uses deploykit.ProjectDeployConfig(uf).
 
 // ProjectDeployConfig returns the *DeployConfig equivalent (the deployments: section of the authored
 // file, independent of any per-machine ~/.config/charly/charly.yml, which remains loaded separately

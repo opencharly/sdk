@@ -11,7 +11,7 @@ import (
 // quadlet_paths.go — the on-disk quadlet/systemd PATH helpers + host existence probes
 // (QuadletDir / SystemdUserDir / QuadletExists[Instance] — os.UserHomeDir + os.Stat). The pure
 // quadlet/service FILENAME funcs are the single-source spec/spec/quadlet_names.go (#55 value
-// extraction — collapsing the former deploykit copy onto spec, R3); re-exported below so
+// extraction — one copy on spec, R3); re-exported below so
 // existing deploykit.QuadletFilename / deploykit.ServiceName… call sites are untouched. Distinct
 // from this package's OWN quadlet.go (the config-WRITE MECHANISM — GenerateQuadlet + its
 // emitters). New consumers should reference spec.* directly.

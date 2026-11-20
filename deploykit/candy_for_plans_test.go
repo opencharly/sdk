@@ -10,7 +10,7 @@ import (
 // CandyForPlan and candy/plugin-fleet's plugin-side secret/artifact resolution: CandiesIncluded
 // (topo order) then per-plan Candy, deduped in first-seen order, resolved against the supplied map;
 // a name absent from the map is skipped. This is the code the collapsed deploy-candy-secrets /
-// deploy-artifacts-retrieve seams used to run host-side — a regression here misroutes candy secrets.
+// deploy-artifacts-retrieve seams run host-side -- a regression here misroutes candy secrets.
 func TestSelectCandiesForPlans(t *testing.T) {
 	candies := map[string]spec.CandyReader{
 		"a": testCandy("a", spec.CandyModel{}, spec.CandyView{}),

@@ -17,7 +17,7 @@ import (
 // plugin drops it in as-is.
 //
 // #55 K4 (this cutover) is its FIRST consumer beyond the source: candy/plugin-fleet's plugin-side
-// secret resolution (secrets_artifacts.go) + candy/plugin-deploy-pod (repointed off its own former
+// secret resolution (secrets_artifacts.go) + candy/plugin-deploy-pod (off its own earlier
 // pluginCredentialAccess copy, the source this was extracted from). The three OTHER pre-existing
 // copies — candy/plugin-pod/enc_cmd.go, candy/plugin-settings/config.go,
 // candy/plugin-substrate/status_android_collect.go — are UNTOUCHED tracked debt, scheduled onto this

@@ -6,10 +6,9 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// vm_deploy_state.go — the charly.yml persistence half of the former deploy_add_cmd_vm.go,
-// R3-relocated from charly/vm_deploy_state.go (F6 vm-lifecycle move, coneB-vmlifecycle): this is
-// SHARED deploy-state logic every deploy plugin (compiled-in or out-of-process) reaches, the same
-// class as VmDeployEntryKeys/IsAutoVmDeployEntry (FLOOR-SLIM Unit 3), which
+// vm_deploy_state.go -- the charly.yml persistence half of the vm deploy path. It is SHARED
+// deploy-state logic every deploy plugin (compiled-in or out-of-process) reaches, the same class
+// as VmDeployEntryKeys/IsAutoVmDeployEntry, which
 // already live here operating on deploykit's own *DeployConfig.
 //
 // The plugin-primaries-coupled marshal callback (saveDeployConfigNodeForm) is NOT hoistable — the
@@ -19,11 +18,9 @@ import (
 // shape. The process-shared deploy-config FLOCK is NO LONGER injected: both bodies below run inside
 // MutateDeployConfig (deploy_config_cycle.go), THE one locked read-modify-write cycle every overlay
 // writer now shares, so the WHOLE read→decide→write critical section still runs under ONE lock hold
-// exactly as before while the two per-candy lock copies this pair used to be handed are deleted
-// (R3). Splitting the decision logic into a separate plugin-side call fed by a stale prior read
-// would reintroduce the
-// lost-update race RCA #6/#7 (referenced below) already fixed — that design was considered and
-// rejected (team-lead ruling, #118 coneB-vmlifecycle).
+// while the two per-candy lock copies are gone (R3). Splitting the decision logic into a
+// separate plugin-side call fed by a stale prior read would reintroduce the lost-update race
+// RCA #6/#7 (referenced below) already fixed -- that design was considered and rejected.
 
 // SaveVmDeployState writes the updated VmDeployState into ~/.config/charly/charly.yml for the given
 // deploy name. Idempotent — overwrites the deploy.<name>.vm_state block. vmEntity is the kind:vm
@@ -41,9 +38,9 @@ import (
 // read is the current-state re-read that cycle performs. A nil read falls back to
 // LoadDeployConfig — the DeployStateHost-backed host read — so an IN-PROCESS host caller passes nil
 // and behaves exactly as before. A plugin caller (out-of-process command:vm) injects its OWN
-// loader-backed reader (loaderkit.LoadHostDeployConfigViaExecutor), so SaveVmDeployState no longer
-// requires the DeployStateHost package var (#55 coneC-dsh config-write seam-collapse — mirrors the
-// SaveDeployConfig/SaveDeployState reader-callback precedent).
+// loader-backed reader (loaderkit.LoadHostDeployConfigViaExecutor), so SaveVmDeployState does not
+// require the DeployStateHost package var -- the same reader-callback shape SaveDeployConfig and
+// SaveDeployState use.
 func SaveVmDeployState(deployName, vmEntity string, state *spec.VmDeployState, save func(*DeployConfig) error, read func() (*DeployConfig, error), ctx context.Context) error {
 	loadBase := read
 	if loadBase == nil {

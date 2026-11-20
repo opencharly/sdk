@@ -9,7 +9,7 @@ import "github.com/opencharly/spec/spec"
 // I/O beyond a stderr diagnostic — so it lives in the spec contract module. deploykit's callers
 // reference deploykit.TunnelConfigFromMetadata unchanged. The dead FUNCTIONAL duplicate in
 // sdk/kit/tunnel_metadata.go was retired in the same move (R3 / dead-code); ResolveTunnelConfig
-// was deleted entirely (zero production callers — W3).
+// has no production callers.
 var (
 	// TunnelConfigFromMetadata creates a TunnelConfig from image-label metadata.
 	TunnelConfigFromMetadata = spec.TunnelConfigFromMetadata

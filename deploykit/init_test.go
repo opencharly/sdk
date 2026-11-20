@@ -9,12 +9,9 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// TestGenerateInitFragments / TestGenerateRelayInitFragments were relocated
-// here from charly/generate_test.go (K3, Bucket-1 dissolution): the thin
-// charly-core wrapper (Generator.generateInitFragments) that these tests
-// exercised had zero non-test callers and was deleted, but the real logic
-// they cover — GenerateInitFragments' fragment-assembly + port-relay naming —
-// lives in this package and stays real production code (candy/plugin-deploy-pod's
+// TestGenerateInitFragments / TestGenerateRelayInitFragments cover GenerateInitFragments'
+// fragment-assembly + port-relay naming, which lives in this package as real production
+// code (candy/plugin-deploy-pod's
 // overlay build reaches it directly). RenderService is stubbed with a minimal
 // fragment renderer so the test isolates GenerateInitFragments' own orchestration
 // (candy ordering, per-candy fragment files, port-relay fragments) from

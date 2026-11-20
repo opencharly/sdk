@@ -256,6 +256,71 @@ func TestGenerateQuadletWithoutGPU(t *testing.T) {
 	}
 }
 
+// TestGenerateQuadletUserNS is the user-namespace half of the CDI-device fix
+// (opencharly/plugin-deploy-pod#81): a unit that CARRIES the CDI GPU device must not run under
+// keep-id, because crun cannot apply the device's FILE mounts inside a keep-id user namespace and
+// the container dies at the first one (mount_setattr EPERM, exit 126). It runs userns=host with the
+// workload as container root instead — the only mapping that keeps a host-owned bind writable AND
+// gets the device injected.
+//
+// The other three arms are the regression guards: a bind-only deploy keeps keep-id byte-identically,
+// a privileged unit never receives a CDI mount (so nothing changed for it), and a GPU deploy with no
+// bind mount was never given keep-id in the first place and must stay that way.
+func TestGenerateQuadletUserNS(t *testing.T) {
+	binds := []ResolvedBindMount{{Name: "data", HostPath: "/srv/data", ContPath: "/data"}}
+	for _, tt := range []struct {
+		name       string
+		gpu        bool
+		privileged bool
+		binds      []ResolvedBindMount
+		want       []string
+		wantAbsent []string
+	}{
+		{
+			name: "cdi device + bind: userns=host, container root",
+			gpu:  true, binds: binds,
+			want:       []string{"UserNS=host", "User=0:0", "AddDevice=nvidia.com/gpu=all"},
+			wantAbsent: []string{"UserNS=keep-id"},
+		},
+		{
+			name:       "bind only, no device: keep-id unchanged",
+			binds:      binds,
+			want:       []string{"UserNS=keep-id:uid=1000,gid=1000"},
+			wantAbsent: []string{"UserNS=host", "User=", "AddDevice="},
+		},
+		{
+			name: "privileged gpu: no cdi mount, keep-id unchanged",
+			gpu:  true, privileged: true, binds: binds,
+			want:       []string{"UserNS=keep-id:uid=1000,gid=1000"},
+			wantAbsent: []string{"UserNS=host", "AddDevice=nvidia.com/gpu=all"},
+		},
+		{
+			name:       "cdi device, no bind: no userns flag at all",
+			gpu:        true,
+			want:       []string{"AddDevice=nvidia.com/gpu=all"},
+			wantAbsent: []string{"UserNS=", "User="},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			content := GenerateQuadlet(QuadletConfig{
+				BoxName: "gpu", ImageRef: "ghcr.io/test/gpu:latest", Home: "/home/user",
+				UID: 1000, GID: 1000, GPU: tt.gpu, BindMounts: tt.binds,
+				Security: vmshared.SecurityConfig{Privileged: tt.privileged},
+			})
+			for _, line := range tt.want {
+				if !strings.Contains(content, line) {
+					t.Errorf("expected %q, got:\n%s", line, content)
+				}
+			}
+			for _, line := range tt.wantAbsent {
+				if strings.Contains(content, line) {
+					t.Errorf("did not expect %q, got:\n%s", line, content)
+				}
+			}
+		})
+	}
+}
+
 func TestGenerateQuadletWithLANBindAddress(t *testing.T) {
 	cfg := QuadletConfig{
 		BoxName:     "fedora-test",
