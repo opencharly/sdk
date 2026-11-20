@@ -166,6 +166,15 @@ func ResolveCheckVarsRuntime(meta *spec.BoxMetadata, deploy *vmshared.DeployNode
 
 // buildTimeVars populates the BoxMetadata-derived subset of the variable
 // map. This is the only part of the map available at `charly check box` time.
+//
+// It produces SEVEN keys from two sources: six read off *spec.BoxMetadata
+// (meta.User -> USER, meta.Home -> HOME, meta.UID -> UID, meta.GID -> GID,
+// meta.Box -> IMAGE, meta.DNS -> DNS) and INSTANCE from this function's own
+// `instance` argument -- which is NOT a metadata field, despite sitting in the
+// same map. meta.Vars then adds the candy's own declared variables on top.
+//
+// Stated as a count AND a provenance because writing one without the other is
+// how a caller comes to believe INSTANCE is read from somewhere it is not.
 func buildTimeVars(meta *spec.BoxMetadata, instance string) map[string]string {
 	env := map[string]string{}
 	if meta == nil {
