@@ -6,7 +6,7 @@ package storekit
 // resolver (`github.com/opencharly/spec/storeroot`), so that the plugin HOST — which may import
 // only `spec/*` — and every plugin reach the same roots from the same code.
 //
-// The package's pre-existing tests pin the cache root's default and its override, the four root
+// The package's pre-existing tests pin the cache root's default and its override, the root
 // NAMES, the runtime→state fallback and that an unknown root errors — so a `Dir` that stopped
 // distinguishing roots AT ALL is caught there (measured: `Dir` returning `CacheDir()` for every
 // root fails `TestExportedConstantsAndRootsAreContract` on "Dir accepted an unknown root name").
