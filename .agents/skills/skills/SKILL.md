@@ -166,11 +166,31 @@ The rule this section implements — authored content lives in the repo that own
 that crosses a repo line is DERIVED rather than hand-maintained — is the umbrella `AGENTS.md`
 Part II #5. What follows is only the how.
 
-1. **Edit the skill's own FILE, in the repo that owns it.** A skill's prose lives at
-   `<owning candy dir>/.agents/skills/<name>/SKILL.md`: the `<name>` DIRECTORY is the skill id, the
+1. **Edit the skill's own FILE, in the repo that owns it, at that repo's ROOT.** A skill's prose
+   lives at `<owner repo>/.agents/skills/<name>/SKILL.md` — the repo root of the repo that DEFINES the
+   `owner:` candy, **never inside the candy's own directory**: the collector resolves the body at
+   `candyRepoRoot` (`sdk/deploykit/skills_collect.go`), so a file under `candy/<name>/` is never read.
+   **`owner:` must name a candy DEFINED IN THE SAME REPO as the body.** A node whose owner candy is
+   composed from another repo is a load error, not a layout choice — the body is searched in the owner
+   candy's repo (`skill "x": no body — no .agents/skills/x/SKILL.md exists at the repo root of the
+   owning candy "x"`, opencharly/layer-strata#28).
+   The `<name>` DIRECTORY is the skill id, the
    frontmatter `name` must agree with it, and an optional `references/<stem>.md` sits beside it (no
-   frontmatter, by contract). A sub-agent DEFINITION is ONE file at
-   `<owning candy dir>/.agents/agents/<name>.md` — the SIBLING tree, never a child of
+   frontmatter, by contract). **The repo class decides where the body lives, one answer per class:**
+
+   | the repo that declares the node | where the BODY lives | `owner:` names |
+   |---|---|---|
+   | the repo that DEFINES the candy (a layer repo) | its own root | that candy |
+   | a box / pod / VM repo composing a FOREIGN candy | **the foreign candy's repo root** — the node may sit in this repo, the body may not | the foreign candy |
+   | a box / pod / VM repo that wants its OWN skill | its own root | a candy **this repo declares** in its `candy/` |
+
+   A pod repo has two legal shapes and no third: it carries the node only with the body back in the
+   engine candy's repo, or it declares a candy of its own and owns the skill through that. `layer-strata`
+   (engine candy) and `pod-strata` (the box composing it) are the reference case: the `strata` skill
+   describes the pod, so the POD must declare a candy to own it — moving the body alone, as
+   layer-strata#25 did, leaves the owner candy in the other repo and every pin fails (#28).
+   A sub-agent DEFINITION is ONE file at
+   `<owner repo>/.agents/agents/<name>.md` — the SIBLING tree, never a child of
    `.agents/skills`, and a candy's `skills:` list does not govern it. `.agents/skills` is what a
    candy's `skills:` list means when it declares none (a candy that declares another tree is honoured
    by the generators; `kind:skill`'s owned content — the image's `ai.opencharly.skill` label and its
