@@ -68,12 +68,27 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 		// Only an EXTERNALIZED (plugin) builder emits a build-time multi-stage — via its
 		// plugin's OpResolve (kit.BuilderResolve). A non-externalized builder emits no
 		// stage here (a custom builder must be an external_builder plugin).
+		//
+		// A builder that cannot run because its plugin is not connected is a HARD ERROR
+		// whenever a candy DECLARED packages for it. The previous `continue` dropped every
+		// `aur:` package silently while the build reported success — measured on both the
+		// arch and cachyos bases (opencharly/layer-kde-shell#7, opencharly/sdk#608).
 		if !external {
+			for _, candyName := range candyOrder {
+				if layer := g.Candies[candyName]; declaresBuilderPackages(layer, builderName) {
+					return fmt.Errorf("image %q: candy %q declares %q packages, but builder %q is not available (its plugin is not connected); refusing to build an image that silently omits them",
+						boxName, candyName, builderName, builderName)
+				}
+			}
 			continue
 		}
 		for _, candyName := range candyOrder {
 			layer := g.Candies[candyName]
-			if !g.CandyNeedsBuilder(img, layer, builderDef) {
+			// The candy needs this builder if a detect-file says so OR if it declares
+			// packages for this builder's own format. The second arm is what keeps a
+			// declared `aur: package: [...]` from being skipped when the detection is
+			// file-based only (opencharly/sdk#608).
+			if !g.CandyNeedsBuilder(img, layer, builderDef) && !declaresBuilderPackages(layer, builderName) {
 				continue
 			}
 			builderRef := g.BuilderRefForFormat(boxName, builderName)
@@ -93,6 +108,18 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 		}
 	}
 	return nil
+}
+
+// declaresBuilderPackages reports whether a candy declares packages for a builder's own
+// format section (the `aur:`, `pixi:`, `npm:` arms) — the declaration a builder MUST honour.
+// A candy that names packages here but gets no builder stage silently ships an image without
+// them, which is the defect opencharly/sdk#608 records.
+func declaresBuilderPackages(layer CandyModel, builderName string) bool {
+	if layer == nil {
+		return false
+	}
+	section := layer.FormatSection(builderName)
+	return section != nil && len(section.Packages) > 0
 }
 
 // resolveDetectionBuilderReply builds the OpResolve render context host-side
