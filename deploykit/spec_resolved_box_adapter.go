@@ -73,6 +73,7 @@ func NewSpecResolvedBox(v spec.ResolvedBoxView, distro map[string]*spec.Resolved
 	box.InitSystem = v.InitSystem
 	box.InitDef = v.InitDef
 	box.ActiveInits = v.ActiveInits
+	box.OwnedContent = v.OwnedContent
 	if v.Caps != nil {
 		box.CandyCaps = &buildkit.AggregatedCandyCaps{
 			PreserveUser:       v.Caps.PreserveUser,

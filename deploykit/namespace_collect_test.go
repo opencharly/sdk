@@ -283,7 +283,7 @@ func TestCollectHooks_ImportedBoxWalksChain(t *testing.T) {
 	// rather than short-circuiting on a flat-lookup miss — proven via the shared chain walk.
 	names, err := BoxCandyChain(root, layers, "distro.app")
 	if err != nil || len(names) == 0 {
-		t.Fatalf("BoxCandyChain(distro.app) = %v, %v — CollectHooks/CollectSkills read the same walk", names, err)
+		t.Fatalf("BoxCandyChain(distro.app) = %v, %v — CollectHooks and the owned-content request read the same walk", names, err)
 	}
 	if got := CollectHooks(root, layers, "distro.app"); got != nil {
 		t.Errorf("CollectHooks = %+v, want nil for a hook-less chain", got)

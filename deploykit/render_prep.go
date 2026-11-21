@@ -69,11 +69,18 @@ func (g *Generator) RenderPrepBox(boxName string) error {
 	}
 
 	// 6. BakedMetadata — the fully-baked OCI-label wire set.
-	meta, err := g.buildBakedMetadata(boxName, candyOrder)
+	meta := g.buildBakedMetadata(boxName, candyOrder)
+	img.BakedMetadata = meta
+
+	// 7. OwnedContent — what every content kind's nodes contribute to this box (ops.OpContent): the
+	// files the render installs under the image user's home, and the labels baked beside the rest.
+	// Resolved here because only render-prep holds the live *Config graph (owned_content.go).
+	content, err := g.compileOwnedContent(boxName, img)
 	if err != nil {
 		return fmt.Errorf("render-prep %s: %w", boxName, err)
 	}
-	img.BakedMetadata = meta
+	img.OwnedContent = content.files
+	meta.Contributed = content.labels
 
 	return nil
 }
@@ -121,12 +128,12 @@ func (g *Generator) RenderPrepAll() error {
 // the two render-gating booleans (PreserveUser/NeedsRootAfterInit) ride img.CandyCaps separately via the
 // #AggregatedCandyCapsView for generateContainerfile's final-USER directive.
 //
-// It returns an error for the ONE collector whose failure must not be silent: the skills
-// aggregator reads a moved skill's prose off disk, and a label entry that lost its body is
-// indistinguishable from a skill that never had one (see CollectSkills).
+// It cannot fail: every collector here reads the resolved graph. The one label whose source can be
+// missing — a composed skill's body — is no longer gathered here: kind:skill contributes it as owned
+// content (RenderPrepBox step 7, owned_content.go), where a missing body is that kind's diagnostic.
 //
 //nolint:gocyclo // linear OCI-label gather -- one branch per label field; no shared abstraction across the ~40 independent labels.
-func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) (*spec.BakedLabelSet, error) {
+func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) *spec.BakedLabelSet {
 	img := g.Boxes[boxName]
 	meta := &spec.BakedLabelSet{}
 
@@ -220,13 +227,6 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) (*sp
 
 	// Shell-init manifest.
 	meta.Shell = CollectShell(g.Config, g.Candies, boxName)
-
-	// Skills: the composed candies' skill definitions (ai.opencharly.skill).
-	skills, err := CollectSkills(g.Config, g.Candies, boxName)
-	if err != nil {
-		return nil, err
-	}
-	meta.Skills = skills
 
 	// Init system label: active init system name + per-init service list.
 	if g.InitConfig != nil {
@@ -461,15 +461,15 @@ func (g *Generator) buildBakedMetadata(boxName string, candyOrder []string) (*sp
 		meta.DataImage = true
 	}
 
-	return meta, nil
+	return meta
 }
 
 // collectChainDataEntries walks the full image chain collecting data entries from candies in
 // parent/intermediate images.
 //
 // It walks via the SHARED BoxCandyChain, exactly like its sibling chain collectors
-// (CollectBoxVolume / CollectBoxPorts / CollectDescriptions / CollectHooks / CollectShell /
-// CollectSkills). It previously hand-rolled that identical walk — `for { imgDef :=
+// (CollectBoxVolume / CollectBoxPorts / CollectDescriptions / CollectHooks / CollectShell, and
+// the owned-content request). It previously hand-rolled that identical walk — `for { imgDef :=
 // cfg.BoxConfig(current); …; current = imgDef.Base }` — which is the duplicate BoxCandyChain
 // exists to replace (R3), and carrying a private copy is what let it keep the namespace-unaware
 // entry after every other collector was fixed: `BoxConfig(current)` missed on a qualified boxName

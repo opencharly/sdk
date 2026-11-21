@@ -49,7 +49,7 @@ func specToBuildkit(o spec.ResolveOpts) buildkit.ResolveOpts {
 // fill needs — relocated out of charly core (#55 Cluster-B) because it writes buildkit host-render
 // caches. opts must already carry the project build vocabulary (charly's resolveVocabOpts fills it
 // before calling).
-func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReader, initCfg *spec.InitConfig, child, calver, dir string, opts spec.ResolveOpts, rp *spec.ResolvedProject) {
+func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReader, initCfg *spec.InitConfig, child, calver, dir string, opts spec.ResolveOpts, content OwnedContentSource, rp *spec.ResolvedProject) {
 	bkopts := specToBuildkit(opts)
 	// The init `depends_candy:` injection, for the NAMESPACED box set. This is the THIRD box-
 	// composition path (beside candy/plugin-build's resolveBuildEngine and
@@ -80,6 +80,7 @@ func FillNamespaceBoxViews(sub *spec.Config, nsLayers map[string]spec.CandyReade
 	tempGen.Config = sub
 	tempGen.Candies = nsLayers
 	tempGen.InitConfig = initCfg
+	tempGen.Content = content
 	tempGen.Dir = dir
 	tempGen.Boxes = subBoxes
 	for name, resolved := range subBoxes {

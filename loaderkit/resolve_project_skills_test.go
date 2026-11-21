@@ -50,7 +50,7 @@ func projectTestSeams() ResolveProjectSeams {
 // TestProjectResolvedProject_FillsOwnedSkillsOntoTheWireModel is the coverage for the behaviour this
 // change exists for (opencharly/spec#254's consumer step): the wire CandyModel must carry the skills
 // its candy OWNS, so a consumer holding only the model can answer "which skills does this candy
-// carry?" without reaching cfg.Skills.
+// carry?" without reaching the authored nodes (Config.PluginKinds["skill"]).
 //
 // It exercises the FILL, not the helper: ProjectResolvedProject is the path the PR changes, and the
 // helper's own unit tests cannot show that the fill is wired to it. The second arm is the "fails
