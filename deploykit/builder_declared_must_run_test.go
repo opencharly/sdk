@@ -69,3 +69,30 @@ func TestEmitBuilderStages_NoBuilderConfigAtAllStillRefusesDeclaredPackages(t *t
 		t.Fatalf("nil BuilderConfig must refuse a declared aur package, got %v", err)
 	}
 }
+
+// The rule cannot be derived from what the image CONFIGURES: a box that configures `pixi`
+// while a candy declares `aur:` would never probe the declaration, and a non-nil-but-empty
+// Builder map would probe nothing at all. Both must still refuse the declared packages
+// (opencharly/sdk#608, review round 3 of #609).
+func TestEmitBuilderStages_DeclaredFormatIsProbedEvenWhenNotConfigured(t *testing.T) {
+	candy := NewSpecCandyModel(
+		spec.CandyModel{Name: "kde-shell", FormatSections: map[string]PackageSection{
+			"aur": {Packages: []string{"kdotool"}},
+		}},
+		spec.CandyView{Name: "kde-shell"},
+	)
+	for _, name := range []string{"configures another format", "configures an empty builder map"} {
+		img := &buildkit.ResolvedBox{BuilderConfig: &buildkit.BuilderConfig{
+			Builder: map[string]*buildkit.BuilderDef{"pixi": {}},
+		}}
+		if name == "configures an empty builder map" {
+			img.BuilderConfig.Builder = map[string]*buildkit.BuilderDef{}
+		}
+		g := &Generator{Candies: map[string]CandyModel{"kde-shell": candy}}
+		var b strings.Builder
+		err := g.EmitBuilderStages(&b, "shell-box", img, []string{"kde-shell"})
+		if err == nil || !strings.Contains(err.Error(), "aur") {
+			t.Fatalf("%s: a declared aur package must still be refused, got %v", name, err)
+		}
+	}
+}

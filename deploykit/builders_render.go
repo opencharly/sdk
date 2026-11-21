@@ -122,11 +122,26 @@ func (g *Generator) requireDeclaredBuilders(boxName string, img *buildkit.Resolv
 	// Measured: the loader registers exactly one format section today (`ensureFormat("aur")`,
 	// the only call in loaderkit/scan_candy.go), so name it there; anything added later belongs
 	// in this list in the same change, and the declaration arm in the loop below covers it.
-	formats := []string{}
+	// Probe the union of: every builder the image CONFIGURES, and every builder format a
+	// candy can DECLARE. The declaration set cannot be derived from the image — a box that
+	// configures `pixi` while a candy declares `aur:` is exactly the case that would slip
+	// through if only configured builders were probed (and a non-nil-but-empty Builder map
+	// would probe nothing at all). The loader registers ONE format section today
+	// (`ensureFormat("aur")` in loaderkit/scan_candy.go); `pixi` and `npm` are named here
+	// because their builders exist, and a new format belongs in this list in the same change
+	// that registers it.
+	declaredFormats := []string{"aur", "pixi", "npm"}
+	formats := append([]string{}, declaredFormats...)
 	if img != nil && img.BuilderConfig != nil {
-		formats = append(formats, img.BuilderConfig.BuilderNames()...)
-	} else {
-		formats = append(formats, "aur")
+		seen := map[string]bool{}
+		for _, f := range formats {
+			seen[f] = true
+		}
+		for _, f := range img.BuilderConfig.BuilderNames() {
+			if !seen[f] {
+				formats = append(formats, f)
+			}
+		}
 	}
 	for _, candyName := range candyOrder {
 		layer := g.Candies[candyName]
