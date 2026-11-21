@@ -512,36 +512,48 @@ func TestTransferAndInstallPkgs(t *testing.T) {
 }
 
 // TestBuildDepPkgsOnHost_DryRunAndEmpty proves the dep-builder leg validates its
-// inputs (empty packages is a no-op; nil/empty config errors rather than
-// silently building) and honors DryRun (no shell-out). The glob is DERIVED from
-// the format's download_template.
+// inputs (empty packages is a no-op; a missing image, definition or package output errors
+// rather than silently building) and honors DryRun (no shell-out). The package directory and
+// glob are the package output the builder plugin declared (BuilderStep.Package), never a hard-coded
+// path.
 func TestBuildDepPkgsOnHost_DryRunAndEmpty(t *testing.T) {
-	lp := testPacLocalPkgDef()
 	bDef := &BuilderDef{}
+	pkg := &spec.BuilderPackage{Format: "pac", Dir: "/tmp/aur-pkgs/c", Glob: "*.pkg.tar.zst"}
 	// Empty packages → (nil, nil): a no-op, never an error.
-	if pkgs, err := BuildDepPkgsOnHost(context.Background(), lp, "aur", bDef, "arch-builder", nil, "/src", nil, nil, EmitOpts{}); err != nil || pkgs != nil {
+	if pkgs, err := BuildDepPkgsOnHost(context.Background(), "aur", "c", bDef, pkg, "arch-builder", nil, "/src", nil, nil, EmitOpts{}); err != nil || pkgs != nil {
 		t.Errorf("empty packages = (%v, %v), want (nil, nil)", pkgs, err)
 	}
 	// DryRun: logs the plan, never shells out.
-	if pkgs, err := BuildDepPkgsOnHost(context.Background(), lp, "aur", bDef, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{DryRun: true}); err != nil || pkgs != nil {
+	if pkgs, err := BuildDepPkgsOnHost(context.Background(), "aur", "c", bDef, pkg, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{DryRun: true}); err != nil || pkgs != nil {
 		t.Errorf("dry-run = (%v, %v), want (nil, nil)", pkgs, err)
 	}
-	// Nil LocalPkgDef → error.
-	if _, err := BuildDepPkgsOnHost(context.Background(), nil, "aur", bDef, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
-		t.Error("BuildDepPkgsOnHost(nil LocalPkgDef) should error")
-	}
 	// Empty builder image → error.
-	if _, err := BuildDepPkgsOnHost(context.Background(), lp, "aur", bDef, "", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
+	if _, err := BuildDepPkgsOnHost(context.Background(), "aur", "c", bDef, pkg, "", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
 		t.Error("BuildDepPkgsOnHost(empty builder image) should error")
 	}
 	// Nil builder definition → error.
-	if _, err := BuildDepPkgsOnHost(context.Background(), lp, "aur", nil, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
+	if _, err := BuildDepPkgsOnHost(context.Background(), "aur", "c", nil, pkg, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
 		t.Error("BuildDepPkgsOnHost(nil builder def) should error")
 	}
-	// No download_template → no derivable glob → error.
-	noGlob := &LocalPkgDef{InstallTemplate: lp.InstallTemplate, Probe: lp.Probe}
-	if _, err := BuildDepPkgsOnHost(context.Background(), noGlob, "aur", bDef, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
-		t.Error("BuildDepPkgsOnHost(no download_template) should error")
+	// A builder that declared no package output → error, never a guessed directory.
+	if _, err := BuildDepPkgsOnHost(context.Background(), "aur", "c", bDef, nil, "arch-builder", []string{"qemu-full"}, "/src", nil, nil, EmitOpts{}); err == nil {
+		t.Error("BuildDepPkgsOnHost(no package output) should error")
+	}
+}
+
+// The host builder template renders the candy's own package directory, so two candies applied
+// to one venue never share a package directory.
+func TestRenderBuilderScriptCarriesThePackageDir(t *testing.T) {
+	s := &BuilderStep{Builder: "aur", CandyName: "kde-shell",
+		Package:    &spec.BuilderPackage{Format: "pac", Dir: "/tmp/aur-pkgs/kde-shell", Glob: "*.pkg.tar.zst"},
+		BuilderDef: &BuilderDef{Phases: &spec.PhaseSet{Install: &spec.PhaseTemplates{Host: "mkdir -p {{.PkgDir}}\n"}}},
+	}
+	script, err := RenderBuilderScript(s, "/home/u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if script != "mkdir -p /tmp/aur-pkgs/kde-shell\n" {
+		t.Errorf("host script = %q, want the candy's own package dir", script)
 	}
 }
 

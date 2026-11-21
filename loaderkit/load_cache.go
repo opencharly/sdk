@@ -32,7 +32,10 @@ package loaderkit
 // components digest of three inputs: (1) the walk envelope's SHA-256 — the FULL materialize input:
 // root config, directive import:/repo: pins, flat imports, discovered manifests and every mounted
 // namespace, i.e. the CONTENT of every ref the walk resolved (fetched pinned repos are walked into
-// the envelope, CanonicalRef → EnsureRepoDownloaded → parsed docs/manifests); (2) the compiled
+// the envelope, CanonicalRef → EnsureRepoDownloaded → parsed docs/manifests), and the host's
+// embedded default vocabulary digest (LoadedProject.EmbeddedDefaultsDigest — the vocabulary the
+// materialize step merges is an input too, so a binary whose embedded charly.yml changed re-keys);
+// (2) the compiled
 // SCHEMA identity — the spec module version that owns schema/*.cue (the former schema CalVer
 // component is GONE with the schema-versioning removal cutover; the CUE schema now lives wholly in
 // the spec module, so a schema change ships in a new spec version); (3) the compiled LOADER logic

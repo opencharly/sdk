@@ -6,7 +6,7 @@ All install-task logic lives in `sdk/deploykit` (`tasks_emit.go` + `tasks_render
 1. # Layer: <name>                 (comment header)
 2. ARG TARGETARCH + ENV ARCH=${TARGETARCH}    (once; from EmitVarsEnv)
 3. ENV <K>=<V> for each layer.Vars entry      (also from EmitVarsEnv)
-4. Package install: rpm/deb/pac/aur/apk  (unchanged — format template render)
+4. Package install: rpm/deb/pac/apk (format template render); then builder package outputs through `local_pkg` (aur on a pac distro)
 5. (g *Generator) EmitTasks(b, layer, img, ops []vmshared.Op, buildDir, contextRelPrefix) (string, error):
    for each t in layer.tasks:
      resolve ${VAR} in non-verbatim fields

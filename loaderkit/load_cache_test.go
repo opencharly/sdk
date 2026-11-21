@@ -385,3 +385,22 @@ func TestMaterializedCache_LoadUnifiedEndToEnd(t *testing.T) {
 		t.Errorf("second load's cached tree differs from the first:\n got  %#v\n want %#v", second, first)
 	}
 }
+
+// The embedded default vocabulary is a materialize input, so its digest re-keys the materialized
+// tree: two envelopes that differ only in the host's embedded-defaults digest must not share an
+// entry, or a binary whose embedded vocabulary changed is served the previous vocabulary's tree.
+func TestLoadedProjectCacheKeyCoversTheEmbeddedDefaults(t *testing.T) {
+	a := &spec.LoadedProject{EmbeddedDefaultsDigest: "sha256:old"}
+	b := &spec.LoadedProject{EmbeddedDefaultsDigest: "sha256:new"}
+	ka, _, err := loadedProjectCacheKey(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kb, _, err := loadedProjectCacheKey(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ka == kb {
+		t.Fatalf("cache key %q ignores the embedded-defaults digest", ka)
+	}
+}

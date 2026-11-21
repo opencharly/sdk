@@ -81,12 +81,6 @@ func (a *specCandyAdapter) Data() []DataYAML { return decodeOpaque[DataYAML](a.m
 
 // maps / pointers
 func (a *specCandyAdapter) Packaging() *spec.Packaging { return a.m.Packaging }
-func (a *specCandyAdapter) FormatSection(name string) *PackageSection {
-	if s, ok := a.m.FormatSections[name]; ok {
-		return &s
-	}
-	return nil
-}
 func (a *specCandyAdapter) TagSection(tag string) *TagPkgConfig {
 	if s, ok := a.m.TagSections[tag]; ok {
 		return &s
@@ -143,7 +137,7 @@ func (a *specCandyAdapter) fileExists(name string) bool {
 
 // derived predicates (aggregate of snapshot-safe fields)
 func (a *specCandyAdapter) HasFormatPackages() bool {
-	return len(a.m.FormatSections) > 0 || len(a.m.TagSections) > 0 || len(a.m.TopPackages) > 0
+	return len(a.m.TagSections) > 0 || len(a.m.TopPackages) > 0
 }
 func (a *specCandyAdapter) HasContent() bool {
 	// Host-precomputed (#67): the live *Candy.HasContent() verdict (env/ports/route/volumes/

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -980,15 +981,17 @@ func TestComputeIntermediates_InheritDistroFromParent(t *testing.T) {
 	}
 }
 
-// TestComputeIntermediates_UnionChildBuildFormats guards the orthogonal case to
-// the test above: a build format declared on the CONSUMING children but NOT the
-// parent must still reach an auto-intermediate that hoists a candy needing it.
-// Real-world regression: the cachyos base is build:[pac]; selkies-labwc and
-// openclaw-desktop are build:[pac,aur]; the shared chrome candy (aur:
-// google-chrome) gets hoisted into a shared intermediate. With parent-only
-// inheritance the intermediate was [pac]-only, so chrome's aur: section was
-// silently dropped and google-chrome never built. The fix unions the parent's
-// formats with every consuming descendant's, parent's primary format first.
+// TestComputeIntermediates_UnionChildBuildFormats guards the orthogonal case to the test above:
+// a build format or a distro tag declared on the CONSUMING children but NOT the parent must still
+// reach an auto-intermediate that hoists a candy needing it, or that candy's section for it is
+// silently absent from the shared intermediate. Two halves, both live:
+//   - formats: a synthetic `deb` only the consumers declare (schema-valid; build: lists OS formats);
+//   - tags: the consumers' `cachyos` tag the arch parent lacks. A hoisted candy's
+//     `distro.cachyos.aur` declaration reaches the intermediate only through this union, because a
+//     manager declaration is scoped by the image's tag chain (opencharly/sdk#608).
+//
+// The fix unions the parent's formats and tags with every consuming descendant's, parent's primary
+// format first, and the intermediate inherits the parent's builder routes so it can build them.
 func TestComputeIntermediates_UnionChildBuildFormats(t *testing.T) {
 	layers := map[string]CandyModel{
 		"a": candyFixture(spec.CandyModel{Name: "a"}, spec.CandyView{}),
@@ -996,7 +999,11 @@ func TestComputeIntermediates_UnionChildBuildFormats(t *testing.T) {
 		"c": candyFixture(spec.CandyModel{Name: "c"}, spec.CandyView{}),
 	}
 
-	images := map[string]*buildkit.ResolvedBox{"cachyos": {ResolvedBox: spec.ResolvedBox{Name: "cachyos", Base: "ext:cachyos", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/cachyos:v1", Pkg: "pac", Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac"}, Builder: buildkit.BuilderMap{"aur": "arch-builder"}}}, "cachyos-a-b": {ResolvedBox: spec.ResolvedBox{Name: "cachyos-a-b", Base: "cachyos", IsExternalBase: false, Candy: []string{"a", "b"}, Tag: "v1", Registry: "r", FullTag: "r/cachyos-a-b:v1", Pkg: "pac", Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac", "aur"}}}, "cachyos-a-c": {ResolvedBox: spec.ResolvedBox{Name: "cachyos-a-c", Base: "cachyos", IsExternalBase: false, Candy: []string{"a", "c"}, Tag: "v1", Registry: "r", FullTag: "r/cachyos-a-c:v1", Pkg: "pac", Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac", "aur"}}}}
+	images := map[string]*buildkit.ResolvedBox{
+		"arch":     {ResolvedBox: spec.ResolvedBox{Name: "arch", Base: "ext:arch", IsExternalBase: true, Candy: []string{}, Tag: "v1", Registry: "r", FullTag: "r/arch:v1", Pkg: "pac", Distro: []string{"arch"}, BuildFormats: []string{"pac"}, Builder: buildkit.BuilderMap{"aur": "arch-builder"}}},
+		"arch-a-b": {ResolvedBox: spec.ResolvedBox{Name: "arch-a-b", Base: "arch", IsExternalBase: false, Candy: []string{"a", "b"}, Tag: "v1", Registry: "r", FullTag: "r/arch-a-b:v1", Pkg: "pac", Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac", "deb"}}},
+		"arch-a-c": {ResolvedBox: spec.ResolvedBox{Name: "arch-a-c", Base: "arch", IsExternalBase: false, Candy: []string{"a", "c"}, Tag: "v1", Registry: "r", FullTag: "r/arch-a-c:v1", Pkg: "pac", Distro: []string{"cachyos", "arch"}, BuildFormats: []string{"pac", "deb"}}},
+	}
 
 	defaults := IntermediateDefaults{
 		Registry: "r",
@@ -1009,34 +1016,36 @@ func TestComputeIntermediates_UnionChildBuildFormats(t *testing.T) {
 		t.Fatalf("ComputeIntermediates() error = %v", err)
 	}
 
-	// Find the auto-intermediate that hoists candy "a" rooted at cachyos.
+	// Find the auto-intermediate that hoists candy "a" rooted at arch.
 	var inter *buildkit.ResolvedBox
 	for _, img := range result {
-		if img.Auto && img.Base == "cachyos" {
+		if img.Auto && img.Base == "arch" {
 			inter = img
 			break
 		}
 	}
 	if inter == nil {
-		t.Fatalf("expected an auto-intermediate with Base=cachyos, got none. result keys: %v", sortedResultNames(result))
+		t.Fatalf("expected an auto-intermediate with Base=arch, got none. result keys: %v", sortedResultNames(result))
 	}
 
-	// The intermediate must carry the UNION: parent's [pac] first, then the
-	// consumer-only aur appended. Without the fix this is [pac] only and the
-	// hoisted aur-bearing candy is silently dropped.
-	if got, want := inter.BuildFormats, []string{"pac", "aur"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("auto-intermediate %q: BuildFormats = %v, want %v (parent pac first + consumer-only aur appended)",
+	// Formats: parent's [pac] first, then the consumer-only deb appended.
+	if got, want := inter.BuildFormats, []string{"pac", "deb"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("auto-intermediate %q: BuildFormats = %v, want %v (parent pac first + consumer-only deb appended)",
 			inter.Name, got, want)
+	}
+	// Tags: the consumers' cachyos tag joins the parent's arch, so a hoisted candy's
+	// distro.cachyos sections (its aur declaration included) stay in the intermediate's tag chain.
+	if !slices.Contains(inter.Distro, "cachyos") || !slices.Contains(inter.Distro, "arch") {
+		t.Errorf("auto-intermediate %q: Distro = %v, want both arch and the consumer-only cachyos", inter.Name, inter.Distro)
 	}
 	// Parent's primary format stays primary (drives img.Pkg + cache mounts).
 	if inter.Pkg != "pac" {
 		t.Errorf("auto-intermediate %q: Pkg = %q, want %q (parent primary preserved)", inter.Name, inter.Pkg, "pac")
 	}
-	// And the builder map for the unioned `aur` format must be inherited from the
-	// parent chain — otherwise the intermediate carries aur but can't build it
-	// ("needs builder aur but no builders.aur configured").
+	// The intermediate inherits the parent's builder routes: a hoisted candy that needs the aur
+	// builder fails the pre-pass on an intermediate with no aur route.
 	if got := inter.Builder["aur"]; got != "arch-builder" {
-		t.Errorf("auto-intermediate %q: Builder[aur] = %q, want %q (must inherit from parent so the unioned aur format is buildable)", inter.Name, got, "arch-builder")
+		t.Errorf("auto-intermediate %q: Builder[aur] = %q, want %q (inherited from the parent so a hoisted aur declaration is buildable)", inter.Name, got, "arch-builder")
 	}
 }
 

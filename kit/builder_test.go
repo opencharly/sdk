@@ -16,27 +16,42 @@ func TestBuilderCollectContext(t *testing.T) {
 		want map[string]any
 	}{
 		{"pixi", spec.BuilderCollectInput{Candy: "jupyter"}, map[string]any{"env_name": "default"}},
-		{"npm", spec.BuilderCollectInput{Candy: "claude-code"}, nil},
-		// cargo now records the LIBRARY leg's two paths. They are a pure function of the
-		// candy name, so they are derivable here with no Cargo.toml read — unlike the
-		// binary leg, which still needs one host-side at install time.
-		{"cargo", spec.BuilderCollectInput{Candy: "ripgrep"}, map[string]any{
-			"lib_dir": "/usr/local/lib/charly/ripgrep",
-			"ld_conf": "/etc/ld.so.conf.d/charly-ripgrep.conf",
+		// npm's teardown set is package.json's dependencies — the globals the apply install adds.
+		{"npm", spec.BuilderCollectInput{Candy: "claude-code", Manifest: "package.json",
+			ManifestContent: `{"dependencies": {"@anthropic-ai/claude-code": "*", "aaa": "1"}}`},
+			map[string]any{"packages": []string{"@anthropic-ai/claude-code", "aaa"}}},
+		{"npm", spec.BuilderCollectInput{Candy: "empty"}, map[string]any{}},
+		// cargo records BOTH legs: the library paths (a function of the candy name) and the
+		// package name `cargo install --path` registers.
+		{"cargo", spec.BuilderCollectInput{Candy: "ripgrep", Manifest: "Cargo.toml", ManifestContent: "[package]\nname = \"ripgrep\"\n"}, map[string]any{
+			"lib_dir":  "/usr/local/lib/charly/ripgrep",
+			"ld_conf":  "/etc/ld.so.conf.d/charly-ripgrep.conf",
+			"packages": []string{"ripgrep"},
 		}},
-		{
-			"aur",
-			spec.BuilderCollectInput{Candy: "chrome", Packages: []string{"google-chrome"}, Replaces: []string{"chromium"}},
-			map[string]any{"packages": []string{"google-chrome"}, "replaces": []string{"chromium"}},
-		},
+		// mise's teardown set is the manifest's tools and the manifest copied into $HOME.
+		{"mise", spec.BuilderCollectInput{Candy: "tools", Manifest: "mise.toml", ManifestContent: "[tools]\nnode = \"22\"\nusage = \"latest\"\n"},
+			map[string]any{"manifest": "mise.toml", "tools": []string{"node", "usage"}}},
+		{"mise", spec.BuilderCollectInput{Candy: "tv", Manifest: ".tool-versions", ManifestContent: "# pinned\nnode 22\npython 3.12\n"},
+			map[string]any{"manifest": ".tool-versions", "tools": []string{"node", "python"}}},
+		{"aur", spec.BuilderCollectInput{Candy: "chrome", Packages: []string{"google-chrome"}}, map[string]any{"packages": []string{"google-chrome"}}},
 		{"aur", spec.BuilderCollectInput{Candy: "x"}, map[string]any{}},
-		{"unknown", spec.BuilderCollectInput{Candy: "x"}, nil},
 	}
 	for _, tc := range cases {
-		got := BuilderCollectContext(tc.word, tc.in)
-		if !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("BuilderCollectContext(%q) = %+v, want %+v", tc.word, got, tc.want)
+		got, err := BuilderCollectContext(tc.word, tc.in)
+		if err != nil {
+			t.Errorf("BuilderCollectContext(%q, %s): %v", tc.word, tc.in.Candy, err)
+			continue
 		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("BuilderCollectContext(%q, %s) = %+v, want %+v", tc.word, tc.in.Candy, got, tc.want)
+		}
+	}
+	// An unknown word and an unparseable manifest are errors — never an empty teardown.
+	if _, err := BuilderCollectContext("unknown", spec.BuilderCollectInput{Candy: "x"}); err == nil {
+		t.Error("an unknown builder word returned no error")
+	}
+	if _, err := BuilderCollectContext("npm", spec.BuilderCollectInput{Candy: "x", Manifest: "package.json", ManifestContent: "{"}); err == nil {
+		t.Error("an unparseable package.json returned no error")
 	}
 }
 
@@ -68,10 +83,19 @@ func TestBuilderReverse(t *testing.T) {
 		t.Fatalf("npm reverse with empty context = %+v, want nil", got)
 	}
 
-	// cargo → cargo-uninstall when binaries present; nil otherwise.
-	ops = BuilderReverse("cargo", spec.BuilderReverseInput{Context: map[string]any{"binaries": []string{"rg", "fd"}}})
-	if len(ops) != 1 || ops[0].Kind != spec.ReverseOpCargoUninstall || len(ops[0].Targets) != 2 {
-		t.Fatalf("cargo reverse = %+v, want [cargo-uninstall rg fd]", ops)
+	// cargo → cargo-uninstall of the recorded package; nil otherwise.
+	ops = BuilderReverse("cargo", spec.BuilderReverseInput{Context: map[string]any{"packages": []string{"ripgrep"}}})
+	if len(ops) != 1 || ops[0].Kind != spec.ReverseOpCargoUninstall || ops[0].Targets[0] != "ripgrep" {
+		t.Fatalf("cargo reverse = %+v, want [cargo-uninstall ripgrep]", ops)
+	}
+
+	// mise → one user-scope plugin script: uninstall the tools, remove the copied manifest.
+	ops = BuilderReverse("mise", spec.BuilderReverseInput{Context: map[string]any{"tools": []any{"node"}, "manifest": "mise.toml"}})
+	if len(ops) != 1 || ops[0].Kind != spec.ReverseOpPluginScript || ops[0].Scope != spec.ScopeUser {
+		t.Fatalf("mise reverse = %+v, want [plugin-script user]", ops)
+	}
+	if script := ops[0].Extra[spec.ReverseOpPluginScriptKey]; script != "mise uninstall --all 'node'\nrm -f \"$HOME\"/'mise.toml'" {
+		t.Fatalf("mise reverse script = %q", script)
 	}
 
 	// unknown / empty → no teardown.

@@ -76,6 +76,9 @@ import (
 type hostBuilderContext struct {
 	HostHome string
 	Packages []string
+	// PkgDir is the candy's package directory the builder plugin declared (BuilderStep.Package.Dir)
+	// — where a package-producing builder's host template leaves its packages.
+	PkgDir string
 }
 
 // RenderBuilderScript turns a BuilderStep into the bash script that runs inside the builder
@@ -96,6 +99,9 @@ func RenderBuilderScript(s *BuilderStep, hostHome string) (string, error) {
 	ctx := hostBuilderContext{
 		HostHome: hostHome,
 		Packages: ExtractStringSlice(s.RawStageContext, "packages"),
+	}
+	if s.Package != nil {
+		ctx.PkgDir = s.Package.Dir
 	}
 	script, err := buildkit.RenderTemplate(s.Builder+"-host", tmpl, ctx)
 	if err != nil {
@@ -410,12 +416,9 @@ func CleanupBuiltPackageFiles(pkgFiles []string) error {
 //
 // The staging tmpdir is registered for sweep but deliberately NOT defer-removed:
 // the caller owns the returned package files until install completes.
-func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, builderName string, bDef *BuilderDef, builderImage string, packages []string, candyDir string, resolveImage func(string) (string, error), ensureImage func(context.Context, string) error, opts EmitOpts) ([]string, error) {
+func BuildDepPkgsOnHost(_ context.Context, builderName, candyName string, bDef *BuilderDef, pkg *spec.BuilderPackage, builderImage string, packages []string, candyDir string, resolveImage func(string) (string, error), ensureImage func(context.Context, string) error, opts EmitOpts) ([]string, error) {
 	if len(packages) == 0 {
 		return nil, nil
-	}
-	if lp == nil {
-		return nil, fmt.Errorf("BuildDepPkgsOnHost: nil LocalPkgDef")
 	}
 	if builderImage == "" {
 		return nil, fmt.Errorf("BuildDepPkgsOnHost: no %s builder image for packages %v", builderName, packages)
@@ -423,10 +426,10 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, builderName string, 
 	if bDef == nil {
 		return nil, fmt.Errorf("BuildDepPkgsOnHost: no %s builder definition for packages %v", builderName, packages)
 	}
-	glob := localPkgGlobFromDownload(lp.DownloadTemplate)
-	if glob == "" {
-		return nil, fmt.Errorf("BuildDepPkgsOnHost: cannot derive package glob from download_template %q for packages %v", lp.DownloadTemplate, packages)
+	if pkg == nil {
+		return nil, fmt.Errorf("BuildDepPkgsOnHost: builder %q declared no package output for candy %q", builderName, candyName)
 	}
+	glob, pkgDir := pkg.Glob, pkg.Dir
 
 	if opts.DryRun {
 		fmt.Fprintf(os.Stderr, "[dry-run] build %d dependency package(s) %v via %s builder %s\n",
@@ -441,13 +444,15 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, builderName string, 
 		Builder:         builderName,
 		BuilderImage:    builderImage,
 		BuilderDef:      bDef,
+		CandyName:       candyName,
 		CandyDir:        candyDir,
+		Package:         pkg,
 		Phase:           spec.PhaseInstall,
 		RawStageContext: map[string]any{"packages": packages},
 	}
 
-	// Host staging dir bind-mounted as /tmp/aur-pkgs — the builder writes the
-	// package files here; we then glob them. RegisterTempCleanup sweeps it on
+	// Host staging dir bind-mounted as the builder's per-candy package directory — the
+	// builder's host template writes the package files there; we then glob them. RegisterTempCleanup sweeps it on
 	// exit; no defer-remove (caller owns the files until install completes).
 	// Held for the builder container's lifetime — same exposure as the localpkg stage above: the
 	// writes land inside the bind-mount, never touching this root's own mtime.
@@ -472,7 +477,7 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, builderName string, 
 	if err != nil {
 		return nil, err
 	}
-	bindMounts["/tmp/aur-pkgs"] = hostStage
+	bindMounts[pkgDir] = hostStage
 	envVars, err := kit.UserScopeEnv(hostHome)
 	if err != nil {
 		return nil, err
@@ -485,20 +490,15 @@ func BuildDepPkgsOnHost(_ context.Context, lp *LocalPkgDef, builderName string, 
 	if err != nil {
 		return nil, err
 	}
+	// The host template stages its own packages and fails when it produced none (the same guard
+	// the image stage carries); no broadened search runs behind it (opencharly/sdk#608).
+	// Rootless-podman userns fix: files created by container user 1000 land in the host's
+	// subuid range and become unreadable to the operator. chown to 0:0 — root in container maps
+	// to the host user under rootless podman — so the bind-mount surface is host-readable for the
+	// subsequent transfer+install leg.
 	wrappedScript := "set -e\n" +
 		innerScript + "\n" +
-		"# Backstop find: the builder installs the package and cleans up its\n" +
-		"# build tree, so the inner script's find may run after the tree is\n" +
-		"# already wiped. Broaden the search if /tmp/aur-pkgs is still empty.\n" +
-		"if [ -z \"$(ls -A /tmp/aur-pkgs 2>/dev/null)\" ]; then\n" +
-		"  find / -name " + shellquote.ShellQuote(glob) + " 2>/dev/null -exec cp {} /tmp/aur-pkgs/ \\;\n" +
-		"fi\n" +
-		"# Rootless-podman userns fix: files created by container user\n" +
-		"# 1000 land in the host's subuid range and become unreadable to\n" +
-		"# the operator. chown to 0:0 — root in container maps to the\n" +
-		"# host user under rootless podman — so the bind-mount surface is\n" +
-		"# host-readable for the subsequent transfer+install leg.\n" +
-		"chown -R 0:0 /tmp/aur-pkgs/\n"
+		"chown -R 0:0 " + shellquote.ShellQuote(pkgDir) + "/\n"
 
 	out, err := kit.BuilderRun(opts.ContextOrDefault(), BuilderRunOpts{
 		BuilderImage: builderImage,

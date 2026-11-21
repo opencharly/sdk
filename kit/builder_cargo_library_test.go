@@ -87,7 +87,10 @@ func TestCargoInline_EmptyLibraryBuildIsFatal(t *testing.T) {
 // The library install is two files in two places, so the teardown is two ops. Leaving the
 // ld.so.conf.d drop-in behind would point the loader at a directory that no longer exists.
 func TestBuilderReverse_CargoLibrary(t *testing.T) {
-	ctx := BuilderCollectContext("cargo", spec.BuilderCollectInput{Candy: "gwd"})
+	ctx, err := BuilderCollectContext("cargo", spec.BuilderCollectInput{Candy: "gwd"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ops := BuilderReverse("cargo", spec.BuilderReverseInput{Candy: "gwd", Context: ctx})
 	if len(ops) != 2 {
 		t.Fatalf("cargo library reverse = %+v, want 2 ops", ops)
@@ -109,7 +112,7 @@ func TestBuilderReverse_CargoLibrary(t *testing.T) {
 // yields three ops, not one silently replacing the other.
 func TestBuilderReverse_CargoBinaryAndLibraryCoexist(t *testing.T) {
 	ops := BuilderReverse("cargo", spec.BuilderReverseInput{Candy: "c", Context: map[string]any{
-		"binaries": []any{"rg"},
+		"packages": []any{"ripgrep"},
 		"lib_dir":  "/usr/local/lib/charly/c",
 		"ld_conf":  "/etc/ld.so.conf.d/charly-c.conf",
 	}})

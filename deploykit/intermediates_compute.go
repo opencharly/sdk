@@ -337,13 +337,13 @@ func createIntermediate(name, parentName string, uid int, pathCandies []string, 
 	}
 
 	// An auto-intermediate hosts candies hoisted out of its consuming images.
-	// When a hoisted candy's package section is keyed on a build format (or
-	// distro tag) the PARENT chain doesn't declare but a CONSUMER does — e.g.
-	// the cachyos base is build:[pac] while selkies-labwc is
-	// build:[pac,aur] and the hoisted chrome candy needs aur for google-chrome —
-	// parent-only inheritance silently drops that section (the AUR gate in
-	// generate.go keys on BuildFormats). Union the parent's formats/distro with
-	// every consuming descendant's, keeping the parent's primary format FIRST
+	// When a hoisted candy's package section is keyed on a build format or a
+	// distro tag the PARENT chain doesn't declare but a CONSUMER does — e.g. an
+	// arch parent whose consumers carry the `cachyos` tag, and a hoisted candy
+	// whose `distro.cachyos.aur` declaration only that tag selects (a manager
+	// declaration is scoped by the image's tag chain, opencharly/sdk#608) —
+	// parent-only inheritance silently drops that section. Union the parent's
+	// formats/distro with every consuming descendant's, keeping the parent's primary format FIRST
 	// (it drives img.Pkg + cache mounts below). No-op when consumers share the
 	// parent's formats (the common case). Mirrors the parent-first inheritance
 	// fix above for the orthogonal "format declared on children" case.

@@ -204,6 +204,10 @@ func scanFromParsed(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyModel
 	hasEnvironmentYml := kit.FileExists(filepath.Join(sourceDir, "environment.yml"))
 	hasPackageJson := kit.FileExists(filepath.Join(sourceDir, "package.json"))
 	hasCargoToml := kit.FileExists(filepath.Join(sourceDir, "Cargo.toml"))
+	// mise is a builder like the others; its manifests were missing here, so a candy whose only
+	// content was a mise.toml read as empty (opencharly/sdk#608). This list duplicates the builder
+	// vocabulary's detect_file — removed with DESIGN's authoring form (opencharly/spec#417).
+	hasMiseConfig := kit.FileExists(filepath.Join(sourceDir, "mise.toml")) || kit.FileExists(filepath.Join(sourceDir, ".tool-versions"))
 
 	svcFiles, _ := filepath.Glob(filepath.Join(sourceDir, "*.service"))
 	if len(svcFiles) > 0 {
@@ -222,17 +226,17 @@ func scanFromParsed(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyModel
 	// EVERY candy is scanned). The host completes both booleans by OR-ing in those two missing
 	// terms once it has computed them (boolean OR is associative — the two-stage composition is
 	// byte-identical to computing the whole predicate in one pass; proven by the byte-parity spike).
-	hasFormatPackages := len(m.FormatSections) > 0 || len(m.TagSections) > 0 || len(m.TopPackages) > 0
+	hasFormatPackages := len(m.TagSections) > 0 || len(m.TopPackages) > 0
 	hasTagPackages := false
 	for _, s := range m.TagSections {
-		if len(s.Package) > 0 {
+		if len(s.Package) > 0 || len(s.Managers) > 0 {
 			hasTagPackages = true
 			break
 		}
 	}
 	hasApk := len(m.Apk) > 0
 	m.HasInstallFiles = hasFormatPackages || hasTagPackages || len(m.TopPackages) > 0 ||
-		hasPixiToml || hasPyprojectToml || hasEnvironmentYml || hasPackageJson || hasCargoToml ||
+		hasPixiToml || hasPyprojectToml || hasEnvironmentYml || hasPackageJson || hasCargoToml || hasMiseConfig ||
 		hasApk
 	m.HasContent = m.HasInstallFiles || m.Env != nil || len(m.Port) > 0 || m.Route != nil ||
 		len(v.Volumes) > 0 || len(v.Aliases) > 0 || len(m.Extract) > 0 || len(m.Data) > 0 ||
@@ -431,19 +435,6 @@ func derivePackageSections(m *spec.CandyModel, ly *spec.CandyYAML) {
 		}
 		return cfg
 	}
-	ensureFormat := func(fmtName string) spec.PackageSection {
-		if m.FormatSections == nil {
-			m.FormatSections = map[string]spec.PackageSection{}
-		}
-		ps := m.FormatSections[fmtName]
-		if ps.FormatName == "" {
-			ps.FormatName = fmtName
-		}
-		if ps.Raw == nil {
-			ps.Raw = map[string]any{}
-		}
-		return ps
-	}
 	// addPackages unions pkgs into *dst (dedup, first-seen order).
 	addPackages := func(dst *[]string, pkgs []string) {
 		seen := map[string]bool{}
@@ -499,16 +490,25 @@ func derivePackageSections(m *spec.CandyModel, ly *spec.CandyYAML) {
 			setRaw(cfg.Raw, "options", dp.Options)
 			setRaw(cfg.Raw, "exclude", dp.Exclude)
 			setRaw(cfg.Raw, "module", dp.Module)
-			m.TagSections[tagKey] = cfg
-
+			// A build-time MANAGER declaration (`distro.<tag>.aur:`) is recorded on THIS tag's
+			// section, exactly like the tag's OS packages, so an image honours it only when it
+			// selects the tag (CascadeTagChain) — never merged into one image-independent section
+			// that every image would have to opt out of (opencharly/sdk#608).
 			if dp.AUR != nil {
-				aurPS := ensureFormat("aur")
-				addPackages(&aurPS.Packages, spec.PackageNames(dp.AUR.Package))
-				aurPS.Raw["package"] = aurPS.Packages
-				setRaw(aurPS.Raw, "options", dp.AUR.Options)
-				setRaw(aurPS.Raw, "replaces", dp.AUR.Replaces)
-				m.FormatSections["aur"] = aurPS
+				if cfg.Managers == nil {
+					cfg.Managers = map[string]spec.PackageSection{}
+				}
+				ms := cfg.Managers["aur"]
+				ms.FormatName = "aur"
+				if ms.Raw == nil {
+					ms.Raw = map[string]any{}
+				}
+				addPackages(&ms.Packages, spec.PackageNames(dp.AUR.Package))
+				ms.Raw["package"] = ms.Packages
+				setRaw(ms.Raw, "options", dp.AUR.Options)
+				cfg.Managers["aur"] = ms
 			}
+			m.TagSections[tagKey] = cfg
 		}
 	}
 }
