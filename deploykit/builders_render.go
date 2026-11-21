@@ -50,6 +50,14 @@ func (g *Generator) EmitPreMainCandyStages(b *strings.Builder, boxName string, i
 // and no second copy of the host's own connectPluginByWordRef.
 // The reply is cached per (candy, builder) for EmitBuilderArtifacts.
 func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *buildkit.ResolvedBox, candyOrder []string) error {
+	// FIRST, before any early return: every candy that DECLARES packages for a builder's
+	// format must have a builder that can actually run. Checked ahead of the
+	// `BuilderConfig == nil` return, because "no builders configured at all" is the most
+	// complete way to suppress the error — a hidden default path whose only purpose would
+	// be to drop the declaration silently.
+	if err := g.requireDeclaredBuilders(boxName, img, candyOrder); err != nil {
+		return err
+	}
 	if img.BuilderConfig == nil {
 		return nil
 	}
@@ -74,13 +82,7 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 		// `aur:` package silently while the build reported success — measured on both the
 		// arch and cachyos bases (opencharly/layer-kde-shell#7, opencharly/sdk#608).
 		if !external {
-			for _, candyName := range candyOrder {
-				if layer := g.Candies[candyName]; declaresBuilderPackages(layer, builderName) {
-					return fmt.Errorf("image %q: candy %q declares %q packages, but builder %q is not available (its plugin is not connected); refusing to build an image that silently omits them",
-						boxName, candyName, builderName, builderName)
-				}
-			}
-			continue
+			continue // requireDeclaredBuilders above already refused any declared-but-unrunnable builder
 		}
 		for _, candyName := range candyOrder {
 			layer := g.Candies[candyName]
@@ -105,6 +107,46 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 			g.detectionBuilderReplies[BuilderCtxKey(layer.GetName(), builderName)] = reply
 			b.WriteString(reply.Stage)
 			b.WriteString("\n")
+		}
+	}
+	return nil
+}
+
+// requireDeclaredBuilders refuses an image whose candies declare packages for a builder that
+// cannot run: no builder definition at all, or no externalized (plugin) builder. It is the ONE
+// rule behind that refusal, called before every early return in EmitBuilderStages
+// (opencharly/sdk#608).
+func (g *Generator) requireDeclaredBuilders(boxName string, img *buildkit.ResolvedBox, candyOrder []string) error {
+	// The formats to probe: every builder the image configures, and — when it configures NONE,
+	// which is the widest suppression — the formats the loader can put on a candy at all.
+	// Measured: the loader registers exactly one format section today (`ensureFormat("aur")`,
+	// the only call in loaderkit/scan_candy.go), so name it there; anything added later belongs
+	// in this list in the same change, and the declaration arm in the loop below covers it.
+	formats := []string{}
+	if img != nil && img.BuilderConfig != nil {
+		formats = append(formats, img.BuilderConfig.BuilderNames()...)
+	} else {
+		formats = append(formats, "aur")
+	}
+	for _, candyName := range candyOrder {
+		layer := g.Candies[candyName]
+		if layer == nil {
+			continue
+		}
+		for _, format := range formats {
+			if !declaresBuilderPackages(layer, format) {
+				continue
+			}
+			var def *buildkit.BuilderDef
+			if img != nil && img.BuilderConfig != nil {
+				def = img.BuilderConfig.Builder[format]
+			}
+			if def == nil {
+				return fmt.Errorf("image %q: candy %q declares %q packages, but no %q builder is configured; refusing to build an image that silently omits them", boxName, candyName, format, format)
+			}
+			if !g.ExternalizedBuilders[format] {
+				return fmt.Errorf("image %q: candy %q declares %q packages, but builder %q is not available (its plugin is not connected); refusing to build an image that silently omits them", boxName, candyName, format, format)
+			}
 		}
 	}
 	return nil

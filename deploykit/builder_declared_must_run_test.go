@@ -50,3 +50,22 @@ func TestEmitBuilderStages_UndeclaredBuilderStaysSilent(t *testing.T) {
 		t.Fatalf("a candy declaring no aur packages must not fail: %v", err)
 	}
 }
+
+// The widest suppression is "no builders configured at all": with a nil BuilderConfig the old
+// code returned nil before looking at any candy, so a declared `aur:` package vanished with no
+// error. The rule now runs FIRST, ahead of every early return.
+func TestEmitBuilderStages_NoBuilderConfigAtAllStillRefusesDeclaredPackages(t *testing.T) {
+	candy := NewSpecCandyModel(
+		spec.CandyModel{Name: "kde-shell", FormatSections: map[string]PackageSection{
+			"aur": {Packages: []string{"kdotool"}},
+		}},
+		spec.CandyView{Name: "kde-shell"},
+	)
+	g := &Generator{Candies: map[string]CandyModel{"kde-shell": candy}}
+	img := &buildkit.ResolvedBox{} // BuilderConfig nil
+	var b strings.Builder
+	err := g.EmitBuilderStages(&b, "shell-box", img, []string{"kde-shell"})
+	if err == nil || !strings.Contains(err.Error(), "no \"aur\" builder is configured") {
+		t.Fatalf("nil BuilderConfig must refuse a declared aur package, got %v", err)
+	}
+}
