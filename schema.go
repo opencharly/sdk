@@ -111,7 +111,7 @@ func BuildCapabilitiesWithRequires(calver string, provided []ProvidedCapability,
 		if c.CommandParent != "" && c.Class != "command" {
 			return nil, fmt.Errorf("plugin capability %s:%s declares a command parent %q outside class=command", c.Class, c.Word, c.CommandParent)
 		}
-		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Phase: c.Phase, Primary: c.Primary, Interactive: c.Interactive, CommandParent: c.CommandParent}
+		pc := &pb.ProvidedCapability{Class: c.Class, Word: c.Word, InputDef: c.InputDef, Structural: c.Structural, Lifecycle: c.Lifecycle, Preresolve: c.Preresolve, Validates: c.Validates, Contents: c.Contents, Phase: c.Phase, Primary: c.Primary, Interactive: c.Interactive, CommandParent: c.CommandParent}
 		if c.CommandModel != nil {
 			if c.Class != "command" {
 				return nil, fmt.Errorf("plugin capability %s:%s declares a command model outside class=command", c.Class, c.Word)

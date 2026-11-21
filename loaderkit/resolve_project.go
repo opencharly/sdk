@@ -1,6 +1,7 @@
 package loaderkit
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/opencharly/sdk/buildkit"
@@ -142,29 +143,30 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 		if c == nil {
 			continue
 		}
-		m, v, ok := deploykit.RawCandyPair(c)
+		// The skills this candy OWNS — `skill.owner` naming this candy entity — projected onto the
+		// wire model so a consumer holding only the model can answer "which skills does this candy
+		// carry?" without reaching the authored nodes (opencharly/spec#254; CandyModel.Skills carries
+		// NAMES, the bodies stay in Config.PluginKinds["skill"] and the marketplace generator). ProjectCandy is the ONE
+		// projection every scope uses, root and import namespace alike.
+		//
+		// PER-CANDY, not per-box: `uf.PluginKinds["skill"]` is the authored document, so a candy's
+		// ownership does not depend on which box happens to compose it. kind:skill's owned content
+		// filters by the composed chain — that is the box question, and asking it here would make
+		// charly-internals own its skills under one image and not under another.
+		var skills map[string]json.RawMessage
+		if uf != nil {
+			skills = uf.PluginKinds["skill"]
+		}
+		m, v, ok, err := deploykit.ProjectCandy(c, name, skills)
+		if err != nil {
+			return nil, err
+		}
 		if !ok {
 			continue
 		}
 		if rp.Candies == nil {
 			rp.Candies = make(map[string]spec.CandyView, len(layers))
 			rp.CandyModels = make(map[string]spec.CandyModel, len(layers))
-		}
-		// The skills this candy OWNS — `skill.owner` naming this candy entity — projected onto the
-		// wire model so a consumer holding only the model can answer "which skills does this candy
-		// carry?" without reaching cfg.Skills (opencharly/spec#254; CandyModel.Skills carries NAMES,
-		// the bodies stay in Config.Skills and the marketplace generator).
-		//
-		// PER-CANDY, not per-box: `uf.PluginKinds["skill"]` is the authored document, so a candy's
-		// ownership does not depend on which box happens to compose it. CollectSkills filters by the
-		// composed chain because a LABEL must stay bounded — that is the box question, and asking it
-		// here would make charly-internals own its skills under one image and not under another.
-		if uf != nil {
-			owned, err := deploykit.CandyModelOwnedSkills(uf.PluginKinds["skill"], name)
-			if err != nil {
-				return nil, fmt.Errorf("projecting candy %q skills: %w", name, err)
-			}
-			m.Skills = owned
 		}
 		rp.Candies[name] = v
 		rp.CandyModels[name] = m

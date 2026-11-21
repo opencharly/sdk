@@ -173,8 +173,9 @@ Part II #5. What follows is only the how.
    `<owning candy dir>/.agents/agents/<name>.md` — the SIBLING tree, never a child of
    `.agents/skills`, and a candy's `skills:` list does not govern it. `.agents/skills` is what a
    candy's `skills:` list means when it declares none (a candy that declares another tree is honoured
-   by the generators; the OCI-label collector reads only the default one — a stated limit at
-   `sdk/deploykit/skills_collect.go`). Both shapes go through ONE reader
+   by the generators; `kind:skill`'s owned content — the image's `ai.opencharly.skill` label and its
+   installed `~/.agents/skills/<name>/` — reads only the default one, a stated limit in
+   opencharly/plugin-harness-kind). Both shapes go through ONE reader
    (`sdk/candywalk/skillfile.go` — `AgentsSkillsDir` / `AgentsAgentsDir`), so the file you author and
    the file the corpus publishes parse identically. **You write the body; nothing writes it for
    you.**
@@ -204,15 +205,16 @@ Part II #5. What follows is only the how.
 
 4. **An IMAGE cannot own a resolvable skill.** A `candy:` node carrying `base:` or `from:` folds into
    the BOX set and never the layer set, so it has no source directory at all: its skill's body
-   resolves nowhere, and the node is silently absent from the `ai.opencharly.skill` OCI label too — it
-   is invisible, not merely unreadable. `charly box validate` rejects the shape
-   (`… owner %q is an image, not a candy …`, `plugin-box/candy/plugin-box/validate_skills.go`,
-   `opencharly/sdk#434`). `owner:` must name a PACKAGE candy the image composes; for a repo whose
-   skills belong to images the sanctioned shape is a `<repo>-skills` carrier candy — a real candy,
-   with install content that `copy:`s `.agents/skills` to the account's `~/.agents/skills` and an ADE
-   `check:` proving it landed, composed by every image that carries one of its skills.
-   `opencharly/distro-arch`'s `candy/arch-skills` is the worked example. The carrier is deliberately
-   COARSE: one carrier composed into N images puts that repo's whole skill set on all N labels.
+   resolves nowhere. `charly box validate` rejects the shape (`… owner %q is an image, not a candy …`,
+   a `kind:skill` diagnostic served by opencharly/plugin-harness-kind, `opencharly/sdk#434`). `owner:`
+   must name a PACKAGE candy the image composes; for a repo whose skills belong to images the
+   sanctioned shape is a `<repo>-skills` carrier candy — a real candy that OWNS the `skill:` nodes and
+   carries an ADE `check:` proving the bodies landed, composed by every image that carries one of its
+   skills. It ships NO install step: charly installs the body of every skill a composed candy owns at
+   the image user's `~/.agents/skills/<name>/` and labels it `ai.opencharly.skill` (`kind:skill`'s
+   owned content, `ops.OpContent`, opencharly/sdk#598) — an owned skill node is the carrier's install
+   content. `opencharly/distro-arch`'s `candy/arch-skills` is the worked example. The carrier is
+   deliberately COARSE: every image that composes it carries every skill it owns.
 
 5. **Regenerate the corpus** in the marketplace repo — the ownership table, the command, the deploy
    drift gate and the daily refresh all live in `/charly-internals:marketplace`. The file you edited

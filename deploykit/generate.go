@@ -144,6 +144,12 @@ func (g *Generator) generateContainerfile(boxName string) error {
 		b.WriteString("COPY --from=traefik-routes /routes.yml /etc/traefik/dynamic/routes.yml\n\n")
 	}
 
+	// Install the owned content the composed candies' kind nodes contribute (skill bodies and the
+	// like) under the image user's home (owned_content.go).
+	if err := g.EmitOwnedContent(&b, boxName, img); err != nil {
+		return err
+	}
+
 	// Final USER directive (use UID for robustness). An init that DECLARES it
 	// requires root (systemd as a container's PID 1) must leave the image at root
 	// for the same reason preserve_user does: a non-root PID 1 makes systemd fail

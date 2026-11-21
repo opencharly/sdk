@@ -216,9 +216,8 @@ func TestProjectCandiesScanned_ImportedNamespaceCandyIsRemote(t *testing.T) {
 		t.Errorf("CandyCopySource = %q, want a %s-staged source (a project-relative source cannot exist in the importing project)", got, wantPrefix)
 	}
 
-	// The R5/R2 collapse: the OTHER name-derived candy-path site (rootCopySources) must reach
-	// the same origin verdict — a staged candy's build-root copy sources are NOT its own
-	// repo's root, so nothing from the importing project's root may be staged into it.
+	// The scratch stage must stage the SAME origin: an imported-namespace candy's files come from
+	// its staged copy, so nothing from the importing project's tree may be rendered into its stage.
 	var b strings.Builder
 	g.EmitScratchStages(&b, []string{"cachyos-base-check"})
 	if strings.Contains(b.String(), "COPY candy/cachyos-base-check/") {

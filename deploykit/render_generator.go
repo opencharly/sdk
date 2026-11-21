@@ -63,6 +63,11 @@ type Generator struct {
 	Config     *spec.Config
 	InitConfig *buildkit.InitConfig
 
+	// Content is how render-prep asks the content kinds what their owned nodes contribute to a box
+	// (ops.OpContent; owned_content.go). The plugin driving the build wires Ask to InvokeProvider and
+	// Kinds to the envelope's content_kinds; empty Kinds means no kind contributes.
+	Content OwnedContentSource
+
 	// externalBuilderReplies caches each candy's external-builder OpResolve reply
 	// for ONE image (Invoked once per candy); RESET per image.
 	externalBuilderReplies map[string]spec.BuilderResolveReply

@@ -165,3 +165,24 @@ func TestBuildCapabilitiesRequirementCommandParentRoundTrip(t *testing.T) {
 		t.Errorf("requires[1].CommandParent = %q, want %q", reqs[1].GetCommandParent(), "box")
 	}
 }
+
+// A kind's `contents` declaration (it serves ops.OpContent) must travel on the wire
+// ProvidedCapability: the host publishes exactly the declaring kinds as content_kinds, so a dropped
+// flag makes a content kind silently never asked — an image built without its skills.
+func TestBuildCapabilitiesContentsRoundTrip(t *testing.T) {
+	caps, err := BuildCapabilities("2026.176.0001",
+		[]ProvidedCapability{
+			{Class: "kind", Word: "skill", InputDef: "#Input", Contents: true},
+			{Class: "kind", Word: "hook", InputDef: "#Input"},
+		}, testSchemaFS(), "schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, c := range caps.GetProvided() {
+		got[c.GetWord()] = c.GetContents()
+	}
+	if !got["skill"] || got["hook"] {
+		t.Fatalf("contents on the wire = %v, want skill=true hook=false", got)
+	}
+}

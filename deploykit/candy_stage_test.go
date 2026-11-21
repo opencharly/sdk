@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opencharly/sdk/vmshared"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -96,49 +95,5 @@ func TestCandyCopySource_ImportedNamespaceOrigin(t *testing.T) {
 		if got := g.CandyCopySource(tc.ref); got != tc.want {
 			t.Errorf("CandyCopySource(%q) = %q, want %q", tc.ref, got, tc.want)
 		}
-	}
-
-	// The OTHER name-derived candy-path site (rootCopySources) must reach the same origin
-	// verdict from the same helper: a staged candy's repo root is its own checkout, not the
-	// importing project's root, so no project-root source may be staged into it.
-	if roots := g.rootCopySources("cachyos-base-check", g.Candies["cachyos-base-check"]); len(roots) != 0 {
-		t.Errorf("rootCopySources staged project-root copies into an imported-namespace candy: %v", roots)
-	}
-}
-
-// TestRootCopySources pins the base rule opencharly/sdk#444 leaves to the generator: a
-// `copy:` source that exists at the PROJECT ROOT and not in the candy's own directory is
-// root-relative and must be staged into the candy's scratch stage.
-func TestRootCopySources(t *testing.T) {
-	project := t.TempDir()
-	mkdir := func(rel string) {
-		if err := os.MkdirAll(filepath.Join(project, rel), 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", rel, err)
-		}
-	}
-	mkdir(".agents/skills/ubuntu")
-	mkdir("candy/carrier/files")
-	candyDir := filepath.Join(project, "candy/carrier")
-
-	ops := []vmshared.Op{
-		{Copy: ".agents/skills"}, // root-relative: the carrier case
-		{Copy: "files"},          // candy-relative: today's behaviour, must not change
-		{Copy: "missing"},        // neither place: nothing to stage
-		{Copy: "/etc/absolute"},  // not a build-context path
-		{Copy: ".agents/skills"}, // duplicate
-		{Copy: ""},               // not a copy op
-	}
-	got := rootCopySources(ops, project, candyDir)
-	want := []string{".agents/skills"}
-	if len(got) != len(want) || got[0] != want[0] {
-		t.Fatalf("rootCopySources = %v, want %v", got, want)
-	}
-
-	// A candy that carries its own .agents/skills keeps it candy-relative — the root
-	// tree must not shadow it.
-	mkdir("candy/carrier/.agents/skills")
-	got = rootCopySources([]vmshared.Op{{Copy: ".agents/skills"}}, project, candyDir)
-	if len(got) != 0 {
-		t.Fatalf("candy-relative .agents/skills staged from the root too: %v", got)
 	}
 }

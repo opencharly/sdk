@@ -282,7 +282,7 @@ func TestFillNamespaceBoxViews_InjectsInitDependsCandy(t *testing.T) {
 	rp := &spec.ResolvedProject{}
 
 	opts := spec.ResolveOpts{DistroCfg: &spec.DistroConfig{}, BuilderCfg: &spec.BuilderConfig{}}
-	FillNamespaceBoxViews(sub, nsLayers, initVocabFixture(), "ns", "2026.1.1", t.TempDir(), opts, rp)
+	FillNamespaceBoxViews(sub, nsLayers, initVocabFixture(), "ns", "2026.1.1", t.TempDir(), opts, OwnedContentSource{}, rp)
 
 	view, ok := rp.Boxes["ns.nsbox"]
 	if !ok {

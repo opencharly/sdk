@@ -24,6 +24,9 @@ const (
 
 	// OpCompile is the K4-B deploy-COMPILE selector (command:deploy).
 	OpCompile = ops.OpCompile
+	// OpContent is a kind's owned-content selector (M1): the build kit asks a kind declaring
+	// `contents` what its nodes contribute to a box (spec.OwnedContentRequest/Reply).
+	OpContent = ops.OpContent
 
 	// OpCollectContext + OpReverse are the DEPLOY-TIME builder-IR legs of an externalized detection-builder.
 	OpCollectContext = ops.OpCollectContext // builder: per-candy stage-context keys → BuilderCollectReply

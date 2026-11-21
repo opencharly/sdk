@@ -44,10 +44,6 @@ sdk-skill-shelf:
             ships no install content and composes no image; it carries the `skill:` routing nodes,
             and the prose lives in `.agents/skills/<name>/SKILL.md` at this repo's root.
         plan:
-            - run: this documentation-only candy ships no install content (it carries the sdk's skill entities); validate-satisfying no-op
-              command: "true"
-              context:
-                  - build
             - check: validate-satisfying no-op — this assertion is NOT performed by the command, the real body-existence gate is `charly box validate`
               id: sdk-skill-shelf-present
               context:

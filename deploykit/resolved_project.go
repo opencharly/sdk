@@ -1,6 +1,8 @@
 package deploykit
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/opencharly/sdk/buildkit"
 	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/sdk/rawbody"
@@ -63,6 +65,7 @@ func ProjectResolvedBox(b *buildkit.ResolvedBox) spec.ResolvedBoxView {
 	v.InitSystem = b.InitSystem
 	v.InitDef = b.InitDef
 	v.ActiveInits = b.ActiveInits
+	v.OwnedContent = b.OwnedContent
 	if b.CandyCaps != nil {
 		v.Caps = &spec.AggregatedCandyCapsView{
 			PreserveUser:       b.CandyCaps.PreserveUser,
@@ -87,6 +90,29 @@ func RawCandyPair(r spec.CandyReader) (spec.CandyModel, spec.CandyView, bool) {
 	}
 	m, v := raw.RawCandy()
 	return m, v, true
+}
+
+// ProjectCandy is the ONE projection of a resolved candy onto its wire pair for the
+// resolved-project envelope: RawCandyPair plus the `skill:` nodes the candy OWNS (`skill.owner`
+// naming this candy), from `skills`, the skill nodes of the scope that authored the candy.
+//
+// One function because there are two scopes and they drifted: the ROOT scope
+// (loaderkit.ResolveProject) projected ownership while each IMPORT NAMESPACE's fold
+// (plugin-build's FillNamespacedBoxes) copied RawCandyPair alone, so an imported candy whose only
+// content is the skills it owns read as empty — the validator refused it for having no install
+// content, though the generator installs exactly those skills (opencharly/sdk#598). ok is false
+// exactly when RawCandyPair's is.
+func ProjectCandy(r spec.CandyReader, name string, skills map[string]json.RawMessage) (spec.CandyModel, spec.CandyView, bool, error) {
+	m, v, ok := RawCandyPair(r)
+	if !ok {
+		return m, v, false, nil
+	}
+	owned, err := CandyModelOwnedSkills(skills, name)
+	if err != nil {
+		return m, v, true, fmt.Errorf("projecting candy %q skills: %w", name, err)
+	}
+	m.Skills = owned
+	return m, v, true, nil
 }
 
 // ProjectBoxAggregates fills the box-AUTHORED + box-AGGREGATE fields on a ResolvedBoxView
