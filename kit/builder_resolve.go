@@ -148,6 +148,24 @@ RUN {{.CacheMountsOwned}}{{.InstallCmd}} && mise reshim
 // CopyArtifacts + CopyBinary (post-main-FROM), or InlineFragment (in-candy, inline builders).
 // An unknown word is a LOUD error (never a silent empty stage). This is the ONE render both
 // the box-build plugin OpResolve and the in-proc pod-overlay build-emit call (R3).
+// The builder reply's REQUIRED `output` discriminator (spec schema, DESIGN §4.4): a reply that
+// does not name its shape is invalid at receipt, so a plugin built against the older contract
+// fails at its first message instead of shipping a payload nothing installs
+// (opencharly/sdk#615). The host checks the pair (deploykit.ValidateBuilderResolveReply).
+const (
+	BuilderOutputPackage = "package"
+	BuilderOutputFiles   = "files"
+	BuilderOutputInline  = "inline"
+)
+
+// builderOutput* are the unexported spellings the built-in replies use, so this file's literals
+// and the host's validation cannot drift.
+const (
+	builderOutputPackage = BuilderOutputPackage
+	builderOutputFiles   = BuilderOutputFiles
+	builderOutputInline  = BuilderOutputInline
+)
+
 func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResolveReply, error) {
 	var zero spec.BuilderResolveReply
 	switch word {
@@ -161,6 +179,7 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 			return zero, err
 		}
 		return spec.BuilderResolveReply{
+			Output:        builderOutputFiles,
 			Stage:         stage,
 			CopyArtifacts: copies,
 			CopyBinary:    builderCopyLine(in.StageName, "/usr/local/bin/pixi", "/usr/local/bin/pixi", false, 0, 0),
@@ -174,7 +193,7 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 		if err != nil {
 			return zero, err
 		}
-		return spec.BuilderResolveReply{Stage: stage, CopyArtifacts: copies}, nil
+		return spec.BuilderResolveReply{Output: builderOutputFiles, Stage: stage, CopyArtifacts: copies}, nil
 	case "aur":
 		pkg := BuilderPackageOutput(word, in.Candy)
 		if pkg == nil {
@@ -188,13 +207,13 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 		if err != nil {
 			return zero, err
 		}
-		return spec.BuilderResolveReply{Stage: stage, CopyArtifacts: copies, Package: pkg}, nil
+		return spec.BuilderResolveReply{Output: builderOutputPackage, Stage: stage, CopyArtifacts: copies, Package: pkg}, nil
 	case "cargo":
 		frag, err := renderCargoInline(in)
 		if err != nil {
 			return zero, err
 		}
-		return spec.BuilderResolveReply{InlineFragment: frag}, nil
+		return spec.BuilderResolveReply{Output: builderOutputInline, InlineFragment: frag}, nil
 	case "mise":
 		stage, err := renderBuilderStageData("mise-stage", miseStageTemplate, miseStageData{BuilderResolveInput: in, MiseVersion: miseVersion})
 		if err != nil {
@@ -205,6 +224,7 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 			return zero, err
 		}
 		return spec.BuilderResolveReply{
+			Output:        builderOutputFiles,
 			Stage:         stage,
 			CopyArtifacts: copies,
 			CopyBinary:    builderCopyLine(in.StageName, "/usr/local/bin/mise", "/usr/local/bin/mise", false, 0, 0),
