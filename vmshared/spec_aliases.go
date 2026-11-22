@@ -171,7 +171,6 @@ type (
 	BootloaderDef          = spec.Bootloader
 	BootstrapDef           = spec.Bootstrap
 	ServiceOverrides       = spec.CandyServiceOverrides
-	CopyDef                = spec.Copy
 	DebootstrapDef         = spec.Debootstrap
 	DeploySecretConfig     = spec.DeploySecret
 	DeployVolumeConfig     = spec.DeployVolume
