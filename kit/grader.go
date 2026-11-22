@@ -111,7 +111,8 @@ func buildGraderPrompt(req GraderRequest, target, instance string) string {
 	b.WriteString("You are an acceptance-test grader for Agent Driven Evaluation. ")
 	b.WriteString("Decide, from real evidence, whether ONE behaviour holds on a running deployment.\n\n")
 	if strings.TrimSpace(req.Description) != "" {
-		b.WriteString("Goal (the entity's purpose): " + req.Description + "\n")
+		b.WriteString("Goal (the entity's purpose): " + req.Description)
+		b.WriteByte('\n')
 	}
 	kw := strings.TrimSpace(req.Keyword)
 	if kw == "" {
@@ -135,8 +136,10 @@ func buildGraderPrompt(req GraderRequest, target, instance string) string {
 	b.WriteString("Decide pass ONLY if the evidence positively confirms the behaviour; otherwise fail. ")
 	b.WriteString("If you cannot gather evidence, fail.\n\n")
 	b.WriteString("Output discipline: your FINAL line MUST be exactly one JSON object and nothing after it:\n")
-	b.WriteString(`{"verdict":"pass","evidence":"<one sentence citing the concrete evidence>"}` + "\n")
-	b.WriteString(`or {"verdict":"fail","evidence":"<why it does not hold>"}` + "\n")
+	b.WriteString(`{"verdict":"pass","evidence":"<one sentence citing the concrete evidence>"}`)
+	b.WriteByte('\n')
+	b.WriteString(`or {"verdict":"fail","evidence":"<why it does not hold>"}`)
+	b.WriteByte('\n')
 	return b.String()
 }
 
