@@ -176,3 +176,33 @@ func TestBuildInfoValidate(t *testing.T) {
 		t.Fatalf("nfpm.Validate: %v", err)
 	}
 }
+
+// A packaging fix to an already-published version is a NEW pkgrel, not a rewritten -1: the
+// artifact changed (corrected metadata) while the upstream version did not, and a client that
+// already holds -1 would never see a rewritten file under the same name. Empty means the first
+// build. (This is how opencharly/layer-charly#23's repaired packages get published.)
+func TestBuildInfoAppliesThePackageRelease(t *testing.T) {
+	binary, pluginsDir := fixtureInputs(t)
+	pkg := testPackaging()
+	base := BuildOptions{Binary: binary, PluginsDir: pluginsDir, Version: "2026.326.1922", Arch: "amd64", Formats: []string{"archlinux"}}
+
+	first, err := BuildInfo(pkg, "archlinux", base)
+	if err != nil {
+		t.Fatalf("BuildInfo (no release): %v", err)
+	}
+	if first.Release != "1" {
+		t.Errorf("Release = %q, want \"1\" for the first build of a version", first.Release)
+	}
+
+	base.Release = "2"
+	second, err := BuildInfo(pkg, "archlinux", base)
+	if err != nil {
+		t.Fatalf("BuildInfo (release 2): %v", err)
+	}
+	if second.Release != "2" {
+		t.Errorf("Release = %q, want \"2\"", second.Release)
+	}
+	if second.Version != "2026.326.1922" {
+		t.Errorf("Version = %q, the upstream version must not move with the release", second.Version)
+	}
+}
