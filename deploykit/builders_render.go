@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -342,4 +343,35 @@ func DetectExternalizedBuilders(order []string, candies map[string]CandyModel, i
 		}
 	}
 	return out
+}
+
+// ValidateBuilderResolveReply is the host's receipt check for a builder's OpResolve answer — the
+// half of DESIGN §4.4 that makes "there is no version negotiation" true: a plugin built against a
+// reply contract that predates the required `output` discriminator cannot produce a valid answer,
+// so it is refused here, at its first message, naming the field (D-PROTO-6). The message is never
+// coerced and never upgraded (opencharly/sdk#615).
+//
+// The pair is checked, not just the field: a `package` output must carry its package (the host
+// installs it), a `files` output its artifact copies, an `inline` output its fragment.
+func ValidateBuilderResolveReply(word string, reply spec.BuilderResolveReply) error {
+	switch reply.Output {
+	case "":
+		return fmt.Errorf("builder %q returned no `output` discriminator: it was built against a builder reply contract older than this host's, so its reply cannot be validated — rebuild it against a current sdk (opencharly/sdk#615)", word)
+	case kit.BuilderOutputPackage:
+		if reply.Package == nil {
+			return fmt.Errorf("builder %q: output %q carries no `package`", word, reply.Output)
+		}
+	case kit.BuilderOutputFiles:
+		if len(reply.CopyArtifacts) == 0 {
+			return fmt.Errorf("builder %q: output %q carries no `copy_artifacts`", word, reply.Output)
+		}
+	case kit.BuilderOutputInline:
+		if reply.InlineFragment == "" {
+			return fmt.Errorf("builder %q: output %q carries no `inline_fragment`", word, reply.Output)
+		}
+	default:
+		return fmt.Errorf("builder %q: unknown `output` %q (the vocabulary is %q, %q, %q)", word, reply.Output,
+			kit.BuilderOutputPackage, kit.BuilderOutputFiles, kit.BuilderOutputInline)
+	}
+	return nil
 }
