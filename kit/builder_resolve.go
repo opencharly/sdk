@@ -158,14 +158,6 @@ const (
 	BuilderOutputInline  = "inline"
 )
 
-// builderOutput* are the unexported spellings the built-in replies use, so this file's literals
-// and the host's validation cannot drift.
-const (
-	builderOutputPackage = BuilderOutputPackage
-	builderOutputFiles   = BuilderOutputFiles
-	builderOutputInline  = BuilderOutputInline
-)
-
 func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResolveReply, error) {
 	var zero spec.BuilderResolveReply
 	switch word {
@@ -179,7 +171,7 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 			return zero, err
 		}
 		return spec.BuilderResolveReply{
-			Output:        builderOutputFiles,
+			Output:        BuilderOutputFiles,
 			Stage:         stage,
 			CopyArtifacts: copies,
 			CopyBinary:    builderCopyLine(in.StageName, "/usr/local/bin/pixi", "/usr/local/bin/pixi", false, 0, 0),
@@ -193,7 +185,7 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 		if err != nil {
 			return zero, err
 		}
-		return spec.BuilderResolveReply{Output: builderOutputFiles, Stage: stage, CopyArtifacts: copies}, nil
+		return spec.BuilderResolveReply{Output: BuilderOutputFiles, Stage: stage, CopyArtifacts: copies}, nil
 	case "aur":
 		pkg := BuilderPackageOutput(word, in.Candy)
 		if pkg == nil {
@@ -207,13 +199,13 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 		if err != nil {
 			return zero, err
 		}
-		return spec.BuilderResolveReply{Output: builderOutputPackage, Stage: stage, CopyArtifacts: copies, Package: pkg}, nil
+		return spec.BuilderResolveReply{Output: BuilderOutputPackage, Stage: stage, CopyArtifacts: copies, Package: pkg}, nil
 	case "cargo":
 		frag, err := renderCargoInline(in)
 		if err != nil {
 			return zero, err
 		}
-		return spec.BuilderResolveReply{Output: builderOutputInline, InlineFragment: frag}, nil
+		return spec.BuilderResolveReply{Output: BuilderOutputInline, InlineFragment: frag}, nil
 	case "mise":
 		stage, err := renderBuilderStageData("mise-stage", miseStageTemplate, miseStageData{BuilderResolveInput: in, MiseVersion: miseVersion})
 		if err != nil {
@@ -224,7 +216,7 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 			return zero, err
 		}
 		return spec.BuilderResolveReply{
-			Output:        builderOutputFiles,
+			Output:        BuilderOutputFiles,
 			Stage:         stage,
 			CopyArtifacts: copies,
 			CopyBinary:    builderCopyLine(in.StageName, "/usr/local/bin/mise", "/usr/local/bin/mise", false, 0, 0),
