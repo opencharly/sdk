@@ -64,12 +64,21 @@ never written. Enablement and installation are SEPARATE halves of the harness
 contract, and satisfying only the first fails SILENTLY:
 
 - **Claude Code** — `enabledPlugins` in `.claude/settings.json` flips
-  enablement only. Skills load when the harness ALSO holds an install record
-  for that plugin scoped to the CURRENT project. A `settings.json` listing a
-  plugin whose install record belongs to a different project, or whose
-  recorded `installPath` no longer exists, loads NONE of its skills — the
+  enablement only. Skills load when the harness ALSO holds a project-scope
+  install record for that plugin, and a session loads the copy cached at the
+  commit that record names. With no such record, or one whose recorded
+  `installPath` no longer exists, it loads NONE of the plugin's skills — the
   marketplace, manifest, and `SKILL.md` frontmatter can all be valid while
   the corpus is entirely absent.
+- **A record is not matched to a session by its exact path.** Several
+  project-scope records can exist for ONE repository — another clone, a linked
+  worktree, a worktree since removed — and a session, or a `claude plugin
+  update --scope project`, can act on any of them. On the host recorded in
+  opencharly/opencharly#1227, a session in the clone loaded the copy of a
+  second clone's record, and `update` run from the clone moved a removed
+  worktree's record while the clone's own stayed at its old commit. With
+  several records per repository, which copy loads is not knowable from the
+  path or from `installed_plugins.json`; only the probe below answers it.
 - `claude plugin list` reads enablement from `settings.json` and prints
   `Status: enabled` regardless of whether the install record resolves, so it
   CONFIRMS a corpus that is not loading. It is not evidence; never close an
@@ -112,10 +121,12 @@ itself, at the scope it is installed at:
 claude plugin update <plugin>@<marketplace> --scope project
 ```
 
-It names the commits it moved between (`updated from <old> to <new>`), and
-that line is the confirmation to look for — a refreshed marketplace clone is
-not evidence that any session sees the change. `--scope` defaults to `user`
-and fails outright on a project-scoped plugin.
+It names the commit it moved to (`updated from <old> to <new>`, or `already
+at the latest version (<sha>)`), but that line speaks for whichever record it
+matched, which need not be the one your sessions load (above) — neither it nor
+a refreshed marketplace clone is evidence that any session sees the change.
+The fresh-session probe is the confirmation. `--scope` defaults to `user` and
+fails outright on a project-scoped plugin.
 
 ## When to Update Skills
 
