@@ -21,7 +21,7 @@ type BuildOptions struct {
 	Binary     string   // the charly binary to package
 	PluginsDir string   // the plugins dir to package
 	Version    string   // the CalVer
-	Release    string   // the package release (pkgrel); "" = "1", the first build of this version
+	Release    string   // the package release (pkgrel) for a REPUBLISH; "" keeps nFPM's own naming (no suffix for deb/apk/ipk, -1 for rpm/archlinux)
 	Arch       string   // GOARCH name (amd64/arm64)
 	Variant    string   // the variant name ("" = the format's default)
 	Formats    []string // the nFPM formats to build
@@ -30,16 +30,6 @@ type BuildOptions struct {
 	APKKey     string   // apk RSA key file (passphrase via NFPM_APK_PASSPHRASE)
 	MSIXPFX    string   // msix PFX cert file (passphrase via NFPM_MSIX_PASSPHRASE)
 	MSIXLogo   string   // msix logo file (required by the msix packager)
-}
-
-// releaseOr is the pkgrel: a packaging fix to an ALREADY-published version is a new
-// release of the same upstream version (`<ver>-2`), never a rewritten `<ver>-1`, because
-// a client that already holds `-1` would never see the change. "" means the first build.
-func releaseOr(r string) string {
-	if r == "" {
-		return "1"
-	}
-	return r
 }
 
 // BuildInfo constructs the nfpm.Info for one (format, variant) from the packaging
@@ -118,7 +108,7 @@ func BuildInfo(pkg *spec.Packaging, format string, opts BuildOptions) (*nfpm.Inf
 		Name:        name,
 		Arch:        arch,
 		Version:     opts.Version,
-		Release:     releaseOr(opts.Release),
+		Release:     opts.Release,
 		Description: pkg.Description,
 		Maintainer:  pkg.Maintainer,
 		Homepage:    pkg.Homepage,
