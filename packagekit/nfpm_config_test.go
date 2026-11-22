@@ -190,8 +190,8 @@ func TestBuildInfoAppliesThePackageRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildInfo (no release): %v", err)
 	}
-	if first.Release != "1" {
-		t.Errorf("Release = %q, want \"1\" for the first build of a version", first.Release)
+	if first.Release != "" {
+		t.Errorf("Release = %q, want empty: a caller that does not ask for a republish must keep nFPM's own naming (deb/apk/ipk carry no suffix, rpm/archlinux -1)", first.Release)
 	}
 
 	base.Release = "2"
