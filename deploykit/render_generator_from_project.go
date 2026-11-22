@@ -104,6 +104,11 @@ func (c renderSeamCaller) resolveBuilderStage(word string, in spec.BuilderResolv
 	if uerr := json.Unmarshal(resJSON, &reply); uerr != nil {
 		return reply, fmt.Errorf("decode OpResolve reply: %w", uerr)
 	}
+	// DESIGN §4.4 / D-PROTO-6: the answer is judged against its definition at receipt, so a
+	// plugin built against an older reply contract fails HERE, naming the field — never coerced.
+	if verr := ValidateBuilderResolveReply(word, reply); verr != nil {
+		return reply, verr
+	}
 	return reply, nil
 }
 
