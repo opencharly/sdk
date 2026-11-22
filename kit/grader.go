@@ -111,22 +111,40 @@ func buildGraderPrompt(req GraderRequest, target, instance string) string {
 	b.WriteString("You are an acceptance-test grader for Agent Driven Evaluation. ")
 	b.WriteString("Decide, from real evidence, whether ONE behaviour holds on a running deployment.\n\n")
 	if strings.TrimSpace(req.Description) != "" {
-		b.WriteString("Goal (the entity's purpose): " + req.Description + "\n")
+		b.WriteString("Goal (the entity's purpose): ")
+		b.WriteString(req.Description)
+		b.WriteByte('\n')
 	}
 	kw := strings.TrimSpace(req.Keyword)
 	if kw == "" {
 		kw = "agent-check"
 	}
-	b.WriteString("\nBehaviour to verify — " + kw + ": " + req.Text + "\n\n")
-	b.WriteString("The deployment under test is named '" + target + "'")
+	b.WriteString("\nBehaviour to verify — ")
+	b.WriteString(kw)
+	b.WriteString(": ")
+	b.WriteString(req.Text)
+	b.WriteString("\n\n")
+	b.WriteString("The deployment under test is named '")
+	b.WriteString(target)
+	b.WriteString("'")
 	if strings.TrimSpace(instance) != "" {
-		b.WriteString(" (instance '" + instance + "')")
+		b.WriteString(" (instance '")
+		b.WriteString(instance)
+		b.WriteString("')")
 	}
 	b.WriteString(". You MAY gather evidence by running probes against it, e.g.:\n")
-	b.WriteString("  charly cmd " + target + " '<shell>'            # run a shell command inside the deployment\n")
-	b.WriteString("  charly check live " + target + " --filter cdp   # Chrome DevTools probes (if it runs a browser)\n")
-	b.WriteString("  charly check live " + target + " --filter wl   # desktop screenshot / window probes (wl)\n")
-	b.WriteString("  charly status " + target + "                   # deployment status\n")
+	b.WriteString("  charly cmd ")
+	b.WriteString(target)
+	b.WriteString(" '<shell>'            # run a shell command inside the deployment\n")
+	b.WriteString("  charly check live ")
+	b.WriteString(target)
+	b.WriteString(" --filter cdp   # Chrome DevTools probes (if it runs a browser)\n")
+	b.WriteString("  charly check live ")
+	b.WriteString(target)
+	b.WriteString(" --filter wl   # desktop screenshot / window probes (wl)\n")
+	b.WriteString("  charly status ")
+	b.WriteString(target)
+	b.WriteString("                   # deployment status\n")
 	if req.ReadOnly {
 		b.WriteString("Use only what is relevant. Do NOT modify the deployment (read-only assessment).\n\n")
 	} else {
@@ -135,8 +153,10 @@ func buildGraderPrompt(req GraderRequest, target, instance string) string {
 	b.WriteString("Decide pass ONLY if the evidence positively confirms the behaviour; otherwise fail. ")
 	b.WriteString("If you cannot gather evidence, fail.\n\n")
 	b.WriteString("Output discipline: your FINAL line MUST be exactly one JSON object and nothing after it:\n")
-	b.WriteString(`{"verdict":"pass","evidence":"<one sentence citing the concrete evidence>"}` + "\n")
-	b.WriteString(`or {"verdict":"fail","evidence":"<why it does not hold>"}` + "\n")
+	b.WriteString(`{"verdict":"pass","evidence":"<one sentence citing the concrete evidence>"}`)
+	b.WriteByte('\n')
+	b.WriteString(`or {"verdict":"fail","evidence":"<why it does not hold>"}`)
+	b.WriteByte('\n')
 	return b.String()
 }
 
@@ -223,7 +243,8 @@ func parseVerdict(out string) (pass bool, evidence string, ok bool) {
 		}
 		if ev["type"] == "result" {
 			if r, isStr := ev["result"].(string); isStr {
-				text.WriteString("\n" + r)
+				text.WriteString("\n")
+				text.WriteString(r)
 			}
 		}
 	}

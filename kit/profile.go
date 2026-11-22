@@ -122,17 +122,21 @@ func ReplaceOrAppendManagedBlock(existing, body, marker string) string {
 		for _, line := range strings.Split(existing, "\n") {
 			if strings.Contains(line, begin) {
 				inBlock = true
-				out.WriteString(begin + "\n")
-				out.WriteString(body + "\n")
+				out.WriteString(begin)
+				out.WriteByte('\n')
+				out.WriteString(body)
+				out.WriteByte('\n')
 				continue
 			}
 			if inBlock && strings.Contains(line, end) {
 				inBlock = false
-				out.WriteString(end + "\n")
+				out.WriteString(end)
+				out.WriteByte('\n')
 				continue
 			}
 			if !inBlock {
-				out.WriteString(line + "\n")
+				out.WriteString(line)
+				out.WriteByte('\n')
 			}
 		}
 		return strings.TrimRight(out.String(), "\n") + "\n"
@@ -165,7 +169,8 @@ func StripManagedBlock(existing, marker string) string {
 			continue
 		}
 		if !inBlock {
-			out.WriteString(line + "\n")
+			out.WriteString(line)
+			out.WriteByte('\n')
 		}
 	}
 	return strings.TrimRight(out.String(), "\n") + "\n"
@@ -192,17 +197,21 @@ func ReplaceOrPrependManagedBlock(existing, body, marker string) string {
 		for _, line := range strings.Split(existing, "\n") {
 			if strings.Contains(line, begin) {
 				inBlock = true
-				out.WriteString(begin + "\n")
-				out.WriteString(body + "\n")
+				out.WriteString(begin)
+				out.WriteByte('\n')
+				out.WriteString(body)
+				out.WriteByte('\n')
 				continue
 			}
 			if inBlock && strings.Contains(line, end) {
 				inBlock = false
-				out.WriteString(end + "\n")
+				out.WriteString(end)
+				out.WriteByte('\n')
 				continue
 			}
 			if !inBlock {
-				out.WriteString(line + "\n")
+				out.WriteString(line)
+				out.WriteByte('\n')
 			}
 		}
 		return strings.TrimRight(out.String(), "\n") + "\n"
