@@ -83,7 +83,10 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 	// which the subsequent OpStep then relocates; the OCI target hoists the
 	// builder stages regardless of step order, so its Containerfile is
 	// unchanged.
-	builderSteps := compileBuilderSteps(layer, img, hostCtx)
+	builderSteps, err := compileBuilderSteps(layer, img, hostCtx)
+	if err != nil {
+		return nil, err
+	}
 	plan.Steps = append(plan.Steps, builderSteps...)
 
 	// 2.5. Bundled PKGBUILD (`localpkg:`) — build on the host + pacman -U on a
@@ -901,22 +904,23 @@ func CompileOpSteps(ctx context.Context, ex *sdk.Executor, layer CandyModel, img
 // Builder compilation
 // ---------------------------------------------------------------------------
 
-// compileBuilderSteps emits one BuilderStep per triggered multi-stage or
-// inline builder. Detection matches today's Generator.candyNeedsBuilder
-// logic: DetectFiles (pixi/npm/cargo) and DetectConfig (aur).
-func compileBuilderSteps(layer CandyModel, img *ResolvedBox, hostCtx HostContext) []InstallStep {
+// compileBuilderSteps emits one BuilderStep per builder the candy needs on this image — the SAME
+// trigger the image render uses (NeedsBuilder), so both modes compile one IR (D-IR-1,
+// opencharly/sdk#608). A builder with a package output carries its per-candy package directory
+// and the venue's local_pkg contract for that format when the target distro serves it.
+func compileBuilderSteps(layer CandyModel, img *ResolvedBox, hostCtx HostContext) ([]InstallStep, error) {
 	if img.BuilderConfig == nil {
-		return nil
+		if managers := declaredManagers(layer, img); len(managers) > 0 {
+			return nil, fmt.Errorf("candy %q declares %v packages, but no builder is defined for this target", layer.GetName(), managers)
+		}
+		return nil, nil
 	}
 	// Deterministic builder iteration order — matches today's BuilderNames.
 	names := img.BuilderConfig.BuilderNames()
 	var out []InstallStep
 	for _, bName := range names {
 		bDef := img.BuilderConfig.Builder[bName]
-		if bDef == nil {
-			continue
-		}
-		if !CandyNeedsBuilderStep(layer, bDef) {
+		if !NeedsBuilder(layer, img, bName, bDef) {
 			continue
 		}
 		step := &BuilderStep{
@@ -933,50 +937,25 @@ func compileBuilderSteps(layer CandyModel, img *ResolvedBox, hostCtx HostContext
 		// RPC at its host-side call sites. Nil when no pre-pass ran or a custom builder.
 		if pre, ok := hostCtx.BuilderContext[BuilderCtxKey(layer.GetName(), bName)]; ok {
 			step.PreResolvedReverse = pre.Reverse
+			// The package output is the builder plugin's own declaration (its collect reply), never
+			// the authored builder node (DESIGN.cue #BuilderAlt).
+			step.Package = pre.Package
 		}
 
-		// aur produces .pkg.tar.zst files in the container at /tmp/aur-pkgs/
-		// and we need to pull them out on the host target. The container
-		// (OCI) target ignores Artifacts — it uses COPY --from directly.
-		// The host/VM targets install those package files via the SAME
-		// config-driven transfer+install leg as the localpkg step, so carry
-		// the package format's localpkg contract (install command + glob)
-		// resolved from the embedded build vocabulary — no hardcoded pacman/glob in the executor.
-		if bName == "aur" {
-			step.Artifacts = []ArtifactRef{{
-				ContainerPath: "/tmp/aur-pkgs/",
-				HostPath:      "", // host-target populates at emit time (tmpdir)
-				Chown:         false,
-			}}
-			if img.DistroDef != nil {
-				if _, lp := img.DistroDef.LocalPkgFormat(img.Pkg); lp != nil {
-					step.LocalPkg = lp
-				}
+		// A declared package output is installed through the target distro's local_pkg contract when
+		// it serves the format (the package files are pulled out of the builder container; the OCI
+		// target COPYs them directly). When it does not, LocalPkg stays nil and the step's venue
+		// decides: an image build (box or pod overlay) copies the builder's payload in, and a host
+		// venue, which cannot, refuses the step (RunVenueBuilderStep).
+		if pkg := step.Package; pkg != nil {
+			if lp := BuilderPackageInstall(img, pkg); lp != nil {
+				step.Artifacts = []ArtifactRef{{ContainerPath: pkg.Dir + "/"}}
+				step.LocalPkg = lp
 			}
 		}
 		out = append(out, step)
 	}
-	return out
-}
-
-// CandyNeedsBuilderStep mirrors Generator.candyNeedsBuilder without
-// requiring a Generator receiver — the compiler doesn't have one.
-func CandyNeedsBuilderStep(layer CandyModel, bDef *BuilderDef) bool {
-	if bDef == nil {
-		return false
-	}
-	for _, f := range bDef.DetectFiles {
-		if layer.HasFile(f) {
-			return true
-		}
-	}
-	if bDef.DetectConfig != "" {
-		section := layer.FormatSection(bDef.DetectConfig)
-		if section != nil && len(section.Packages) > 0 {
-			return true
-		}
-	}
-	return false
+	return out, nil
 }
 
 // resolveBuilderImage selects the builder image for a given builder name.

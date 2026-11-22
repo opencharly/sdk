@@ -136,7 +136,10 @@ func TestBuildStageContext_ImportedNamespaceCopySource(t *testing.T) {
 		UID: 1000, GID: 1000, Home: "/home/crabbox", User: "crabbox",
 	}}
 
-	ctx := g.BuildStageContext(layer, "npm", &buildkit.BuilderDef{}, img, "arch.arch-builder")
+	ctx, err := g.BuildStageContext(layer, "npm", &buildkit.BuilderDef{}, img, "arch.arch-builder")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if want := ".build/_candy/cachyos-base-check.2026.300.1129"; ctx.CopySrc != want {
 		t.Errorf("BuildStageContext CopySrc = %q, want %q", ctx.CopySrc, want)
 	}

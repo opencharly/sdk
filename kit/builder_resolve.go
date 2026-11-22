@@ -19,11 +19,14 @@ package kit
 // and passes them in BuilderResolveInput, so kit needs no cache-mount render engine and the
 // emitted bytes stay byte-identical to the former embedded-vocabulary render.
 //
-// Selection stays DETECTION host-side (candyNeedsBuilder against the retained detect_file /
-// detect_config vocabulary); the host computes the full BuilderResolveInput (builder ref,
-// stage name, target identity, filesystem-detected manifest/lockfile/build-script, aur
-// packages/options, pre-rendered cache mounts) and Invokes the plugin's OpResolve; the plugin
-// returns the rendered Stage + CopyArtifacts (+ CopyBinary / InlineFragment) via THIS function.
+// Selection stays host-side (deploykit.NeedsBuilder: a detect file, or a manager declaration the
+// image's tag chain selects); the host computes the full BuilderResolveInput (builder ref, stage
+// name, target identity, filesystem-detected manifest/lockfile/build-script, manager
+// packages/options, pre-rendered cache mounts) and
+// Invokes the plugin's OpResolve; the plugin
+// returns the rendered Stage + CopyArtifacts (+ CopyBinary / InlineFragment / Package) via THIS
+// function; the payload and the package output are the plugin's own knowledge (builderPayloadCopies,
+// BuilderPackageOutput), never the authored builder node.
 
 import (
 	"fmt"
@@ -38,11 +41,11 @@ import (
 const pixiStageTemplate = "FROM {{.BuilderRef}} AS {{.StageName}}\nUSER {{.UID}}\nWORKDIR {{.Home}}\n{{- if .HasLockFile}}\nCOPY --chown={{.UID}}:{{.GID}} {{.CopySrc}}/pixi.lock pixi.lock\n{{- end}}\nCOPY --chown={{.UID}}:{{.GID}} {{.CopySrc}}/{{.Manifest}} {{.Manifest}}\n{{.ManylinuxFix}}\nENV PIXI_CACHE_DIR=/tmp/pixi-cache RATTLER_CACHE_DIR=/tmp/rattler-cache\n{{- if .HasBuildScript}}\n# build.sh is COPY'd (NOT bind-mounted) so its CONTENT is part of this\n# stage's BuildKit cache key — editing build.sh (e.g. the pixelflux\n# NVENC patch) MUST invalidate the compile. A\n# `--mount=type=bind,from=<stage>,source=/build.sh` delivers the file\n# but its content NEVER enters the RUN cache key (the key is parent-SHA\n# + COPY'd manifest + RUN-text), so a changed build.sh silently reused\n# a stale compiled artifact — the \"new code not picked up\" bug. COPY\n# keys it exactly like pixi.toml / pixi.lock above.\nCOPY --chown={{.UID}}:{{.GID}} {{.CopySrc}}/{{.BuildScript}} /tmp/{{.BuildScript}}\nRUN {{.CacheMountsOwned}}{{.InstallCmd}} && bash /tmp/{{.BuildScript}} && rm -f {{.Manifest}} pixi.lock\n{{- else}}\nRUN {{.CacheMountsOwned}}{{.InstallCmd}} && rm -f {{.Manifest}} pixi.lock\n{{- end}}\n"
 
 // npmStageTemplate is the verbatim former builder.npm.stage_template.
-const npmStageTemplate = "FROM {{.BuilderRef}} AS {{.StageName}}\nUSER {{.UID}}\nWORKDIR {{.Home}}\n# Override NPM_CONFIG_PREFIX from the builder image so npm writes to\n# the TARGET image's HOME (not the builder's /home/user). Without this,\n# uid=0 target images silently get empty copy_artifacts.\nENV NPM_CONFIG_PREFIX={{.Home}}/.npm-global\nCOPY --chown={{.UID}}:{{.GID}} {{.CopySrc}}/package.json package.json\nRUN {{.CacheMountsOwned}}node -e 'var d=require(\"./package.json\").dependencies||{};for(var[n,v]of Object.entries(d))console.log(v===\"*\"?n:n+\"@\"+v)' | xargs npm install -g && rm -f package.json\n"
+const npmStageTemplate = "FROM {{.BuilderRef}} AS {{.StageName}}\nUSER {{.UID}}\nWORKDIR {{.Home}}\n# Override NPM_CONFIG_PREFIX from the builder image so npm writes to\n# the TARGET image's HOME (not the builder's /home/user). Without this,\n# uid=0 target images silently get an empty payload.\nENV NPM_CONFIG_PREFIX={{.Home}}/.npm-global\nCOPY --chown={{.UID}}:{{.GID}} {{.CopySrc}}/package.json package.json\nRUN {{.CacheMountsOwned}}node -e 'var d=require(\"./package.json\").dependencies||{};for(var[n,v]of Object.entries(d))console.log(v===\"*\"?n:n+\"@\"+v)' | xargs npm install -g && rm -f package.json\n"
 
 // aurStageTemplate is the verbatim former builder.aur.stage_template (cache-mount func →
 // pre-rendered {{.CacheMountsAuto}}).
-const aurStageTemplate = "FROM {{.BuilderRef}} AS {{.StageName}}\nUSER root\nRUN echo '{{.User}} ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder\nUSER {{.UID}}\nWORKDIR {{.Home}}\nENV XDG_CACHE_HOME=/tmp/aur-xdg-cache\nRUN {{.CacheMountsAuto}} \\\n    mkdir -p /tmp/aur-build /tmp/aur-srcdest /tmp/aur-xdg-cache && \\\n    cp /etc/makepkg.conf /tmp/makepkg.conf && \\\n    sed -i '/^OPTIONS/s/ debug/ !debug/' /tmp/makepkg.conf && \\\n    echo 'SRCDEST=/tmp/aur-srcdest' >> /tmp/makepkg.conf && \\\n    sudo pacman -Syu --noconfirm && \\\n    yay -S --noconfirm --needed --builddir /tmp/aur-build --makepkgconf /tmp/makepkg.conf\n{{- range .Options}} {{.}}{{end}}\n{{- range .Packages}} \\\n      {{.}}{{end}} && \\\n    mkdir -p /tmp/aur-pkgs && \\\n    find /tmp/aur-build -name '*.pkg.tar.zst' -exec cp {} /tmp/aur-pkgs/ \\; && \\\n    { ls /tmp/aur-pkgs/*.pkg.tar.zst >/dev/null 2>&1 || { echo 'charly aur builder: yay produced ZERO .pkg.tar.zst artifacts for a non-empty aur: package list — a package listed under aur: is likely now a repo package (yay -S --needed installs it from the repo without building), so nothing was copied for the main image to COPY. Move it to the package: list.' >&2; exit 1; }; }\n"
+const aurStageTemplate = "FROM {{.BuilderRef}} AS {{.StageName}}\nUSER root\nRUN echo '{{.User}} ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder\nUSER {{.UID}}\nWORKDIR {{.Home}}\nENV XDG_CACHE_HOME=/tmp/aur-xdg-cache\nRUN {{.CacheMountsAuto}} \\\n    mkdir -p /tmp/aur-build /tmp/aur-srcdest /tmp/aur-xdg-cache && \\\n    cp /etc/makepkg.conf /tmp/makepkg.conf && \\\n    sed -i '/^OPTIONS/s/ debug/ !debug/' /tmp/makepkg.conf && \\\n    echo 'SRCDEST=/tmp/aur-srcdest' >> /tmp/makepkg.conf && \\\n    sudo pacman -Syu --noconfirm && \\\n    yay -S --noconfirm --needed --builddir /tmp/aur-build --makepkgconf /tmp/makepkg.conf\n{{- range .Options}} {{.}}{{end}}\n{{- range .Packages}} \\\n      {{.}}{{end}} && \\\n    mkdir -p {{.PkgDir}} {{.PayloadDir}} && \\\n    find /tmp/aur-build -name '*.pkg.tar.zst' -exec cp {} {{.PkgDir}}/ \\; && \\\n    { ls {{.PkgDir}}/*.pkg.tar.zst >/dev/null 2>&1 || { echo 'charly aur builder: yay produced ZERO .pkg.tar.zst artifacts for a non-empty aur: package list — a package listed under aur: is likely now a repo package (yay -S --needed installs it from the repo without building), so nothing was copied for the main image to COPY. Move it to the package: list.' >&2; exit 1; }; } && \\\n    for p in {{.PkgDir}}/*.pkg.tar.zst; do bsdtar -xpf \"$p\" -C {{.PayloadDir}} --exclude .PKGINFO --exclude .BUILDINFO --exclude .MTREE --exclude .INSTALL --exclude .CHANGELOG; done\n"
 
 // CargoLibDir returns the directory a cargo LIBRARY crate's artifacts install into for a
 // given candy. Per-candy rather than a flat /usr/local/lib so the install is identifiable and
@@ -153,9 +156,13 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 		if err != nil {
 			return zero, err
 		}
+		copies, err := builderPayloadCopies(word, in)
+		if err != nil {
+			return zero, err
+		}
 		return spec.BuilderResolveReply{
 			Stage:         stage,
-			CopyArtifacts: []string{builderCopyLine(in.StageName, in.Home, in.Home, true, in.UID, in.GID)},
+			CopyArtifacts: copies,
 			CopyBinary:    builderCopyLine(in.StageName, "/usr/local/bin/pixi", "/usr/local/bin/pixi", false, 0, 0),
 		}, nil
 	case "npm":
@@ -163,19 +170,25 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 		if err != nil {
 			return zero, err
 		}
-		return spec.BuilderResolveReply{
-			Stage:         stage,
-			CopyArtifacts: []string{builderCopyLine(in.StageName, in.Home, in.Home, true, in.UID, in.GID)},
-		}, nil
-	case "aur":
-		stage, err := renderBuilderStage("aur-stage", aurStageTemplate, in)
+		copies, err := builderPayloadCopies(word, in)
 		if err != nil {
 			return zero, err
 		}
-		return spec.BuilderResolveReply{
-			Stage:         stage,
-			CopyArtifacts: []string{builderCopyLine(in.StageName, "/tmp/aur-pkgs/", "/tmp/aur-pkgs/", false, 0, 0)},
-		}, nil
+		return spec.BuilderResolveReply{Stage: stage, CopyArtifacts: copies}, nil
+	case "aur":
+		pkg := BuilderPackageOutput(word, in.Candy)
+		if pkg == nil {
+			return zero, fmt.Errorf("aur builder, candy %q: no package output is defined for aur", in.Candy)
+		}
+		stage, err := renderBuilderStageData("aur-stage", aurStageTemplate, aurStageData{BuilderResolveInput: in, PkgDir: pkg.Dir, PayloadDir: AurPayloadDir(in.Candy)})
+		if err != nil {
+			return zero, err
+		}
+		copies, err := builderPayloadCopies(word, in)
+		if err != nil {
+			return zero, err
+		}
+		return spec.BuilderResolveReply{Stage: stage, CopyArtifacts: copies, Package: pkg}, nil
 	case "cargo":
 		frag, err := renderCargoInline(in)
 		if err != nil {
@@ -187,9 +200,13 @@ func BuilderResolve(word string, in spec.BuilderResolveInput) (spec.BuilderResol
 		if err != nil {
 			return zero, err
 		}
+		copies, err := builderPayloadCopies(word, in)
+		if err != nil {
+			return zero, err
+		}
 		return spec.BuilderResolveReply{
 			Stage:         stage,
-			CopyArtifacts: []string{builderCopyLine(in.StageName, in.Home, in.Home, true, in.UID, in.GID)},
+			CopyArtifacts: copies,
 			CopyBinary:    builderCopyLine(in.StageName, "/usr/local/bin/mise", "/usr/local/bin/mise", false, 0, 0),
 		}, nil
 	}
@@ -218,14 +235,53 @@ func renderBuilderStageData(name, tmplStr string, data any) (string, error) {
 	return b.String(), nil
 }
 
-// builderCopyLine renders a `COPY --from=<stage> [--chown=uid:gid] <src> <dst>` directive —
-// the exact shape the former emitBuilderArtifacts produced (copy_artifact / copy_binary),
+// builderCopyLine renders a `COPY --from=<stage> [--chown=uid:gid] <src> <dst>` directive,
 // with no trailing newline (the host adds newlines when splicing).
 func builderCopyLine(stage, src, dst string, chown bool, uid, gid int) string {
 	if chown {
 		return fmt.Sprintf("COPY --from=%s --chown=%d:%d %s %s", stage, uid, gid, src, dst)
 	}
 	return fmt.Sprintf("COPY --from=%s %s %s", stage, src, dst)
+}
+
+// builderPayloadCopies is each stage builder's payload COPY into the main image — the builder
+// plugin's OWN knowledge (DESIGN.cue #BuilderAlt: the authored builder node is only a manager map,
+// and what a builder installs is the plugin's, P3), defined once here for every stage builder: the
+// user-home builders (pixi/npm/mise) copy the stage's home, and aur copies its extracted package
+// tree. A stage word with no payload here is an error, never a stage whose output reaches no image
+// (opencharly/sdk#608).
+func builderPayloadCopies(word string, in spec.BuilderResolveInput) ([]string, error) {
+	switch word {
+	case "pixi", "npm", "mise":
+		return []string{builderCopyLine(in.StageName, in.Home, in.Home, true, in.UID, in.GID)}, nil
+	case "aur":
+		return []string{builderCopyLine(in.StageName, AurPayloadDir(in.Candy)+"/", "/", false, 0, 0)}, nil
+	}
+	return nil, fmt.Errorf("builder %q, candy %q: no payload is defined for this stage builder", word, in.Candy)
+}
+
+// BuilderPackageOutput is the OS package output `word` produces for `candy` — the builder plugin's
+// own declaration, returned in its resolve and collect replies (#BuilderPackage): aur builds pac
+// packages into the candy's OWN directory, so two candies' packages never share one. Nil for every
+// builder whose output is a payload of files.
+func BuilderPackageOutput(word, candy string) *spec.BuilderPackage {
+	if word == "aur" {
+		return &spec.BuilderPackage{Format: "pac", Dir: "/tmp/aur-pkgs/" + candy, Glob: "*.pkg.tar.zst"}
+	}
+	return nil
+}
+
+// AurPayloadDir is where the aur stage extracts a candy's built packages as a file tree — the
+// payload a target WITHOUT a pacman local_pkg contract receives (builderPayloadCopies copies it to
+// the image root). A function of the candy name, like CargoLibDir.
+func AurPayloadDir(candy string) string { return "/tmp/aur-root/" + candy }
+
+// aurStageData is the aur template's render context: the resolve input plus the candy's package
+// and payload directories.
+type aurStageData struct {
+	spec.BuilderResolveInput
+	PkgDir     string
+	PayloadDir string
 }
 
 // miseStageData is the mise template's render context: the resolve input plus the

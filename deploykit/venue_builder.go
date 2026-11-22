@@ -64,6 +64,14 @@ func BuilderStepImage(s *BuilderStep, opts EmitOpts) (string, error) {
 // Config + dir to resolve a short/namespace-qualified builder image and fall back to a local
 // `charly box build`).
 func RunVenueBuilderStep(ctx context.Context, exec DeployExecutor, venueHome string, resolveImage func(string) (string, error), ensureImage func(context.Context, string) error, s *BuilderStep, opts EmitOpts) error {
+	// A builder whose plugin declared an OS package output can reach a host venue only through that
+	// venue's local_pkg contract for the format; an image build copies the payload instead, but a
+	// host venue cannot, so the step is refused, never applied as a payload that installs nothing
+	// (opencharly/sdk#608).
+	if s.Package != nil && s.LocalPkg == nil {
+		return fmt.Errorf("candy %q: builder %q produces %s packages, but this venue's distro serves no local_pkg contract for %s, and a host venue cannot install the builder's payload",
+			s.CandyName, s.Builder, s.Package.Format, s.Package.Format)
+	}
 	if s.LocalPkg == nil {
 		if s.BuilderDef == nil || buildkit.BuilderPhaseTemplate(s.BuilderDef, spec.PhaseInstall, spec.VenueHostNative) == "" {
 			if opts.SkipIncompatible {
@@ -90,7 +98,7 @@ func RunVenueBuilderStep(ctx context.Context, exec DeployExecutor, venueHome str
 	// (R3) — the builder runs on the host (podman); the venue never needs a container
 	// runtime. The package glob comes from the format config. The image resolve/ensure
 	// seams are the caller's INJECTED closures (BuildDepPkgsOnHost imports no *Config).
-	matches, err := BuildDepPkgsOnHost(ctx, s.LocalPkg, s.Builder, s.BuilderDef, image, ExtractStringSlice(s.RawStageContext, "packages"), s.CandyDir,
+	matches, err := BuildDepPkgsOnHost(ctx, s.Builder, s.CandyName, s.BuilderDef, s.Package, image, ExtractStringSlice(s.RawStageContext, "packages"), s.CandyDir,
 		resolveImage, ensureImage, opts)
 	if err != nil {
 		return fmt.Errorf("venue aur builder: %w", err)

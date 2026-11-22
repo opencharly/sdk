@@ -38,8 +38,8 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 	// and deploy can never diverge). It folds the candy's top-level `package:`
 	// base, unions every matching distro tag section over img.Distro, and
 	// resolves repo/options/etc. most-specific-wins. Emits the PRIMARY format
-	// (img.Pkg) install; non-primary build formats (the `aur` builder) emit from
-	// their own format section below.
+	// (img.Pkg) install; a builder's package output (aur) installs below through
+	// the distro's local_pkg contract (emitBuilderPackageInstalls).
 	// Every unrenderable case is a LOUD failure (R4): a candy that resolved
 	// packages for this box and then emits no install would ship an image
 	// SILENTLY missing them, and the Containerfile looks legitimate — the
@@ -66,40 +66,13 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 		}
 	}
 
-	// Non-primary build formats (e.g. `aur` for build: [pac, aur]) are secondary
-	// BUILD formats consumed by a multi-stage builder, NOT distro package tags, so
-	// they emit from their own format section (the cascade above owns img.Pkg).
-	for _, format := range img.BuildFormats {
-		if format == img.Pkg {
-			continue // primary format handled by the cascade above
-		}
-		section := layer.FormatSection(format)
-		if section == nil || len(section.Packages) == 0 {
-			continue
-		}
-		if img.DistroDef == nil || img.DistroDef.Format == nil {
-			continue
-		}
-		formatDef := img.DistroDef.Format[format]
-		if formatDef == nil {
-			continue
-		}
-		if builderDef, ok := img.BuilderConfig.Builder[format]; ok && !builderDef.Inline {
-			// Format with builder: use the format's install_template (e.g., aur COPY + pacman -U)
-			ctx := &spec.InstallContext{
-				CacheMounts: formatDef.CacheMount,
-				Packages:    section.Packages,
-				StageName:   fmt.Sprintf("%s-%s-build", layer.GetName(), format),
-			}
-			if rendered, err := buildkit.RenderTemplate(format+"-install", buildkit.FormatPhaseTemplate(formatDef, spec.PhaseInstall, spec.VenueContainerBuilder), ctx); err == nil {
-				b.WriteString(rendered)
-			}
-		} else {
-			ctx := buildkit.NewInstallContext(section.Raw, formatDef.CacheMount)
-			if rendered, err := buildkit.RenderTemplate(format+"-install", buildkit.FormatPhaseTemplate(formatDef, spec.PhaseInstall, spec.VenueContainerBuilder), ctx); err == nil {
-				b.WriteString(rendered)
-			}
-		}
+	// Builder PACKAGE outputs: a builder that produces OS packages (aur) whose format this image's
+	// distro serves through `local_pkg` installs them here, through the distro's own package
+	// manager (dependencies resolved and tracked) — read from data (#Builder.package, the distro's
+	// formats), never from a word. On any other image the builder's payload was copied in by
+	// EmitBuilderArtifacts, like every other builder's (opencharly/sdk#608).
+	if err := g.emitBuilderPackageInstalls(b, layer, img); err != nil {
+		return asUser, err
 	}
 
 	// 2.5 localpkg: install the candy's OS package in the IMAGE build — the same
@@ -161,13 +134,12 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 			if !bDef.Inline {
 				continue
 			}
+			if !NeedsBuilder(layer, img, bName, bDef) {
+				continue
+			}
+			// requireBuilders (EmitBuilderStages' first act) already refused an inline builder
+			// that has neither a plugin nor a template, so neither arm below can be empty.
 			external := g.ExternalizedBuilders[bName]
-			if !external && buildkit.BuilderPhaseTemplate(bDef, spec.PhaseInstall, spec.VenueContainerBuilder) == "" {
-				continue
-			}
-			if !g.CandyNeedsBuilder(img, layer, bDef) {
-				continue
-			}
 			if !asUser {
 				fmt.Fprintf(b, "USER %d\n", img.UID)
 				asUser = true
@@ -233,4 +205,56 @@ func (g *Generator) WriteCandySteps(b *strings.Builder, candyName string, img *b
 
 	b.WriteString("\n")
 	return asUser, nil
+}
+
+// emitBuilderPackageInstalls installs, for each stage builder this candy needs on this image whose
+// resolved stage declared a PACKAGE output (the plugin's reply) that the image's distro serves
+// through `local_pkg` (BuilderPackageInstall), the candy's built packages: COPY them out of the
+// candy's builder stage into the same per-candy directory, render the format's local_pkg
+// install_template over them, then remove them.
+func (g *Generator) emitBuilderPackageInstalls(b *strings.Builder, layer CandyModel, img *buildkit.ResolvedBox) error {
+	if img.BuilderConfig == nil {
+		return nil
+	}
+	for _, bName := range img.BuilderConfig.BuilderNames() {
+		def := img.BuilderConfig.Builder[bName]
+		if def.Inline || !NeedsBuilder(layer, img, bName, def) {
+			continue
+		}
+		reply, ok := g.detectionBuilderReplies[BuilderCtxKey(layer.GetName(), bName)]
+		if !ok {
+			return fmt.Errorf("candy %q needs builder %q but no stage was resolved for it", layer.GetName(), bName)
+		}
+		lp := BuilderPackageInstall(img, reply.Package)
+		if lp == nil {
+			continue // no package output, or the distro does not serve its format: the payload installs
+		}
+		frag, err := RenderBuilderPackageInstall(layer.GetName(), bName, reply.Package, lp)
+		if err != nil {
+			return err
+		}
+		b.WriteString(frag)
+	}
+	return nil
+}
+
+// RenderBuilderPackageInstall is the ONE render of a builder's PACKAGE output install into an image:
+// COPY the candy's packages out of its builder stage (`<candy>-<builder>-build`) into the same
+// per-candy directory, install them through the distro format's local_pkg template, then remove
+// them. Shared by the image build (emitBuilderPackageInstalls) and the pod overlay's builder step
+// (plugin-installstep), so both modes install a builder's packages identically (D-IR-1, R2).
+func RenderBuilderPackageInstall(candy, builder string, pkg *spec.BuilderPackage, lp *spec.LocalPkg) (string, error) {
+	if pkg == nil || lp == nil {
+		return "", fmt.Errorf("candy %q: builder %q: no package output or local_pkg contract to install it through", candy, builder)
+	}
+	stage := fmt.Sprintf("%s-%s-build", candy, builder)
+	rendered, err := buildkit.RenderTemplate(builder+"-package-install", lp.InstallTemplate, localPkgInstallContext{StageDir: pkg.Dir, Glob: pkg.Glob})
+	if err != nil {
+		return "", fmt.Errorf("candy %q: rendering the %s local_pkg install for builder %q: %w", candy, pkg.Format, builder, err)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Install %s packages (%s, through the distro's local_pkg contract)\n", builder, pkg.Format)
+	fmt.Fprintf(&b, "COPY --from=%s %s/ %s/\n", stage, pkg.Dir, pkg.Dir)
+	fmt.Fprintf(&b, "RUN %s && rm -rf %s\n", strings.TrimSpace(rendered), pkg.Dir)
+	return b.String(), nil
 }

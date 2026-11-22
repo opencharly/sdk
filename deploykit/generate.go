@@ -103,10 +103,14 @@ func (g *Generator) generateContainerfile(boxName string) error {
 	g.WriteExpose(&b, boxName)
 
 	// Copy builder artifacts — fully config-driven from the embedded builder: vocabulary
-	g.EmitBuilderArtifacts(&b, img, candyOrder)
+	if err := g.EmitBuilderArtifacts(&b, img, candyOrder); err != nil {
+		return err
+	}
 
 	// Copy EXTERNAL builder artifacts — the cached OpResolve reply's COPY --from directives.
-	g.EmitExternalBuilderArtifacts(&b, candyOrder)
+	if err := g.EmitExternalBuilderArtifacts(&b, candyOrder); err != nil {
+		return err
+	}
 
 	// Bake out-of-tree `bake_plugin:` provider binaries into the FINAL image.
 	if err := g.EmitBakedPlugins(&b, boxName, candyOrder); err != nil {

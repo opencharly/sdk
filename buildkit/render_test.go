@@ -343,33 +343,6 @@ func TestPacTemplateBasic(t *testing.T) {
 	}
 }
 
-func TestAurInstallPhase(t *testing.T) {
-	aur := &spec.Format{
-		CacheMount: []spec.CacheMount{{Dst: "/var/cache/pacman/pkg", Sharing: "locked"}},
-		Phases: &spec.PhaseSet{
-			Install: &spec.PhaseTemplates{Container: `COPY --from={{.StageName}} /tmp/aur-pkgs/ /tmp/aur-pkgs/
-RUN {{cacheMounts .CacheMounts}} \
-    pacman -U --noconfirm /tmp/aur-pkgs/*.pkg.tar.zst && \
-    rm -rf /tmp/aur-pkgs
-`},
-		},
-	}
-	ctx := &spec.InstallContext{
-		CacheMounts: aur.CacheMount,
-		StageName:   "my-tool-aur-build",
-	}
-	out, err := RenderTemplate("aur-install-test", aur.Phases.Install.Container, ctx)
-	if err != nil {
-		t.Fatalf("render error: %v", err)
-	}
-	if !strings.Contains(out, "COPY --from=my-tool-aur-build /tmp/aur-pkgs/") {
-		t.Error("should COPY from AUR build stage")
-	}
-	if !strings.Contains(out, "pacman -U --noconfirm") {
-		t.Error("should install with pacman -U")
-	}
-}
-
 // A pinned package version (`name=VERSION` on pac/apt/apk, `name-VERSION-<rel>`
 // on rpm) must reach the INSTALL template verbatim — that is what makes the
 // emitted Containerfile line change on a version bump and so invalidates exactly

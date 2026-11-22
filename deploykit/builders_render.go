@@ -2,7 +2,7 @@ package deploykit
 
 import (
 	"fmt"
-	"slices"
+	"sort"
 	"strings"
 
 	"github.com/opencharly/sdk/buildkit"
@@ -40,8 +40,8 @@ func (g *Generator) EmitPreMainCandyStages(b *strings.Builder, boxName string, i
 }
 
 // EmitBuilderStages emits per-candy multi-stage build stages. Each builder declares
-// detect_files and/or detect_config (the embedded builder: vocabulary, host-side
-// DETECTION); for each matching candy an EXTERNALIZED detection builder (pixi/npm/aur)
+// detect_files, and a candy can declare packages for it under a distro tag (NeedsBuilder);
+// for each candy that needs it an EXTERNALIZED builder (pixi/npm/aur/mise)
 // renders its stage via its plugin's OpResolve leg (ResolveDetectionBuilderStage →
 // kit.BuilderResolve -- not an in-core stage template); a non-externalized
 // builder emits no build-time multi-stage (a custom builder must be an external_builder
@@ -50,59 +50,35 @@ func (g *Generator) EmitPreMainCandyStages(b *strings.Builder, boxName string, i
 // and no second copy of the host's own connectPluginByWordRef.
 // The reply is cached per (candy, builder) for EmitBuilderArtifacts.
 func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *buildkit.ResolvedBox, candyOrder []string) error {
-	// FIRST, before any early return: every candy that DECLARES packages for a builder's
-	// format must have a builder that can actually run. Checked ahead of the
-	// `BuilderConfig == nil` return, because "no builders configured at all" is the most
-	// complete way to suppress the error — a hidden default path whose only purpose would
-	// be to drop the declaration silently.
-	if err := g.requireDeclaredBuilders(boxName, img, candyOrder); err != nil {
+	// FIRST, before any early return: every builder a candy needs on this image must be able to
+	// run. requireBuilders is the ONE rule behind that refusal (opencharly/sdk#608).
+	if err := g.requireBuilders(boxName, img, candyOrder); err != nil {
 		return err
 	}
 	if img.BuilderConfig == nil {
-		return nil
+		return nil // requireBuilders already refused any manager declaration this image selects
 	}
 	// Reset the per-image detection-builder reply cache (populated below, read by
 	// EmitBuilderArtifacts). Scopes to ONE image, exactly like externalBuilderReplies.
 	g.detectionBuilderReplies = map[string]spec.BuilderResolveReply{}
 
-	// Process builders in deterministic order
-	builderNames := img.BuilderConfig.BuilderNames()
-	for _, builderName := range builderNames {
+	for _, builderName := range img.BuilderConfig.BuilderNames() {
 		builderDef := img.BuilderConfig.Builder[builderName]
 		if builderDef.Inline {
-			continue // inline builders handled in writeCandySteps
-		}
-		external := g.ExternalizedBuilders[builderName]
-		// Only an EXTERNALIZED (plugin) builder emits a build-time multi-stage — via its
-		// plugin's OpResolve (kit.BuilderResolve). A non-externalized builder emits no
-		// stage here (a custom builder must be an external_builder plugin).
-		//
-		// A builder that cannot run because its plugin is not connected is a HARD ERROR
-		// whenever a candy DECLARED packages for it. The previous `continue` dropped every
-		// `aur:` package silently while the build reported success — measured on both the
-		// arch and cachyos bases (opencharly/layer-kde-shell#7, opencharly/sdk#608).
-		if !external {
-			continue // requireDeclaredBuilders above already refused any declared-but-unrunnable builder
+			continue // an inline builder renders inside its candy's steps (candy_steps.go), not as a stage
 		}
 		for _, candyName := range candyOrder {
 			layer := g.Candies[candyName]
-			// The candy needs this builder if a detect-file says so OR if it declares
-			// packages for this builder's own format. The second arm is what keeps a
-			// declared `aur: package: [...]` from being skipped when the detection is
-			// file-based only (opencharly/sdk#608).
-			if !g.CandyNeedsBuilder(img, layer, builderDef) && !declaresBuilderPackages(layer, builderName) {
+			if !NeedsBuilder(layer, img, builderName, builderDef) {
 				continue
 			}
 			builderRef := g.BuilderRefForFormat(boxName, builderName)
-			if builderRef == "" {
-				return fmt.Errorf("image %q: candy %q needs builder %q but no builders.%s configured", boxName, candyName, builderName, builderName)
-			}
 			reply, err := g.resolveDetectionBuilderReply(builderName, layer, builderDef, img, builderRef)
 			if err != nil {
 				return fmt.Errorf("image %q: candy %q builder %q: %w", boxName, candyName, builderName, err)
 			}
 			if strings.TrimSpace(reply.Stage) == "" {
-				return fmt.Errorf("image %q: candy %q: detection builder %q returned an empty OpResolve stage", boxName, candyName, builderName)
+				return fmt.Errorf("image %q: candy %q: builder %q returned an empty stage", boxName, candyName, builderName)
 			}
 			g.detectionBuilderReplies[BuilderCtxKey(layer.GetName(), builderName)] = reply
 			b.WriteString(reply.Stage)
@@ -112,66 +88,99 @@ func (g *Generator) EmitBuilderStages(b *strings.Builder, boxName string, img *b
 	return nil
 }
 
-// requireDeclaredBuilders refuses an image whose candies declare packages for a builder that
-// cannot run: no builder definition at all, or no externalized (plugin) builder. It is the ONE
-// rule behind that refusal, called before every early return in EmitBuilderStages
-// (opencharly/sdk#608).
-func (g *Generator) requireDeclaredBuilders(boxName string, img *buildkit.ResolvedBox, candyOrder []string) error {
-	// Probe the union of: every builder the image CONFIGURES, and every builder format a
-	// candy can DECLARE. The declaration set cannot be derived from the image — a box that
-	// configures `pixi` while a candy declares `aur:` is exactly the case that would slip
-	// through if only configured builders were probed (and a non-nil-but-empty Builder map
-	// would probe nothing at all). The loader registers ONE format section today
-	// (`ensureFormat("aur")` in loaderkit/scan_candy.go); `pixi` and `npm` are named here
-	// because their builders exist, and a new format belongs in this list in the same change
-	// that registers it.
-	declaredFormats := []string{"aur", "pixi", "npm"}
-	formats := append([]string{}, declaredFormats...)
-	if img != nil && img.BuilderConfig != nil {
-		seen := map[string]bool{}
-		for _, f := range formats {
-			seen[f] = true
+// NeededBuilderImages lists, once each and sorted, the builder images the stage builders this
+// image's candies need resolve to (BuilderRefForFormat over NeedsBuilder) — exactly the images
+// EmitBuilderStages names in its FROM lines. A caller that renders those stages into a build whose
+// builder images are not otherwise produced (the pod overlay) ensures each one first; the box
+// build produces them as its own dependencies (opencharly/sdk#608).
+func (g *Generator) NeededBuilderImages(boxName string, img *buildkit.ResolvedBox, candyOrder []string) []string {
+	if img == nil || img.BuilderConfig == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, name := range img.BuilderConfig.BuilderNames() {
+		def := img.BuilderConfig.Builder[name]
+		if def.Inline {
+			continue // an inline builder runs inside the candy's own stage
 		}
-		for _, f := range img.BuilderConfig.BuilderNames() {
-			if !seen[f] {
-				formats = append(formats, f)
+		for _, candyName := range candyOrder {
+			if !NeedsBuilder(g.Candies[candyName], img, name, def) {
+				continue
+			}
+			if ref := g.BuilderRefForFormat(boxName, name); ref != "" && !seen[ref] {
+				seen[ref] = true
+				out = append(out, ref)
 			}
 		}
 	}
+	sort.Strings(out)
+	return out
+}
+
+// requireBuilders refuses an image on which a candy needs a builder that cannot run — the same
+// rule for every builder (opencharly/sdk#608). For each builder in the vocabulary that a candy
+// needs on this image (NeedsBuilder): an inline builder needs its plugin or an inline template; a
+// stage builder needs its plugin and a route to a builder box. And a manager declaration this image
+// selects needs a builder definition at all — checked even when the image resolved no builder
+// vocabulary, the widest way a declaration could otherwise vanish.
+func (g *Generator) requireBuilders(boxName string, img *buildkit.ResolvedBox, candyOrder []string) error {
 	for _, candyName := range candyOrder {
 		layer := g.Candies[candyName]
 		if layer == nil {
 			continue
 		}
-		for _, format := range formats {
-			if !declaresBuilderPackages(layer, format) {
+		for _, manager := range declaredManagers(layer, img) {
+			if img.BuilderConfig == nil || img.BuilderConfig.Builder[manager] == nil {
+				return fmt.Errorf("image %q: candy %q declares %q packages, but no %q builder is defined; refusing to build an image that silently omits them",
+					boxName, candyName, manager, manager)
+			}
+		}
+		if img.BuilderConfig == nil {
+			continue
+		}
+		for _, name := range img.BuilderConfig.BuilderNames() {
+			def := img.BuilderConfig.Builder[name]
+			if !NeedsBuilder(layer, img, name, def) {
 				continue
 			}
-			var def *buildkit.BuilderDef
-			if img != nil && img.BuilderConfig != nil {
-				def = img.BuilderConfig.Builder[format]
+			external := g.ExternalizedBuilders[name]
+			if def.Inline {
+				if !external && buildkit.BuilderPhaseTemplate(def, spec.PhaseInstall, spec.VenueContainerBuilder) == "" {
+					return fmt.Errorf("image %q: candy %q needs builder %q, which has neither a plugin nor an inline install template", boxName, candyName, name)
+				}
+				continue
 			}
-			if def == nil {
-				return fmt.Errorf("image %q: candy %q declares %q packages, but no %q builder is configured; refusing to build an image that silently omits them", boxName, candyName, format, format)
+			if !external {
+				return fmt.Errorf("image %q: candy %q needs builder %q, but its plugin is not available; refusing to build an image that silently omits its packages", boxName, candyName, name)
 			}
-			if !g.ExternalizedBuilders[format] {
-				return fmt.Errorf("image %q: candy %q declares %q packages, but builder %q is not available (its plugin is not connected); refusing to build an image that silently omits them", boxName, candyName, format, format)
+			if g.BuilderRefForFormat(boxName, name) == "" {
+				return fmt.Errorf("image %q: candy %q needs builder %q, but no builder box is routed for it (builder.%s)", boxName, candyName, name, name)
 			}
 		}
 	}
 	return nil
 }
 
-// declaresBuilderPackages reports whether a candy declares packages for a builder's own
-// format section (the `aur:`, `pixi:`, `npm:` arms) — the declaration a builder MUST honour.
-// A candy that names packages here but gets no builder stage silently ships an image without
-// them, which is the defect opencharly/sdk#608 records.
-func declaresBuilderPackages(layer CandyModel, builderName string) bool {
-	if layer == nil {
-		return false
+// declaredManagers lists the build-time managers a candy declares packages for on this image — the
+// same tag chain its OS packages resolve over (ResolveManagerPackages), sorted for determinism.
+func declaredManagers(layer CandyModel, img *buildkit.ResolvedBox) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, tag := range CascadeTagChain(img) {
+		cfg := layer.TagSection(tag)
+		if cfg == nil {
+			continue
+		}
+		for manager, ms := range cfg.Managers {
+			if len(ms.Packages) > 0 && !seen[manager] {
+				seen[manager] = true
+				out = append(out, manager)
+			}
+		}
 	}
-	section := layer.FormatSection(builderName)
-	return section != nil && len(section.Packages) > 0
+	sort.Strings(out)
+	return out
 }
 
 // resolveDetectionBuilderReply builds the OpResolve render context host-side
@@ -180,7 +189,10 @@ func declaresBuilderPackages(layer CandyModel, builderName string) bool {
 // + OpResolve Invoke, charly-side). The counterpart of the external_builder path,
 // sharing the SAME seam-served OpResolve Invoke (R3).
 func (g *Generator) resolveDetectionBuilderReply(builderName string, layer CandyModel, builderDef *buildkit.BuilderDef, img *buildkit.ResolvedBox, builderRef string) (spec.BuilderResolveReply, error) {
-	ctx := g.BuildStageContext(layer, builderName, builderDef, img, builderRef)
+	ctx, err := g.BuildStageContext(layer, builderName, builderDef, img, builderRef)
+	if err != nil {
+		return spec.BuilderResolveReply{}, err
+	}
 	in := BuilderResolveInputFrom(layer.GetName(), builderName, builderDef, ctx)
 	return g.ResolveDetectionBuilderStage(builderName, in, &img.ResolvedBox)
 }
@@ -234,12 +246,21 @@ func (g *Generator) EmitExternalBuilderStages(b *strings.Builder, img *buildkit.
 // EmitExternalBuilderArtifacts writes the post-main-FROM COPY --from directives for
 // each candy whose external builder resolved in EmitExternalBuilderStages (read from
 // the per-image cache — never re-Invoked). The artifacts pull the built files out of
-// the plugin's multi-stage build into the final image.
-func (g *Generator) EmitExternalBuilderArtifacts(b *strings.Builder, candyOrder []string) {
+// the plugin's multi-stage build into the final image. A candy that selects an external builder
+// whose stage was not resolved, or whose reply copies nothing, is an error: its build would reach
+// no image (opencharly/sdk#608 — the same rule as every detection builder).
+func (g *Generator) EmitExternalBuilderArtifacts(b *strings.Builder, candyOrder []string) error {
 	for _, candyName := range candyOrder {
-		reply, ok := g.externalBuilderReplies[candyName]
-		if !ok || len(reply.CopyArtifacts) == 0 {
+		layer := g.Candies[candyName]
+		if layer == nil || layer.GetExternalBuilder() == "" {
 			continue
+		}
+		reply, ok := g.externalBuilderReplies[candyName]
+		if !ok {
+			return fmt.Errorf("candy %q selects external builder %q but no stage was resolved for it", candyName, layer.GetExternalBuilder())
+		}
+		if len(reply.CopyArtifacts) == 0 {
+			return fmt.Errorf("candy %q: external builder %q returned no copy artifacts, so its build would reach no image", candyName, layer.GetExternalBuilder())
 		}
 		fmt.Fprintf(b, "# Copy external_builder artifacts (%s)\n", g.Candies[candyName].GetExternalBuilder())
 		for _, line := range reply.CopyArtifacts {
@@ -250,44 +271,36 @@ func (g *Generator) EmitExternalBuilderArtifacts(b *strings.Builder, candyOrder 
 		}
 		b.WriteString("\n")
 	}
+	return nil
 }
 
-// EmitBuilderArtifacts copies builder artifacts/binaries into the main image. For an
-// EXTERNALIZED detection builder (pixi/npm/aur) the COPY lines come from the plugin's
-// cached OpResolve reply (detectionBuilderReplies, populated by EmitBuilderStages) — the
-// plugin owns the copy_artifact/copy_binary shape . For a custom (non-externalized)
-// builder they come from the embedded builder: vocabulary copy_artifacts/copy_binary. Both
-// keep the structure: the `# Copy <builder> artifacts` header once per builder, then each
-// candy's artifacts, and the builder BINARY copied ONCE per builder (deduped across candies).
-func (g *Generator) EmitBuilderArtifacts(b *strings.Builder, img *buildkit.ResolvedBox, candyOrder []string) {
+// EmitBuilderArtifacts splices each needed builder's payload COPY lines (its cached OpResolve
+// reply, populated by EmitBuilderStages) into the main image: the `# Copy <builder> artifacts`
+// header once per builder, each candy's copies, and the builder BINARY once per builder. A builder
+// whose PACKAGE output this image installs through its distro's local_pkg contract
+// (BuilderPackageInstall) is installed by the candy's own steps instead, so its payload is not
+// also copied. Every needed builder has a cached reply — a missing one is an error, never a
+// silently absent payload (opencharly/sdk#608).
+func (g *Generator) EmitBuilderArtifacts(b *strings.Builder, img *buildkit.ResolvedBox, candyOrder []string) error {
 	if img.BuilderConfig == nil {
-		return
+		return nil
 	}
-	builderNames := img.BuilderConfig.BuilderNames()
-	for _, builderName := range builderNames {
+	for _, builderName := range img.BuilderConfig.BuilderNames() {
 		builderDef := img.BuilderConfig.Builder[builderName]
 		if builderDef.Inline {
-			continue
+			continue // an inline builder installs inside its candy's steps
 		}
-		external := g.ExternalizedBuilders[builderName]
-		if !external {
-			continue
-		}
-
-		// Find candies that triggered this builder
-		hasArtifacts := false
-		binaryCopied := false
+		hasArtifacts, binaryCopied := false, false
 		for _, candyName := range candyOrder {
 			layer := g.Candies[candyName]
-			if !g.CandyNeedsBuilder(img, layer, builderDef) {
+			if !NeedsBuilder(layer, img, builderName, builderDef) {
 				continue
 			}
-
-			if external {
-				reply, ok := g.detectionBuilderReplies[BuilderCtxKey(layer.GetName(), builderName)]
-				if !ok {
-					continue
-				}
+			reply, ok := g.detectionBuilderReplies[BuilderCtxKey(layer.GetName(), builderName)]
+			if !ok {
+				return fmt.Errorf("image %q: candy %q needs builder %q but no stage was resolved for it", img.Name, candyName, builderName)
+			}
+			if BuilderPackageInstall(img, reply.Package) == nil {
 				for _, line := range reply.CopyArtifacts {
 					if !hasArtifacts {
 						fmt.Fprintf(b, "# Copy %s artifacts\n", builderName)
@@ -296,34 +309,10 @@ func (g *Generator) EmitBuilderArtifacts(b *strings.Builder, img *buildkit.Resol
 					b.WriteString(line)
 					b.WriteString("\n")
 				}
-				if reply.CopyBinary != "" && !binaryCopied {
-					b.WriteString(reply.CopyBinary)
-					b.WriteString("\n")
-					binaryCopied = true
-				}
-				continue
 			}
-
-			stageName := fmt.Sprintf("%s-%s-build", layer.GetName(), builderName)
-
-			// Copy artifacts
-			for _, art := range builderDef.CopyArtifacts {
-				if !hasArtifacts {
-					fmt.Fprintf(b, "# Copy %s artifacts\n", builderName)
-					hasArtifacts = true
-				}
-				src := expandBuilderPath(art.Src, img)
-				dst := expandBuilderPath(art.Dst, img)
-				if art.Chown {
-					fmt.Fprintf(b, "COPY --from=%s --chown=%d:%d %s %s\n", stageName, img.UID, img.GID, src, dst)
-				} else {
-					fmt.Fprintf(b, "COPY --from=%s %s %s\n", stageName, src, dst)
-				}
-			}
-
-			// Copy binary (only once, from first matching candy)
-			if builderDef.CopyBinary != nil && !binaryCopied {
-				fmt.Fprintf(b, "COPY --from=%s %s %s\n", stageName, builderDef.CopyBinary.Src, builderDef.CopyBinary.Dst)
+			if reply.CopyBinary != "" && !binaryCopied {
+				b.WriteString(reply.CopyBinary)
+				b.WriteString("\n")
 				binaryCopied = true
 			}
 		}
@@ -331,47 +320,26 @@ func (g *Generator) EmitBuilderArtifacts(b *strings.Builder, img *buildkit.Resol
 			b.WriteString("\n")
 		}
 	}
+	return nil
 }
 
-// DetectExternalizedBuilders returns the externalized builder words an image
-// triggers, so a caller can connect exactly those plugins on-demand. A config-only
-// detection (aur) runs a distro-specific install_template, so it is only needed when
-// the image's build formats include that format (the DetectConfig gate — a multi-distro
-// candy's aur: section must NOT pull arch tooling onto a fedora build); a detect-files
-// builder is needed by any candy carrying the file. Uses the img-less
-// CandyNeedsBuilderStep (the DetectConfig BuildFormats gate is applied here, not in the
-// step check). The SINGLE detection impl shared (R3) by the box-build RENDER
-// (EmitBuilderStages, over the Generator's Candies + ExternalizedBuilders) AND the charly
-// deploy build PRE-PASS (over its candy map + externalizedBuilders registry set).
-func DetectExternalizedBuilders(order []string, candies map[string]CandyModel, externalized map[string]bool, img *buildkit.ResolvedBox) []string {
+// DetectExternalizedBuilders returns the builder words an image needs (NeedsBuilder over its
+// candies), so a caller connects exactly those plugins on demand. The SAME trigger the render and
+// the apply compile use — one rule (opencharly/sdk#608). A needed builder that is not externalized
+// is returned too: connecting it then fails loudly, instead of the word being dropped here.
+func DetectExternalizedBuilders(order []string, candies map[string]CandyModel, img *buildkit.ResolvedBox) []string {
 	if img == nil || img.BuilderConfig == nil {
 		return nil
 	}
 	var out []string
 	for _, bName := range img.BuilderConfig.BuilderNames() {
-		if !externalized[bName] {
-			continue
-		}
 		bDef := img.BuilderConfig.Builder[bName]
-		if bDef == nil {
-			continue
-		}
-		if bDef.DetectConfig != "" && !slices.Contains(img.BuildFormats, bDef.DetectConfig) {
-			continue
-		}
 		for _, candyName := range order {
-			if layer := candies[candyName]; layer != nil && CandyNeedsBuilderStep(layer, bDef) {
+			if NeedsBuilder(candies[candyName], img, bName, bDef) {
 				out = append(out, bName)
 				break
 			}
 		}
 	}
 	return out
-}
-
-// expandBuilderPath substitutes the {{.Home}} placeholder in a builder
-// copy_artifact/copy_binary path (the only template token these paths carry).
-func expandBuilderPath(path string, img *buildkit.ResolvedBox) string {
-	path = strings.ReplaceAll(path, "{{.Home}}", img.Home)
-	return path
 }
