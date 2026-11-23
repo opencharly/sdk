@@ -380,7 +380,7 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 	// VerifyOnly: skip mutating steps (run:/agent-run:) -- except a bed's own actions in a
 	// bed-actions run, which execute in authored order (D-VERB-1: the one step that
 	// changes state is a run: step; D-DEP-3: a disposable bed authorizes it).
-	if pc.VerifyOnly() && step.Mutates() && !(pc.BedActions() && fs.bed) {
+	if pc.VerifyOnly() && step.Mutates() && (!pc.BedActions() || !fs.bed) {
 		sr.Result = spec.CheckResult{Status: StatusSkip, Message: "skipped — verify-only mode (mutating step)"}
 		return sr
 	}
