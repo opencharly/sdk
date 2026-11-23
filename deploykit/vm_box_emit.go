@@ -31,6 +31,7 @@ import (
 	"syscall"
 
 	"github.com/opencharly/sdk/buildkitdrive"
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/container"
 	"github.com/opencharly/spec/shellquote"
 	"github.com/opencharly/spec/spec"
@@ -159,7 +160,7 @@ type vmBoxCopy struct {
 // Otherwise the context is a staging directory in which any qcow2 overlay has been
 // flattened and every other artefact LINKED into it, so a multi-gigabyte rootfs is still
 // copied; only a link the filesystem refuses falls back to a byte copy.
-func emitVmBoxArtifacts(ctx context.Context, engine, ref string, meta *spec.VmBoxMetadata, arts []vmBoxArtifact) error {
+func emitVmBoxArtifacts(ctx context.Context, engine, ref string, meta *spec.VmBoxMetadata, arts []vmBoxArtifact) (err error) {
 	if meta == nil {
 		return fmt.Errorf("EmitVmBox: nil metadata")
 	}
@@ -217,6 +218,10 @@ func emitVmBoxArtifacts(ctx context.Context, engine, ref string, meta *spec.VmBo
 		return err
 	}
 	dest := buildkitdrive.ExportFile(stageDir, ref)
+	// The archive is a full copy of the image with ONE consumer (the bridge below), so it is
+	// removed on EVERY exit path — a failed build or a failed bridge leaves a partial or 0-byte
+	// file under the same naming otherwise (buildkitdrive.RemoveExport owns the rule).
+	defer func() { err = errors.Join(err, buildkitdrive.RemoveExport(dest)) }()
 	// DaemonOptions{} is deliberate here: this path has no parallelism input of its own, so
 	// it expresses NO OPINION and never restarts a daemon the build drive configured.
 	daemon, err := buildkitdrive.Ensure(ctx, buildkitdrive.ExecRunner{}, buildkitdrive.DaemonOptions{})
@@ -241,14 +246,8 @@ func emitVmBoxArtifacts(ctx context.Context, engine, ref string, meta *spec.VmBo
 	}
 	// The tag re-application is LoadExport's duty, not the caller's: a load returns
 	// success while landing the image UNTAGGED, so without it `ref` resolves to nothing.
-	if err := buildkitdrive.LoadExport(ctx, buildkitdrive.ExecRunner{}, container.EngineBinary(engine), dest, ref); err != nil {
+	if err := buildkitdrive.LoadExport(ctx, buildkitdrive.ExecRunner{}, kit.EngineBinary(engine), dest, ref); err != nil {
 		return fmt.Errorf("EmitVmBox: bridging %s into the %s store: %w", ref, engine, err)
-	}
-	// The export is a full copy of the image. Keeping it would double the storage of every
-	// VM box on a persistent root, where GC is not yet proven, so it is removed once the
-	// bridge has succeeded — and a failure to remove it is reported, not swallowed.
-	if err := os.Remove(dest); err != nil {
-		return fmt.Errorf("EmitVmBox: removing the export %s: %w", dest, err)
 	}
 	return nil
 }

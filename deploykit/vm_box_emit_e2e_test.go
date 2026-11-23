@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/buildkitdrive"
+	"github.com/opencharly/sdk/kit"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -67,4 +69,44 @@ func TestEmitVmBoxAt_OverlayIsFlattenedIntoSelfContainedBox(t *testing.T) {
 		t.Fatalf("emitted disk still has a backing file — not self-contained:\n%s", info)
 	}
 	t.Logf("emitted disk: %d bytes, self-contained\n%s", fi.Size(), info)
+}
+
+// TestEmitVmBox_RemovesTheExportWhenTheBridgeFails is the FAILURE-path proof for the export's
+// lifecycle: the build succeeds, the bridge cannot (an engine name no capability table knows),
+// and the staged archive must STILL be gone. Without the deferred cleanup the archive survives
+// the failure — which is exactly how a failed build leaked a multi-GB tarball
+// (opencharly/plugin-build#64, 68 GiB of them on one host).
+func TestEmitVmBox_RemovesTheExportWhenTheBridgeFails(t *testing.T) {
+	requireBuildkitDrive(t)
+	dir := t.TempDir()
+	disk := filepath.Join(dir, "disk.raw")
+	if err := os.WriteFile(disk, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref := "probe/vm-export-cleanup:test"
+	meta := &spec.VmBoxMetadata{Description: "export cleanup probe"}
+
+	// Fail the BRIDGE deterministically: point the engine binary at a path that does not
+	// exist, so the build succeeds and the load cannot.
+	prev := kit.EngineBinary
+	kit.EngineBinary = func(string) string { return filepath.Join(dir, "no-such-engine") }
+	defer func() { kit.EngineBinary = prev }()
+
+	if err := EmitVmBoxAt(context.Background(), "podman", ref, meta, disk, "/disk.raw"); err == nil {
+		t.Fatal("a missing engine binary must fail the bridge")
+	}
+
+	stage, err := buildkitdrive.StageDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(stage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "vm-export-cleanup") {
+			t.Fatalf("the export archive %s survived a failed bridge", e.Name())
+		}
+	}
 }
