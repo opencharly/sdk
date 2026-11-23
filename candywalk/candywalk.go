@@ -265,27 +265,14 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver, scope RefSc
 			// it is what is read; the tree's root manifest is not (a subpath ref is not a claim
 			// on the repo).
 			if pr.SubPath != "" {
-				manifest, dir := subpathManifest(fetched, pr.SubPath)
-				if manifest == "" {
+				found, refs, serr := walkSubpathRef(fetched, fetchedRoot, pr.SubPath, scope)
+				if serr != nil {
 					skipped++
-					fmt.Fprintf(os.Stderr, "charly: WARNING: skipping ref %s: its subpath %q names no manifest in the fetched tree\n", ref, pr.SubPath)
+					fmt.Fprintf(os.Stderr, "charly: WARNING: skipping ref %s: %v\n", ref, serr)
 					continue
-				}
-				found, rerr := ReadEntityFile(manifest, fetchedRoot, dir)
-				if rerr != nil {
-					skipped++
-					fmt.Fprintf(os.Stderr, "charly: WARNING: skipping ref %s: its subpath manifest cannot be read: %v\n", ref, rerr)
-					continue
-				}
-				for i := range found {
-					found[i].SourceRoot = fetched
 				}
 				out = append(out, found...)
-				fileRefs := collectRefs(manifest)
-				if scope != nil {
-					fileRefs = scope(manifest, filepath.Base(dir), found, fileRefs)
-				}
-				queue = append(queue, fileRefs...)
+				queue = append(queue, refs...)
 				continue
 			}
 
@@ -340,6 +327,29 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver, scope RefSc
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// walkSubpathRef reads the ONE manifest a subpath ref names and returns its entities and the
+// refs that manifest declares (scoped). It is split out of collectEntitiesWithRemote so the
+// closure loop stays under the repo's gocyclo bound while the subpath branches live together.
+// An error names why the ref cannot be honoured; the caller skips it with a warning.
+func walkSubpathRef(fetched string, fetchedRoot Root, subpath string, scope RefScope) ([]Entity, []string, error) {
+	manifest, dir := subpathManifest(fetched, subpath)
+	if manifest == "" {
+		return nil, nil, fmt.Errorf("its subpath %q names no manifest in the fetched tree", subpath)
+	}
+	found, err := ReadEntityFile(manifest, fetchedRoot, dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("its subpath manifest cannot be read: %w", err)
+	}
+	for i := range found {
+		found[i].SourceRoot = fetched
+	}
+	fileRefs := collectRefs(manifest)
+	if scope != nil {
+		fileRefs = scope(manifest, filepath.Base(dir), found, fileRefs)
+	}
+	return found, fileRefs, nil
 }
 
 // subpathManifest resolves a ref's SUBPATH to the manifest it names, inside a fetched tree.
