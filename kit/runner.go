@@ -99,7 +99,10 @@ type RunnerConfig struct {
 	CandyDirs    map[string]string
 	CandyScanErr error
 
-	VerifyOnly           bool
+	VerifyOnly bool
+	// BedActions: execute the plan's Deploy-section run: steps under VerifyOnly (see
+	// PlanContext.BedActions).
+	BedActions           bool
 	SkipDeterministicRun bool
 
 	Scenario *ScenarioContext
@@ -142,7 +145,9 @@ type Runner struct {
 	candyDirs    map[string]string
 	candyScanErr error
 
-	verifyOnly           bool
+	verifyOnly bool
+
+	bedActions           bool
 	skipDeterministicRun bool
 
 	scenario *ScenarioContext
@@ -182,6 +187,7 @@ func NewRunner(cfg RunnerConfig) *Runner {
 		candyDirs:            cfg.CandyDirs,
 		candyScanErr:         cfg.CandyScanErr,
 		verifyOnly:           cfg.VerifyOnly,
+		bedActions:           cfg.BedActions,
 		skipDeterministicRun: cfg.SkipDeterministicRun,
 		scenario:             cfg.Scenario,
 		grader:               cfg.Grader,
@@ -214,6 +220,9 @@ func (r *Runner) Mode() RunMode { return r.mode }
 
 // VerifyOnly restricts the walk to idempotent verify steps (check:/agent-check:).
 func (r *Runner) VerifyOnly() bool { return r.verifyOnly }
+
+// BedActions executes the plan's Deploy-section run: steps under VerifyOnly.
+func (r *Runner) BedActions() bool { return r.bedActions }
 
 // SkipDeterministicRun skips deterministic run: install-timeline steps (feature-run mode).
 func (r *Runner) SkipDeterministicRun() bool { return r.skipDeterministicRun }

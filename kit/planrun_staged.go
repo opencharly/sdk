@@ -73,11 +73,23 @@ func RunPlanStaged(ctx context.Context, members []MemberRun, parallel bool, stri
 		if set == nil {
 			continue
 		}
+		// The section ORDER is the walk order (candy -> box -> deploy); the `bed` flag marks
+		// the deployment's own steps, the ONLY ones a bed-actions run may execute while
+		// mutating. Naming both explicitly keeps the marker from depending on a slice
+		// position: reordering the walk cannot silently re-point it.
+		sections := []struct {
+			plan []LabeledDescription
+			bed  bool
+		}{
+			{plan: set.Candy, bed: false},
+			{plan: set.Box, bed: false},
+			{plan: set.Deploy, bed: true},
+		}
 		var flat []flatStep
-		for _, sec := range [][]LabeledDescription{set.Candy, set.Box, set.Deploy} {
-			for _, ld := range sec {
+		for _, sec := range sections {
+			for _, ld := range sec.plan {
 				for i, s := range ld.Plan {
-					fs := flatStep{origin: ld.Origin, desc: ld.Description, idx: i, step: s}
+					fs := flatStep{origin: ld.Origin, desc: ld.Description, idx: i, step: s, bed: sec.bed}
 					flat = append(flat, fs)
 					if st := s.Stage; st != "" {
 						hasStages = true

@@ -42,6 +42,7 @@ type fakePlanContext struct {
 	distros    []string
 	mode       RunMode
 	verifyOnly bool
+	bedActions bool
 	skipRun    bool
 	ctxSkip    string
 	do         spec.DoMode
@@ -67,6 +68,7 @@ func (c *fakePlanContext) ClassifyUnresolved(op *spec.Op, name string) Unresolve
 func (c *fakePlanContext) Distros() []string                 { return c.distros }
 func (c *fakePlanContext) Mode() RunMode                     { return c.mode }
 func (c *fakePlanContext) VerifyOnly() bool                  { return c.verifyOnly }
+func (c *fakePlanContext) BedActions() bool                  { return c.bedActions }
 func (c *fakePlanContext) SkipDeterministicRun() bool        { return c.skipRun }
 func (c *fakePlanContext) ContextSkipReason(*spec.Op) string { return c.ctxSkip }
 func (c *fakePlanContext) EffectiveDo(*spec.Op) spec.DoMode  { return c.do }
@@ -394,6 +396,49 @@ func TestRunPlan_VerifyOnlySkipsMutating(t *testing.T) {
 	}
 	if out[1].Result.Status != StatusPass {
 		t.Errorf("check: step → %v, want StatusPass", out[1].Result.Status)
+	}
+}
+
+// A bed's actions are `run:` steps (D-VERB-1). In a bed-actions run (`charly check run`'s
+// live stage on a disposable bed) the bed's OWN run: steps -- the Deploy section -- execute
+// between its checks; the install timeline's run: steps (Candy, Box) stay skipped, and with
+// the flag off every mutating step stays skipped (plain `check live`, verify-only).
+func TestRunPlan_BedActionsExecuteOnlyTheBedsOwnRunSteps(t *testing.T) {
+	set := func() *LabelDescriptionSet {
+		return &LabelDescriptionSet{
+			Candy: []LabeledDescription{{Origin: "candy:x", Plan: []spec.Step{
+				{Run: "install it", Op: *pluginOp()},
+			}}},
+			Box: []LabeledDescription{{Origin: "box:y", Plan: []spec.Step{
+				{Run: "configure it", Op: *pluginOp()},
+			}}},
+			Deploy: []LabeledDescription{{Origin: "pod:bed", Plan: []spec.Step{
+				{Run: "resize the stream", Op: *pluginOp()},
+				{Check: "the stream followed", Op: *pluginOp()},
+			}}},
+		}
+	}
+	for _, tc := range []struct {
+		name       string
+		bedActions bool
+		want       []spec.Status
+	}{
+		{"bed actions", true, []spec.Status{StatusSkip, StatusSkip, StatusPass, StatusPass}},
+		{"plain check live", false, []spec.Status{StatusSkip, StatusSkip, StatusSkip, StatusPass}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vr := &fakeVerbResolver{known: true, result: spec.CheckResult{Status: StatusPass}}
+			pc := &fakePlanContext{env: map[string]string{}, verifyOnly: true, bedActions: tc.bedActions, verbs: vr}
+			out := RunPlan(context.Background(), pc, set(), false)
+			if len(out) != len(tc.want) {
+				t.Fatalf("RunPlan -> %d results, want %d", len(out), len(tc.want))
+			}
+			for i, w := range tc.want {
+				if out[i].Result.Status != w {
+					t.Errorf("step %d -> %v %q, want %v", i, out[i].Result.Status, out[i].Result.Message, w)
+				}
+			}
+		})
 	}
 }
 
