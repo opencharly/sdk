@@ -74,10 +74,10 @@ func RunPlanStaged(ctx context.Context, members []MemberRun, parallel bool, stri
 			continue
 		}
 		var flat []flatStep
-		for _, sec := range [][]LabeledDescription{set.Candy, set.Box, set.Deploy} {
+		for si, sec := range [][]LabeledDescription{set.Candy, set.Box, set.Deploy} {
 			for _, ld := range sec {
 				for i, s := range ld.Plan {
-					fs := flatStep{origin: ld.Origin, desc: ld.Description, idx: i, step: s}
+					fs := flatStep{origin: ld.Origin, desc: ld.Description, idx: i, step: s, bed: si == 2}
 					flat = append(flat, fs)
 					if st := s.Stage; st != "" {
 						hasStages = true

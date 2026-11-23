@@ -69,6 +69,11 @@ type PlanContext interface {
 	// VerifyOnly restricts a plan walk to idempotent verify steps (check:/agent-check:),
 	// skipping mutating steps (run:/agent-run:) — the check live / check box mode.
 	VerifyOnly() bool
+	// BedActions lets a verify-only walk EXECUTE the deployment's own run: steps — a bed's
+	// actions, the plan's Deploy section — in authored order between its checks. Only
+	// `charly check run`'s live stage on a disposable bed sets it (#CheckRunRequest
+	// bed_actions, D-DEP-3); the Candy/Box install timeline stays skipped either way.
+	BedActions() bool
 	// SkipDeterministicRun skips deterministic run: install-timeline steps while still
 	// running check:/agent-check: and the agent-graded agent-run: — the feature-run mode.
 	SkipDeterministicRun() bool
@@ -120,6 +125,9 @@ type flatStep struct {
 	desc   string
 	idx    int
 	step   spec.Step
+	// bed marks a step of the plan's Deploy section: the deployment's own steps, which a
+	// bed-actions run executes even when they mutate (see PlanContext.BedActions).
+	bed bool
 }
 
 // assertOnlyOp reports whether the walk stamped op as an ASSERT step. The stamp comes from the
@@ -369,8 +377,10 @@ func runUnit(ctx context.Context, pc PlanContext, fs flatStep, stepCtx *Scenario
 		return sr
 	}
 
-	// VerifyOnly: skip mutating steps (run:/agent-run:).
-	if pc.VerifyOnly() && step.Mutates() {
+	// VerifyOnly: skip mutating steps (run:/agent-run:) -- except a bed's own actions in a
+	// bed-actions run, which execute in authored order (D-VERB-1: the one step that
+	// changes state is a run: step; D-DEP-3: a disposable bed authorizes it).
+	if pc.VerifyOnly() && step.Mutates() && !(pc.BedActions() && fs.bed) {
 		sr.Result = spec.CheckResult{Status: StatusSkip, Message: "skipped — verify-only mode (mutating step)"}
 		return sr
 	}
