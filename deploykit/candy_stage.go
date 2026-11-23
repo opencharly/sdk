@@ -86,18 +86,86 @@ func (g *Generator) candyOrigin(layer CandyModel, sourceDir string) (staged bool
 	return false, rel
 }
 
-// EmitScratchStages emits a `FROM scratch AS <candy>` + `COPY <src>/ /` per candy,
-// staging each candy's files in its own scratch layer. A `copy:` resolves inside that
-// stage, never at the build root: content that lives at a repo root (a skill body) is a
-// kind's owned content and is installed by EmitOwnedContent instead. Relocated (P8).
+// EmitScratchStages emits a `FROM scratch AS <candy>` + `COPY <src>/ /` per candy a rendering
+// step READS from, staging each candy's files in its own scratch layer. A `copy:` resolves
+// inside that stage, never at the build root: content that lives at a repo root (a skill body)
+// is a kind's owned content and is installed by EmitOwnedContent instead. Relocated (P8).
+//
+// TWO rules, both about not staging what nothing needs (opencharly/sdk#623):
+//
+//   - a candy NOTHING copies from gets no stage at all (stageConsumed) — a stage nothing reads
+//     is dead output;
+//   - a candy whose own directory IS the build root (an INLINE candy declared in the project's
+//     root charly.yml) is staged by its plan's SOURCES, never with a whole-project COPY. A
+//     `COPY ./ /` would put `.git`, `.check` run logs, `.build` staging and any local secret into
+//     the image's build graph, with the context-ignore DENYLIST as its only protection.
 func (g *Generator) EmitScratchStages(b *strings.Builder, candyOrder []string) {
 	for _, candyName := range candyOrder {
 		layer := g.Candies[candyName]
-		stageName := layer.GetName() // use short name for stage alias
-		fmt.Fprintf(b, "FROM scratch AS %s\n", stageName)
-		fmt.Fprintf(b, "COPY %s/ /\n", g.CandyCopySource(candyName))
-		b.WriteString("\n")
+		g.emitScratchStage(b, candyName, layer)
 	}
+}
+
+// emitScratchStage writes ONE candy's scratch stage under the two rules above. Shared by the
+// build path and the data-image path so the rule cannot hold in one and not the other (R2).
+func (g *Generator) emitScratchStage(b *strings.Builder, candyName string, layer CandyModel) {
+	if !stageConsumed(layer) {
+		return
+	}
+	stageName := layer.GetName() // use short name for stage alias
+	fmt.Fprintf(b, "FROM scratch AS %s\n", stageName)
+	if src := g.CandyCopySource(candyName); src != "." && src != "" {
+		fmt.Fprintf(b, "COPY %s/ /\n", src)
+		b.WriteString("\n")
+		return
+	}
+	// The candy's directory is the build root: stage exactly the paths its plan reads. A
+	// consumed candy whose sources are not expressible leaves a stage with no COPY, so the
+	// consuming instruction fails naming the missing path — never a silent whole-project copy.
+	for _, src := range stageSources(layer) {
+		fmt.Fprintf(b, "COPY %s %s\n", src, src)
+	}
+	b.WriteString("\n")
+}
+
+// stageConsumed reports whether any rendering step reads from a candy's scratch stage: a
+// `copy:` step (EmitCopy) or a data declaration (WriteDataStaging). Those two are the ONLY
+// consumers — `COPY --from=` elsewhere names a BUILDER stage (`<candy>-<builder>-build`) or an
+// init FRAGMENT stage, never a candy's scratch stage.
+func stageConsumed(layer CandyModel) bool {
+	if layer.HasData() {
+		return true
+	}
+	for _, op := range layer.RunOps() {
+		if op.Copy != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// stageSources returns the build-context paths a root-inline candy's stage must carry: the
+// `copy:` sources and the `data:` sources its plan names, deduplicated in plan order. Absolute,
+// escaping and empty paths are skipped — none of them can be a build-context path, and the
+// consumer fails loudly on them rather than being silently served something else.
+func stageSources(layer CandyModel) []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(p string) {
+		p = filepath.ToSlash(filepath.Clean(strings.TrimSpace(p)))
+		if p == "" || p == "." || seen[p] || filepath.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, op := range layer.RunOps() {
+		add(op.Copy)
+	}
+	for _, d := range layer.Data() {
+		add(d.Src)
+	}
+	return out
 }
 
 // EmitExtractStages emits a `FROM <source> AS <candy>-extract-<i>` stage per

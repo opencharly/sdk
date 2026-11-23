@@ -210,14 +210,14 @@ func (g *Generator) generateDataImageContainerfile(boxName string, img *buildkit
 	fmt.Fprintf(&b, "# .build/%s/Containerfile (generated -- do not edit)\n\n", boxName)
 	b.WriteString("FROM scratch\n\n")
 
-	// Scratch stages for candies that have data
+	// Scratch stages for candies that have data. The ONE emitter is shared with the build path,
+	// so a root-inline candy is staged by its sources here too (opencharly/sdk#623).
 	for _, candyName := range candyOrder {
 		layer := g.Candies[candyName]
 		if !layer.HasData() {
 			continue
 		}
-		fmt.Fprintf(&b, "FROM scratch AS %s\n", layer.GetName())
-		fmt.Fprintf(&b, "COPY %s/ /\n\n", g.CandyCopySource(candyName))
+		g.emitScratchStage(&b, candyName, layer)
 	}
 
 	// Main image: just data staging + labels
