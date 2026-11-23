@@ -112,7 +112,7 @@ type RemoteResolver func(repoPath, version string) (fetchedDir string, err error
 // (candy/<name>/charly.yml, box/<name>/charly.yml) — the same two the loader uses — so the
 // result is exactly what an author has written down.
 func CollectEntities(roots []Root) ([]Entity, error) {
-	return collectEntitiesWithRemote(roots, nil)
+	return collectEntitiesWithRemote(roots, nil, nil)
 }
 
 // CollectEntitiesRemote extends CollectEntities with the candy de-submodule cutover's
@@ -124,15 +124,32 @@ func CollectEntities(roots []Root) ([]Entity, error) {
 // runtime scan materialises). Entity.SourceRoot carries the fetched repo dir for remote entities
 // so schema reads resolve against the fetched tree, not the local project root.
 func CollectEntitiesRemote(roots []Root, resolve RemoteResolver) ([]Entity, error) {
-	return collectEntitiesWithRemote(roots, resolve)
+	return collectEntitiesWithRemote(roots, resolve, nil)
 }
 
-// collectEntitiesWithRemote is the shared walker behind CollectEntities (resolve == nil) and
-// CollectEntitiesRemote (resolve != nil). When resolve is nil it is exactly the pure local
-// FS walk of candy/ + box/. When resolve is set, every @github.com/opencharly/... ref found in
-// the walked files (local AND fetched) is resolved and the fetched repo's entities unioned in,
-// fix-pointing until no new refs surface.
-func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, error) {
+// RefScope decides which @github refs a walked FILE contributes to the remote fix-point. `all`
+// is exactly what collectRefs found in that file; ents are the file's entities, candyName the
+// candy/box directory name ("" for a fetched repo's root manifest). Returning a subset NARROWS
+// the closure for that file; nil disables the scope.
+//
+// It exists so a consumer can express ITS OWN inclusion rule without changing this walker's
+// full-closure contract (the corpus generator scopes a source to its skill owners; the walker's
+// other consumers still need every ref).
+type RefScope func(path, candyName string, ents []Entity, all []string) []string
+
+// CollectEntitiesRemoteScoped is CollectEntitiesRemote with a per-file RefScope. A nil scope is
+// exactly CollectEntitiesRemote.
+func CollectEntitiesRemoteScoped(roots []Root, resolve RemoteResolver, scope RefScope) ([]Entity, error) {
+	return collectEntitiesWithRemote(roots, resolve, scope)
+}
+
+// collectEntitiesWithRemote is the shared walker behind CollectEntities (resolve == nil),
+// CollectEntitiesRemote and CollectEntitiesRemoteScoped. When resolve is nil it is exactly the
+// pure local FS walk of candy/ + box/. When resolve is set, every @github.com/opencharly/...
+// ref found in the walked files (local AND fetched) is resolved and the fetched repo's entities
+// unioned in, fix-pointing until no new refs surface. A non-nil scope filters each file's refs
+// before they are queued.
+func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver, scope RefScope) ([]Entity, error) {
 	var out []Entity
 	seenRefs := map[string]bool{} // repoPath:version -> fetched (or attempted)
 
@@ -163,7 +180,11 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 				}
 				out = append(out, found...)
 				if resolve != nil {
-					newRefs = append(newRefs, collectRefs(path)...)
+					fileRefs := collectRefs(path)
+					if scope != nil {
+						fileRefs = scope(path, de.Name(), found, fileRefs)
+					}
+					newRefs = append(newRefs, fileRefs...)
 				}
 			}
 		}
@@ -248,7 +269,12 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver) ([]Entity, 
 				}
 				out = append(out, found...)
 				if resolve != nil {
-					queue = append(queue, collectRefs(filepath.Join(fetched, UnifiedFileName))...)
+					rootPath := filepath.Join(fetched, UnifiedFileName)
+					fileRefs := collectRefs(rootPath)
+					if scope != nil {
+						fileRefs = scope(rootPath, "", found, fileRefs)
+					}
+					queue = append(queue, fileRefs...)
 				}
 			}
 		}
