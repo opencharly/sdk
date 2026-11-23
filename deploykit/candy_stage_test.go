@@ -3,8 +3,10 @@ package deploykit
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/opencharly/sdk/vmshared"
 	"github.com/opencharly/spec/spec"
 )
 
@@ -95,5 +97,50 @@ func TestCandyCopySource_ImportedNamespaceOrigin(t *testing.T) {
 		if got := g.CandyCopySource(tc.ref); got != tc.want {
 			t.Errorf("CandyCopySource(%q) = %q, want %q", tc.ref, got, tc.want)
 		}
+	}
+}
+
+// TestEmitScratchStage_NeverStagesTheBuildRoot is the regression guard for opencharly/sdk#623:
+// an INLINE candy (declared in the project's root charly.yml) has the build root as its own
+// directory, and staging it as a whole would put the entire project — .git, .check run logs,
+// .build staging, any local secret — into the image's build graph, with the context-ignore
+// DENYLIST as its only protection. And a candy nothing copies from gets no stage at all.
+func TestEmitScratchStage_NeverStagesTheBuildRoot(t *testing.T) {
+	root := t.TempDir()
+	g := &Generator{
+		Dir: root,
+		Candies: map[string]CandyModel{
+			"inline-probe": NewSpecCandyModel(spec.CandyModel{
+				Name:      "inline-probe",
+				SourceDir: root,
+				RunOps:    []vmshared.Op{{Copy: "etc/probe.conf", To: "/etc/probe.conf"}},
+			}, spec.CandyView{}),
+			"idle": NewSpecCandyModel(spec.CandyModel{
+				Name:      "idle",
+				SourceDir: filepath.Join(root, "candy", "idle"),
+			}, spec.CandyView{}),
+			"pixi": NewSpecCandyModel(spec.CandyModel{
+				Name:      "pixi",
+				SourceDir: filepath.Join(root, "candy", "pixi"),
+				RunOps:    []vmshared.Op{{Copy: "etc/x", To: "/etc/x"}},
+			}, spec.CandyView{}),
+		},
+	}
+
+	var b strings.Builder
+	g.EmitScratchStages(&b, []string{"inline-probe", "idle", "pixi"})
+	out := b.String()
+
+	if strings.Contains(out, "COPY ./ /") {
+		t.Fatalf("the generator staged the whole build root:\n%s", out)
+	}
+	if !strings.Contains(out, "FROM scratch AS inline-probe\nCOPY etc/probe.conf etc/probe.conf\n") {
+		t.Errorf("an inline candy must be staged by the sources its plan reads, got:\n%s", out)
+	}
+	if strings.Contains(out, "FROM scratch AS idle") {
+		t.Errorf("a candy nothing copies from must get no stage, got:\n%s", out)
+	}
+	if !strings.Contains(out, "FROM scratch AS pixi\nCOPY candy/pixi/ /\n") {
+		t.Errorf("a conventional candy keeps its directory stage, got:\n%s", out)
 	}
 }
