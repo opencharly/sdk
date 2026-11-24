@@ -198,8 +198,21 @@ func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *Depl
 	return perhost.Apply(path, func(root *yaml.Node) (bool, error) {
 		// The fail-safe re-read runs INSIDE the locked section, so the check and the write see
 		// the same bytes: a config that passes here cannot have been replaced before the rename.
-		if _, lerr := recheck(); lerr != nil {
+		onDisk, lerr := recheck()
+		if lerr != nil {
 			return false, fmt.Errorf("refusing to overwrite %s — the existing per-host config fails to load (%w); fix it (or remove it to regenerate) first", path, lerr)
+		}
+		// DEGRADED-LOAD GUARD (data-safety). The loader can DEGRADE instead of erroring: a deploy
+		// entry it cannot unify comes back as an EMPTY or short DeployConfig with no error, and
+		// writing dc over that state erases every entry the loader dropped. Measured on a host,
+		// 2026-11-24: the overlay lost both of its deploy entries and `system:` in one run. The
+		// guard compares the TYPED re-read with the file's own key count — the two things a
+		// legitimate write always sees as equal — so a deliberate removal (dc smaller, file and
+		// re-read agreeing) still passes, and only a load that cannot account for the file refuses.
+		if onDisk != nil {
+			if onFile := countDeployKeys(root); len(onDisk.Deploy) < onFile {
+				return false, fmt.Errorf("refusing to write %s — it holds %d deploy entr(y|ies) but only %d load; this binary would erase the %d a degraded load dropped (fix the config first, e.g. `charly migrate`, or remove it to regenerate)", path, onFile, len(onDisk.Deploy), onFile-len(onDisk.Deploy))
+			}
 		}
 		if dc.Provides != nil {
 			pb, perr := yaml.Marshal(dc.Provides)
@@ -232,6 +245,18 @@ var reservedDeployKeys = map[string]bool{
 	"provides": true, "providers": true, "compiled_plugins": true,
 	"context_ignore_baseline": true, "ovmf_paths": true, "ovmf_distro_aliases": true,
 	"cache": true, "ledger": true, "system": true, "sidecar": true,
+}
+
+// countDeployKeys counts the deploy entries in a per-host config root — the same basis
+// removeDeployKeys uses, so the guard and the writer can never disagree about what a deploy key is.
+func countDeployKeys(m *yaml.Node) int {
+	n := 0
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if !reservedDeployKeys[m.Content[i].Value] {
+			n++
+		}
+	}
+	return n
 }
 
 // removeDeployKeys removes every top-level key that is a deploy entry (not a reserved
