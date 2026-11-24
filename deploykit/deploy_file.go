@@ -118,6 +118,21 @@ func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
 	return &DeployConfig{}, nil
 }
 
+// DeployConfigSaveOption tunes ONE SaveDeployConfig write. Variadic so no existing caller changes.
+type DeployConfigSaveOption func(*deployConfigSaveOptions)
+
+type deployConfigSaveOptions struct {
+	pruneEmptyProvides bool
+}
+
+// PruneEmptyProvides makes the write DELETE a top-level `provides:` section that the config no
+// longer carries. It is for the REMOVAL path only (CleanDeployEntry), whose cleaner empties the
+// lists and sets Provides=nil: without this, a nil Provides means "nothing to write" and the
+// stale section survives on disk while the removal reports success (opencharly/sdk#634).
+func PruneEmptyProvides() DeployConfigSaveOption {
+	return func(o *deployConfigSaveOptions) { o.pruneEmptyProvides = true }
+}
+
 // SaveDeployConfig writes a DeployConfig to the standard charly.yml path. The kind-blind file
 // shell: the provides directive, the
 // caller-supplied per-entry node-form bodies, and the atomic tempfile+os.Rename write with a
@@ -146,21 +161,6 @@ func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
 // populator). It therefore writes through perhost.Apply, the shared atomic mechanics, and does NOT
 // acquire the lock again: flock is per-open-file-description, so a second acquire in the same
 // process would wait for the first and fail at perhost.LockWait.
-// DeployConfigSaveOption tunes ONE SaveDeployConfig write. Variadic so no existing caller changes.
-type DeployConfigSaveOption func(*deployConfigSaveOptions)
-
-type deployConfigSaveOptions struct {
-	pruneEmptyProvides bool
-}
-
-// PruneEmptyProvides makes the write DELETE a top-level `provides:` section that the config no
-// longer carries. It is for the REMOVAL path only (CleanDeployEntry), whose cleaner empties the
-// lists and sets Provides=nil: without this, a nil Provides means "nothing to write" and the
-// stale section survives on disk while the removal reports success (opencharly/sdk#634).
-func PruneEmptyProvides() DeployConfigSaveOption {
-	return func(o *deployConfigSaveOptions) { o.pruneEmptyProvides = true }
-}
-
 func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctx context.Context, opts ...DeployConfigSaveOption) error {
 	var so deployConfigSaveOptions
 	for _, o := range opts {
