@@ -206,13 +206,14 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 	// NO charly pod runs as container root. A unit with a bind mount runs as the IMAGE USER under
 	// keep-id: the image user IS the invoking host user there, so a host-owned volume (a bind, or
 	// a gocryptfs plaintext dir) is writable with no chown, and the workload is the image user, not
-	// root. A CDI GPU device cannot be injected in this shape (crun cannot apply the spec's file
-	// mounts inside the keep-id userns: mount_setattr EPERM, exit 126), so the device is never
-	// emitted on a bind unit; the caller injects the GPU as device nodes plus the driver libraries
-	// bound to their soname paths (plugin-deploy-pod's detect_devices), which are ordinary binds.
+	// root. The CDI device is emitted for every GPU unit, bind or not: what keep-id cannot apply is
+	// the CDI spec's FILE MOUNTS (crun mount_setattr EPERM, exit 126), not the device — a
+	// DEVICES-ONLY spec applies fine. The caller therefore points the engine at a devices-only spec
+	// (plugin-deploy-pod) and supplies the driver libraries as read-only binds to their SONAME paths.
 	// Measured 2026-11-24 (podman 6.2.0, crun 1.31, rootless): keep-id + image user + host bind ->
-	// uid=1000, write ok, host owner 1000:1000; keep-id + CDI -> exit 126; userns=host --user 1000
-	// with an idmapped volume -> denied.
+	// uid=1000, write ok, host owner 1000:1000; keep-id + a devices-only CDI spec + the three driver
+	// binds -> cuInit=0 on the RTX 4080 SUPER; keep-id + the stock nvidia-ctk spec (mounts) -> exit
+	// 126; userns=host --user 1000 with an idmapped volume -> denied.
 	if len(cfg.BindMounts) > 0 {
 		fmt.Fprintf(b, "UserNS=keep-id:uid=%d,gid=%d\n", cfg.UID, cfg.GID)
 	}
@@ -268,10 +269,9 @@ func emitInitRuntime(b *strings.Builder, cfg QuadletConfig) {
 func carriesCDIDevice(cfg QuadletConfig) bool { return cfg.GPU && !cfg.Security.Privileged }
 
 func emitContainerSecurity(b *strings.Builder, cfg QuadletConfig) {
-	// The CDI device is emitted ONLY for a unit without bind mounts: a bind unit runs under
-	// keep-id, where crun cannot apply the CDI spec's file mounts (see the userns note); its GPU
-	// arrives as device nodes plus driver-library binds instead.
-	if carriesCDIDevice(cfg) && len(cfg.BindMounts) == 0 {
+	// Emitted for every GPU unit, bind or not: keep-id cannot apply a CDI spec's file mounts, not
+	// its device (see the userns note), so the caller arranges a devices-only spec.
+	if carriesCDIDevice(cfg) {
 		b.WriteString("AddDevice=nvidia.com/gpu=all\n")
 	}
 	if cfg.Security.Privileged {

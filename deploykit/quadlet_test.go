@@ -259,17 +259,18 @@ func TestGenerateQuadletWithoutGPU(t *testing.T) {
 // TestGenerateQuadletUserNS pins the one user-namespace rule: **no charly pod runs as container
 // root**. A unit with a bind mount runs as the IMAGE USER under keep-id — the image user IS the
 // invoking host user there, so a host-owned volume (a bind, or a gocryptfs plaintext dir) is
-// writable with no chown. A CDI GPU device cannot ride that unit: keep-id + CDI fails at the
-// spec's first FILE mount (`crun: mount_setattr …: EPERM`, exit 126), measured with the nvidia-ctk
-// spec AND with a minimal devices+libs spec, while a DEVICES-ONLY spec applies fine — so the CDI
-// device is emitted only on a unit WITHOUT binds, and a bind unit gets its GPU as device nodes
-// (AddDevice=/dev/nvidia…, which is plain device injection) plus driver-library bind mounts.
+// writable with no chown. The CDI device is emitted for every GPU unit, bind included: what keep-id
+// cannot apply is the CDI spec's FILE mounts (`crun: mount_setattr …: EPERM`, exit 126), never the
+// device — a DEVICES-ONLY spec applies fine, measured with the device name still resolving to a
+// spec carrying only `deviceNodes`, plus the driver libraries bound to their SONAME paths
+// (`cuInit=0` on the RTX 4080 SUPER). The emitter therefore never decides the spec shape; its
+// caller points the engine at a devices-only one.
 // Measured 2026-11-24 (podman 6.2.0, crun 1.31, rootless): keep-id + image user + host bind ->
 // uid=1000, write ok, host owner 1000:1000; userns=host --user 1000 + an idmapped volume -> denied.
 //
 // The other arms are the regression guards: a bind-only deploy keeps keep-id byte-identically, a
-// privileged unit never receives a CDI mount, and a GPU deploy with no bind mount was never given
-// keep-id in the first place and keeps the CDI device.
+// privileged unit never receives a CDI mount, and a GPU deploy with no bind mount keeps both
+// keep-id's absence and its CDI device.
 func TestGenerateQuadletUserNS(t *testing.T) {
 	binds := []ResolvedBindMount{{Name: "data", HostPath: "/srv/data", ContPath: "/data"}}
 	for _, tt := range []struct {
@@ -282,10 +283,10 @@ func TestGenerateQuadletUserNS(t *testing.T) {
 		wantAbsent []string
 	}{
 		{
-			name: "cdi device + bind: keep-id, the image user, and NO CDI device",
+			name: "cdi device + bind: keep-id, the image user, and the CDI device",
 			gpu:  true, binds: binds,
-			want:       []string{"UserNS=keep-id:uid=1000,gid=1000"},
-			wantAbsent: []string{"UserNS=host", "User=0:0", "AddDevice=nvidia.com/gpu=all"},
+			want:       []string{"UserNS=keep-id:uid=1000,gid=1000", "AddDevice=nvidia.com/gpu=all"},
+			wantAbsent: []string{"UserNS=host", "User=0:0"},
 		},
 		{
 			name:  "bind + GPU device nodes: keep-id and the nodes injected",
