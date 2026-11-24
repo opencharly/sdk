@@ -138,8 +138,9 @@ func (g *Generator) emitScratchStage(b *strings.Builder, candyName string, layer
 // BuildKit resolves the mount source as `docker.io/library/<candy>:latest`. A PLUGIN verb
 // counts too: `plugin: command` carries its command in PluginInput (not Command) and every
 // other plugin verb may render an act shell through the same EmitCmd (tasks_render.go's
-// `plugin` case), so it mounts the stage as well — measured on arch-builder, where the first
-// fix emitted `nodejs` but not `yay`.
+// `plugin` case), so it mounts the stage as well — measured on arch-builder with the first
+// fix, whose regenerated Containerfile still lacked BOTH stages and whose failure surfaced
+// on `yay`.
 func stageConsumed(layer CandyModel) bool {
 	if layer.HasData() {
 		return true
