@@ -76,6 +76,20 @@ FROM scratch AS mylib-ctx
 COPY candy/mylib/ /
 ```
 
+### A `command:` or plugin step is a scratch-stage consumer (opencharly/sdk#635)
+
+`EmitCmd` emits `--mount=type=bind,from=<candy>,source=/,target=/ctx` for a literal `command:`
+step **and** for a plugin verb whose provider renders an act shell — including `plugin: command`,
+which carries its command in `PluginInput`, not `Command`. So `stageConsumed`
+(`sdk/deploykit/candy_stage.go`) must count a `command:` op **and** a plugin op, in addition to the
+`copy:` / `data:` consumers.
+
+A candy whose plan is command-only (`layer-nodejs` / `layer-yay` in `arch-builder`) otherwise
+mounts a scratch stage that was never emitted, and BuildKit resolves the mount source as
+`docker.io/library/<candy>:latest` — the `arch-builder` build failure in opencharly/charly#1270,
+fixed by opencharly/sdk#635 / #636 / #637. The stage may be empty when the candy has no file
+sources; `emitScratchStage` already handles that without a whole-project COPY.
+
 ## Auto-Intermediate Images — grouping by `(Base, UID)`
 
 Sibling images that share the same base are grouped by

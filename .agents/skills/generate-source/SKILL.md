@@ -50,7 +50,7 @@ The generated Containerfile follows this order:
 | Topic | File |
 |---|---|
 | Task emission pipeline — per-verb emitters, `Task` struct, emitter helpers, shell-quoting, inline-content staging, user resolution, variable substitution, adjacent-coalescing, parent-dir auto-insertion, tag-section install emission | `references/task-emission.md` |
-| Multi-stage build stages (pixi/npm/AUR/OpResolve builders, scratch context), auto-intermediate grouping by `(Base, UID)`, intermediate images, container user resolution (adopt vs create) | `references/multistage-and-intermediates.md` |
+| Multi-stage build stages (pixi/npm/AUR/OpResolve builders, scratch context and the command/plugin stage-consumer rule), auto-intermediate grouping by `(Base, UID)`, intermediate images, container user resolution (adopt vs create) | `references/multistage-and-intermediates.md` |
 | LABEL placement + cache efficiency, OCI label reference table, runtime-only features, cache mounts | `references/labels-and-caching.md` |
 
 ## Common Workflows
