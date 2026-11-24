@@ -603,3 +603,79 @@ func TestApplyDeployState_EmptyEngineDoesNotClear(t *testing.T) {
 		t.Fatalf("Engine = %q after an empty-engine patch, want the existing podman", got)
 	}
 }
+
+// TestCleanDeployEntry_RemovesTheProvidesSection is opencharly/sdk#634: a removal that empties
+// the provides lists must DELETE the section from the FILE. Before the fix, SaveDeployConfig
+// wrote `provides:` only when the config carried one, so a nil Provides meant "nothing to write"
+// and the stale section survived while the removal printed "Removed env provides from <box>" —
+// measured on a real deployment: two remove runs each reported the removal and the
+// `source: immich-cdi` entry survived both.
+//
+// FAILS WITHOUT THE CHANGE: the file still carries `provides:` (and its entry) after the clean.
+// A second deploy keeps the file alive, so the assertion exercises the SAVE path rather than the
+// empty-config file-removal branch.
+func TestCleanDeployEntry_RemovesTheProvidesSection(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "charly.yml")
+	t.Setenv(kit.DeployConfigEnv, dest)
+	fixture := `provides:
+    env:
+        - name: IMMICH_API_URL
+          value: http://charly-immich-cdi:2283/api
+          source: immich-cdi
+immich-cdi:
+    pod:
+        image: immich-cdi
+other:
+    pod:
+        image: other
+`
+	if err := os.WriteFile(dest, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// read returns a FRESH config per call, like the loader: the degraded-load guard in
+	// SaveDeployConfig compares the file's deploy-key count against this read, so a closure
+	// returning the MUTATED config would make the writer refuse its own write. The per-host
+	// file's name-first entries are the loader's projection, not the DeployConfig wire shape,
+	// so the deploy set is constructed here while the provides section is parsed from the file.
+	read := func() (*DeployConfig, error) {
+		b, rerr := os.ReadFile(dest)
+		if rerr != nil {
+			return nil, rerr
+		}
+		var d DeployConfig
+		if uerr := yaml.Unmarshal(b, &d); uerr != nil {
+			return nil, uerr
+		}
+		d.Deploy = map[string]DeployNode{
+			"immich-cdi": {Image: "immich-cdi"},
+			"other":      {Image: "other"},
+		}
+		return &d, nil
+	}
+	marshal := func(_ string, node *DeployNode) (*yaml.Node, error) {
+		var n yaml.Node
+		if err := yaml.Unmarshal([]byte("pod: {image: "+node.Image+"}\n"), &n); err != nil {
+			return nil, err
+		}
+		if n.Kind == yaml.DocumentNode && len(n.Content) == 1 {
+			return n.Content[0], nil
+		}
+		return &n, nil
+	}
+	CleanDeployEntry("immich-cdi", "", marshal, read, context.Background())
+
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("the config file was removed instead of pruned: %v", err)
+	}
+	if strings.Contains(string(got), "provides:") {
+		t.Fatalf("the removed image's provides section survived the clean:\n%s", got)
+	}
+	if strings.Contains(string(got), "IMMICH_API_URL") {
+		t.Fatalf("a provides entry survived the clean:\n%s", got)
+	}
+	if !strings.Contains(string(got), "other:") {
+		t.Fatalf("the unrelated deploy entry was lost:\n%s", got)
+	}
+}
