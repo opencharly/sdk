@@ -117,7 +117,7 @@ instead of always using defaults. This keeps HOME-relative
 Blast radius: uid=1000 images (the overwhelming majority) share their
 intermediates as usual. Uid=0 images get their own `-uid0`-suffixed
 intermediates. The ecosystem's coder/charly images run as uid=1000 + sudo
-(see `/charly-coder:fedora-coder`), so the per-UID split is dormant
+(see the coder images), so the per-UID split is dormant
 protection against any future uid=0 image — it stays in place because
 the defensive grouping is cheap (one extra struct field) and prevents
 a whole class of silent PATH regressions.
