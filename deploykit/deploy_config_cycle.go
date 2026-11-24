@@ -3,9 +3,9 @@ package deploykit
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/perhost"
 )
 
 // deploy_config_cycle.go — THE ONE locked read-modify-write cycle over the per-host deploy overlay
@@ -62,11 +62,16 @@ type DeployConfigMutator func(dc *DeployConfig) (changed bool, err error)
 // deploy-kind-specific marshal and the placement-specific read are the caller's responsibility,
 // and this shell stays kind-blind.
 //
-// The lock is BLOCKING, with a SHORT bound: a config read-modify-write hold is milliseconds, so a
-// concurrent writer normally QUEUES and proceeds; but the wait is bounded (deployConfigLockWait) so
-// a holder that outlives it — a cross-bed overlay collision or a stuck writer — fails FAST with the
-// holder named rather than reading as a legitimate slow build for the 30-minute image-build bound
-// (RCA issue 2).
+// The lock is perhost.Lock — the SAME `<path>.lock`, bound and holder-naming timeout that
+// perhost.Update takes for the cache, the ledger and the system section. It is BLOCKING with a short
+// bound: a config read-modify-write hold is milliseconds, so a concurrent writer normally QUEUES and
+// proceeds; a holder that outlives the bound — a cross-bed overlay collision or a stuck writer —
+// fails FAST with the holder named rather than reading as a legitimate slow build for the
+// 30-minute image-build bound (RCA issue 2).
+//
+// `save` is the caller's LOCK-HELD writer: it runs while this cycle holds perhost.Lock and must
+// therefore not acquire the lock itself (deploykit.SaveDeployConfig writes through perhost.Apply for
+// exactly this reason — a second flock acquire in one process self-deadlocks).
 func MutateDeployConfig(read func() (*DeployConfig, error), save func(dc *DeployConfig) error, mutate DeployConfigMutator, ctx context.Context) (*DeployConfig, error) {
 	if read == nil {
 		return nil, fmt.Errorf("MutateDeployConfig: read callback is nil")
@@ -111,21 +116,12 @@ func AcquireDeployConfigLock(ctx context.Context) (func() error, error) {
 	if err != nil {
 		return nil, fmt.Errorf("determining deploy config path for lock: %w", err)
 	}
-	// A config read-modify-write hold is milliseconds, so bound the wait SHORT: a contended
-	// overlay write (the cross-bed collision of plan RCA issue #2) fails FAST with a clear
-	// message naming the holder, rather than waiting the 30-minute image-build bound and
-	// reading as a legitimate slow build. flock is per-open-file-description, so a same-process
-	// (in-roster) contention is detected identically.
-	return kit.AcquireFileLockWithin(path+".lock", true, deployConfigLockWait)
+	// The lock itself — its path (`<path>.lock`), its bound and its holder-naming timeout — is
+	// perhost.Lock, the SAME lock perhost.Update takes. This cycle must not derive a second one:
+	// a duplicated constant drifts, and a duplicated path is how two writers end up serializing
+	// against different files while both believe they are guarded.
+	return perhost.Lock(path)
 }
-
-// deployConfigLockWait bounds a contended deploy-config write. A whole overlay write is
-// milliseconds, so a legitimate same-overlay queue clears well inside this; a hold that outlives
-// it is a cross-bed collision or a stuck writer, and both deserve a fast, named error. The value
-// is a deliberate FIXED constant, NOT config-sourced: it is a SAFETY bound on an internal lock,
-// and a config knob would let a misconfiguration re-introduce the unbounded hang this closes. It
-// is hundreds of times a measured legitimate hold yet far below the 30-minute image-build bound.
-const deployConfigLockWait = 10 * time.Second
 
 // ensureDeployConfig self-heals a nil config / nil Deploy map into a usable empty overlay — the
 // state a first-ever `charly config` on a fresh XDG-isolated bed sees. Every write path repeated

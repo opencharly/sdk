@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/opencharly/sdk/kit"
+	"github.com/opencharly/spec/perhost"
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
@@ -138,35 +139,51 @@ func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
 // (enc_probe / status_flat / vm state, RemoveVmDeployEntry), NOT a transitional shim — the
 // migrated caller (command:deploy) already never passes nil. The nil path dies when the LAST of
 // those host callers migrates plugin-side in its own deferred cone (enc floor / check-cone).
+//
+// THE LOCK: this is the lock-held writer of the per-host config, not a bare one. Its runtime caller
+// is MutateDeployConfig (below), which holds deploykit's cycle lock — perhost.Lock, the SAME
+// `<path>.lock` every other per-host writer takes (the git-ref cache, the install ledger, the system
+// populator). It therefore writes through perhost.Apply, the shared atomic mechanics, and does NOT
+// acquire the lock again: flock is per-open-file-description, so a second acquire in the same
+// process would wait for the first and fail at perhost.LockWait.
 func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctx context.Context) error {
 	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
 		return fmt.Errorf("determining deploy config path: %w", err)
 	}
-	// FAIL-SAFE (data-safety): refuse to clobber a present-but-currently-unloadable per-host
-	// config. A writer that loaded through the error-swallowing LoadDeployConfigForRead path
-	// holds a DEGRADED (empty) DeployConfig whenever the on-disk file fails the loader gate;
-	// writing that degraded config would TRUNCATE the user's recoverable deploy state. Re-check
-	// the on-disk file here and abort with a `charly migrate` hint instead — the bytes stay on
-	// disk for the migration to recover.
-	recheck := failsafeRead
-	if recheck == nil {
-		recheck = func() (*DeployConfig, error) { return LoadDeployConfig(ctx) }
-	}
-	if _, lerr := recheck(); lerr != nil {
-		return fmt.Errorf("refusing to overwrite %s — the existing per-host config fails to load (%w); fix it (or remove it to regenerate) first", path, lerr)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
+	if marshalNode == nil {
+		return fmt.Errorf("SaveDeployConfig: marshalNode callback is nil (the deploy-kind-specific marshal is the caller's responsibility)")
 	}
 	if dc == nil {
 		dc = &DeployConfig{}
 	}
-	if marshalNode == nil {
-		return fmt.Errorf("SaveDeployConfig: marshalNode callback is nil (the deploy-kind-specific marshal is the caller's responsibility)")
+	// FAIL-SAFE (data-safety): refuse to clobber a present-but-currently-unloadable per-host
+	// config. A writer that loaded through the error-swallowing LoadDeployConfigForRead path
+	// holds a DEGRADED (empty) DeployConfig whenever the on-disk file fails the loader gate;
+	// writing that degraded config would TRUNCATE the user's recoverable deploy state. Re-check
+	// the on-disk file and abort with a `charly migrate` hint instead — the bytes stay on disk
+	// for the migration to recover.
+	recheck := failsafeRead
+	if recheck == nil {
+		recheck = func() (*DeployConfig, error) { return LoadDeployConfig(ctx) }
 	}
-	// Write a unified node-form per-host charly.yml: the HEAD `version:` stamp lets a re-load
-	// through LoadUnified pass the schema gate; `provides:` stays a document directive; each
+	// Marshal the per-entry node-form bodies BEFORE the locked section: they are a pure function
+	// of dc, and the lock must span only the read-modify-write of the file.
+	names := make([]string, 0, len(dc.Deploy))
+	for n := range dc.Deploy {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	bodies := make([]*yaml.Node, len(names))
+	for i, name := range names {
+		node := dc.Deploy[name]
+		body, merr := marshalNode(name, &node)
+		if merr != nil {
+			return fmt.Errorf("marshaling deploy %q: %w", name, merr)
+		}
+		bodies[i] = body
+	}
+	// Write a unified node-form per-host charly.yml: `provides:` stays a document directive; each
 	// deploy entry is a name-first node `<name>: {<disc>: <body>, <child-nodes>}` — the SAME
 	// shape the node-form loader accepts (the only authoring surface), produced by the caller's
 	// marshalNode callback.
@@ -175,76 +192,37 @@ func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *Depl
 	// (`deploy:`), the git metadata cache (`cache:`), the install ledger (`ledger:`), and the
 	// local system info (`system:`). A deploy write must PRESERVE the other sections — the
 	// GitClient, the ledger, and the system populator write their own sections to the same file
-	// — so this starts from the EXISTING file's root (when present) and updates only the
-	// version/provides/deploy keys, never clobbering cache/ledger/system.
-	root := &yaml.Node{Kind: yaml.MappingNode}
-	if existing, rerr := os.ReadFile(path); rerr == nil {
-		var doc yaml.Node
-		if yaml.Unmarshal(existing, &doc) == nil && len(doc.Content) > 0 && doc.Content[0].Kind == yaml.MappingNode {
-			root = doc.Content[0]
+	// — so it updates only the provides/deploy keys of the CURRENT document, never clobbering
+	// cache/ledger/system. The schema-version stamp is GONE (the schema-versioning removal
+	// cutover): the file carries no schema stamp, only the authored/provides/deploy keys.
+	return perhost.Apply(path, func(root *yaml.Node) (bool, error) {
+		// The fail-safe re-read runs INSIDE the locked section, so the check and the write see
+		// the same bytes: a config that passes here cannot have been replaced before the rename.
+		if _, lerr := recheck(); lerr != nil {
+			return false, fmt.Errorf("refusing to overwrite %s — the existing per-host config fails to load (%w); fix it (or remove it to regenerate) first", path, lerr)
 		}
-	}
-	// Update the `version:` key is GONE (the schema-versioning removal cutover): the
-	// deploy file carries no schema stamp, only the authored/provides/deploy keys.
-	if dc.Provides != nil {
-		pb, perr := yaml.Marshal(dc.Provides)
-		if perr != nil {
-			return fmt.Errorf("marshaling provides: %w", perr)
+		if dc.Provides != nil {
+			pb, perr := yaml.Marshal(dc.Provides)
+			if perr != nil {
+				return false, fmt.Errorf("marshaling provides: %w", perr)
+			}
+			var pd yaml.Node
+			if perr := yaml.Unmarshal(pb, &pd); perr != nil {
+				return false, fmt.Errorf("re-parsing provides: %w", perr)
+			}
+			if len(pd.Content) == 1 {
+				perhost.Set(root, pd.Content[0], "provides")
+			}
 		}
-		var pd yaml.Node
-		if perr := yaml.Unmarshal(pb, &pd); perr != nil {
-			return fmt.Errorf("re-parsing provides: %w", perr)
+		// Replace the deploy entries: remove every existing deploy key, then add the new ones.
+		// The deploy keys are the top-level keys that are NOT reserved directives and NOT the
+		// local-state sections (cache/ledger/system/sidecar/provides).
+		removeDeployKeys(root)
+		for i, name := range names {
+			root.Content = append(root.Content, kit.ScalarNode(name), bodies[i])
 		}
-		if len(pd.Content) == 1 {
-			kit.SetMappingKey(root, "provides", pd.Content[0])
-		}
-	}
-	// Replace the deploy entries: remove every existing deploy key, then add the new ones.
-	// The deploy keys are the top-level keys that are NOT reserved directives and NOT the
-	// local-state sections (cache/ledger/system/sidecar/provides).
-	removeDeployKeys(root)
-	names := make([]string, 0, len(dc.Deploy))
-	for n := range dc.Deploy {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		node := dc.Deploy[name]
-		body, merr := marshalNode(name, &node)
-		if merr != nil {
-			return fmt.Errorf("marshaling deploy %q: %w", name, merr)
-		}
-		root.Content = append(root.Content, kit.ScalarNode(name), body)
-	}
-	data, err := yaml.Marshal(root)
-	if err != nil {
-		return fmt.Errorf("marshaling deploy config: %w", err)
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".charly.yml.tmp.*")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpPath) }
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("writing temp file: %w", err)
-	}
-	if err := tmp.Chmod(0600); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("chmod temp file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return fmt.Errorf("closing temp file: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		cleanup()
-		return fmt.Errorf("renaming %s -> %s: %w", tmpPath, path, err)
-	}
-	return nil
+		return true, nil
+	})
 }
 
 // reservedDeployKeys are the top-level keys that are NOT deploy entries: the reserved

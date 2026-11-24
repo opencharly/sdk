@@ -21,6 +21,7 @@ package kit
 import (
 	"context"
 	"fmt"
+	"github.com/opencharly/spec/perhost"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -75,8 +76,9 @@ type LedgerLock struct {
 // LedgerTxLockPath returns the LEDGER TRANSACTION lock path for one LedgerPaths: the
 // config path + ".ledger.lock". This is NOT paths.LockFile, and the separation is load-bearing
 // (the deploy-del self-deadlock, RCA 2026-09-07): paths.LockFile guards the per-host charly.yml
-// read-modify-write — the SAME brief exclusion every writer of that FILE shares (writeLedger
-// here, deploykit.MutateDeployConfig/SaveDeployConfig, spec/refs GitClient.save's cache section).
+// read-modify-write — the SAME brief exclusion every writer of that FILE shares (mutateLedger here,
+// deploykit.MutateDeployConfig/SaveDeployConfig, spec/refs GitClient.save's cache section), all of
+// them now through spec/perhost's one lock, read and atomic write.
 // The ledger TRANSACTION lock is a different logical resource: the deploy-del/add transaction
 // bracket (resolve → members-down → node-del-dispatch) holds it for the WHOLE operation —
 // minutes, network fetches included. Collapsing both onto charly.yml.lock made every in-process
@@ -137,15 +139,6 @@ type (
 // I/O — the `ledger:` section of the per-host charly.yml
 // ---------------------------------------------------------------------------
 
-// ledgerDoc is the minimal per-host charly.yml shape this package reads: the
-// `ledger:` section. Everything else is preserved as-is on write.
-type ledgerDoc struct {
-	Ledger *struct {
-		Deploys map[string]DeployRecord `yaml:"deploys"`
-		Candies map[string]CandyRecord  `yaml:"candies"`
-	} `yaml:"ledger"`
-}
-
 // ReadLedger returns the FULL ledger maps (deploys + candies) in ONE read of the
 // per-host charly.yml. The status collector uses this to avoid re-reading the
 // config once per record (measured: 186 reads of a 310KB config per status run).
@@ -154,90 +147,89 @@ func ReadLedger(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRe
 	return readLedgerStrict(paths)
 }
 
+// ledgerFromRoot decodes the `ledger:` section out of a per-host config root. It is the ONE
+// decoder: the best-effort reader, the strict reader and every locked writer all derive their
+// maps from it, so they cannot disagree about what a `ledger:` section is.
+//
+// A WRONG-SHAPE section is an ERROR, never an empty ledger: `ledger:` that is not a mapping, or
+// `ledger.deploys`/`ledger.candies` that are not mappings, is what the strict reader exists to
+// surface (the hand-rolled decode it replaced errored on exactly these). Reading them as empty is
+// how a malformed ledger becomes indistinguishable from "nothing deployed yet". A nil root (an
+// absent file / empty document) is the empty ledger and NOT an error.
+func ledgerFromRoot(root *yaml.Node) (map[string]DeployRecord, map[string]CandyRecord, error) {
+	deploys := map[string]DeployRecord{}
+	candies := map[string]CandyRecord{}
+	if root == nil {
+		return deploys, candies, nil
+	}
+	lv := perhost.Get(root, "ledger")
+	if lv == nil {
+		return deploys, candies, nil
+	}
+	if lv.Kind != yaml.MappingNode {
+		return nil, nil, fmt.Errorf("`ledger:` is not a mapping")
+	}
+	if dv := perhost.Get(lv, "deploys"); dv != nil {
+		if dv.Kind != yaml.MappingNode {
+			return nil, nil, fmt.Errorf("`ledger.deploys:` is not a mapping")
+		}
+		if err := dv.Decode(&deploys); err != nil {
+			return nil, nil, fmt.Errorf("ledger.deploys: %w", err)
+		}
+	}
+	if cv := perhost.Get(lv, "candies"); cv != nil {
+		if cv.Kind != yaml.MappingNode {
+			return nil, nil, fmt.Errorf("`ledger.candies:` is not a mapping")
+		}
+		if err := cv.Decode(&candies); err != nil {
+			return nil, nil, fmt.Errorf("ledger.candies: %w", err)
+		}
+	}
+	return deploys, candies, nil
+}
+
 // readLedger reads the `ledger:` section of the per-host charly.yml (best-effort;
 // an absent/corrupt file yields an empty ledger).
 func readLedger(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRecord) {
-	deploys := map[string]DeployRecord{}
-	candies := map[string]CandyRecord{}
-	data, err := os.ReadFile(paths.ConfigFile)
+	doc, err := perhost.Read(paths.ConfigFile)
+	if err != nil || doc == nil || len(doc.Content) == 0 {
+		return map[string]DeployRecord{}, map[string]CandyRecord{}
+	}
+	deploys, candies, err := ledgerFromRoot(doc.Content[0])
 	if err != nil {
-		return deploys, candies
-	}
-	var doc ledgerDoc
-	if yaml.Unmarshal(data, &doc) != nil {
-		return deploys, candies
-	}
-	if doc.Ledger != nil {
-		if doc.Ledger.Deploys != nil {
-			deploys = doc.Ledger.Deploys
-		}
-		if doc.Ledger.Candies != nil {
-			candies = doc.Ledger.Candies
-		}
+		return map[string]DeployRecord{}, map[string]CandyRecord{}
 	}
 	return deploys, candies
 }
 
-// writeLedger persists the `ledger:` section into the per-host charly.yml under
-// the advisory lock (best-effort). It reads the CURRENT file, updates only the
-// `ledger:` key (preserving every other key — deploy:, provides:, cache:,
-// system:, …), and writes back atomically (tempfile + rename).
-func writeLedger(paths *LedgerPaths, deploys map[string]DeployRecord, candies map[string]CandyRecord) error {
-	unlock, err := AcquireFileLock(paths.LockFile, true)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = unlock() }()
-
-	data, err := os.ReadFile(paths.ConfigFile)
-	var doc yaml.Node
-	if err == nil {
-		if yaml.Unmarshal(data, &doc) != nil {
-			return fmt.Errorf("ledger: refusing to clobber a corrupt %s", paths.ConfigFile)
+// mutateLedger runs ONE locked read-modify-write of the `ledger:` section: spec/perhost is the
+// per-host file's ONE writer (bounded lock, read INSIDE it, own key only, atomic rename, a corrupt
+// file refused), and the maps handed to mutate are decoded from the document the lock just read —
+// never a snapshot a caller loaded before the lock.
+//
+// This is the whole point of the shape: the previous readLedger-then-writeLedger pair read the
+// ledger OUTSIDE the lock and then replaced the whole section with that stale snapshot, so two
+// concurrent writes (a deploy's WriteDeployRecord and a teardown's DeleteDeployRecord, or two
+// installs) each silently dropped the other's record. The mutation must therefore be COMPUTED
+// INSIDE the closure, from the maps it is given.
+func mutateLedger(paths *LedgerPaths, mutate func(deploys map[string]DeployRecord, candies map[string]CandyRecord) (bool, error)) error {
+	return perhost.Update(paths.ConfigFile, func(root *yaml.Node) (bool, error) {
+		deploys, candies, err := ledgerFromRoot(root)
+		if err != nil {
+			return false, fmt.Errorf("ledger %s: %w", paths.ConfigFile, err)
 		}
-	}
-	if doc.Kind == 0 {
-		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{
-			{Kind: yaml.MappingNode, Tag: "!!map"},
+		changed, err := mutate(deploys, candies)
+		if err != nil || !changed {
+			return false, err
+		}
+		ledgerVal := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Value: "deploys"},
+			recordMapNode(deploys),
+			{Kind: yaml.ScalarNode, Value: "candies"},
+			recordMapNode(candies),
 		}}
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return fmt.Errorf("ledger: %s is not a mapping", paths.ConfigFile)
-	}
-
-	// Build the ledger: {deploys, candies} value.
-	ledgerVal := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{
-		{Kind: yaml.ScalarNode, Value: "deploys"},
-		recordMapNode(deploys),
-		{Kind: yaml.ScalarNode, Value: "candies"},
-		recordMapNode(candies),
-	}}
-	SetMappingKey(root, "ledger", ledgerVal)
-
-	out, err := yaml.Marshal(&doc)
-	if err != nil {
-		return err
-	}
-	dir := filepath.Dir(paths.ConfigFile)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".charly-ledger-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(out); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, paths.ConfigFile)
+		return perhost.Set(root, ledgerVal, "ledger"), nil
+	})
 }
 
 // recordMapNode builds a YAML mapping node from a record map (deploy-id or
@@ -275,9 +267,10 @@ func WriteDeployRecord(paths *LedgerPaths, rec *DeployRecord) error {
 	if err := spec.ValidateRecord("deploy_record", paths.ConfigFile, rec); err != nil {
 		return err
 	}
-	deploys, candies := readLedger(paths)
-	deploys[rec.DeployID] = *rec
-	return writeLedger(paths, deploys, candies)
+	return mutateLedger(paths, func(deploys map[string]DeployRecord, _ map[string]CandyRecord) (bool, error) {
+		deploys[rec.DeployID] = *rec
+		return true, nil
+	})
 }
 
 // ReadDeployRecord loads ledger.deploys[id]; returns nil, nil if absent.
@@ -299,24 +292,19 @@ func ReadDeployRecord(paths *LedgerPaths, id string) (*DeployRecord, error) {
 func readLedgerStrict(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRecord, error) {
 	deploys := map[string]DeployRecord{}
 	candies := map[string]CandyRecord{}
-	data, err := os.ReadFile(paths.ConfigFile)
+	// The ONE reader of the per-host document (spec/perhost), so this cannot disagree with the
+	// writers about what a `ledger:` section is. perhost.Read is (nil, nil) for an absent file and
+	// an error for an unreadable or unparseable one — exactly this function's strict contract.
+	doc, err := perhost.Read(paths.ConfigFile)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return deploys, candies, nil // never deployed on this host
-		}
-		return nil, nil, fmt.Errorf("read ledger %s: %w", paths.ConfigFile, err)
-	}
-	var doc ledgerDoc
-	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, nil, fmt.Errorf("parse ledger %s: %w", paths.ConfigFile, err)
 	}
-	if doc.Ledger != nil {
-		if doc.Ledger.Deploys != nil {
-			deploys = doc.Ledger.Deploys
-		}
-		if doc.Ledger.Candies != nil {
-			candies = doc.Ledger.Candies
-		}
+	if doc == nil || len(doc.Content) == 0 {
+		return deploys, candies, nil // never deployed on this host
+	}
+	deploys, candies, err = ledgerFromRoot(doc.Content[0])
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse ledger %s: %w", paths.ConfigFile, err)
 	}
 	return deploys, candies, nil
 }
@@ -390,9 +378,10 @@ func WriteCandyRecord(paths *LedgerPaths, rec *CandyRecord) error {
 	if err := spec.ValidateRecord("candy_record", paths.ConfigFile, rec); err != nil {
 		return err
 	}
-	deploys, candies := readLedger(paths)
-	candies[rec.Candy] = *rec
-	return writeLedger(paths, deploys, candies)
+	return mutateLedger(paths, func(_ map[string]DeployRecord, candies map[string]CandyRecord) (bool, error) {
+		candies[rec.Candy] = *rec
+		return true, nil
+	})
 }
 
 // ReadCandyRecord loads ledger.candies[layer]; returns nil, nil if absent.
@@ -408,22 +397,24 @@ func ReadCandyRecord(paths *LedgerPaths, layer string) (*CandyRecord, error) {
 // DeleteDeployRecord removes ledger.deploys[id]; silently ignores not-found
 // (teardown is idempotent).
 func DeleteDeployRecord(paths *LedgerPaths, id string) error {
-	deploys, candies := readLedger(paths)
-	if _, ok := deploys[id]; !ok {
-		return nil
-	}
-	delete(deploys, id)
-	return writeLedger(paths, deploys, candies)
+	return mutateLedger(paths, func(deploys map[string]DeployRecord, _ map[string]CandyRecord) (bool, error) {
+		if _, ok := deploys[id]; !ok {
+			return false, nil
+		}
+		delete(deploys, id)
+		return true, nil
+	})
 }
 
 // DeleteCandyRecord removes ledger.candies[layer].
 func DeleteCandyRecord(paths *LedgerPaths, layer string) error {
-	deploys, candies := readLedger(paths)
-	if _, ok := candies[layer]; !ok {
-		return nil
-	}
-	delete(candies, layer)
-	return writeLedger(paths, deploys, candies)
+	return mutateLedger(paths, func(_ map[string]DeployRecord, candies map[string]CandyRecord) (bool, error) {
+		if _, ok := candies[layer]; !ok {
+			return false, nil
+		}
+		delete(candies, layer)
+		return true, nil
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -440,25 +431,28 @@ func DeleteCandyRecord(paths *LedgerPaths, layer string) error {
 // and merged (content-dedup) over the ops already recorded, rather than replacing
 // them; see MergeReverseOps and charly#687.
 func AddCandyDeployment(paths *LedgerPaths, candyName, deployID string, update func(*CandyRecord)) error {
-	rec, err := ReadCandyRecord(paths, candyName)
-	if err != nil {
-		return err
-	}
-	if rec == nil {
-		rec = &CandyRecord{
-			Candy:      candyName,
-			DeployedAt: time.Now().UTC().Format(time.RFC3339),
+	return mutateLedger(paths, func(_ map[string]DeployRecord, candies map[string]CandyRecord) (bool, error) {
+		rec, ok := candies[candyName]
+		if !ok {
+			rec = CandyRecord{
+				Candy:      candyName,
+				DeployedAt: time.Now().UTC().Format(time.RFC3339),
+			}
 		}
-	}
-	if !containsString(rec.DeployedBy, deployID) {
-		rec.DeployedBy = append(rec.DeployedBy, deployID)
-	}
-	priorOps := append([]spec.ReverseOp(nil), rec.ReverseOps...)
-	if update != nil {
-		update(rec)
-	}
-	rec.ReverseOps = MergeReverseOps(priorOps, rec.ReverseOps)
-	return WriteCandyRecord(paths, rec)
+		if !containsString(rec.DeployedBy, deployID) {
+			rec.DeployedBy = append(rec.DeployedBy, deployID)
+		}
+		priorOps := append([]spec.ReverseOp(nil), rec.ReverseOps...)
+		if update != nil {
+			update(&rec)
+		}
+		rec.ReverseOps = MergeReverseOps(priorOps, rec.ReverseOps)
+		if err := spec.ValidateRecord("candy_record", paths.ConfigFile, &rec); err != nil {
+			return false, err
+		}
+		candies[candyName] = rec
+		return true, nil
+	})
 }
 
 // RemoveCandyDeployment decrements a candy's deployed_by set. Returns
@@ -466,24 +460,36 @@ func AddCandyDeployment(paths *LedgerPaths, candyName, deployID string, update f
 // caller should perform the actual file/package/service teardown and then delete
 // the candy ledger entry.
 func RemoveCandyDeployment(paths *LedgerPaths, candyName, deployID string) (*CandyRecord, bool, error) {
-	rec, err := ReadCandyRecord(paths, candyName)
+	var (
+		out         *CandyRecord
+		fullyRemove bool
+	)
+	err := mutateLedger(paths, func(_ map[string]DeployRecord, candies map[string]CandyRecord) (bool, error) {
+		rec, ok := candies[candyName]
+		if !ok {
+			return false, nil // already gone
+		}
+		kept := rec.DeployedBy[:0]
+		for _, id := range rec.DeployedBy {
+			if id != deployID {
+				kept = append(kept, id)
+			}
+		}
+		rec.DeployedBy = kept
+		out = &rec
+		if len(rec.DeployedBy) == 0 {
+			// The caller performs the teardown and then deletes the entry: the record stays on
+			// disk untouched until it does, exactly as before.
+			fullyRemove = true
+			return false, nil
+		}
+		candies[candyName] = rec
+		return true, nil
+	})
 	if err != nil {
 		return nil, false, err
 	}
-	if rec == nil {
-		return nil, false, nil // already gone
-	}
-	out := rec.DeployedBy[:0]
-	for _, id := range rec.DeployedBy {
-		if id != deployID {
-			out = append(out, id)
-		}
-	}
-	rec.DeployedBy = out
-	if len(rec.DeployedBy) == 0 {
-		return rec, true, nil
-	}
-	return rec, false, WriteCandyRecord(paths, rec)
+	return out, fullyRemove, nil
 }
 
 func containsString(s []string, v string) bool {
