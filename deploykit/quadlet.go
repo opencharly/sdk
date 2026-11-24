@@ -43,6 +43,7 @@ type ResolvedBindMount struct {
 	HostPath  string // effective host path (plain: expanded host, encrypted: plain dir)
 	ContPath  string // container path (expanded)
 	Encrypted bool   // for status/mount checks
+	ReadOnly  bool   // emitted as :ro — host files the workload must never write (driver libraries)
 }
 
 // ResolvedSidecar is a fully-resolved sidecar ready for quadlet generation — the
@@ -65,12 +66,16 @@ type ResolvedSidecar struct {
 // one process (built from config-resolve data), so it never crosses the
 // host↔plugin boundary and needs no CUE-sourcing.
 type QuadletConfig struct {
-	BoxName     string
-	ImageRef    string
-	Home        string
-	Ports       []string
-	Volumes     []VolumeMount
-	BindMounts  []ResolvedBindMount
+	BoxName    string
+	ImageRef   string
+	Home       string
+	Ports      []string
+	Volumes    []VolumeMount
+	BindMounts []ResolvedBindMount
+	// PodmanArgs are extra podman flags this deploy needs (e.g. `--cdi-spec-dir <dir>`), emitted as
+	// ONE `PodmanArgs=` line: quadlet splits that line into argv words, so a flag and its value
+	// belong together.
+	PodmanArgs  []string
 	GPU         bool
 	BindAddress string
 	Tunnel      *spec.TunnelConfig
@@ -174,7 +179,11 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 		fmt.Fprintf(b, "Volume=%s:%s\n", vol.VolumeName, vol.ContainerPath)
 	}
 	for _, bm := range cfg.BindMounts {
-		fmt.Fprintf(b, "Volume=%s:%s\n", bm.HostPath, bm.ContPath)
+		if bm.ReadOnly {
+			fmt.Fprintf(b, "Volume=%s:%s:ro\n", bm.HostPath, bm.ContPath)
+		} else {
+			fmt.Fprintf(b, "Volume=%s:%s\n", bm.HostPath, bm.ContPath)
+		}
 	}
 	for _, m := range cfg.Security.Mounts {
 		if after, ok := strings.CutPrefix(m, "tmpfs:"); ok {
@@ -191,6 +200,9 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 		}
 	}
 	emitContainerSecurity(b, cfg)
+	if len(cfg.PodmanArgs) > 0 {
+		fmt.Fprintf(b, "PodmanArgs=%s\n", strings.Join(cfg.PodmanArgs, " "))
+	}
 	if cfg.Security.CgroupNS != "" {
 		fmt.Fprintf(b, "PodmanArgs=--cgroupns=%s\n", cfg.Security.CgroupNS)
 	}

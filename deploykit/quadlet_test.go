@@ -895,3 +895,27 @@ func TestQuadletWithoutEncryptedMounts(t *testing.T) {
 		t.Errorf("expected default TimeoutStartSec=900, got:\n%s", got)
 	}
 }
+
+// TestGenerateQuadletPodmanArgsAndReadOnlyBind pins the two inputs a keep-id GPU unit needs on top
+// of AddDevice: the engine flag that points podman at the derived devices-only CDI spec (one
+// PodmanArgs= line, which quadlet splits into argv words), and the driver libraries bound `:ro`.
+func TestGenerateQuadletPodmanArgsAndReadOnlyBind(t *testing.T) {
+	content := GenerateQuadlet(QuadletConfig{
+		BoxName: "gpu", ImageRef: "ghcr.io/test/gpu:latest", Home: "/home/user", UID: 1000, GID: 1000, GPU: true,
+		BindMounts: []ResolvedBindMount{{
+			Name: "libcuda", HostPath: "/usr/lib/libcuda.so.615.78.08",
+			ContPath: "/usr/lib/libcuda.so.1", ReadOnly: true,
+		}},
+		PodmanArgs: []string{"--cdi-spec-dir", "/home/user/.local/share/charly/cdi"},
+	})
+	for _, want := range []string{
+		"PodmanArgs=--cdi-spec-dir /home/user/.local/share/charly/cdi",
+		"Volume=/usr/lib/libcuda.so.615.78.08:/usr/lib/libcuda.so.1:ro",
+		"AddDevice=nvidia.com/gpu=all",
+		"UserNS=keep-id:uid=1000,gid=1000",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("quadlet missing %q\n%s", want, content)
+		}
+	}
+}
