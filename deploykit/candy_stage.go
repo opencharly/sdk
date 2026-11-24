@@ -129,15 +129,19 @@ func (g *Generator) emitScratchStage(b *strings.Builder, candyName string, layer
 }
 
 // stageConsumed reports whether any rendering step reads from a candy's scratch stage: a
-// `copy:` step (EmitCopy) or a data declaration (WriteDataStaging). Those two are the ONLY
-// consumers — `COPY --from=` elsewhere names a BUILDER stage (`<candy>-<builder>-build`) or an
-// init FRAGMENT stage, never a candy's scratch stage.
+// `copy:` step (EmitCopy), a `command:` step (EmitCmd mounts `from=<candy>` for its `/ctx`),
+// or a data declaration (WriteDataStaging). `COPY --from=` elsewhere names a BUILDER stage
+// (`<candy>-<builder>-build`) or an init FRAGMENT stage, never a candy's scratch stage.
+//
+// A `command:` step counting here is load-bearing (opencharly/sdk#635): a command-only candy
+// (layer-nodejs / layer-yay in arch-builder) mounts a stage it would otherwise never emit, so
+// BuildKit resolves the mount source as `docker.io/library/<candy>:latest`.
 func stageConsumed(layer CandyModel) bool {
 	if layer.HasData() {
 		return true
 	}
 	for _, op := range layer.RunOps() {
-		if op.Copy != "" {
+		if op.Copy != "" || strings.TrimSpace(op.Command) != "" {
 			return true
 		}
 	}
