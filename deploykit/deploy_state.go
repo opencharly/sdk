@@ -631,7 +631,11 @@ func CleanDeployEntry(boxName, instance string, marshalNode func(name string, no
 		loadBase = func() (*DeployConfig, error) { return LoadDeployConfig(ctx) }
 	}
 	key := DeployKey(boxName, instance)
-	save := func(dc *DeployConfig) error { return SaveDeployConfig(dc, marshalNode, read, ctx) }
+	save := func(dc *DeployConfig) error {
+		// The removal path owns the provides section: the cleaner empties it and nils it, and
+		// the write must DELETE it rather than skip it (opencharly/sdk#634).
+		return SaveDeployConfig(dc, marshalNode, read, ctx, PruneEmptyProvides())
+	}
 	cleaned := false
 	// The lock hold and the fresh re-read inside it are MutateDeployConfig's — the same locked
 	// cycle every other overlay writer uses. This clean is the one writer whose mutation may end
