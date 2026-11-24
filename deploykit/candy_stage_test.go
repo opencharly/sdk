@@ -162,8 +162,9 @@ func TestEmitScratchStage_CommandOnlyCandyIsStaged(t *testing.T) {
 			}, spec.CandyView{}),
 			// A `plugin: command` step carries the command in PluginInput, NOT in Command —
 			// it still renders through EmitCmd (deploykit/tasks_render.go's `plugin` case)
-			// and mounts `from=yay`. Measured on arch-builder: nodejs resolved after the
-			// first fix, yay did not.
+			// and mounts `from=yay`. Measured on arch-builder with the first fix: the
+			// regenerated Containerfile still lacked BOTH stages, and the failure surfaced
+			// on `yay` in that run.
 			"yay": NewSpecCandyModel(spec.CandyModel{
 				Name:      "yay",
 				SourceDir: filepath.Join(root, "candy", "yay"),
