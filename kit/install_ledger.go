@@ -148,30 +148,58 @@ func ReadLedger(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRe
 }
 
 // ledgerFromRoot decodes the `ledger:` section out of a per-host config root. It is the ONE
-// decoder: both the best-effort reader below and every locked writer derive their maps from it,
-// so a writer's maps are always the ones the document it is about to replace actually holds.
-func ledgerFromRoot(root *yaml.Node) (map[string]DeployRecord, map[string]CandyRecord) {
+// decoder: the best-effort reader, the strict reader and every locked writer all derive their
+// maps from it, so they cannot disagree about what a `ledger:` section is.
+//
+// A WRONG-SHAPE section is an ERROR, never an empty ledger: `ledger:` that is not a mapping, or
+// `ledger.deploys`/`ledger.candies` that are not mappings, is what the strict reader exists to
+// surface (the hand-rolled decode it replaced errored on exactly these). Reading them as empty is
+// how a malformed ledger becomes indistinguishable from "nothing deployed yet". A nil root (an
+// absent file / empty document) is the empty ledger and NOT an error.
+func ledgerFromRoot(root *yaml.Node) (map[string]DeployRecord, map[string]CandyRecord, error) {
 	deploys := map[string]DeployRecord{}
 	candies := map[string]CandyRecord{}
-	if dv := perhost.Get(root, "ledger", "deploys"); dv != nil {
-		_ = dv.Decode(&deploys)
+	if root == nil {
+		return deploys, candies, nil
 	}
-	if cv := perhost.Get(root, "ledger", "candies"); cv != nil {
-		_ = cv.Decode(&candies)
+	lv := perhost.Get(root, "ledger")
+	if lv == nil {
+		return deploys, candies, nil
 	}
-	return deploys, candies
+	if lv.Kind != yaml.MappingNode {
+		return nil, nil, fmt.Errorf("`ledger:` is not a mapping")
+	}
+	if dv := perhost.Get(lv, "deploys"); dv != nil {
+		if dv.Kind != yaml.MappingNode {
+			return nil, nil, fmt.Errorf("`ledger.deploys:` is not a mapping")
+		}
+		if err := dv.Decode(&deploys); err != nil {
+			return nil, nil, fmt.Errorf("ledger.deploys: %w", err)
+		}
+	}
+	if cv := perhost.Get(lv, "candies"); cv != nil {
+		if cv.Kind != yaml.MappingNode {
+			return nil, nil, fmt.Errorf("`ledger.candies:` is not a mapping")
+		}
+		if err := cv.Decode(&candies); err != nil {
+			return nil, nil, fmt.Errorf("ledger.candies: %w", err)
+		}
+	}
+	return deploys, candies, nil
 }
 
 // readLedger reads the `ledger:` section of the per-host charly.yml (best-effort;
 // an absent/corrupt file yields an empty ledger).
 func readLedger(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRecord) {
-	deploys := map[string]DeployRecord{}
-	candies := map[string]CandyRecord{}
 	doc, err := perhost.Read(paths.ConfigFile)
 	if err != nil || doc == nil || len(doc.Content) == 0 {
-		return deploys, candies
+		return map[string]DeployRecord{}, map[string]CandyRecord{}
 	}
-	return ledgerFromRoot(doc.Content[0])
+	deploys, candies, err := ledgerFromRoot(doc.Content[0])
+	if err != nil {
+		return map[string]DeployRecord{}, map[string]CandyRecord{}
+	}
+	return deploys, candies
 }
 
 // mutateLedger runs ONE locked read-modify-write of the `ledger:` section: spec/perhost is the
@@ -186,7 +214,10 @@ func readLedger(paths *LedgerPaths) (map[string]DeployRecord, map[string]CandyRe
 // INSIDE the closure, from the maps it is given.
 func mutateLedger(paths *LedgerPaths, mutate func(deploys map[string]DeployRecord, candies map[string]CandyRecord) (bool, error)) error {
 	return perhost.Update(paths.ConfigFile, func(root *yaml.Node) (bool, error) {
-		deploys, candies := ledgerFromRoot(root)
+		deploys, candies, err := ledgerFromRoot(root)
+		if err != nil {
+			return false, fmt.Errorf("ledger %s: %w", paths.ConfigFile, err)
+		}
 		changed, err := mutate(deploys, candies)
 		if err != nil || !changed {
 			return false, err
@@ -271,7 +302,10 @@ func readLedgerStrict(paths *LedgerPaths) (map[string]DeployRecord, map[string]C
 	if doc == nil || len(doc.Content) == 0 {
 		return deploys, candies, nil // never deployed on this host
 	}
-	deploys, candies = ledgerFromRoot(doc.Content[0])
+	deploys, candies, err = ledgerFromRoot(doc.Content[0])
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse ledger %s: %w", paths.ConfigFile, err)
+	}
 	return deploys, candies, nil
 }
 
