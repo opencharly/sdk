@@ -214,10 +214,18 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver, scope RefSc
 				continue
 			}
 			key := pr.RepoPath + ":" + pr.Version
-			if seenRefs[key] {
+			// The dedupe unit includes the SUBPATH: two refs to the same repo@version may name
+			// DIFFERENT manifests (a box file and a candy dir), and both must be read. Without
+			// the subpath in the key the second one was silently dropped as "already seen"
+			// (measured by TestCollectEntitiesRemote_HonoursSubpath).
+			walkKey := key
+			if pr.SubPath != "" {
+				walkKey = key + "#" + pr.SubPath
+			}
+			if seenRefs[walkKey] {
 				continue
 			}
-			seenRefs[key] = true
+			seenRefs[walkKey] = true
 
 			// Progress BEFORE the work, not after. The line names the ref about to be
 			// resolved, so a slow or stalled resolve is attributable to a specific repo
@@ -246,6 +254,28 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver, scope RefSc
 			// manifest at the repo root (config candies). Walk both; the root manifest is read as
 			// its own root with Namespace carrying the fetched dir so SourceRoot is unambiguous.
 			fetchedRoot := Root{Namespace: key, Dir: fetched}
+
+			// HONOUR THE REF'S SUBPATH (opencharly/plugin-marketplace#64). A ref may name ONE
+			// manifest inside the repo — a box FILE (`.../box/fedora/charly.yml`, the `import:`
+			// form) or a candy/box DIR (`.../candy/cachyos-base-check`). Walking the whole
+			// fetched tree instead drags every OTHER manifest of that tree, and every ref those
+			// declare, into the closure: measured, a stale box-file import at an old tag pulled
+			// an ENTIRE old distro tree in, whose retired `box/immich-ml` composed
+			// pod-immich-ml and republished its skill. The subpath is what the ref asked for, so
+			// it is what is read; the tree's root manifest is not (a subpath ref is not a claim
+			// on the repo).
+			if pr.SubPath != "" {
+				found, refs, serr := walkSubpathRef(fetched, fetchedRoot, pr.SubPath, scope)
+				if serr != nil {
+					skipped++
+					fmt.Fprintf(os.Stderr, "charly: WARNING: skipping ref %s: %v\n", ref, serr)
+					continue
+				}
+				out = append(out, found...)
+				queue = append(queue, refs...)
+				continue
+			}
+
 			refs, err := walkRoot(fetchedRoot)
 			if err != nil {
 				// Same contract as the resolve failure above: a fetched tree whose OWN manifest
@@ -297,6 +327,58 @@ func collectEntitiesWithRemote(roots []Root, resolve RemoteResolver, scope RefSc
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// walkSubpathRef reads the ONE manifest a subpath ref names and returns its entities and the
+// refs that manifest declares (scoped). It is split out of collectEntitiesWithRemote so the
+// closure loop stays under the repo's gocyclo bound while the subpath branches live together.
+// An error names why the ref cannot be honoured; the caller skips it with a warning.
+func walkSubpathRef(fetched string, fetchedRoot Root, subpath string, scope RefScope) ([]Entity, []string, error) {
+	manifest, dir := subpathManifest(fetched, subpath)
+	if manifest == "" {
+		return nil, nil, fmt.Errorf("its subpath %q names no manifest in the fetched tree", subpath)
+	}
+	found, err := ReadEntityFile(manifest, fetchedRoot, dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("its subpath manifest cannot be read: %w", err)
+	}
+	for i := range found {
+		found[i].SourceRoot = fetched
+	}
+	fileRefs := collectRefs(manifest)
+	if scope != nil {
+		fileRefs = scope(manifest, filepath.Base(dir), found, fileRefs)
+	}
+	return found, fileRefs, nil
+}
+
+// subpathManifest resolves a ref's SUBPATH to the manifest it names, inside a fetched tree.
+// Two shapes are supported, and both are what the corpus actually pins:
+//
+//   - a FILE path ending in charly.yml (`box/fedora/charly.yml`) — the flat `import:` form.
+//     Its entities' Dir is the file's directory.
+//   - a DIR (`candy/cachyos-base-check`) — the candy/box form. Its manifest is <dir>/charly.yml.
+//
+// It returns "" when neither exists, and the caller skips the ref with a warning rather than
+// silently falling back to the whole tree: a subpath that names nothing is a stale pin, and
+// walking the tree anyway would reintroduce exactly the drag this exists to stop.
+func subpathManifest(fetched, subpath string) (manifest, dir string) {
+	sub := filepath.Clean(strings.TrimPrefix(subpath, "/"))
+	if sub == "." || sub == "" || strings.HasPrefix(sub, "..") {
+		return "", ""
+	}
+	candidate := filepath.Join(fetched, sub)
+	if strings.HasSuffix(sub, UnifiedFileName) {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, filepath.Dir(sub)
+		}
+		return "", ""
+	}
+	manifest = filepath.Join(candidate, UnifiedFileName)
+	if _, err := os.Stat(manifest); err == nil {
+		return manifest, sub
+	}
+	return "", ""
 }
 
 // remoteRefRe matches a remote candy ref in a require:/candy: list — ANY ref form, not CalVer
