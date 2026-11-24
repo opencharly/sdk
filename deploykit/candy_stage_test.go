@@ -144,3 +144,33 @@ func TestEmitScratchStage_NeverStagesTheBuildRoot(t *testing.T) {
 		t.Errorf("a conventional candy keeps its directory stage, got:\n%s", out)
 	}
 }
+
+// TestEmitScratchStage_CommandOnlyCandyIsStaged is the regression guard for
+// opencharly/sdk#635: EmitCmd mounts `from=<candy>` for EVERY `command:` step, so a candy
+// whose plan is command-only must emit its scratch stage. Without it BuildKit resolves the
+// mount source as an image reference (`docker.io/library/nodejs:latest`) — the arch-builder
+// build failure in opencharly/charly#1270.
+func TestEmitScratchStage_CommandOnlyCandyIsStaged(t *testing.T) {
+	root := t.TempDir()
+	g := &Generator{
+		Dir: root,
+		Candies: map[string]CandyModel{
+			"nodejs": NewSpecCandyModel(spec.CandyModel{
+				Name:      "nodejs",
+				SourceDir: filepath.Join(root, "candy", "nodejs"),
+				RunOps:    []vmshared.Op{{Command: "pacman -S --noconfirm --needed nodejs"}},
+			}, spec.CandyView{}),
+		},
+	}
+
+	var b strings.Builder
+	g.EmitScratchStages(&b, []string{"nodejs"})
+	out := b.String()
+
+	if !strings.Contains(out, "FROM scratch AS nodejs\n") {
+		t.Fatalf("a command-only candy must emit the stage its commands mount, got:\n%s", out)
+	}
+	if strings.Contains(out, "docker.io") || strings.Contains(out, "library/") {
+		t.Fatalf("the stage emission must not name an image, got:\n%s", out)
+	}
+}
