@@ -203,6 +203,9 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 	if cfg.Security.ShmSize != "" && cfg.PodName == "" && !IpcModeBlocksShmSize(cfg.Security.IpcMode) {
 		fmt.Fprintf(b, "ShmSize=%s\n", cfg.Security.ShmSize)
 	}
+	// rootHome is set when this unit forces the workload to run as container root; the
+	// image's home is then emitted as HOME (see the CDI branch below).
+	var rootHome string
 	switch {
 	case carriesCDIDevice(cfg) && len(cfg.BindMounts) > 0:
 		// A unit that CARRIES the CDI GPU device cannot run under keep-id: crun cannot apply
@@ -217,10 +220,30 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 		// bind writable and the file host-owned.
 		b.WriteString("UserNS=host\n")
 		b.WriteString("User=0:0\n")
+		// ...and the second thing this branch must correct: container root's HOME is /root,
+		// while every volume is mounted under the image's home (ai.opencharly.home, carried on
+		// cfg.Home). Left alone, any workload that resolves HOME — Immich's DB/start wrappers,
+		// a candy's state path — looks in /root and misses the mounted data. Changing the
+		// workload user cannot substitute. Measured on this host (podman 6.2.0, crun 1.31,
+		// rootless, subuid range atrawog:100000:65536), writing into a user-owned directory:
+		//   userns=host --user 0    -> file lands owned by host uid 1000 (the invoking user)
+		//   userns=host --user 1000 -> file lands owned by host uid 100999 (subordinate range)
+		//   userns=host --user 0    -> HOME=/root;  --user 1000 + host bind -> bind read-only
+		//   userns=keep-id + CDI    -> crun mount_setattr EPERM, exit 126
+		// so container root is the only workload user that can write a host-owned (or FUSE
+		// plaintext) directory with the device injected, and its HOME is corrected here from
+		// the label the image already carries. This is also the XDG contract inside the pod:
+		// XDG_CONFIG_HOME/XDG_DATA_HOME/XDG_CACHE_HOME/XDG_STATE_HOME are HOME-derived by
+		// specification, so with HOME pinned every runtime (and charly's own spec/storeroot)
+		// resolves /home/user/... instead of /root/... — measured with HOME=/home/user in this
+		// shape: the XDG vars are correctly unset, python expanduser("~") and node os.homedir()
+		// both report /home/user. Emitting XDG_* directly would override an operator's choice
+		// and any image that sets them itself; HOME is the one input the spec derives from.
+		rootHome = cfg.Home
 	case len(cfg.BindMounts) > 0:
 		fmt.Fprintf(b, "UserNS=keep-id:uid=%d,gid=%d\n", cfg.UID, cfg.GID)
 	}
-	for _, e := range cfg.Env {
+	for _, e := range envWithRootHome(cfg.Env, rootHome) {
 		if before, after, ok := strings.Cut(e, "="); ok {
 			if strings.ContainsAny(after, `"{}[] `) {
 				fmt.Fprintf(b, "Environment=%s=%q\n", before, after)
@@ -520,4 +543,22 @@ func GenerateTunnelUnit(cfg QuadletConfig, cfgPath string) string {
 	b.WriteString("WantedBy=default.target\n")
 
 	return b.String()
+}
+
+// envWithRootHome returns env with HOME=<home> appended when the workload runs as container
+// root and home is known. This is the ONE place the invariant lives: a container-root workload
+// under userns=host is the invoking host user, but its HOME is /root, while every volume is
+// mounted under the image's home. An env that already sets HOME is respected as authored.
+func envWithRootHome(env []string, home string) []string {
+	if home == "" {
+		return env
+	}
+	for _, e := range env {
+		if strings.HasPrefix(e, "HOME=") {
+			return env
+		}
+	}
+	out := make([]string, 0, len(env)+1)
+	out = append(out, env...)
+	return append(out, "HOME="+home)
 }

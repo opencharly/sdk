@@ -883,3 +883,73 @@ func TestQuadletWithoutEncryptedMounts(t *testing.T) {
 		t.Errorf("expected default TimeoutStartSec=900, got:\n%s", got)
 	}
 }
+
+// TestGenerateQuadletRootWorkloadHome is the HOME half of the CDI-device decision. The branch
+// forces `UserNS=host` + `User=0:0`; container root's HOME is /root, while every volume is mounted
+// under the image's home (ai.opencharly.home, carried as cfg.Home), so a workload that resolves
+// HOME looks in /root and misses the mounted data. The emitter pins the image home instead.
+//
+// Measured on this host (podman 6.2.0, crun 1.31, rootless, subuid range
+// atrawog:100000:65536), writing into a user-owned directory:
+//   - userns=host --user 0    -> host uid 1000, HOME=/root, bind writable  (the defect: the
+//     path is wrong, the identity is the invoking user)
+//   - userns=host --user 1000 -> host uid 100999 (subordinate), bind READ-ONLY
+//   - userns=keep-id + CDI    -> crun mount_setattr EPERM, exit 126
+//
+// so container root is the only usable workload user for a CDI device with a host-owned volume,
+// and its HOME must be corrected in the emitter — never re-derived by each candy.
+//
+// The arms: the CDI+bind unit gets the image home; an AUTHORED HOME wins (nothing is overwritten);
+// a keep-id unit gets nothing (its HOME is already the image user's); and an unknown home is not
+// invented.
+func TestGenerateQuadletRootWorkloadHome(t *testing.T) {
+	binds := []ResolvedBindMount{{Name: "data", HostPath: "/srv/data", ContPath: "/data"}}
+	for _, tt := range []struct {
+		name       string
+		gpu        bool
+		home       string
+		env        []string
+		want       []string
+		wantAbsent []string
+	}{
+		{
+			name: "cdi device + bind: the image home is emitted as HOME",
+			gpu:  true, home: "/home/user",
+			want:       []string{"User=0:0", "Environment=HOME=/home/user"},
+			wantAbsent: []string{"Environment=HOME=/root"},
+		},
+		{
+			name: "an authored HOME wins over the label",
+			gpu:  true, home: "/home/user", env: []string{"HOME=/custom"},
+			want:       []string{"Environment=HOME=/custom"},
+			wantAbsent: []string{"Environment=HOME=/home/user"},
+		},
+		{
+			name:       "keep-id unit keeps its own HOME (no injection)",
+			home:       "/home/user",
+			wantAbsent: []string{"Environment=HOME="},
+		},
+		{
+			name:       "cdi device + bind but no home label: nothing invented",
+			gpu:        true,
+			wantAbsent: []string{"Environment=HOME="},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			content := GenerateQuadlet(QuadletConfig{
+				BoxName: "probe", ImageRef: "ghcr.io/test/probe:latest", Home: tt.home,
+				UID: 1000, GID: 1000, GPU: tt.gpu, BindMounts: binds, Env: tt.env,
+			})
+			for _, line := range tt.want {
+				if !strings.Contains(content, line) {
+					t.Errorf("expected %q, got:\n%s", line, content)
+				}
+			}
+			for _, line := range tt.wantAbsent {
+				if strings.Contains(content, line) {
+					t.Errorf("did not expect %q, got:\n%s", line, content)
+				}
+			}
+		})
+	}
+}
