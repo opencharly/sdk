@@ -256,16 +256,21 @@ func TestGenerateQuadletWithoutGPU(t *testing.T) {
 	}
 }
 
-// TestGenerateQuadletUserNS is the user-namespace half of the CDI-device fix
-// (opencharly/plugin-deploy-pod#81): a unit that CARRIES the CDI GPU device must not run under
-// keep-id, because crun cannot apply the device's FILE mounts inside a keep-id user namespace and
-// the container dies at the first one (mount_setattr EPERM, exit 126). It runs userns=host with the
-// workload as container root instead — the only mapping that keeps a host-owned bind writable AND
-// gets the device injected.
+// TestGenerateQuadletUserNS pins the one user-namespace rule: **no charly pod runs as container
+// root**. A unit with a bind mount runs as the IMAGE USER under keep-id — the image user IS the
+// invoking host user there, so a host-owned volume (a bind, or a gocryptfs plaintext dir) is
+// writable with no chown. The CDI device is emitted for every GPU unit, bind included: what keep-id
+// cannot apply is the CDI spec's FILE mounts (`crun: mount_setattr …: EPERM`, exit 126), never the
+// device — a DEVICES-ONLY spec applies fine, measured with the device name still resolving to a
+// spec carrying only `deviceNodes`, plus the driver libraries bound to their SONAME paths
+// (`cuInit=0` on the RTX 4080 SUPER). The emitter therefore never decides the spec shape; its
+// caller points the engine at a devices-only one.
+// Measured 2026-11-24 (podman 6.2.0, crun 1.31, rootless): keep-id + image user + host bind ->
+// uid=1000, write ok, host owner 1000:1000; userns=host --user 1000 + an idmapped volume -> denied.
 //
-// The other three arms are the regression guards: a bind-only deploy keeps keep-id byte-identically,
-// a privileged unit never receives a CDI mount (so nothing changed for it), and a GPU deploy with no
-// bind mount was never given keep-id in the first place and must stay that way.
+// The other arms are the regression guards: a bind-only deploy keeps keep-id byte-identically, a
+// privileged unit never receives a CDI mount, and a GPU deploy with no bind mount keeps both
+// keep-id's absence and its CDI device.
 func TestGenerateQuadletUserNS(t *testing.T) {
 	binds := []ResolvedBindMount{{Name: "data", HostPath: "/srv/data", ContPath: "/data"}}
 	for _, tt := range []struct {
@@ -273,14 +278,21 @@ func TestGenerateQuadletUserNS(t *testing.T) {
 		gpu        bool
 		privileged bool
 		binds      []ResolvedBindMount
+		devices    []string
 		want       []string
 		wantAbsent []string
 	}{
 		{
-			name: "cdi device + bind: userns=host, container root",
+			name: "cdi device + bind: keep-id, the image user, and the CDI device",
 			gpu:  true, binds: binds,
-			want:       []string{"UserNS=host", "User=0:0", "AddDevice=nvidia.com/gpu=all"},
-			wantAbsent: []string{"UserNS=keep-id"},
+			want:       []string{"UserNS=keep-id:uid=1000,gid=1000", "AddDevice=nvidia.com/gpu=all"},
+			wantAbsent: []string{"UserNS=host", "User=0:0"},
+		},
+		{
+			name:  "bind + GPU device nodes: keep-id and the nodes injected",
+			binds: binds, devices: []string{"/dev/nvidia0", "/dev/nvidiactl"},
+			want:       []string{"UserNS=keep-id:uid=1000,gid=1000", "AddDevice=/dev/nvidia0", "AddDevice=/dev/nvidiactl"},
+			wantAbsent: []string{"User=0:0", "AddDevice=nvidia.com/gpu=all"},
 		},
 		{
 			name:       "bind only, no device: keep-id unchanged",
@@ -305,7 +317,7 @@ func TestGenerateQuadletUserNS(t *testing.T) {
 			content := GenerateQuadlet(QuadletConfig{
 				BoxName: "gpu", ImageRef: "ghcr.io/test/gpu:latest", Home: "/home/user",
 				UID: 1000, GID: 1000, GPU: tt.gpu, BindMounts: tt.binds,
-				Security: vmshared.SecurityConfig{Privileged: tt.privileged},
+				Security: vmshared.SecurityConfig{Privileged: tt.privileged, Devices: tt.devices},
 			})
 			for _, line := range tt.want {
 				if !strings.Contains(content, line) {
@@ -881,5 +893,29 @@ func TestQuadletWithoutEncryptedMounts(t *testing.T) {
 	// Default timeout
 	if !strings.Contains(got, "TimeoutStartSec=900") {
 		t.Errorf("expected default TimeoutStartSec=900, got:\n%s", got)
+	}
+}
+
+// TestGenerateQuadletPodmanArgsAndReadOnlyBind pins the two inputs a keep-id GPU unit needs on top
+// of AddDevice: the engine flag that points podman at the derived devices-only CDI spec (one
+// PodmanArgs= line, which quadlet splits into argv words), and the driver libraries bound `:ro`.
+func TestGenerateQuadletPodmanArgsAndReadOnlyBind(t *testing.T) {
+	content := GenerateQuadlet(QuadletConfig{
+		BoxName: "gpu", ImageRef: "ghcr.io/test/gpu:latest", Home: "/home/user", UID: 1000, GID: 1000, GPU: true,
+		BindMounts: []ResolvedBindMount{{
+			Name: "libcuda", HostPath: "/usr/lib/libcuda.so.615.78.08",
+			ContPath: "/usr/lib/libcuda.so.1", ReadOnly: true,
+		}},
+		PodmanArgs: []string{"--cdi-spec-dir", "/home/user/.local/share/charly/cdi"},
+	})
+	for _, want := range []string{
+		"PodmanArgs=--cdi-spec-dir /home/user/.local/share/charly/cdi",
+		"Volume=/usr/lib/libcuda.so.615.78.08:/usr/lib/libcuda.so.1:ro",
+		"AddDevice=nvidia.com/gpu=all",
+		"UserNS=keep-id:uid=1000,gid=1000",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("quadlet missing %q\n%s", want, content)
+		}
 	}
 }
