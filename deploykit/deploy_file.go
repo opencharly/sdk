@@ -146,7 +146,26 @@ func LoadDeployConfig(ctx context.Context) (*DeployConfig, error) {
 // populator). It therefore writes through perhost.Apply, the shared atomic mechanics, and does NOT
 // acquire the lock again: flock is per-open-file-description, so a second acquire in the same
 // process would wait for the first and fail at perhost.LockWait.
-func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctx context.Context) error {
+// DeployConfigSaveOption tunes ONE SaveDeployConfig write. Variadic so no existing caller changes.
+type DeployConfigSaveOption func(*deployConfigSaveOptions)
+
+type deployConfigSaveOptions struct {
+	pruneEmptyProvides bool
+}
+
+// PruneEmptyProvides makes the write DELETE a top-level `provides:` section that the config no
+// longer carries. It is for the REMOVAL path only (CleanDeployEntry), whose cleaner empties the
+// lists and sets Provides=nil: without this, a nil Provides means "nothing to write" and the
+// stale section survives on disk while the removal reports success (opencharly/sdk#634).
+func PruneEmptyProvides() DeployConfigSaveOption {
+	return func(o *deployConfigSaveOptions) { o.pruneEmptyProvides = true }
+}
+
+func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *DeployNode) (*yaml.Node, error), failsafeRead func() (*DeployConfig, error), ctx context.Context, opts ...DeployConfigSaveOption) error {
+	var so deployConfigSaveOptions
+	for _, o := range opts {
+		o(&so)
+	}
 	path, err := kit.DefaultDeployConfigPath(ctx)
 	if err != nil {
 		return fmt.Errorf("determining deploy config path: %w", err)
@@ -226,6 +245,11 @@ func SaveDeployConfig(dc *DeployConfig, marshalNode func(name string, node *Depl
 			if len(pd.Content) == 1 {
 				perhost.Set(root, pd.Content[0], "provides")
 			}
+		} else if so.pruneEmptyProvides {
+			// A nil value REMOVES the key (perhost.Set's documented contract). The root handed
+			// to this mutation is the MAPPING itself, not a document node — a document-node
+			// traversal here would find nothing and silently keep the stale section.
+			perhost.Set(root, nil, "provides")
 		}
 		// Replace the deploy entries: remove every existing deploy key, then add the new ones.
 		// The deploy keys are the top-level keys that are NOT reserved directives and NOT the
