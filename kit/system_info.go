@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/opencharly/spec/hostenv"
+	"github.com/opencharly/spec/perhost"
 	"github.com/opencharly/spec/spec"
 	"gopkg.in/yaml.v3"
 )
@@ -108,28 +109,6 @@ func PopulateSystemInfo() error {
 // only the `system:` key (preserving every other key), and writes back
 // atomically (tempfile + rename).
 func writeSystemInfo(path string, info spec.SystemInfo) error {
-	unlock, err := AcquireFileLock(path+".lock", true)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = unlock() }()
-
-	data, err := os.ReadFile(path)
-	var doc yaml.Node
-	if err == nil {
-		if yaml.Unmarshal(data, &doc) != nil {
-			return nil // corrupt file — never clobber it
-		}
-	}
-	if doc.Kind == 0 {
-		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{
-			{Kind: yaml.MappingNode, Tag: "!!map"},
-		}}
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return nil
-	}
 	body, err := yaml.Marshal(info)
 	if err != nil {
 		return err
@@ -138,29 +117,11 @@ func writeSystemInfo(path string, info spec.SystemInfo) error {
 	if err := yaml.Unmarshal(body, &val); err != nil || len(val.Content) == 0 {
 		return err
 	}
-	SetMappingKey(root, "system", val.Content[0])
-
-	out, err := yaml.Marshal(&doc)
-	if err != nil {
-		return err
-	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".charly-system-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(out); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
+	// The per-host file is written by SEVERAL charly commands, so it has ONE writer:
+	// spec/perhost (bounded lock, read INSIDE it, own key only, atomic rename, a corrupt file
+	// refused untouched). This function supplies only its own section.
+	return perhost.Update(path, func(root *yaml.Node) (bool, error) {
+		v := *val.Content[0]
+		return perhost.Set(root, &v, "system"), nil
+	})
 }
