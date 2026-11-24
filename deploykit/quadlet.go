@@ -203,21 +203,17 @@ func emitContainerSection(b *strings.Builder, cfg QuadletConfig, name string) {
 	if cfg.Security.ShmSize != "" && cfg.PodName == "" && !IpcModeBlocksShmSize(cfg.Security.IpcMode) {
 		fmt.Fprintf(b, "ShmSize=%s\n", cfg.Security.ShmSize)
 	}
-	switch {
-	case carriesCDIDevice(cfg) && len(cfg.BindMounts) > 0:
-		// A unit that CARRIES the CDI GPU device cannot run under keep-id: crun cannot apply
-		// the device's ~62 FILE mounts inside a keep-id user namespace, and the container dies
-		// at the first one — `mount_setattr /usr/bin/nvidia-cuda-mps-control: Operation not
-		// permitted: OCI permission denied`, exit 126 (opencharly/plugin-deploy-pod#81).
-		// keep-id exists to make a HOST-OWNED bind writable, and the one mapping that keeps that
-		// bind writable AND gets the device injected is userns=host with the workload as
-		// container root — which in a rootless pod is still the unprivileged host user, so files
-		// the workload creates land owned by that user. Measured on both halves (podman 6.2.0,
-		// crun 1.31): keep-id + device rc=126 on any image, userns=host + --user 0 rc=0 with the
-		// bind writable and the file host-owned.
-		b.WriteString("UserNS=host\n")
-		b.WriteString("User=0:0\n")
-	case len(cfg.BindMounts) > 0:
+	// NO charly pod runs as container root. A unit with a bind mount runs as the IMAGE USER under
+	// keep-id: the image user IS the invoking host user there, so a host-owned volume (a bind, or
+	// a gocryptfs plaintext dir) is writable with no chown, and the workload is the image user, not
+	// root. A CDI GPU device cannot be injected in this shape (crun cannot apply the spec's file
+	// mounts inside the keep-id userns: mount_setattr EPERM, exit 126), so the device is never
+	// emitted on a bind unit; the caller injects the GPU as device nodes plus the driver libraries
+	// bound to their soname paths (plugin-deploy-pod's detect_devices), which are ordinary binds.
+	// Measured 2026-11-24 (podman 6.2.0, crun 1.31, rootless): keep-id + image user + host bind ->
+	// uid=1000, write ok, host owner 1000:1000; keep-id + CDI -> exit 126; userns=host --user 1000
+	// with an idmapped volume -> denied.
+	if len(cfg.BindMounts) > 0 {
 		fmt.Fprintf(b, "UserNS=keep-id:uid=%d,gid=%d\n", cfg.UID, cfg.GID)
 	}
 	for _, e := range cfg.Env {
@@ -272,7 +268,10 @@ func emitInitRuntime(b *strings.Builder, cfg QuadletConfig) {
 func carriesCDIDevice(cfg QuadletConfig) bool { return cfg.GPU && !cfg.Security.Privileged }
 
 func emitContainerSecurity(b *strings.Builder, cfg QuadletConfig) {
-	if carriesCDIDevice(cfg) {
+	// The CDI device is emitted ONLY for a unit without bind mounts: a bind unit runs under
+	// keep-id, where crun cannot apply the CDI spec's file mounts (see the userns note); its GPU
+	// arrives as device nodes plus driver-library binds instead.
+	if carriesCDIDevice(cfg) && len(cfg.BindMounts) == 0 {
 		b.WriteString("AddDevice=nvidia.com/gpu=all\n")
 	}
 	if cfg.Security.Privileged {
