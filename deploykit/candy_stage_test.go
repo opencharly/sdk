@@ -160,15 +160,30 @@ func TestEmitScratchStage_CommandOnlyCandyIsStaged(t *testing.T) {
 				SourceDir: filepath.Join(root, "candy", "nodejs"),
 				RunOps:    []vmshared.Op{{Command: "pacman -S --noconfirm --needed nodejs"}},
 			}, spec.CandyView{}),
+			// A `plugin: command` step carries the command in PluginInput, NOT in Command —
+			// it still renders through EmitCmd (deploykit/tasks_render.go's `plugin` case)
+			// and mounts `from=yay`. Measured on arch-builder: nodejs resolved after the
+			// first fix, yay did not.
+			"yay": NewSpecCandyModel(spec.CandyModel{
+				Name:      "yay",
+				SourceDir: filepath.Join(root, "candy", "yay"),
+				RunOps: []vmshared.Op{{
+					Plugin:      "command",
+					PluginInput: map[string]any{"command": "install yay from its release tarball"},
+				}},
+			}, spec.CandyView{}),
 		},
 	}
 
 	var b strings.Builder
-	g.EmitScratchStages(&b, []string{"nodejs"})
+	g.EmitScratchStages(&b, []string{"nodejs", "yay"})
 	out := b.String()
 
 	if !strings.Contains(out, "FROM scratch AS nodejs\n") {
 		t.Fatalf("a command-only candy must emit the stage its commands mount, got:\n%s", out)
+	}
+	if !strings.Contains(out, "FROM scratch AS yay\n") {
+		t.Fatalf("a `plugin: command` candy must emit the stage its command mounts, got:\n%s", out)
 	}
 	if strings.Contains(out, "docker.io") || strings.Contains(out, "library/") {
 		t.Fatalf("the stage emission must not name an image, got:\n%s", out)

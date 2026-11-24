@@ -135,13 +135,17 @@ func (g *Generator) emitScratchStage(b *strings.Builder, candyName string, layer
 //
 // A `command:` step counting here is load-bearing (opencharly/sdk#635): a command-only candy
 // (layer-nodejs / layer-yay in arch-builder) mounts a stage it would otherwise never emit, so
-// BuildKit resolves the mount source as `docker.io/library/<candy>:latest`.
+// BuildKit resolves the mount source as `docker.io/library/<candy>:latest`. A PLUGIN verb
+// counts too: `plugin: command` carries its command in PluginInput (not Command) and every
+// other plugin verb may render an act shell through the same EmitCmd (tasks_render.go's
+// `plugin` case), so it mounts the stage as well — measured on arch-builder, where the first
+// fix emitted `nodejs` but not `yay`.
 func stageConsumed(layer CandyModel) bool {
 	if layer.HasData() {
 		return true
 	}
 	for _, op := range layer.RunOps() {
-		if op.Copy != "" || strings.TrimSpace(op.Command) != "" {
+		if op.Copy != "" || strings.TrimSpace(op.Command) != "" || op.Plugin != "" {
 			return true
 		}
 	}
