@@ -423,14 +423,14 @@ language.
 | Matrix / catalog / definition | Sole owner |
 |---|---|
 | "R10 gate by change class" matrix (incl. the class → gate → tier cross-walk) + "Flag discipline" catalog | `/charly-check:check` |
-| R1–R5, RDD (incl. "The spike"), ADE operationalization (forbidden patterns, risk table, worked examples) | `/charly-internals:strict-policy` |
+| R1–R5, R12 and the spike model ("Spike-first": the round, the `### Spike` block, the exemptions, the RDD/ADE/SDD "which instrument when" table), RDD, ADE operationalization (forbidden patterns, risk table, worked examples) | `/charly-internals:strict-policy` |
 | SDD operationalization (the schema→generated-code pipeline map, the schema-change recipe, the generation-coverage current state) | `/charly-internals:go` |
 | Hard-cutover workflow, forbidden patterns, deliverables | `/charly-internals:cutover-policy` |
 | `disposable:` / `preemptible:` flag semantics, "What counts as an R10 run" | `/charly-internals:disposable` |
 | Landing mechanics (branch loop, the two-step PR + `pr-validator` merge/tag, CalVer-generated-at-merge, branch protection, multi-repo order) | `/charly-internals:git-workflow` |
 | Agent/workflow/team primitives, hooks doctrine | `/charly-internals:agents` |
 | Kernel/plugin doctrine (core = kernel; every capability a plugin candy), the two authoring shapes, placement, the three-lane transport doctrine, the seams catalog, **the kernel/plugin boundary law** (E/M/B/D/R) + the incomplete-seam mandate | `/charly-internals:plugin` |
-| Skill Dispatcher, RDD/ADE/SDD mandates, R1–R10, acceptance checklist, attribution tiers, Documentation-only change class anchor, "What the validator checks" table, "Commit, push, land" | the umbrella `AGENTS.md`, Part I (`charly/AGENTS.md` carries only the charly-core rules: core dispatcher rows, the kernel/plugin boundary law, the core SDD pipeline, R9 + the core Go gate) |
+| Skill Dispatcher, RDD/ADE/SDD mandates, R0–R12, acceptance checklist, attribution tiers, Documentation-only change class anchor, "What the validator checks" table, "Commit, push, land" | the umbrella `AGENTS.md`, Part I (`charly/AGENTS.md` carries only the charly-core rules: core dispatcher rows, the kernel/plugin boundary law, the core SDD pipeline, R9 + the core Go gate) |
 
 A registry owner may hold its canonical text in a `references/<file>.md` split file rather than the top-level `SKILL.md` body (see "Progressive disclosure" above) — the row still names the SKILL as sole owner regardless of which file inside it carries the detail.
 
