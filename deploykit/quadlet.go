@@ -274,10 +274,12 @@ func emitInitRuntime(b *strings.Builder, cfg QuadletConfig) {
 }
 
 // carriesCDIDevice reports whether this unit receives the CDI GPU device. It is the ONE fact
-// behind both the `AddDevice=` line and the user-namespace mapping emitted below: a unit that
-// carries the device cannot run under keep-id (opencharly/plugin-deploy-pod#81). A privileged
-// unit gets every device through `--privileged` and is never given a CDI mount, so it is not
-// "carrying" one and keeps the mapping it had.
+// behind both the `AddDevice=` line and the user-namespace mapping emitted below: a GPU unit
+// carries the device and rides keep-id when it has a bind mount, because the caller points the
+// engine at a devices-only CDI spec (opencharly/plugin-deploy-pod#97) — what keep-id cannot apply
+// is the spec's file mounts, never the device. A privileged unit gets every device through
+// `--privileged` and is never given a CDI mount, so it is not "carrying" one and keeps the
+// mapping it had.
 func carriesCDIDevice(cfg QuadletConfig) bool { return cfg.GPU && !cfg.Security.Privileged }
 
 // cdiDevice is the CDI device name a GPU unit receives; one spelling for the implicit line and
