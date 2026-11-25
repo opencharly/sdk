@@ -280,11 +280,15 @@ func emitInitRuntime(b *strings.Builder, cfg QuadletConfig) {
 // "carrying" one and keeps the mapping it had.
 func carriesCDIDevice(cfg QuadletConfig) bool { return cfg.GPU && !cfg.Security.Privileged }
 
+// cdiDevice is the CDI device name a GPU unit receives; one spelling for the implicit line and
+// the dedupe in the explicit list.
+const cdiDevice = "nvidia.com/gpu=all"
+
 func emitContainerSecurity(b *strings.Builder, cfg QuadletConfig) {
 	// Emitted for every GPU unit, bind or not: keep-id cannot apply a CDI spec's file mounts, not
 	// its device (see the userns note), so the caller arranges a devices-only spec.
 	if carriesCDIDevice(cfg) {
-		b.WriteString("AddDevice=nvidia.com/gpu=all\n")
+		fmt.Fprintf(b, "AddDevice=%s\n", cdiDevice)
 	}
 	if cfg.Security.Privileged {
 		b.WriteString("SecurityLabelDisable=true\n")
@@ -302,6 +306,12 @@ func emitContainerSecurity(b *strings.Builder, cfg QuadletConfig) {
 			fmt.Fprintf(b, "AddCapability=%s\n", cap)
 		}
 		for _, dev := range cfg.Security.Devices {
+			// A caller that also lists the CDI device in `security.devices` names the SAME
+			// directive the branch above already emitted; emitting it twice is two sources of
+			// truth for one fact, and hides which one owns it (opencharly/sdk#643).
+			if carriesCDIDevice(cfg) && dev == cdiDevice {
+				continue
+			}
 			fmt.Fprintf(b, "AddDevice=%s\n", dev)
 		}
 		for _, opt := range cfg.Security.SecurityOpt {
