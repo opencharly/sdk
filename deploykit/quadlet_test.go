@@ -919,3 +919,20 @@ func TestGenerateQuadletPodmanArgsAndReadOnlyBind(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateQuadletCDIDeviceIsEmittedOnce: a caller that ALSO lists the CDI device in
+// security.devices must not get the line twice — two sources of truth for one directive
+// (opencharly/sdk#643). This test fails on the unmodified emitter, which writes the implicit
+// line and then every Security.Devices entry verbatim.
+func TestGenerateQuadletCDIDeviceIsEmittedOnce(t *testing.T) {
+	content := GenerateQuadlet(QuadletConfig{
+		BoxName: "gpu", ImageRef: "ghcr.io/test/gpu:latest", Home: "/home/user", UID: 1000, GID: 1000, GPU: true,
+		Security: SecurityConfig{Devices: []string{CDIDevice, "/dev/dri/renderD128"}},
+	})
+	if got := strings.Count(content, "AddDevice="+CDIDevice+"\n"); got != 1 {
+		t.Errorf("CDI device emitted %d times, want exactly 1\n%s", got, content)
+	}
+	if !strings.Contains(content, "AddDevice=/dev/dri/renderD128\n") {
+		t.Errorf("a non-CDI device entry must still be emitted\n%s", content)
+	}
+}
