@@ -927,9 +927,9 @@ func TestGenerateQuadletPodmanArgsAndReadOnlyBind(t *testing.T) {
 func TestGenerateQuadletCDIDeviceIsEmittedOnce(t *testing.T) {
 	content := GenerateQuadlet(QuadletConfig{
 		BoxName: "gpu", ImageRef: "ghcr.io/test/gpu:latest", Home: "/home/user", UID: 1000, GID: 1000, GPU: true,
-		Security: SecurityConfig{Devices: []string{CDIDevice, "/dev/dri/renderD128"}},
+		Security: SecurityConfig{Devices: []string{cdiDevice, "/dev/dri/renderD128"}},
 	})
-	if got := strings.Count(content, "AddDevice="+CDIDevice+"\n"); got != 1 {
+	if got := strings.Count(content, "AddDevice="+cdiDevice+"\n"); got != 1 {
 		t.Errorf("CDI device emitted %d times, want exactly 1\n%s", got, content)
 	}
 	if !strings.Contains(content, "AddDevice=/dev/dri/renderD128\n") {
