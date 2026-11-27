@@ -359,7 +359,7 @@ func TestGCConfigMismatch(t *testing.T) {
 	if !mismatch {
 		t.Fatal("a config without the requested GC policy must report a mismatch")
 	}
-	for _, want := range []string{"gc disabled", "reservedSpace=40GB", "maxUsedSpace=80GB", "minFreeSpace=5GB"} {
+	for _, want := range []string{"the daemon's default GC policy", "373GB free target", "reservedSpace=40GB", "maxUsedSpace=80GB", "minFreeSpace=5GB"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("the report must name %q:\n%s", want, msg)
 		}
@@ -367,6 +367,21 @@ func TestGCConfigMismatch(t *testing.T) {
 
 	if msg, mismatch := GCConfigMismatch(DaemonConfig(opts), opts); mismatch || msg != "" {
 		t.Fatalf("a matching policy must report nothing: mismatch=%v msg=%q", mismatch, msg)
+	}
+
+	// An explicit `gc = false` still describes as disabled; an ABSENT gc key is the
+	// daemon's enabled default, a different state that must not read as disabled.
+	explicitOff := GCConfig{}
+	explicitOff.Explicit, explicitOff.Enabled = true, false
+	if got := explicitOff.Describe(); got != "gc disabled" {
+		t.Errorf("an explicit gc=false must describe as disabled: %q", got)
+	}
+	absent := ConfigGC("[worker.oci]\n  process-mode = \"sandbox\"\n")
+	if !absent.Enabled || absent.Explicit {
+		t.Errorf("an absent gc key must read as the daemon's ENABLED default (not explicit): %+v", absent)
+	}
+	if got := absent.Describe(); !strings.Contains(got, "default GC policy") {
+		t.Errorf("an absent gc key must describe as the daemon's default policy: %q", got)
 	}
 
 	// A disabled GC is a real change from an enabled budget and vice versa.
@@ -440,7 +455,7 @@ func TestEnsureReportsTheRunningDaemonsGCPolicy(t *testing.T) {
 		t.Error("Ensure must report that it attached to the running daemon, not that it started one")
 	}
 	report, _ := io.ReadAll(r)
-	for _, want := range []string{"gc disabled", "reservedSpace=40GB", "maxUsedSpace=80GB", "minFreeSpace=5GB", sock} {
+	for _, want := range []string{"the daemon's default GC policy", "373GB free target", "reservedSpace=40GB", "maxUsedSpace=80GB", "minFreeSpace=5GB", sock} {
 		if !strings.Contains(string(report), want) {
 			t.Errorf("the running-daemon report must name %q:\n%s", want, report)
 		}

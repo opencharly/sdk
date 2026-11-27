@@ -195,11 +195,14 @@ func (o DaemonOptions) gcBudget() (reserved, maxUsed, minFree string) {
 
 // wantedGC is the ConfigGC these options render, for comparison with a running daemon's file.
 func (o DaemonOptions) wantedGC() GCConfig {
+	// The requested state is ALWAYS explicit: the drive either writes the three-space budget
+	// or writes `gc = false`. Explicit also keeps Describe() rendering the requested values
+	// instead of the daemon-default wording.
 	if o.GCDisabled {
-		return GCConfig{}
+		return GCConfig{Explicit: true}
 	}
 	reserved, maxUsed, minFree := o.gcBudget()
-	return GCConfig{Enabled: true, ReservedSpace: reserved, MaxUsedSpace: maxUsed, MinFreeSpace: minFree}
+	return GCConfig{Enabled: true, Explicit: true, ReservedSpace: reserved, MaxUsedSpace: maxUsed, MinFreeSpace: minFree}
 }
 
 // DaemonConfig renders buildkitd.toml for the resolved options.
@@ -309,17 +312,26 @@ func ConfigMaxParallelism(content string) int {
 // value it started with, which is why Ensure reports a mismatch instead of rewriting a live
 // daemon's file.
 type GCConfig struct {
-	Enabled       bool
+	// Enabled is the daemon's GC state. An ABSENT `gc` key is the daemon's own default,
+	// which is ENABLED — buildkitd's worker GC runs by default with
+	// `--oci-worker-gc-keepstorage 10000,373000,100000` (10 GB reserve / 373 GB free
+	// target / 100 GB ceiling), which is exactly the policy that prunes a small host's
+	// cache to the reserve floor (measured). Only an explicit `gc = false` is disabled.
+	Enabled bool
+	// Explicit reports whether the file STATES a gc setting at all. Absent means the
+	// daemon's default policy, which is a DIFFERENT state from an explicit budget and is
+	// the one a daemon started before the budget existed is running.
+	Explicit      bool
 	ReservedSpace string
 	MaxUsedSpace  string
 	MinFreeSpace  string
 }
 
 // ConfigGC reads the GC keys this file records. It parses the rendered form (this kit is the
-// only writer), within `[worker.oci]` only; an absent `gc` key reads as disabled (the
-// daemon's own default when the key is missing is `false` for the worker's gc field).
+// only writer), within `[worker.oci]` only. An absent `gc` key is the daemon's OWN DEFAULT,
+// which is ENABLED with its compiled keepstorage budget — the opposite of disabled.
 func ConfigGC(content string) GCConfig {
-	out := GCConfig{}
+	out := GCConfig{Enabled: true} // absent = the daemon's default (enabled)
 	inWorker := false
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
@@ -338,6 +350,7 @@ func ConfigGC(content string) GCConfig {
 		value = strings.Trim(strings.TrimSpace(value), `"`)
 		switch key {
 		case "gc":
+			out.Explicit = true
 			out.Enabled = value == "true"
 		case "reservedSpace":
 			out.ReservedSpace = value
@@ -356,7 +369,7 @@ func (o DaemonOptions) SameGC(configured GCConfig) bool {
 		return !configured.Enabled
 	}
 	reserved, maxUsed, minFree := o.gcBudget()
-	return configured.Enabled && configured.ReservedSpace == reserved &&
+	return configured.Explicit && configured.Enabled && configured.ReservedSpace == reserved &&
 		configured.MaxUsedSpace == maxUsed && configured.MinFreeSpace == minFree
 }
 
@@ -364,6 +377,12 @@ func (o DaemonOptions) SameGC(configured GCConfig) bool {
 func (c GCConfig) Describe() string {
 	if !c.Enabled {
 		return "gc disabled"
+	}
+	if !c.Explicit {
+		// The legacy daemon this report exists for: no gc section at all, so it runs the
+		// daemon's compiled default — enabled, with the 373 GB free target that prunes the
+		// cache to the 10 GB reserve floor.
+		return "the daemon's default GC policy (--oci-worker-gc-keepstorage 10000,373000,100000: 10GB reserve, 373GB free target, 100GB ceiling)"
 	}
 	return fmt.Sprintf("gc reservedSpace=%s maxUsedSpace=%s minFreeSpace=%s", c.ReservedSpace, c.MaxUsedSpace, c.MinFreeSpace)
 }
