@@ -50,8 +50,7 @@ func TestWriteBootstrap_UserCreationSupportsBusyboxBases(t *testing.T) {
 
 	// The busybox leg is what the regression is about.
 	for _, want := range []string{
-		"addgroup -g 1000 user",
-		"adduser -D -h /home/user -u 1000 -G user",
+		"adduser -D -h /home/user -u 1000",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("busybox leg missing %q\n--- emitted ---\n%s", want, got)
@@ -97,9 +96,10 @@ func TestWriteBootstrap_AdoptedUserEmitsNoUseradd(t *testing.T) {
 // was never created and every exec failed with
 // `unable to find user user: no matching entries in passwd file`.
 //
-// Red arm (the pre-fix code): the third assertion below failed because the guard
-// read `getent passwd 1000`, and the fourth failed because no --non-unique fallback
-// existed to create the name when the uid was taken.
+// Red arm (the pre-fix code): all THREE assertions below failed — the first because
+// the guard did not mention the declared name at all, the second because it read
+// `getent passwd 1000`, and the third because no --non-unique fallback existed to
+// create the name when the uid was already taken.
 func TestWriteBootstrap_GuardsOnTheDeclaredNameNotTheUID(t *testing.T) {
 	var b strings.Builder
 	g := &Generator{}
@@ -114,5 +114,35 @@ func TestWriteBootstrap_GuardsOnTheDeclaredNameNotTheUID(t *testing.T) {
 	}
 	if !strings.Contains(got, "useradd -o -m -u 1000 -g 1000") {
 		t.Errorf("no --non-unique fallback: a base whose uid 1000 is taken by another account still cannot create the declared name\n--- emitted ---\n%s", got)
+	}
+}
+
+// TestWriteBootstrap_BusyboxLegEnsuresTheGroupByNameAndFallsBack pins the busybox half
+// of opencharly/sdk#655, which the first round left unproven:
+//
+//   - busybox `adduser` creates the same-named GROUP itself and takes -G by NAME
+//     (`adduser -G 1000` dies "unknown group 1000"), so a pre-created group is not
+//     needed — and actively breaks the fallback ("group 'user' in use", measured).
+//   - when uid 1000 is taken, the fallback must drop --uid AND --group together;
+//     `adduser -D -h DIR -s SHELL user` is the form busybox accepts there (measured:
+//     `user:x:1001:1001` — the declared NAME resolves, which is the contract).
+//
+// Red arm (the previous round's emitter): the second and third assertions failed —
+// the leg carried `addgroup -g 1000 user` (gid-keyed, so group `user` can be absent)
+// and the fallback still passed `-G user`.
+func TestWriteBootstrap_BusyboxLegEnsuresTheGroupByNameAndFallsBack(t *testing.T) {
+	var b strings.Builder
+	g := &Generator{}
+	g.WriteBootstrap(&b, bootstrapCreateBox())
+	got := b.String()
+
+	if strings.Contains(got, "addgroup") || strings.Contains(got, "-G ") {
+		t.Errorf("the busybox leg pre-creates/passes a group: busybox adduser makes its own same-named group, and a pre-created one breaks the fallback with \"group 'user' in use\" (measured)\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, `adduser -D -h /home/user -s "$LOGIN_SHELL" user`) {
+		t.Errorf("no uid-and-group-free adduser fallback: a base whose uid 1000 is taken still cannot create the declared name\n--- emitted ---\n%s", got)
+	}
+	if n := strings.Count(got, "adduser -D"); n != 2 {
+		t.Errorf("expected exactly two adduser attempts (primary + fallback), got %d\n--- emitted ---\n%s", n, got)
 	}
 }

@@ -100,8 +100,15 @@ func (g *Generator) WriteBootstrap(b *strings.Builder, img *buildkit.ResolvedBox
 		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.GID, img.User)
 		fmt.Fprintf(b, "        { useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s || useradd -o -m -u %d -g %d -s \"$LOGIN_SHELL\" %s; }; \\\n", img.UID, img.GID, img.User, img.UID, img.GID, img.User)
 		b.WriteString("      else \\\n")
-		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || addgroup -g %d %s) && \\\n", img.GID, img.GID, img.User)
-		fmt.Fprintf(b, "        { adduser -D -h %s -u %d -G %s -s \"$LOGIN_SHELL\" %s || adduser -D -h %s -G %s -s \"$LOGIN_SHELL\" %s; }; \\\n", img.Home, img.UID, img.User, img.User, img.Home, img.User, img.User)
+		// busybox adduser creates the same-named GROUP itself and takes -G by NAME
+		// (measured: `adduser -G 1000` on Alpine dies "unknown group 1000"), so a
+		// pre-created group is not only unnecessary — it BREAKS the group-free
+		// fallback ("group 'user' in use"). Neither attempt passes --group:
+		// `-u UID` gives the uid when it is free, and the fallback lets busybox pick
+		// the next free uid when it is not (measured on a base whose uid 1000 is
+		// another account: `user:x:1001:1001` — the declared NAME resolves, which is
+		// the contract; a busybox userland has no --non-unique to hold uid 1000).
+		fmt.Fprintf(b, "        { adduser -D -h %s -u %d -s \"$LOGIN_SHELL\" %s || adduser -D -h %s -s \"$LOGIN_SHELL\" %s; }; \\\n", img.Home, img.UID, img.User, img.Home, img.User)
 		b.WriteString("      fi; \\\n")
 		b.WriteString("    fi\n\n")
 	}
