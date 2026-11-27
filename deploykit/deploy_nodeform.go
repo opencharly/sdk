@@ -9,7 +9,7 @@ import (
 
 // deploy_nodeform.go — the canonical DeployNode → compact node-form deploy serializer. MarshalDeployNode
 // emits the COMPACT name-first node the per-host overlay (~/.config/charly/charly.yml) is read back in:
-// the kind discriminator (pod/vm/kubernetes/local/android/group/deploy) carries the FULL body inline (scalars,
+// the kind discriminator (pod/vm/kubernetes/local/group/deploy) carries the FULL body inline (scalars,
 // collections, and the `plan:` step list), and only nested/peer members become child nodes (their names
 // are load-bearing). Plan steps are RESUGARED (the internal plugin/plugin_input pair back to the authored
 // `<word>: <input>` sugar, collapsing a single-primary map to the scalar shorthand) so the written file
@@ -28,7 +28,7 @@ import (
 // deployCrossRefKeys are the deploy-value scalar keys that NAME another top-level
 // entity (the key equals the referenced entity's kind).
 var deployCrossRefKeys = map[string]bool{
-	"box": true, "vm": true, "kubernetes": true, "local": true, "android": true, "kubevirt": true,
+	"box": true, "vm": true, "kubernetes": true, "local": true, "kubevirt": true,
 }
 
 // MarshalDeployNode emits a DeployNode as the compact name-first node-form the per-host
@@ -95,7 +95,7 @@ func MarshalDeployNode(node *spec.Deploy, primaries map[string]string) (*yaml.No
 
 // deployDiscForEntity picks the node-form discriminator for a deploy/check entity
 // whose `target:` key is about to be dropped. A same-kind cross-ref (box/vm/local/
-// kubernetes/android) uses `deploy:` (buildDeployNode infers the workload target from it);
+// kubernetes) uses `deploy:` (buildDeployNode infers the workload target from it);
 // the SAVE path marshals DeployNode.Target, so the disc is that target — an empty
 // target with a POD-WORKLOAD indicator (image/resolved_image/resolved_port/port/
 // volume_project_checked) is a POD (the DEFAULT substrate), and an empty target with
@@ -138,7 +138,7 @@ func deployDiscForEntity(body *yaml.Node) string {
 		}
 		return "group"
 	default:
-		return t // pod | vm | kubernetes | local | android
+		return t // pod | vm | kubernetes | local
 	}
 }
 

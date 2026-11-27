@@ -15,9 +15,9 @@ import (
 // load the project itself, the ONE remaining reason this branch was a host seam — a separate-module
 // plugin cannot import LoadUnified — no longer holds. resolveKindTemplateBodyViaExecutor mirrors the
 // deleted host body's own uf.ProjectTemplates().ByKind(kind)[name] lookup (kind-blind, DATA-indexed);
-// the 3 typed Resolve<Kind>EntityViaExecutor wrappers below combine it with the SAME typed
+// the 2 typed Resolve<Kind>EntityViaExecutor wrappers below combine it with the SAME typed
 // spec.SubstrateTemplateResolveRequest discriminated-union dispatch resolve_via_executor.go's
-// Resolve{Resource,Android,Vm}ViaExecutor already establish (a STRONGER-typed replacement for the
+// Resolve{Resource,Vm}ViaExecutor already establish (a STRONGER-typed replacement for the
 // deleted seam's own untyped map[string]map[string]json.RawMessage wire shape) — no new mechanism,
 // same InvokeProvider(kind, "local", OpResolve) peer-dispatch already proven live throughout candy/.
 // The wrappers are one-liners over the shared resolveSubstrateViaExecutor/decodeResolveReply
@@ -82,25 +82,6 @@ func ResolveKubernetesEntityViaExecutor(ctx context.Context, ex *sdk.Executor, d
 	}
 	var reply spec.KubernetesResolveReply
 	if err := decodeResolveReply(res, &reply, fmt.Sprintf("kubernetes entity %q", name)); err != nil {
-		return nil, err
-	}
-	return reply.Resolved, nil
-}
-
-// ResolveAndroidEntityViaExecutor loads the project and resolves the named kind:android template
-// entity via candy/plugin-substrate's OpResolve leg — the plugin-side self-load twin of the deleted
-// "deploy-entity-resolve" seam's kind="android" branch.
-func ResolveAndroidEntityViaExecutor(ctx context.Context, ex *sdk.Executor, dir, name string) (*spec.ResolvedAndroid, error) {
-	body, err := resolveKindTemplateBodyViaExecutor(ctx, ex, dir, "android", name)
-	if err != nil {
-		return nil, err
-	}
-	res, err := resolveSubstrateViaExecutor(ctx, ex, "local", spec.SubstrateTemplateResolveRequest{Android: &spec.AndroidResolveInput{Android: body}})
-	if err != nil {
-		return nil, err
-	}
-	var reply spec.AndroidResolveReply
-	if err := decodeResolveReply(res, &reply, fmt.Sprintf("android entity %q", name)); err != nil {
 		return nil, err
 	}
 	return reply.Resolved, nil

@@ -47,10 +47,10 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 		}
 		// Bed-target validity is DATA-DRIVEN from the substrate's declared #DeployTraits
 		// (candy/plugin-substrate), never a per-substrate-word switch (the boundary-law incomplete-seam
-		// gate, task #22): bed_target marks pod/vm/local/android as valid bed targets; kubernetes
+		// gate, task #22): bed_target marks pod/vm/local as valid bed targets; kubernetes
 		// (bed_target:false) and unknown words fall to the external/unsupported arm. image_backed
 		// distinguishes pod's box: cross-ref (enforced elsewhere) from the template-backed
-		// vm/local/android from: cross-ref.
+		// vm/local from: cross-ref.
 		traits := t.DeployTraits[node.Target]
 		switch {
 		case node.Target == "":
@@ -79,7 +79,7 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 			}
 		case traits != nil && traits.BedTarget:
 			// A valid bed target. image_backed (pod) enforces box: via validateDeployRequiresBox on the
-			// folded Deploy entry — no duplicate check. The template-backed substrates (vm/local/android)
+			// folded Deploy entry — no duplicate check. The template-backed substrates (vm/local)
 			// share ONE cross-ref shape: a `from: <entity>` naming an entry in the SAME PluginKinds[target]
 			// map every standalone-template kind folds into.
 			if !traits.ImageBacked {
@@ -121,7 +121,7 @@ func ValidateCheckBeds(uf *spec.UnifiedFile, t spec.Threaded) error {
 			if t.ExternalDeploySubstrates[node.Target] {
 				break
 			}
-			return fmt.Errorf("kind:check bed %q has unsupported target %q (must be pod, vm, local, android, or a registered external deploy substrate)", name, node.Target)
+			return fmt.Errorf("kind:check bed %q has unsupported target %q (must be pod, vm, local, or a registered external deploy substrate)", name, node.Target)
 		}
 		// Cutover C task 4 — ALL-OR-NOTHING stage authoring per bed: when ANY step
 		// of the bed (the root node AND every member, both positions) carries the

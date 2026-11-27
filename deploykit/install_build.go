@@ -145,15 +145,7 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 	shellSteps := CompileShellSnippetSteps(layer, img, hostCtx)
 	plan.Steps = append(plan.Steps, shellSteps...)
 
-	// 6. Android apps: the candy manifest `apk:` package format. Compiled into ONE
-	// ApkInstallStep regardless of target; the android deploy preresolver reads it
-	// host-side (collectAndroidInstalls) and the external deploy:android plugin
-	// installs the apps — every EmitTarget records a skip. See ApkInstallStep.
-	if apkStep := CompileApkStep(layer); apkStep != nil {
-		plan.Steps = append(plan.Steps, apkStep)
-	}
-
-	// 7. Reboot: the candy manifest `reboot: true`. Emitted LAST so the reboot
+	// 6. Reboot: the candy manifest `reboot: true`. Emitted LAST so the reboot
 	// follows every install step of this candy. Only the vm deploy acts
 	// on it (the host's rebootVenueAndWait reboots the guest + waits); OCI/pod/kubernetes skip it (no machine
 	// at build time); the local deploy target skips + warns (never reboots the
@@ -165,31 +157,14 @@ func BuildDeployPlan(ctx context.Context, ex *sdk.Executor, layer CandyModel, im
 	return plan, nil
 }
 
-// CompileApkStep turns a candy's `apk:` package list into a single
-// ApkInstallStep, or nil if the candy declares no apk packages. The `apk`
-// format is target-agnostic at compile time — the step carries the specs and
-// each EmitTarget decides whether to execute (android) or skip (everything
-// else), exactly as the IR intends for venue-specific work.
-func CompileApkStep(layer CandyModel) InstallStep {
-	apks := layer.Apk()
-	if len(apks) == 0 {
-		return nil
-	}
-	return &ApkInstallStep{
-		Packages:  append([]ApkPackageSpec(nil), apks...),
-		CandyName: layer.GetName(),
-		CandyDir:  layer.GetSourceDir(),
-	}
-}
-
 // CompileLocalPkgStep turns a candy's `localpkg:` field into a single
-// LocalPkgInstallStep, or nil if the candy declares none. Like CompileApkStep
-// it is target-agnostic at compile time — the step carries the published
+// LocalPkgInstallStep, or nil if the candy declares none. It is target-agnostic
+// at compile time — the step carries the published
 // package name (from the candy's `packaging:` section) + the candy dir (the
 // anchor for the candy's charly.yml, the generate-packages plugin's --candy
 // input). Each EmitTarget
 // decides whether to obtain+install (localpkg-capable host/guest), skip (image
-// build, non-pac targets, android, kubernetes).
+// build, non-pac targets, kubernetes).
 //
 // The localpkg mechanism is fully config-driven: the format's `local_pkg:`
 // block (resolved here via DistroDef.LocalPkgFormat, the SAME DistroDef the

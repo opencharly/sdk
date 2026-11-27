@@ -212,7 +212,7 @@ func ProjectResolvedProject(cfg *spec.Config, layers map[string]spec.CandyReader
 	rp.ExternalizedBuilders = seams.ExternalizedBuilders
 
 	if uf != nil {
-		// kind TEMPLATES (validate localtemplates + check-include pod/vm arms + status kubernetes/adb).
+		// kind TEMPLATES (validate localtemplates + check-include pod/vm arms + status kubernetes).
 		rp.Templates = uf.ProjectTemplates()
 		// kind:agent catalog (the harness AI-CLI pick + charly feature list-agent).
 		if agents := uf.PluginKinds["agent"]; len(agents) > 0 {

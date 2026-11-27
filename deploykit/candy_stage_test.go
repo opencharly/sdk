@@ -87,16 +87,27 @@ func TestCandyCopySource_ImportedNamespaceOrigin(t *testing.T) {
 		},
 	}
 
-	cases := []struct{ ref, want string }{
-		{"cachyos-base-check", ".build/_candy/cachyos-base-check.2026.300.1129"},
-		{"pixi", "candy/pixi"},
-		{"anchored", "layers/anchored"},
-		{"github.com/test/repo/layers/cuda", ".build/_candy/cuda.2026.167.1200"},
+	// The staged suffix under .build/_candy/ is a CONTENT ADDRESS derived by the spec's
+	// deploy.CandyStageDirName (<name>.<sha256[:16]> — spec CHANGELOG 0.2026330.2134), so the
+	// exact value depends on the candy's tree (here the empty temp dir). This test guards the
+	// ORIGIN decision (staged vs project-relative), so it asserts the staged prefix; the suffix
+	// derivation itself is pinned by the spec module's own tests.
+	cases := []struct {
+		ref, want string
+		prefix    bool
+	}{
+		{"cachyos-base-check", ".build/_candy/cachyos-base-check.", true},
+		{"pixi", "candy/pixi", false},
+		{"anchored", "layers/anchored", false},
+		// No SourceDir → the spec falls back to the version-keyed name, exact.
+		{"github.com/test/repo/layers/cuda", ".build/_candy/cuda.2026.167.1200", false},
 	}
 	for _, tc := range cases {
-		if got := g.CandyCopySource(tc.ref); got != tc.want {
-			t.Errorf("CandyCopySource(%q) = %q, want %q", tc.ref, got, tc.want)
+		got := g.CandyCopySource(tc.ref)
+		if tc.prefix && strings.HasPrefix(got, tc.want) || !tc.prefix && got == tc.want {
+			continue
 		}
+		t.Errorf("CandyCopySource(%q) = %q, want %q (prefix=%v)", tc.ref, got, tc.want, tc.prefix)
 	}
 }
 

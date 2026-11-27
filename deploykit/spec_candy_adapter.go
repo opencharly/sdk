@@ -62,7 +62,6 @@ func (a *specCandyAdapter) GetRepoPath() string  { return a.v.RepoPath }
 // build-model direct field reads
 func (a *specCandyAdapter) Vars() map[string]string { return a.m.Vars }
 func (a *specCandyAdapter) PlanSteps() []Step       { return a.m.Plan }
-func (a *specCandyAdapter) Apk() []ApkPackageSpec   { return a.m.Apk }
 func (a *specCandyAdapter) TopPackages() []string   { return a.m.TopPackages }
 func (a *specCandyAdapter) ServiceFiles() []string  { return a.m.ServiceFiles }
 func (a *specCandyAdapter) RelayPorts() []int       { return a.m.PortRelayPorts }
@@ -147,7 +146,7 @@ func (a *specCandyAdapter) HasContent() bool {
 }
 func (a *specCandyAdapter) HasInstallFiles() bool {
 	// Host-precomputed (#67): the live *Candy.HasInstallFiles() verdict (packages + fs-probe
-	// detection + tasks/apk), carried on the CandyModel — distinct from HasContent (the pixi-
+	// detection + tasks), carried on the CandyModel — distinct from HasContent (the pixi-
 	// bound intermediate detection gates on this narrower predicate).
 	return a.m.HasInstallFiles
 }

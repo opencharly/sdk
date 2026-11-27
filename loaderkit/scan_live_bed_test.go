@@ -181,10 +181,10 @@ func liveBedFixtureAvailable(t *testing.T) {
 
 func liveBedLayers() map[string]spec.CandyReader {
 	return map[string]spec.CandyReader{
-		"layer-older": newLoaderTestCandy("layer-older", spec.CandyModel{}, spec.CandyView{
+		"layer-older": newLoaderTestCandy("layer-older", spec.CandyView{
 			Require: []spec.CandyRef{spec.CandyRef("@" + liveCandyRef + ":" + liveOlderTag)},
 		}),
-		"layer-newest": newLoaderTestCandy("layer-newest", spec.CandyModel{}, spec.CandyView{
+		"layer-newest": newLoaderTestCandy("layer-newest", spec.CandyView{
 			Require: []spec.CandyRef{spec.CandyRef("@" + liveCandyRef + ":" + liveNewestTag)},
 		}),
 	}
@@ -298,7 +298,7 @@ func TestLiveBedInitDependsSeedFetchesTheInitRuntime(t *testing.T) {
 	var levels []spec.DiagLevel
 	var msgs []string
 	seams := liveBedSeams(&spec.Config{}, map[string]spec.CandyReader{
-		"svc": newLoaderTestCandy("svc", spec.CandyModel{}, spec.CandyView{}),
+		"svc": newLoaderTestCandy("svc", spec.CandyView{}),
 	}, &levels, &msgs)
 
 	got, err := ScanCandyFromLocal(localScanned, supervisordInitCfg(), seams)
@@ -338,7 +338,7 @@ func TestLiveBedInjectionResolvesTheSeedsRealMaterialization(t *testing.T) {
 	var levels []spec.DiagLevel
 	var msgs []string
 	seams := liveBedSeams(&spec.Config{}, map[string]spec.CandyReader{
-		"svc": newLoaderTestCandy("svc", spec.CandyModel{}, spec.CandyView{}),
+		"svc": newLoaderTestCandy("svc", spec.CandyView{}),
 	}, &levels, &msgs)
 
 	scanned, err := ScanCandyFromLocal(localScanned, supervisordInitCfg(), seams)

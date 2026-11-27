@@ -23,7 +23,7 @@ import (
 // the host's os.Getwd() and connects the deployment's plugins. A plugin-side leg with no
 // dispatch-threaded directory of its own (a post-provision handler, a command leaf) uses it to
 // feed the self-load helpers (LoadUnifiedViaExecutor, ResolveMergedTreeViaExecutor,
-// Resolve{Kubernetes,Vm,Android}EntityViaExecutor). deployName names the deployment whose plugins
+// Resolve{Kubernetes,Vm}EntityViaExecutor). deployName names the deployment whose plugins
 // the host connects; "" asks for the CURRENT project.
 //
 // Every failure is a real error — a missing host reverse channel, a failed seam call, or an

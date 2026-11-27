@@ -57,22 +57,22 @@ func TestRunProvisionAct_NilExecutorMapsToFail(t *testing.T) {
 	}
 }
 
-// TestSnapshotCheckEnvCarriesCandyDirs is the regression guard for the committed-APK
-// fixture anchor on the plugin→host wire leg: SnapshotCheckEnv MUST carry the runner's
-// CandyDirs, or the host's resolveCheckApk sees an empty map and every relative
-// `apk:` step fails with `candy "…" is absent from the source scan (0 candies scanned)`.
+// TestSnapshotCheckEnvCarriesCandyDirs is the regression guard for candy-relative file
+// anchoring on the plugin→host wire leg: SnapshotCheckEnv MUST carry the runner's CandyDirs,
+// or the host sees an empty map and a step that names a file relative to its authoring candy
+// fails with `candy "…" is absent from the source scan (0 candies scanned)`.
 // (The host→plugin snapshot already carries CandyDirs; only this leg was missing it —
 // a regression from the R3 checkkit one-home cutover, which replaced the plugin-local
 // snapshot that DID set it.)
 func TestSnapshotCheckEnvCarriesCandyDirs(t *testing.T) {
-	dirs := map[string]string{"github.com/opencharly/pod-android-emulator-layer": "/cache/pod-android-emulator-layer"}
+	dirs := map[string]string{"github.com/opencharly/layer-example": "/cache/layer-example"}
 	kr := kit.NewRunner(kit.RunnerConfig{CandyDirs: dirs})
 
 	ce := SnapshotCheckEnv(kr)
 	if len(ce.CandyDirs) != len(dirs) {
 		t.Fatalf("SnapshotCheckEnv CandyDirs = %v, want %v", ce.CandyDirs, dirs)
 	}
-	if ce.CandyDirs["github.com/opencharly/pod-android-emulator-layer"] != dirs["github.com/opencharly/pod-android-emulator-layer"] {
+	if ce.CandyDirs["github.com/opencharly/layer-example"] != dirs["github.com/opencharly/layer-example"] {
 		t.Errorf("SnapshotCheckEnv dropped/mangled CandyDirs: got %v, want %v", ce.CandyDirs, dirs)
 	}
 }

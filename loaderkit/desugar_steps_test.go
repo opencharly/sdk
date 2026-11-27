@@ -15,7 +15,7 @@ import (
 func TestDesugarStepsRealStepShape(t *testing.T) {
 	doc := "- check: the emulator is attached\n" +
 		"  id: g8-devices-online\n" +
-		"  adb:\n" +
+		"  example:\n" +
 		"    method: devices\n" +
 		"  context:\n" +
 		"    - runtime\n" +
@@ -34,7 +34,7 @@ func TestDesugarStepsRealStepShape(t *testing.T) {
 	}
 	s := string(out)
 	t.Logf("desugared: %s", s)
-	if !strings.Contains(s, "plugin: adb") || !strings.Contains(s, "plugin_input:") {
+	if !strings.Contains(s, "plugin: example") || !strings.Contains(s, "plugin_input:") {
 		t.Fatalf("verb sugar not rewritten: %s", s)
 	}
 	if !strings.Contains(s, "g8-devices-online") || !strings.Contains(s, "runtime") {
@@ -49,7 +49,7 @@ func TestDesugarStepsRealStepShape(t *testing.T) {
 func TestDesugarStepsWireFormPassesThrough(t *testing.T) {
 	doc := "- check: wire form\n" +
 		"  id: w1\n" +
-		"  plugin: adb\n" +
+		"  plugin: example\n" +
 		"  plugin_input:\n" +
 		"    method: devices\n"
 	var n yaml.Node
@@ -60,7 +60,7 @@ func TestDesugarStepsWireFormPassesThrough(t *testing.T) {
 		t.Fatalf("wire form must pass through: %v", err)
 	}
 	out, _ := yaml.Marshal(&n)
-	if !strings.Contains(string(out), "plugin: adb") {
+	if !strings.Contains(string(out), "plugin: example") {
 		t.Fatalf("wire form changed: %s", out)
 	}
 }
@@ -74,7 +74,7 @@ func TestDesugarStepsRejectsNonSequenceAndNoIntent(t *testing.T) {
 		t.Fatal("a mapping document must error: a steps sequence must be a YAML list")
 	}
 	var n yaml.Node
-	if err := yaml.Unmarshal([]byte("- id: no-intent\n  adb:\n    method: devices\n"), &n); err != nil {
+	if err := yaml.Unmarshal([]byte("- id: no-intent\n  example:\n    method: devices\n"), &n); err != nil {
 		t.Fatal(err)
 	}
 	if err := DesugarSteps("steps.yml", &n, spec.Threaded{}); err == nil {

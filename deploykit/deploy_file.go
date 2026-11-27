@@ -523,7 +523,7 @@ func ExportAllBox(rp *spec.ResolvedProject) *DeployConfig {
 // substrateNodeOrder is the substrate EDGE discriminators a node-form deploy entry can carry, in
 // PRECEDENCE order. One ordered list, not a set: an entry that (wrongly) carries two of them must
 // resolve to the same kind on every run, and ranging a map would make that read nondeterministic.
-var substrateNodeOrder = []string{"pod", "vm", "kubernetes", "local", "android", "group"}
+var substrateNodeOrder = []string{"pod", "vm", "kubernetes", "local", "group"}
 
 // hostFileKeys are the per-host charly.yml's NON-deploy sections: they share the document with
 // the name-first deploy entries and must never be mistaken for one.

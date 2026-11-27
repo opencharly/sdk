@@ -156,7 +156,7 @@ func BuildDeployNode(pn spec.ParsedNode, t spec.Threaded) (*spec.DeployNode, err
 	// inference from a cross-ref). group:/host: are targetless venues.
 	dn.Target = DeployTargetForDisc(pn.Disc, t)
 	// A scalar discriminator value (`vm: pg-vm` / `pod: img`) is the deploy's cross-ref: pod →
-	// the image it runs; vm/kubernetes/local/android → the same-kind template it inherits (`from:`).
+	// the image it runs; vm/kubernetes/local → the same-kind template it inherits (`from:`).
 	dv, err := discValue(pn)
 	if err != nil {
 		return nil, err
@@ -192,7 +192,7 @@ func BuildDeployNode(pn spec.ParsedNode, t spec.Threaded) (*spec.DeployNode, err
 // Every pn.Children entry is an entity child by construction (the parse's own member extraction
 // plus the desugar separate step/data children into the plan/body fields before a spec.ParsedNode
 // ever reaches here), so no discClass filter is needed. A non-member entity child is a hard error
-// (deploy/resource children must be pod/vm/kubernetes/local/android/group or a recognized
+// (deploy/resource children must be pod/vm/kubernetes/local/group or a recognized
 // external kind — the ONE memberDisc classification). The FOLD stamps each entry's Position from
 // the authored depth alone: a child NAMED by a top-level key of pn's authored disc body hung
 // INSIDE the kind body (in-substrate); one that didn't is a deploy-level sibling of the kind key.
@@ -204,7 +204,7 @@ func BuildResourceMemberChildren(pn spec.ParsedNode, t spec.Threaded) ([]spec.Me
 	var out []spec.Member
 	for _, rk := range pn.Children {
 		if !IsResourceDisc(rk.Disc, t) {
-			return nil, fmt.Errorf("node %q: a %q child %q is not a resource member (deploy/resource children must be pod/vm/kubernetes/local/android)", pn.Name, rk.Disc, rk.Name)
+			return nil, fmt.Errorf("node %q: a %q child %q is not a resource member (deploy/resource children must be pod/vm/kubernetes/local)", pn.Name, rk.Disc, rk.Name)
 		}
 		member, err := BuildDeployNode(*rk, t)
 		if err != nil {

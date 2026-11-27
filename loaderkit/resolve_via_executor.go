@@ -10,14 +10,14 @@ import (
 )
 
 // resolve_via_executor.go — the plugin-side substrate/resource RESOLVE callbacks the plugin-side loader
-// (execLoaderExecutor in plugin-fleet/plugin-build/plugin-vm) threads into loaderkit.ValidateAndroidDevices
-// / ValidatePreemptible, so the plugin runs those loader validators ITSELF instead of calling back to the
-// host over a HostBuild leg (the former host android/preempt-validate legs, now dissolved). Each is
+// (execLoaderExecutor in plugin-fleet/plugin-build/plugin-vm) threads into loaderkit.ValidatePreemptible,
+// so the plugin runs that loader validator ITSELF instead of calling back to the host over a HostBuild
+// leg (the former host preempt-validate leg, now dissolved). Each is
 // InvokeProvider(class:kind, word, OpResolve) over the plugin's reverse channel — the SAME plugin↔plugin
 // dispatch candy/plugin-build's build-resolve already uses in production (resolve_legs.go's
 // resolveResourceLeg/resolveDistroLeg/resolveInitLeg). ONE home (R3): reused by build-resolve AND the 3
 // plugins' loader-validate. The compiled-in host loader (charly.LoadUnified via hostLoaderExecutor) keeps
-// its own registry-side callbacks (resolveResource/Android/VmViaPlugin) — this is the PLUGIN-side twin.
+// its own registry-side callbacks (resolveResource/VmViaPlugin) — this is the PLUGIN-side twin.
 //
 // The wrappers are one-liners over the shared resolveSubstrateViaExecutor/decodeResolveReply envelope
 // (resolve_substrate_executor.go — parser consolidation F1.1): the same typed request/reply shape
@@ -34,23 +34,6 @@ func ResolveResourceViaExecutor(ctx context.Context, ex *sdk.Executor) func(json
 		}
 		var reply spec.ResourceResolveReply
 		if err := decodeResolveReply(res, &reply, "resource resolve"); err != nil {
-			return nil, err
-		}
-		return reply.Resolved, nil
-	}
-}
-
-// ResolveAndroidViaExecutor builds the resolveAndroid callback ValidateAndroidDevices needs, dispatching
-// each opaque android body to the substrate plugin's OpResolve leg (any of its 5 substrate words serves;
-// "local" is the canonical entry, mirroring the host's invokeSubstrateTemplateResolve).
-func ResolveAndroidViaExecutor(ctx context.Context, ex *sdk.Executor) func(json.RawMessage) (*spec.ResolvedAndroid, error) {
-	return func(body json.RawMessage) (*spec.ResolvedAndroid, error) {
-		res, err := resolveSubstrateViaExecutor(ctx, ex, "local", spec.SubstrateTemplateResolveRequest{Android: &spec.AndroidResolveInput{Android: body}})
-		if err != nil {
-			return nil, err
-		}
-		var reply spec.AndroidResolveReply
-		if err := decodeResolveReply(res, &reply, "android resolve"); err != nil {
 			return nil, err
 		}
 		return reply.Resolved, nil

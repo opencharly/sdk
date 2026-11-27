@@ -53,8 +53,7 @@ func (e *degradedExecutorMock) MaterializeLoadedProject(lp *spec.LoadedProject, 
 	}
 	return nil
 }
-func (*degradedExecutorMock) ValidateAndroidDevices(*spec.UnifiedFile) error { return nil }
-func (*degradedExecutorMock) ValidatePreemptible(*spec.UnifiedFile) error    { return nil }
+func (*degradedExecutorMock) ValidatePreemptible(*spec.UnifiedFile) error { return nil }
 
 // TestLoadUnifiedViaExecutorSeam_DeclaredFieldsFloor drives the FULL LoadUnified orchestration
 // through the executor seam with the degraded Threaded: the converted tree (the live-repro

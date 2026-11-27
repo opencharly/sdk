@@ -14,7 +14,7 @@ import (
 //
 //   - PluginKinds is tagged `json:"-"` ("Host-internal — never serialized"), so a plain marshal
 //     SILENTLY DROPS every standalone-template + plugin-kind entity (uf.PluginKinds[disc][name] —
-//     the map uf.VM()/Local()/Android()/Pod()/Kubernetes() and the check-bed / android / preempt
+//     the map uf.VM()/Local()/Pod()/Kubernetes() and the check-bed / preempt
 //     validators all read). Host-side that never matters (charly.LoadUnified mutates ONE
 //     spec.UnifiedFile in place, no serialization); the PLUGIN-side witness (execLoaderExecutor)
 //     round-trips the spec.UnifiedFile through HostBuild's []byte payload, so the maps are captured

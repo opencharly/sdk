@@ -220,7 +220,7 @@ func scanFromParsed(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyModel
 	}
 
 	// PARTIAL host-precomputed predicates (#67): every term computable from THIS candy alone
-	// (fs-probes, package derivation, Apk). RunOps and HasInit are NOT scan-computable — RunOps
+	// (fs-probes, package derivation). RunOps and HasInit are NOT scan-computable — RunOps
 	// needs opInContext/VerbCatalog (registry-adjacent D-data the host still owns, task #39);
 	// HasInit needs PopulateCandyInitSystem (cross-candy InitConfig resolution, run once after
 	// EVERY candy is scanned). The host completes both booleans by OR-ing in those two missing
@@ -234,10 +234,8 @@ func scanFromParsed(name, sourceDir string, ly *spec.CandyYAML) (spec.CandyModel
 			break
 		}
 	}
-	hasApk := len(m.Apk) > 0
 	m.HasInstallFiles = hasFormatPackages || hasTagPackages || len(m.TopPackages) > 0 ||
-		hasPixiToml || hasPyprojectToml || hasEnvironmentYml || hasPackageJson || hasCargoToml || hasMiseConfig ||
-		hasApk
+		hasPixiToml || hasPyprojectToml || hasEnvironmentYml || hasPackageJson || hasCargoToml || hasMiseConfig
 	m.HasContent = m.HasInstallFiles || m.Env != nil || len(m.Port) > 0 || m.Route != nil ||
 		len(v.Volumes) > 0 || len(v.Aliases) > 0 || len(m.Extract) > 0 || len(m.Data) > 0 ||
 		len(m.PortRelayPorts) > 0 || len(m.ServiceFiles) > 0 || len(m.Service) > 0
@@ -368,7 +366,6 @@ func populateFromYAML(m *spec.CandyModel, v *spec.CandyView, ly *spec.CandyYAML)
 	v.TerminalProfiles = ly.TerminalProfiles
 	m.Engine = string(ly.Engine)
 	m.Vars = ly.Vars
-	m.Apk = ly.Apk
 	m.ExternalBuilder = ly.ExternalBuilder
 	v.SubPathPrefix = "" // filled by the resolve projector for remote candies (#67), not at scan time
 	m.Reboot = ly.Reboot

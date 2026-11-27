@@ -18,7 +18,7 @@ import (
 // deploykit.ResolveContainer directly, only described it in a comment about what the PLUGIN
 // does); every ACTUAL caller (candy/plugin-check
 // [venue.go's resolveCheckVenue + the ${HOST:} member resolution, members.go]/plugin-cmd/
-// plugin-pod/plugin-adb/plugin-deploy-pod) imports THESE functions directly. This is the ONE
+// plugin-pod/plugin-deploy-pod) imports THESE functions directly. This is the ONE
 // shared implementation.
 
 // splitNamespacedBox returns the (box, instance) pair the container NAMERS must be given to
