@@ -160,3 +160,34 @@ func TestWriteBootstrap_BusyboxLegEnsuresTheGroupByNameAndFallsBack(t *testing.T
 		t.Errorf("expected exactly three adduser attempts (uid / group-free / group-named), got %d\n--- emitted ---\n%s", n, got)
 	}
 }
+
+// TestWriteBootstrap_ShadowUtilsFallsBackToTheGroupName pins the shadow-utils half of the
+// same invariant busybox attempt 3 covers: a base can ship a group of the DECLARED NAME at
+// a DIFFERENT gid, in which case there is no group at img.GID.
+//
+// Measured on a fedora base:
+//
+//	useradd -g 9999 ...  -> "group '9999' does not exist"   (no group at that gid)
+//	useradd -g grp  ...  -> creates the account with gid 2000 (the group exists BY NAME)
+//
+// So the group guard must also accept an existing NAME, and the useradd chain needs the
+// -g <name> forms; -o alone does not help when the GROUP is what is missing.
+//
+// Red arm (the uid-guarded emitter 79ce454): all three assertions fail — its guard was
+// gid-only and both of its forms passed -g 1000.
+func TestWriteBootstrap_ShadowUtilsFallsBackToTheGroupName(t *testing.T) {
+	var b strings.Builder
+	g := &Generator{}
+	g.WriteBootstrap(&b, bootstrapCreateBox())
+	got := b.String()
+
+	if !strings.Contains(got, "getent group 1000 >/dev/null 2>&1 || getent group user >/dev/null 2>&1") {
+		t.Errorf("the group guard still keys on the gid only, so a base shipping group `user` at another gid never gets past it\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, "useradd -m -u 1000 -g user") {
+		t.Errorf("no -g <name> form: when the group exists at another gid, useradd -g 1000 fails and the declared name is never created\n--- emitted ---\n%s", got)
+	}
+	if n := strings.Count(got, "-m -u 1000"); n != 4 {
+		t.Errorf("expected four useradd attempts (gid / -o / name / -o+name), got %d\n--- emitted ---\n%s", n, got)
+	}
+}

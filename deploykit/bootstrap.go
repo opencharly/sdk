@@ -97,8 +97,16 @@ func (g *Generator) WriteBootstrap(b *strings.Builder, img *buildkit.ResolvedBox
 		fmt.Fprintf(b, "RUN if ! getent passwd %s >/dev/null 2>&1; then \\\n", img.User)
 		b.WriteString("      LOGIN_SHELL=/bin/sh; [ -x /bin/bash ] && LOGIN_SHELL=/bin/bash; \\\n")
 		b.WriteString("      if command -v useradd >/dev/null 2>&1; then \\\n")
-		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.GID, img.User)
-		fmt.Fprintf(b, "        { useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s || useradd -o -m -u %d -g %d -s \"$LOGIN_SHELL\" %s; }; \\\n", img.UID, img.GID, img.User, img.UID, img.GID, img.User)
+		// The group guard must not key on the gid alone: a base can already ship a group
+		// of that NAME at a different gid, in which case there is no group at img.GID
+		// and `groupadd -g GID user` fails, short-circuiting the `&&`. Create a group at
+		// GID only when neither the gid nor the NAME is present.
+		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || getent group %s >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.User, img.GID, img.User)
+		// Four measured forms: `useradd -g <gid>` needs a group AT that gid (measured:
+		// "group '9999' does not exist"), `useradd -g <name>` resolves a group at any gid
+		// (measured: a group at gid 2000 accepts the account), and -o alone does not help
+		// when the group is missing rather than the uid.
+		fmt.Fprintf(b, "        { useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s || useradd -o -m -u %d -g %d -s \"$LOGIN_SHELL\" %s || useradd -m -u %d -g %s -s \"$LOGIN_SHELL\" %s || useradd -o -m -u %d -g %s -s \"$LOGIN_SHELL\" %s; }; \\\n", img.UID, img.GID, img.User, img.UID, img.GID, img.User, img.UID, img.User, img.User, img.UID, img.User, img.User)
 		b.WriteString("      else \\\n")
 		// busybox adduser creates the same-named GROUP itself and takes -G by NAME
 		// (measured: `adduser -G 1000` on Alpine dies "unknown group 1000"). Three
