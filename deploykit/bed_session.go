@@ -73,16 +73,22 @@ func PersistBedDeployOverrides(ctx context.Context, name string, node DeployNode
 		return
 	}
 	SaveDeployState(name, "", SaveDeployStateInput{
-		Ports:         node.Port,
-		SetPorts:      len(node.Port) > 0,
-		Volume:        node.Volume,
-		Env:           node.Env,
-		CleanEnv:      true,
-		Tunnel:        node.Tunnel,
-		Security:      node.Security,
-		Network:       node.Network,
-		Box:           node.Image,
-		Target:        node.Target,
+		Ports:    node.Port,
+		SetPorts: len(node.Port) > 0,
+		Volume:   node.Volume,
+		Env:      node.Env,
+		CleanEnv: true,
+		Tunnel:   node.Tunnel,
+		Security: node.Security,
+		Network:  node.Network,
+		Box:      node.Image,
+		Target:   node.Target,
+		// The same-kind cross-ref a `from:` member inherits (a template-backed substrate has
+		// NO image, so Box above is empty): persisting it is what keeps the written entry
+		// loadable. Without it the entry is `vm: {disposable: true}` with no source, the next
+		// load drops it as a degraded entry, and the save guard refuses the following write
+		// ("holds 2 deploy entr(y|ies) but only 1 load") — opencharly/charly#1299.
+		VmCrossRef:    node.From,
 		SetDisposable: true,
 		Disposable:    node.IsDisposable(),
 		SetLifecycle:  node.Lifecycle != "",
