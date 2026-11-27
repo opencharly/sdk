@@ -367,6 +367,25 @@ func (c GCConfig) Describe() string {
 	return fmt.Sprintf("gc reservedSpace=%s maxUsedSpace=%s minFreeSpace=%s", c.ReservedSpace, c.MaxUsedSpace, c.MinFreeSpace)
 }
 
+// GCConfigMismatch reports whether a rendered config's GC policy differs from opts, and the
+// diagnostic line Ensure prints for a RUNNING daemon that was started with the old policy.
+// It is a PURE function so the running-daemon report is testable without a daemon: the
+// policy is fixed at daemon start, and the operator restarts it to apply the new one.
+func GCConfigMismatch(rendered string, opts DaemonOptions) (string, bool) {
+	configured := ConfigGC(rendered)
+	if opts.SameGC(configured) {
+		return "", false
+	}
+	return fmt.Sprintf("buildkitdrive: the running daemon was started with %s; %s was requested. The GC policy is fixed at daemon start — stop the daemon and this drive will start it with the new policy.\n",
+		configured.Describe(), opts.wantedGC().Describe()), true
+}
+
+// ConfigDiffers reports whether an on-disk config differs from what opts renders — the
+// ensure's write decision. Pure, so the "always write the full config" arm is testable.
+func ConfigDiffers(existing string, opts DaemonOptions) bool {
+	return existing != DaemonConfig(opts)
+}
+
 // NeedsRestart reports whether a daemon configured with `configured` must be restarted to
 // honour `want`.
 //

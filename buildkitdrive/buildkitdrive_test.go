@@ -342,6 +342,54 @@ func TestConfigGC_RoundTrips(t *testing.T) {
 	}
 }
 
+// TestGCConfigMismatch — the running-daemon report Ensure prints when the daemon predates
+// the requested GC policy. The policy is fixed at daemon start, so a mismatch is REPORTED
+// (never fatal) and the operator restarts; a matching policy reports nothing.
+func TestGCConfigMismatch(t *testing.T) {
+	opts := DaemonOptions{GCReservedSpace: "40GB", GCMaxUsedSpace: "80GB", GCMinFreeSpace: "5GB"}
+
+	// The pre-change rendered form: no GC section at all.
+	old := "[worker.oci]\n  process-mode = \"sandbox\"\n  max-parallelism = 4\n"
+	msg, mismatch := GCConfigMismatch(old, opts)
+	if !mismatch {
+		t.Fatal("a config without the requested GC policy must report a mismatch")
+	}
+	for _, want := range []string{"gc disabled", "reservedSpace=40GB", "maxUsedSpace=80GB", "minFreeSpace=5GB"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the report must name %q:\n%s", want, msg)
+		}
+	}
+
+	if msg, mismatch := GCConfigMismatch(DaemonConfig(opts), opts); mismatch || msg != "" {
+		t.Fatalf("a matching policy must report nothing: mismatch=%v msg=%q", mismatch, msg)
+	}
+
+	// A disabled GC is a real change from an enabled budget and vice versa.
+	if _, mismatch := GCConfigMismatch(DaemonConfig(opts), DaemonOptions{GCDisabled: true}); !mismatch {
+		t.Error("enabled -> disabled must report a mismatch")
+	}
+	if _, mismatch := GCConfigMismatch(DaemonConfig(DaemonOptions{GCDisabled: true}), opts); !mismatch {
+		t.Error("disabled -> enabled must report a mismatch")
+	}
+}
+
+// TestConfigDiffers — the ensure's write decision: the full rendered config is written when
+// the file differs (the always-write arm that replaced the "adopt whatever is on disk" path),
+// and not rewritten when it already matches.
+func TestConfigDiffers(t *testing.T) {
+	opts := DaemonOptions{MaxParallelism: 4}
+	if !ConfigDiffers("", opts) {
+		t.Error("an absent config must be written")
+	}
+	if ConfigDiffers(DaemonConfig(opts), opts) {
+		t.Error("an identical config must not be rewritten")
+	}
+	// The pre-change file (no GC budget) must be upgraded.
+	if !ConfigDiffers("[worker.oci]\n  process-mode = \"sandbox\"\n  max-parallelism = 4\n", opts) {
+		t.Error("a config without the GC budget must be rewritten")
+	}
+}
+
 // TestDaemonConfig_CarriesTheRegistryMirror — the base-input half of the local-build bridge.
 //
 // MEASURED (spike, buildkitd 0.34.0, a registry:2 mirror on 127.0.0.1:5000):

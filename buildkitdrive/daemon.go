@@ -102,9 +102,10 @@ func Ensure(ctx context.Context, r Runner, opts DaemonOptions) (*Daemon, error) 
 		// The GC policy is a daemon-start setting too. A mismatch is reported, not fatal:
 		// the cache budget is a performance contract, and failing every build on a host
 		// whose daemon predates it would be worse than the slower cache.
-		if rerr == nil && !opts.SameGC(ConfigGC(string(raw))) {
-			fmt.Fprintf(os.Stderr, "buildkitdrive: the running daemon was started with %s; %s was requested. The GC policy is fixed at daemon start — stop the daemon (%s) and this drive will start it with the new policy.\n",
-				ConfigGC(string(raw)).Describe(), opts.wantedGC().Describe(), d.Socket)
+		if rerr == nil {
+			if msg, mismatch := GCConfigMismatch(string(raw), opts); mismatch {
+				fmt.Fprintf(os.Stderr, "%s (socket %s)\n", strings.TrimRight(msg, "\n"), d.Socket)
+			}
 		}
 		return d, nil
 	}
