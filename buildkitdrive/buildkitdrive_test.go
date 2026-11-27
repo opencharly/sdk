@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -379,6 +380,67 @@ type fakeWorkers struct{}
 
 func (fakeWorkers) Run(context.Context, string, ...string) (string, error) {
 	return "oci.process-mode:SANDBOX", nil
+}
+
+// TestEnsureReportsTheRunningDaemonsGCPolicy — the daemon-LISTENING branch: a daemon that
+// is already up keeps its start-time policy, so Ensure must REPORT the mismatch on stderr
+// rather than fail or silently accept it. This reaches the branch the always-write test
+// cannot (it starts from no socket), so the fmt.Fprintf wiring is proven, not only the pure
+// helper. It FAILS on the tree without the report (stderr stays empty).
+func TestEnsureReportsTheRunningDaemonsGCPolicy(t *testing.T) {
+	rt, cache := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", rt)
+	t.Setenv("XDG_CACHE_HOME", cache)
+
+	cfg, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A daemon started before the GC budget existed: same parallelism (so no restart is
+	// demanded) and NO gc section.
+	stale := "[worker.oci]\n  process-mode = \"sandbox\"\n  max-parallelism = 4\n"
+	if err := os.WriteFile(cfg, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sock, err := SocketPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(sock), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sock, nil, 0o600); err != nil { // the probe stats the socket
+		t.Fatal(err)
+	}
+
+	// Swap the process stderr for a pipe: the report's DESTINATION is part of the claim.
+	oldErr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = oldErr })
+
+	opts := DaemonOptions{MaxParallelism: 4, GCReservedSpace: "40GB", GCMaxUsedSpace: "80GB", GCMinFreeSpace: "5GB"}
+	got, err := Ensure(context.Background(), fakeWorkers{}, opts)
+	_ = w.Close()
+	os.Stderr = oldErr
+	if err != nil {
+		t.Fatalf("Ensure against a listening daemon: %v", err)
+	}
+	if got.Started {
+		t.Error("Ensure must report that it attached to the running daemon, not that it started one")
+	}
+	report, _ := io.ReadAll(r)
+	for _, want := range []string{"gc disabled", "reservedSpace=40GB", "maxUsedSpace=80GB", "minFreeSpace=5GB", sock} {
+		if !strings.Contains(string(report), want) {
+			t.Errorf("the running-daemon report must name %q:\n%s", want, report)
+		}
+	}
 }
 
 // TestEnsureRewritesAStaleConfigWithoutParallelism — the always-write arm, exercised on
