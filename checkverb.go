@@ -71,7 +71,7 @@ func (s *checkVerbServer) Invoke(ctx context.Context, req *pb.InvokeRequest) (*p
 // captured_value is raw JSON (ops.resultWire), so the capture crosses as itself instead of being
 // dropped: before this function existed the single return call was the captureless builder, so a
 // probe's captured payload — the entire reason the field exists on the OUT-OF-PROCESS verb family
-// (cdp/appium/kube/adb/wl/…) — never reached the host, while the in-process path carried it
+// (cdp/kube/wl/vnc/…) — never reached the host, while the in-process path carried it
 // (charly's checkResultFromVerb). opencharly/charly#780.
 //
 // A verdict that captured nothing returns byte-identical bytes to the pre-extension wire (the

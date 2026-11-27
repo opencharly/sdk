@@ -213,7 +213,7 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	// has a CLOSED schema and never scans; its members are DEPLOY-LEVEL siblings only (the
 	// memberPairs loop below).
 	//
-	// SUBSTRATE parent (vm/pod/local/android/kubernetes) — the entity-keyed value-shape scan
+	// SUBSTRATE parent (vm/pod/local/kubernetes) — the entity-keyed value-shape scan
 	// (discEntityPairs/isEntityValue) MINUS the substrate's DECLARED body fields
 	// (t.DeployDeclaredFields — the #Deploy-schema channel, the substrate twin of the structural
 	// rule below, fed by the host from the registered schema): a declared field (iterate, plan,
@@ -271,7 +271,7 @@ func parseNode(name string, m *yaml.Node, asChild bool, t spec.Threaded) (spec.P
 	// Deploy-level siblings second: entity keys beside the disc key, in authored order.
 	for _, c := range memberPairs {
 		if !allowMembers {
-			return spec.ParsedNode{}, fmt.Errorf("node %q (kind %q): child %q is not allowed — only deployable kinds (pod/vm/kubernetes/local/android/group) or an external structural plugin kind nest sub-entity members; an old-shape data/step child must be migrated (run: charly migrate)", name, disc, c.k.Value)
+			return spec.ParsedNode{}, fmt.Errorf("node %q (kind %q): child %q is not allowed — only deployable kinds (pod/vm/kubernetes/local/group) or an external structural plugin kind nest sub-entity members; an old-shape data/step child must be migrated (run: charly migrate)", name, disc, c.k.Value)
 		}
 		child, err := parseNode(c.k.Value, c.v, true, t)
 		if err != nil {

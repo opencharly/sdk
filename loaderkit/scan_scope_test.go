@@ -183,10 +183,10 @@ func TestScanScopeEndToEndWiresRealCollector(t *testing.T) {
 	const ref = "github.com/opencharly/pod-dbus"
 	// Two boxes, two tags — an independent pin per box (the false-positive shape).
 	layers := map[string]spec.CandyReader{
-		"layer-a": newLoaderTestCandy("layer-a", spec.CandyModel{}, spec.CandyView{
+		"layer-a": newLoaderTestCandy("layer-a", spec.CandyView{
 			Require: []spec.CandyRef{"@github.com/opencharly/pod-dbus:v2026.239.1555"},
 		}),
-		"layer-b": newLoaderTestCandy("layer-b", spec.CandyModel{}, spec.CandyView{
+		"layer-b": newLoaderTestCandy("layer-b", spec.CandyView{
 			Require: []spec.CandyRef{"@github.com/opencharly/pod-dbus:v2026.243.1831"},
 		}),
 	}

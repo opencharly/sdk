@@ -14,7 +14,7 @@ import (
 // no live definition. The consumers of ResolveBoxEngineForDeploy are all candies:
 // candy/plugin-deploy-pod/resolve.go, candy/plugin-pod/{pod_cmd,service_resolve,
 // remove_orchestration}.go, candy/plugin-preempt/holder_dispatch.go, and
-// candy/plugin-substrate/{status_flat,status_android_collect}.go (CHECK-wave container-resolve
+// candy/plugin-substrate/status_flat.go (CHECK-wave container-resolve
 // dedup).
 
 // ResolveBoxEngineForDeploy resolves the run engine from the per-host deploy config,

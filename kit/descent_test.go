@@ -20,7 +20,7 @@ func canonicalTraits(word string) *spec.DeployTraits {
 		return &spec.DeployTraits{Venue: "shell", MachineVenue: true}
 	case "kubernetes":
 		return &spec.DeployTraits{Venue: "shell", ImageContext: true, LeafOnly: true}
-	case "android":
+	case "parentvenue":
 		return &spec.DeployTraits{Venue: "parent"}
 	default:
 		return nil // targetless group / empty target
@@ -37,7 +37,7 @@ func TestDescentFromTraits_TransportsByTraits(t *testing.T) {
 		{"vm", "ssh", false},
 		{"kubernetes", "reject", false},
 		{"local", "none", true},
-		{"android", "none", false},
+		{"parentvenue", "none", false},
 		{"", "container-exec", false}, // targetless group → external-in-place default
 	}
 	for _, c := range cases {

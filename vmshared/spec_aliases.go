@@ -27,8 +27,6 @@ import "github.com/opencharly/spec/spec"
 type (
 	AliasConfig              = spec.AliasConfig
 	AliasYAML                = spec.ResolvedCandyAlias
-	AndroidSpec              = spec.AndroidSpec
-	ApkPackageSpec           = spec.ApkPackageSpec
 	BoxConfig                = spec.BoxConfig
 	BuildStageContext        = spec.BuildStageContext
 	BuilderDef               = spec.BuilderDef
@@ -163,7 +161,6 @@ type (
 	VolumeYAML               = spec.ResolvedCandyVolume
 
 	// --- nested types renamed in spec (charly name != cue-def name) ---
-	AndroidAdbEndpoint     = spec.AdbEndpoint
 	AgentConfig            = spec.Agent
 	AlpineBootstrapDef     = spec.AlpineBootstrap
 	AURPackages            = spec.AUR
@@ -176,7 +173,6 @@ type (
 	DeployVolumeConfig     = spec.DeployVolume
 	DnfConfig              = spec.Dnf
 	FormatDef              = spec.Format
-	AndroidGoogleAccount   = spec.GoogleAccount
 	KubernetesDeployConfig = spec.KubernetesDeploy
 	LocalPkgDef            = spec.LocalPkg
 	PacstrapDef            = spec.Pacstrap

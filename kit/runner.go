@@ -94,8 +94,9 @@ type RunnerConfig struct {
 	// It is the PROCESS environment, not the expansion map: a name the shell cannot
 	// export is not exported at all (and is disclosed), and a value is never expanded.
 	StepEnv map[string]string
-	// CandyDirs maps candy name → resolved source dir (relative committed-APK anchoring);
-	// CandyScanErr is its build error (only an apk-anchoring check consults it). Host-read.
+	// CandyDirs maps candy name → resolved source dir (a relative file input a candy step
+	// names is anchored against the authoring candy's source tree); CandyScanErr is its build
+	// error (only a candy-relative anchoring consumer consults it). Host-read.
 	CandyDirs    map[string]string
 	CandyScanErr error
 
@@ -374,7 +375,7 @@ func (r *Runner) VmTargetName() string {
 // DialTimeout is the per-dial ceiling for host-side TCP reachability probes. HTTPClient is the
 // engine's base client (the host HTTPDo leg derives per-request clients from it). HasRuntime
 // reports whether the resolved env carries running-container state (false → runtime-only vars
-// resolve to a skip). CandyDirs / CandyScanErr anchor a relative committed-APK path.
+// resolve to a skip). CandyDirs / CandyScanErr anchor a candy-relative file path.
 func (r *Runner) DialTimeout() time.Duration   { return r.dialTimeout }
 func (r *Runner) HTTPClient() *http.Client     { return r.httpClient }
 func (r *Runner) HasRuntime() bool             { return r.hasRuntime }

@@ -201,7 +201,7 @@ func TestParse_DeclaredFieldsContractFloor_UndeclaredStillMember(t *testing.T) {
 // (external plugin) word floors to nil — the documented no-declared-schema fallback is
 // preserved for words the contract does not declare.
 func TestContractDeclaredFields_Floor(t *testing.T) {
-	for _, word := range []string{"pod", "vm", "local", "android", "kubernetes"} {
+	for _, word := range []string{"pod", "vm", "local", "kubernetes"} {
 		fields := contractDeclaredFields(word)
 		if len(fields) == 0 {
 			t.Fatalf("contract floor for substrate %q is empty — the contract derivation is dead", word)

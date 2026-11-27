@@ -15,7 +15,7 @@ import (
 // a fail-closed pattern once dropped a real branch with no error.
 func TestAcceptableVersion_RejectsEveryProseFormAndKeepsEveryRealOne(t *testing.T) {
 	reject := []string{
-		"v2026.xxx.yyyy", // `layer-android-sdk:v2026.xxx.yyyy` — claims the tag namespace, is not CalVer
+		"v2026.xxx.yyyy", // `layer-example-sdk:v2026.xxx.yyyy` — claims the tag namespace, is not CalVer
 		"vTAG",           // `charly:vTAG` — four characters, so NO length constant can reach it
 		"v",              // the truncated `…/candy/omarchy-base:v` form
 		"2026.xxx.yyyy",  // the v-less form of the SAME placeholder: it claims CalVer shape, so it must BE CalVer
@@ -72,7 +72,7 @@ func TestCollectRefs_DropsTheProseFormsAndKeepsTheRealRefsBesideThem(t *testing.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "AGENTS.md")
 	const body = "A ref looks like `@github.com/opencharly/<kind>-<name>:<tag>`, or " +
-		"`@github.com/opencharly/layer-android-sdk:v2026.xxx.yyyy`, or `@github.com/opencharly/charly:vTAG`.\n\n" +
+		"`@github.com/opencharly/layer-example-sdk:v2026.xxx.yyyy`, or `@github.com/opencharly/charly:vTAG`.\n\n" +
 		"A real one: '@github.com/opencharly/layer-nodejs:v2026.240.0001'.\n" +
 		"A real branch: '@github.com/opencharly/pod-charly-hooks:feat/kubevirt-marketplace-family-2'.\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {

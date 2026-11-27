@@ -155,10 +155,6 @@ func walkStep(ctx context.Context, exec DeployExecutor, step spec.InstallStepVie
 		return walkServiceCustom(ctx, exec, step)
 	case "RepoChange":
 		return walkRepoChange(ctx, exec, step)
-	case "ApkInstall":
-		// Only an android deploy installs apk packages; on any other venue it is a no-op
-		// (the in-proc targets record a skip). No teardown.
-		return nil, nil
 	default:
 		// An EXTERNAL (plugin-contributed) step kind (F3): "external:<word>". Like every other
 		// host-engine kind it routes to RunHostStep — the host reconstructs the opaque step from

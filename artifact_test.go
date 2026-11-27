@@ -12,7 +12,7 @@ import (
 )
 
 // The artifact validators are the SINGLE implementation (R3) shared by every
-// out-of-tree verb plugin (appium screenshot, adb screencap, …) via
+// out-of-tree verb plugin (cdp screenshot, wl capture, …) via
 // RunArtifactValidators. These tests, ported from the former host-side copy
 // (deleted with the dead in-proc live-verb runtime), keep the surviving SDK
 // implementation covered.

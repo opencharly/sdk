@@ -54,7 +54,6 @@ import (
 // node carrying base:/from: is typed "box" for per-entity validation. cueKindDefs was never
 // bijective with the kind keywords, so an internal key is fine.
 var cueKindDefs = map[string]string{
-	"android":    "#Android",
 	"box":        "#Box",
 	"candy":      "#Candy",
 	"check":      "#Check",

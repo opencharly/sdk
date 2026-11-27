@@ -17,7 +17,6 @@ type (
 	StepKind       = spec.StepKind
 	ReverseOp      = spec.ReverseOp
 	ReverseOpKind  = spec.ReverseOpKind
-	ApkPackageSpec = spec.ApkPackageSpec
 	CacheMountDef  = spec.CacheMount
 	BuilderDef     = spec.BuilderDef
 	Op             = spec.Op
@@ -44,7 +43,6 @@ type (
 	ShellHookStep       = spec.ShellHookStep
 	ShellSnippetStep    = spec.ShellSnippetStep
 	RepoChangeStep      = spec.RepoChangeStep
-	ApkInstallStep      = spec.ApkInstallStep
 	LocalPkgInstallStep = spec.LocalPkgInstallStep
 	RebootStep          = spec.RebootStep
 	ExternalPluginStep  = spec.ExternalPluginStep
@@ -79,7 +77,6 @@ const (
 	StepKindShellHook       = spec.StepKindShellHook
 	StepKindShellSnippet    = spec.StepKindShellSnippet
 	StepKindRepoChange      = spec.StepKindRepoChange
-	StepKindApkInstall      = spec.StepKindApkInstall
 	StepKindLocalPkgInstall = spec.StepKindLocalPkgInstall
 	StepKindReboot          = spec.StepKindReboot
 	StepKindExternalPlugin  = spec.StepKindExternalPlugin

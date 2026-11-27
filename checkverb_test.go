@@ -77,13 +77,13 @@ func TestCheckVerbReplyCarriesTheCapturedValue(t *testing.T) {
 // field's omitempty makes: a verdict that captured nothing is byte-identical to the
 // pre-extension {status,message} wire, so no existing producer's bytes changed.
 func TestCheckVerbReplyEmptyCaptureIsByteIdenticalToThePlainWire(t *testing.T) {
-	plain, err := ResultJSON("fail", "adb: screencap: dimensions 1080x2424 < required min 4000x4000")
+	plain, err := ResultJSON("fail", "cdp: screenshot: dimensions 1080x2424 < required min 4000x4000")
 	if err != nil {
 		t.Fatalf("ResultJSON: %v", err)
 	}
 	withReply, err := checkVerbReply(kit.Result{
 		Status:  kit.StatusFail,
-		Message: "adb: screencap: dimensions 1080x2424 < required min 4000x4000",
+		Message: "cdp: screenshot: dimensions 1080x2424 < required min 4000x4000",
 	})
 	if err != nil {
 		t.Fatalf("checkVerbReply: %v", err)

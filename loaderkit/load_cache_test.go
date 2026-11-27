@@ -49,8 +49,6 @@ func (c *countingExecutor) MaterializeLoadedProject(_ *spec.LoadedProject, merge
 	return nil
 }
 
-func (c *countingExecutor) ValidateAndroidDevices(*spec.UnifiedFile) error { return nil }
-
 func (c *countingExecutor) ValidatePreemptible(*spec.UnifiedFile) error { return nil }
 
 // testMaterializedState builds the canned project state (the walk envelope) + the canned

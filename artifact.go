@@ -25,8 +25,8 @@ import (
 // abstraction (nil = host-side, no pull). The post-run artifact-reality
 // assertions (min_bytes / min_dimensions / not_uniform / min_cast_events /
 // contains_text) are the SINGLE implementation (R3) every out-of-tree verb
-// plugin that produces an artifact (appium screenshot, adb screencap,
-// cdp/wl/vnc/record captures) calls — the same property motivating
+// plugin that produces an artifact (cdp/wl/vnc/record captures) calls — the same
+// property motivating
 // MatchAll's home here. Every live-container verb is now served out-of-process,
 // so this SDK copy is the sole implementation (the former host duplicate in
 // charly's core check runner was deleted with the in-proc live-verb runtime).

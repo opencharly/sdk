@@ -16,7 +16,7 @@ var (
 	SplitDottedPath = deploy.SplitDottedPath
 	// PathLeaf returns the last (tolerant) segment of a dotted deployment path.
 	PathLeaf = deploy.PathLeaf
-	// ClassifyNodeTarget picks the pod|vm|kubernetes|local|android target discriminator for a node.
+	// ClassifyNodeTarget picks the pod|vm|kubernetes|local target discriminator for a node.
 	ClassifyNodeTarget = deploy.ClassifyNodeTarget
 	// BedCheckLiveRefs returns the ordered `charly check live` targets for a bed.
 	BedCheckLiveRefs = deploy.BedCheckLiveRefs

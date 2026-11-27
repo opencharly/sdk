@@ -56,9 +56,6 @@ type LoadSeams struct {
 	// ValidateCheckBeds enforces the kind:check bed invariants (disposable,
 	// cross-ref, external-substrate recognition via the provider registry).
 	ValidateCheckBeds func(uf *spec.UnifiedFile) error
-	// ValidateAndroidDevices enforces the kind:android box⊻adb XOR (resolves
-	// android templates via the plugin-substrate provider).
-	ValidateAndroidDevices func(uf *spec.UnifiedFile) error
 	// ValidateMembers enforces the member-specific invariants beyond the generic
 	// deploy validation. Paired with FoldMembers under the same FINAL/K5 ruling.
 	ValidateMembers func(uf *spec.UnifiedFile) error
@@ -154,9 +151,6 @@ func LoadUnified(dir string, seams LoadSeams) (*spec.UnifiedFile, bool, error) {
 		return nil, true, fmt.Errorf("%s: %w", root, err)
 	}
 	if err := seams.ValidateCheckBeds(merged); err != nil {
-		return nil, true, fmt.Errorf("%s: %w", root, err)
-	}
-	if err := seams.ValidateAndroidDevices(merged); err != nil {
 		return nil, true, fmt.Errorf("%s: %w", root, err)
 	}
 	if err := seams.ValidateMembers(merged); err != nil {

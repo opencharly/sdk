@@ -78,10 +78,10 @@ func TestCollectScopesTwoBoxesAtDifferentTagsStayIndependent(t *testing.T) {
 func TestCollectScopesTwoLayersInOneBoxShareTheBoxScope(t *testing.T) {
 	// The box composes layer-a and layer-b directly; each layer pins pod-dbus at a different tag.
 	layers := map[string]spec.CandyReader{
-		"layer-a": newLoaderTestCandy("layer-a", spec.CandyModel{}, spec.CandyView{
+		"layer-a": newLoaderTestCandy("layer-a", spec.CandyView{
 			Require: []spec.CandyRef{"@github.com/opencharly/pod-dbus:v2026.239.1555"},
 		}),
-		"layer-b": newLoaderTestCandy("layer-b", spec.CandyModel{}, spec.CandyView{
+		"layer-b": newLoaderTestCandy("layer-b", spec.CandyView{
 			Require: []spec.CandyRef{"@github.com/opencharly/pod-dbus:v2026.243.1831"},
 		}),
 	}
@@ -106,7 +106,7 @@ func TestCollectScopesTwoLayersInOneBoxShareTheBoxScope(t *testing.T) {
 // disagreement in another is reported for the latter only.
 func TestCollectScopesLayerSharedByTwoBoxesCarriesBoth(t *testing.T) {
 	layers := map[string]spec.CandyReader{
-		"layer-a": newLoaderTestCandy("layer-a", spec.CandyModel{}, spec.CandyView{
+		"layer-a": newLoaderTestCandy("layer-a", spec.CandyView{
 			Require: []spec.CandyRef{"@github.com/opencharly/pod-dbus:v2026.243.1831"},
 		}),
 	}
@@ -189,7 +189,7 @@ func TestCollectScopesNamespaceBoxIsQualified(t *testing.T) {
 // OWN scope, so its difference stays SILENT (the version rule only reports within a box).
 func TestCollectScopesUnownedLayerIsItsOwnSilentScope(t *testing.T) {
 	layers := map[string]spec.CandyReader{
-		"orphan": newLoaderTestCandy("orphan", spec.CandyModel{}, spec.CandyView{
+		"orphan": newLoaderTestCandy("orphan", spec.CandyView{
 			Require: []spec.CandyRef{"@github.com/opencharly/pod-dbus:v2026.243.1831"},
 		}),
 	}

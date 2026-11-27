@@ -3,6 +3,7 @@ package deploykit
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/opencharly/sdk/buildkit"
@@ -140,7 +141,11 @@ func TestBuildStageContext_ImportedNamespaceCopySource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := ".build/_candy/cachyos-base-check.2026.300.1129"; ctx.CopySrc != want {
-		t.Errorf("BuildStageContext CopySrc = %q, want %q", ctx.CopySrc, want)
+	// The staged suffix is the spec's CONTENT ADDRESS (<name>.<sha256[:16]> — spec CHANGELOG
+	// 0.2026330.2134), so the exact value depends on the candy's tree (the empty temp dir here).
+	// The guard is the ORIGIN decision: an imported-namespace candy must stage under
+	// .build/_candy/, never the project-relative candy/<name>/ that cannot exist.
+	if want := ".build/_candy/cachyos-base-check."; !strings.HasPrefix(ctx.CopySrc, want) {
+		t.Errorf("BuildStageContext CopySrc = %q, want prefix %q", ctx.CopySrc, want)
 	}
 }

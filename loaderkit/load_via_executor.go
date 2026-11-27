@@ -54,8 +54,8 @@ func (e *executorLoaderExecutor) LoaderThreaded() spec.Threaded {
 // to the raw, un-bootstrapped bytes — a genuine defect: LoadUnified would then proceed on an
 // un-bootstrapped root with zero visible signal (root-caused during the K-wave terminus RCA,
 // #20 — the confirmed regression in e0edc38d's vmPrepareVenue self-load swap). Every sibling
-// LoaderExecutor leg (WalkProject, MaterializeLoadedProject, ValidateAndroidDevices,
-// ValidatePreemptible) already propagates a HostBuild failure as a hard error; this leg now matches
+// LoaderExecutor leg (WalkProject, MaterializeLoadedProject, ValidatePreemptible) already
+// propagates a HostBuild failure as a hard error; this leg now matches
 // that contract instead of being the one silent exception.
 func (e *executorLoaderExecutor) RunBootstrapPhase(data []byte) ([]byte, error) {
 	out, err := e.ex.HostBuild(e.ctx, "loader-bootstrap", data)
@@ -100,12 +100,6 @@ func (e *executorLoaderExecutor) MaterializeLoadedProject(lp *spec.LoadedProject
 		return fmt.Errorf("loader-materialize: decode reply: %w", err)
 	}
 	return nil
-}
-
-// ValidateAndroidDevices runs the kind:android box⊻adb XOR validator PLUGIN-SIDE, threading the
-// android resolve callback over InvokeProvider(kind, "local", OpResolve) — no host round-trip.
-func (e *executorLoaderExecutor) ValidateAndroidDevices(uf *spec.UnifiedFile) error {
-	return ValidateAndroidDevices(uf, ResolveAndroidViaExecutor(e.ctx, e.ex))
 }
 
 // ValidatePreemptible runs the preemptible/requires_exclusive/requires_shared validator PLUGIN-SIDE,

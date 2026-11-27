@@ -111,20 +111,19 @@ func TestRunPlan_SkipDeterministicRunSkipsInstall(t *testing.T) {
 // TestRunPlan_StampsStepOrigin: the per-step Origin is re-stamped from the owning
 // LabeledDescription (op.Origin = fs.origin) — the candy-group Origin lives ONCE on the
 // LabeledDescription and is NOT baked per-step, so RunPlan must propagate it onto each
-// dispatched Op or a host-side consumer keyed on Origin (the committed-APK anchor,
-// charly/checkrun_charly_verbs.go's resolveCheckApk) sees an empty Origin. Relocated from
-// charly's apk_format_test.go TestRunPlan_StampsStepOrigin, simplified to assert the
-// stamping directly via the resolver's captured Op rather than round-tripping through a
-// stub external adb provider + a scan-error sentinel message.
+// dispatched Op or a host-side consumer keyed on Origin (a candy-relative file anchor)
+// sees an empty Origin. Relocated from a former charly render test, simplified to
+// assert the stamping directly via the resolver's captured Op rather than round-tripping
+// through a stub external provider + a scan-error sentinel message.
 func TestRunPlan_StampsStepOrigin(t *testing.T) {
 	vr := &fakeVerbResolver{known: true, result: spec.CheckResult{Status: StatusPass}}
 	pc := &fakePlanContext{env: map[string]string{}, verbs: vr}
-	const wantOrigin = "candy:github.com/owner/repo/candy/android-emulator-layer"
+	const wantOrigin = "candy:github.com/owner/repo/candy/example-apps"
 	set := &LabelDescriptionSet{Candy: []LabeledDescription{{
 		Origin:      wantOrigin,
-		Description: "android apps install",
+		Description: "example apps install",
 		Plan: []spec.Step{{
-			Op: spec.Op{ID: "adb-install-apidemos", Plugin: "adb", PluginInput: map[string]any{"method": "install", "apk": "./tests/data/ApiDemos-debug.apk"}, Context: []string{"runtime"}},
+			Op: spec.Op{ID: "example-install-app", Plugin: "example", PluginInput: map[string]any{"method": "install", "file": "./tests/data/app.bin"}, Context: []string{"runtime"}},
 		}},
 	}}}
 	res := RunPlan(context.Background(), pc, set, false)

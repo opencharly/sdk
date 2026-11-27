@@ -10,44 +10,16 @@ import (
 	"github.com/opencharly/spec/spec"
 )
 
-// validate_capabilities.go — the LOAD-time CAPABILITY validators (the kind:android box⊻adb XOR and
-// the preemptible / requires_exclusive / requires_shared invariants), relocated from charly core
-// (unified.go's validateAndroidDevices + validate_preempt.go). Their LOGIC is kind-blind clause-R
-// capability validation; the ONLY host coupling is the per-kind registry RESOLVE (android/resource/vm
-// templates → their resolved envelopes), which the host threads in as a resolve CALLBACK (the same
-// spec.ResolvePluginKindViaPlugin pattern the vocabulary accessors use). So they run identically host-side
-// (the compiled-in placement passes its in-proc registry callbacks) OR plugin-side (a genuine
-// out-of-module loader passes InvokeProvider-backed callbacks) — the same relocation shape
-// ValidateCheckBeds / ValidateEphemeral already took. Error accumulation reuses the loaderkit
-// spec.Diagnostics helpers (addErr / diagErrors / diagJoin, validate_ephemeral.go), R3.
-
-// ValidateAndroidDevices enforces the kind:android device source invariant: a device is EXACTLY ONE
-// of an in-pod emulator (box:) XOR a remote/physical adb endpoint (adb:) — never both, never neither.
-// This is the entity-level XOR the #Android CUE schema formerly expressed via a trailing
-// `& ({box:_} | {adb:_})` disjunction (dropped because gengotypes collapses an entity-level
-// disjunction to an empty struct — see schema/android.cue). Runs at LOAD time so EVERY command that
-// resolves a device (charly deploy add android:, charly check run, charly box validate, …) sees the
-// same friendly error. resolveAndroid projects one opaque android template body into its
-// *spec.ResolvedAndroid via the registry (host-threaded).
-func ValidateAndroidDevices(uf *spec.UnifiedFile, resolveAndroid func(json.RawMessage) (*spec.ResolvedAndroid, error)) error {
-	if uf == nil {
-		return nil
-	}
-	for name, sp := range spec.ResolvePluginKindViaPlugin(uf, "android", resolveAndroid) {
-		if sp == nil {
-			continue
-		}
-		hasBox := sp.Box != ""
-		hasAdb := sp.Adb != nil
-		switch {
-		case hasBox && hasAdb:
-			return fmt.Errorf("kind:android device %q sets both box: and adb: — a device is EXACTLY ONE of an in-pod emulator (box:) or a remote/physical adb endpoint (adb:)", name)
-		case !hasBox && !hasAdb:
-			return fmt.Errorf("kind:android device %q sets neither box: nor adb: — a device must declare EXACTLY ONE source (box: <kind:box emulator> or adb: {host: …})", name)
-		}
-	}
-	return nil
-}
+// validate_capabilities.go — the LOAD-time CAPABILITY validators (the preemptible /
+// requires_exclusive / requires_shared invariants), relocated from charly core
+// (validate_preempt.go). Their LOGIC is kind-blind clause-R capability validation; the ONLY host
+// coupling is the per-kind registry RESOLVE (resource/vm templates → their resolved envelopes),
+// which the host threads in as a resolve CALLBACK (the same spec.ResolvePluginKindViaPlugin pattern
+// the vocabulary accessors use). So they run identically host-side (the compiled-in placement passes
+// its in-proc registry callbacks) OR plugin-side (a genuine out-of-module loader passes
+// InvokeProvider-backed callbacks) — the same relocation shape ValidateCheckBeds / ValidateEphemeral
+// already took. Error accumulation reuses the loaderkit spec.Diagnostics helpers (addErr /
+// diagErrors / diagJoin, validate_ephemeral.go), R3.
 
 // ValidatePreemptibleOnNode checks one deploy node's preemptible + requires_exclusive/requires_shared
 // fields and accumulates problems into d:
