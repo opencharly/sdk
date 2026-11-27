@@ -81,14 +81,46 @@ func (g *Generator) WriteBootstrap(b *strings.Builder, img *buildkit.ResolvedBox
 		// emitted shell probes for the shadow-utils tool rather than branching on
 		// a distro name, so any base with either userland works. The login shell
 		// is probed the same way — Alpine ships no /bin/bash.
-		fmt.Fprintf(b, "RUN if ! getent passwd %d >/dev/null 2>&1; then \\\n", img.UID)
+		//
+		// The guard is the NAME, not the UID (opencharly/sdk#655): the contract the
+		// image goes on to declare is `USER <name>` (the WORKDIR/home and the
+		// ai.opencharly.user label are name-based, and `podman exec` resolves a
+		// container's configured user by name). Guarding on the uid meant a base
+		// whose uid 1000 already belonged to ANOTHER account (ubuntu, a builder
+		// image, a distro whose base_user differs) short-circuited the block, so
+		// the declared name was never created and every exec failed with
+		// `unable to find user <name>: no matching entries in passwd file`.
+		// When the uid IS taken by another account, the name is still created at
+		// that uid via --non-unique (useradd -o) so the uid contract holds too;
+		// the second command is the fallback for a userland that rejects the
+		// duplicate uid outright.
+		fmt.Fprintf(b, "RUN if ! getent passwd %s >/dev/null 2>&1; then \\\n", img.User)
 		b.WriteString("      LOGIN_SHELL=/bin/sh; [ -x /bin/bash ] && LOGIN_SHELL=/bin/bash; \\\n")
 		b.WriteString("      if command -v useradd >/dev/null 2>&1; then \\\n")
-		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.GID, img.User)
-		fmt.Fprintf(b, "        useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s; \\\n", img.UID, img.GID, img.User)
+		// The group guard must not key on the gid alone: a base can already ship a group
+		// of that NAME at a different gid, in which case there is no group at img.GID
+		// and `groupadd -g GID user` fails, short-circuiting the `&&`. Create a group at
+		// GID only when neither the gid nor the NAME is present.
+		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || getent group %s >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.User, img.GID, img.User)
+		// Four measured forms: `useradd -g <gid>` needs a group AT that gid (measured:
+		// "group '9999' does not exist"), `useradd -g <name>` resolves a group at any gid
+		// (measured: a group at gid 2000 accepts the account), and -o alone does not help
+		// when the group is missing rather than the uid.
+		fmt.Fprintf(b, "        { useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s || useradd -o -m -u %d -g %d -s \"$LOGIN_SHELL\" %s || useradd -m -u %d -g %s -s \"$LOGIN_SHELL\" %s || useradd -o -m -u %d -g %s -s \"$LOGIN_SHELL\" %s; }; \\\n", img.UID, img.GID, img.User, img.UID, img.GID, img.User, img.UID, img.User, img.User, img.UID, img.User, img.User)
 		b.WriteString("      else \\\n")
-		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || addgroup -g %d %s) && \\\n", img.GID, img.GID, img.User)
-		fmt.Fprintf(b, "        adduser -D -h %s -u %d -G %s -s \"$LOGIN_SHELL\" %s; \\\n", img.Home, img.UID, img.User, img.User)
+		// busybox adduser creates the same-named GROUP itself and takes -G by NAME
+		// (measured: `adduser -G 1000` on Alpine dies "unknown group 1000"). Three
+		// measured refusals need three forms, and each form covers exactly one of
+		// them (all three measured on Alpine):
+		//   1. `-u UID` alone        — uid free: creates user at UID + group `user`.
+		//   2. neither `-u` nor `-G` — uid taken, group absent: "uid '1000' in use" on
+		//      a base without the group → creates user at the next free uid.
+		//      (But it dies "group 'user' in use" when the group ALREADY exists.)
+		//   3. `-G user`, no `-u`    — group present, uid taken: creates the account at
+		//      the next free uid IN the existing group.
+		// A busybox userland has no --non-unique, so the uid may move; the contract is
+		// the declared NAME resolving, which every form guarantees.
+		fmt.Fprintf(b, "        { adduser -D -h %s -u %d -s \"$LOGIN_SHELL\" %s || adduser -D -h %s -s \"$LOGIN_SHELL\" %s || adduser -D -h %s -G %s -s \"$LOGIN_SHELL\" %s; }; \\\n", img.Home, img.UID, img.User, img.Home, img.User, img.Home, img.User, img.User)
 		b.WriteString("      fi; \\\n")
 		b.WriteString("    fi\n\n")
 	}

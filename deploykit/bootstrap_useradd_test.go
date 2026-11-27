@@ -50,8 +50,7 @@ func TestWriteBootstrap_UserCreationSupportsBusyboxBases(t *testing.T) {
 
 	// The busybox leg is what the regression is about.
 	for _, want := range []string{
-		"addgroup -g 1000 user",
-		"adduser -D -h /home/user -u 1000 -G user",
+		"adduser -D -h /home/user -u 1000",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("busybox leg missing %q\n--- emitted ---\n%s", want, got)
@@ -86,5 +85,109 @@ func TestWriteBootstrap_AdoptedUserEmitsNoUseradd(t *testing.T) {
 	}
 	if !strings.Contains(got, "adopted from base image") {
 		t.Errorf("adopted-user branch missing its comment\n--- emitted ---\n%s", got)
+	}
+}
+
+// TestWriteBootstrap_GuardsOnTheDeclaredNameNotTheUID pins opencharly/sdk#655: the
+// account the image DECLARES is `USER <name>`, and `podman exec` resolves a
+// container's configured user by name. The creation guard must therefore ask about
+// that NAME. Guarding on the uid let a base whose uid 1000 belonged to another
+// account (ubuntu, a builder image) short-circuit the block, so the declared name
+// was never created and every exec failed with
+// `unable to find user user: no matching entries in passwd file`.
+//
+// Red arm (the pre-fix code): all THREE assertions below failed — the first because
+// the guard did not mention the declared name at all, the second because it read
+// `getent passwd 1000`, and the third because no --non-unique fallback existed to
+// create the name when the uid was already taken.
+func TestWriteBootstrap_GuardsOnTheDeclaredNameNotTheUID(t *testing.T) {
+	var b strings.Builder
+	g := &Generator{}
+	g.WriteBootstrap(&b, bootstrapCreateBox())
+	got := b.String()
+
+	if !strings.Contains(got, "if ! getent passwd user >/dev/null 2>&1") {
+		t.Errorf("the creation guard does not ask about the DECLARED NAME\n--- emitted ---\n%s", got)
+	}
+	if strings.Contains(got, "getent passwd 1000 >/dev/null 2>&1") {
+		t.Errorf("the creation guard still keys on the UID, so a base whose uid is owned by another name creates nothing\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, "useradd -o -m -u 1000 -g 1000") {
+		t.Errorf("no --non-unique fallback: a base whose uid 1000 is taken by another account still cannot create the declared name\n--- emitted ---\n%s", got)
+	}
+}
+
+// TestWriteBootstrap_BusyboxLegEnsuresTheGroupByNameAndFallsBack pins the busybox half
+// of opencharly/sdk#655, which the first round left unproven:
+//
+//   - busybox `adduser` creates the same-named GROUP itself and takes -G by NAME
+//     (`adduser -G 1000` dies "unknown group 1000"), so a pre-created group is not
+//     needed — and actively breaks the fallback ("group 'user' in use", measured).
+//   - when uid 1000 is taken the fallback must drop --uid AND --group together
+//     (`adduser -D -h DIR -s SHELL user`, measured `user:x:1001:1001`);
+//   - when group `user` ALREADY exists and uid 1000 is taken, that group-free form
+//     dies "group 'user' in use", so a third form passes the group NAME and no uid
+//     (`adduser -D -h DIR -G user -s SHELL user`, measured: it creates the account
+//     in the existing group at the next free uid).
+//
+// Red arm, measured against TWO emitters (both pasted in the PR body):
+//   - the emitter reviewed in the previous round (c19ff8e) fails assertions 4 and 5 —
+//     it had the uid form and the group-free fallback, but no group-named form:
+//     `expected exactly three adduser attempts (uid / group-free / group-named), got 2`
+//     and "no group-named fallback";
+//   - the round-1 emitter (uid-guarded, `addgroup -g 1000 user`, BOTH adduser forms
+//     passing `-G user`) fails assertions 1, 2, 3 and 5; assertion 4 passes only
+//     because its fallback happens to be the group-named form.
+func TestWriteBootstrap_BusyboxLegEnsuresTheGroupByNameAndFallsBack(t *testing.T) {
+	var b strings.Builder
+	g := &Generator{}
+	g.WriteBootstrap(&b, bootstrapCreateBox())
+	got := b.String()
+
+	if strings.Contains(got, "addgroup") {
+		t.Errorf("the busybox leg pre-creates a group: busybox adduser makes its own same-named group, and a pre-created one breaks the group-free fallback with \"group 'user' in use\" (measured)\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, `-u 1000 -s "$LOGIN_SHELL" user ||`) {
+		t.Errorf("the busybox primary no longer passes the uid first\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, `adduser -D -h /home/user -s "$LOGIN_SHELL" user`) {
+		t.Errorf("no uid-and-group-free adduser fallback: a base whose uid 1000 is taken (group absent) still cannot create the declared name\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, `adduser -D -h /home/user -G user -s "$LOGIN_SHELL" user`) {
+		t.Errorf("no group-named fallback: on a base that already has group `user` but not the account, the group-free form dies \"group 'user' in use\" and the name is never created\n--- emitted ---\n%s", got)
+	}
+	if n := strings.Count(got, "adduser -D"); n != 3 {
+		t.Errorf("expected exactly three adduser attempts (uid / group-free / group-named), got %d\n--- emitted ---\n%s", n, got)
+	}
+}
+
+// TestWriteBootstrap_ShadowUtilsFallsBackToTheGroupName pins the shadow-utils half of the
+// same invariant busybox attempt 3 covers: a base can ship a group of the DECLARED NAME at
+// a DIFFERENT gid, in which case there is no group at img.GID.
+//
+// Measured on a fedora base:
+//
+//	useradd -g 9999 ...  -> "group '9999' does not exist"   (no group at that gid)
+//	useradd -g grp  ...  -> creates the account with gid 2000 (the group exists BY NAME)
+//
+// So the group guard must also accept an existing NAME, and the useradd chain needs the
+// -g <name> forms; -o alone does not help when the GROUP is what is missing.
+//
+// Red arm (the uid-guarded emitter 79ce454): all three assertions fail — its guard was
+// gid-only and both of its forms passed -g 1000.
+func TestWriteBootstrap_ShadowUtilsFallsBackToTheGroupName(t *testing.T) {
+	var b strings.Builder
+	g := &Generator{}
+	g.WriteBootstrap(&b, bootstrapCreateBox())
+	got := b.String()
+
+	if !strings.Contains(got, "getent group 1000 >/dev/null 2>&1 || getent group user >/dev/null 2>&1") {
+		t.Errorf("the group guard still keys on the gid only, so a base shipping group `user` at another gid never gets past it\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, "useradd -m -u 1000 -g user") {
+		t.Errorf("no -g <name> form: when the group exists at another gid, useradd -g 1000 fails and the declared name is never created\n--- emitted ---\n%s", got)
+	}
+	if n := strings.Count(got, "-m -u 1000"); n != 4 {
+		t.Errorf("expected four useradd attempts (gid / -o / name / -o+name), got %d\n--- emitted ---\n%s", n, got)
 	}
 }
