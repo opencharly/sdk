@@ -91,26 +91,28 @@ func Ensure(ctx context.Context, r Runner, opts DaemonOptions) (*Daemon, error) 
 		// by a killed daemon, an unowned daemon answering for the one we thought we replaced).
 		// Applying a changed daemon-level setting reliably therefore needs a SUPERVISOR (a
 		// user unit), which is a design decision this package does not take on its own.
+		raw, rerr := os.ReadFile(cfg)
 		configured := 0
-		if raw, rerr := os.ReadFile(cfg); rerr == nil {
+		if rerr == nil {
 			configured = ConfigMaxParallelism(string(raw))
 		}
 		if NeedsRestart(configured, opts.MaxParallelism) {
 			return nil, fmt.Errorf("buildkitdrive: the running daemon was configured with max-parallelism=%d but %d was requested; the value is set at daemon start, so stop the daemon (%s) and this drive will start it with the new value", configured, opts.MaxParallelism, d.Socket)
 		}
+		// The GC policy is a daemon-start setting too. A mismatch is reported, not fatal:
+		// the cache budget is a performance contract, and failing every build on a host
+		// whose daemon predates it would be worse than the slower cache.
+		if rerr == nil && !opts.SameGC(ConfigGC(string(raw))) {
+			fmt.Fprintf(os.Stderr, "buildkitdrive: the running daemon was started with %s; %s was requested. The GC policy is fixed at daemon start — stop the daemon (%s) and this drive will start it with the new policy.\n",
+				ConfigGC(string(raw)).Describe(), opts.wantedGC().Describe(), d.Socket)
+		}
 		return d, nil
 	}
-	// No daemon is listening. A caller WITH an opinion writes the config; a caller WITHOUT
-	// one adopts whatever is on disk (the drive's value, or the daemon's own defaults) and
-	// never overwrites it — that is what keeps two callers from fighting over the file.
-	if opts.MaxParallelism > 0 {
-		if err := writeIfChanged(cfg, DaemonConfig(opts)); err != nil {
-			return nil, err
-		}
-	} else if _, err := os.Stat(cfg); err != nil {
-		if err := os.WriteFile(cfg, []byte(DaemonConfig(DaemonOptions{})), 0o644); err != nil {
-			return nil, fmt.Errorf("buildkitdrive: write %s: %w", cfg, err)
-		}
+	// No daemon is listening. The drive always has an opinion now (the GC budget is a
+	// package default), so it writes the full rendered config when it differs; the file
+	// then describes the daemon this call is about to start.
+	if err := writeIfChanged(cfg, DaemonConfig(opts)); err != nil {
+		return nil, err
 	}
 	args := DaemonArgs(sock, stateRoot, cfg)
 	// ⚑ The daemon OUTLIVES the caller, so it must NOT inherit the caller's streams. A

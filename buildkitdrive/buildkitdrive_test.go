@@ -248,18 +248,97 @@ func TestPaths_ComeFromTheResolver(t *testing.T) {
 }
 
 // TestDaemonConfig_SetsOnlyTheMeasuredShape: the config carries the OCI worker's sandbox
-// process mode and NOTHING venue-specific. In particular no snapshotter: the
-// native-vs-overlayfs measurement came from a doubly-nested user namespace, so writing
-// either value here would promote a venue result into a universal rule.
+// process mode and the GC budget, and NOTHING venue-specific. In particular no
+// snapshotter by default: the native-vs-overlayfs measurement came from a doubly-nested
+// user namespace, so writing either value here would promote a venue result into a
+// universal rule.
 func TestDaemonConfig_SetsOnlyTheMeasuredShape(t *testing.T) {
 	cfg := DaemonConfig(DaemonOptions{})
 	if !strings.Contains(cfg, `process-mode = "sandbox"`) {
 		t.Errorf("the OCI worker must run in sandbox process mode:\n%s", cfg)
 	}
-	for _, forbidden := range []string{"snapshotter", "overlayfs", "native", "gckeepstorage"} {
+	for _, forbidden := range []string{"snapshotter", "overlayfs", "native"} {
 		if strings.Contains(cfg, forbidden) {
 			t.Errorf("config must not pin %q (unmeasured here):\n%s", forbidden, cfg)
 		}
+	}
+}
+
+// TestDaemonConfig_CarriesTheGCBudget — the cache-policy control (opencharly/charly#1292).
+//
+// buildkitd's compiled default GC policy keeps a 373 GB free-space target (the
+// `--oci-worker-gc-keepstorage 10000,373000,100000` default). On a host with less free
+// space than that, the GC prunes reclaimable cache down to the ~10 GB reserve floor on
+// every pass, so a repeated build of an unchanged tree re-executes its layers. The drive
+// therefore writes an explicit 100 GB budget, and the default free-space target is small.
+func TestDaemonConfig_CarriesTheGCBudget(t *testing.T) {
+	cfg := DaemonConfig(DaemonOptions{})
+	for _, want := range []string{
+		"  gc = true",
+		`  reservedSpace = "100GB"`,
+		`  maxUsedSpace = "100GB"`,
+		`  minFreeSpace = "10GB"`,
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("the default config must carry %q:\n%s", want, cfg)
+		}
+	}
+	if strings.Contains(cfg, "373000") || strings.Contains(cfg, "keepStorage") {
+		t.Errorf("the legacy keepStorage spelling must not be rendered:\n%s", cfg)
+	}
+}
+
+// TestDaemonConfig_GCIsConfigurable — every GC knob the charly.yml surface exposes renders,
+// and the disabled arm drops the budget keys (they are meaningless with gc = false).
+func TestDaemonConfig_GCIsConfigurable(t *testing.T) {
+	cfg := DaemonConfig(DaemonOptions{
+		GCReservedSpace: "40GB",
+		GCMaxUsedSpace:  "80GB",
+		GCMinFreeSpace:  "5GB",
+		GCPolicies: []GCPolicy{{
+			ReservedSpace: "1GB",
+			MaxUsedSpace:  "2GB",
+			MinFreeSpace:  "3GB",
+			KeepDuration:  "48h",
+			Filters:       []string{"type==source.local", "type==exec.cachemount"},
+		}},
+	})
+	for _, want := range []string{
+		`  reservedSpace = "40GB"`,
+		`  maxUsedSpace = "80GB"`,
+		`  minFreeSpace = "5GB"`,
+		"[[worker.oci.gcpolicy]]",
+		`  keepDuration = "48h"`,
+		`  filters = ["type==source.local", "type==exec.cachemount"]`,
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("config must carry %q:\n%s", want, cfg)
+		}
+	}
+
+	off := DaemonConfig(DaemonOptions{GCDisabled: true})
+	if !strings.Contains(off, "  gc = false") {
+		t.Errorf("GCDisabled must render gc = false:\n%s", off)
+	}
+	if strings.Contains(off, "reservedSpace") {
+		t.Errorf("a disabled GC must not render a budget:\n%s", off)
+	}
+}
+
+// TestConfigGC_RoundTrips — the reader that lets Ensure tell whether a RUNNING daemon was
+// started with the policy now requested.
+func TestConfigGC_RoundTrips(t *testing.T) {
+	want := DaemonOptions{GCReservedSpace: "40GB", GCMaxUsedSpace: "80GB", GCMinFreeSpace: "5GB"}
+	got := ConfigGC(DaemonConfig(want))
+	if !want.SameGC(got) {
+		t.Errorf("rendered GC must read back as the requested policy: got %s", got.Describe())
+	}
+	if (DaemonOptions{}).SameGC(got) {
+		t.Errorf("the default policy must differ from a 40/80/5 budget")
+	}
+	off := ConfigGC(DaemonConfig(DaemonOptions{GCDisabled: true}))
+	if off.Enabled {
+		t.Errorf("a disabled GC must read back disabled: %s", off.Describe())
 	}
 }
 
