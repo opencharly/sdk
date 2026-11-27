@@ -150,8 +150,9 @@ type DaemonOptions struct {
 	GCPolicies []GCPolicy
 
 	// Extra is raw buildkitd.toml appended VERBATIM after the managed sections — the
-	// escape hatch for a daemon setting charly does not model. It may not redefine
-	// `[worker.oci]` (the managed block is authoritative).
+	// escape hatch for a daemon setting charly does not model. Nothing enforces exclusivity:
+	// a duplicate table (`[worker.oci]` again) makes buildkitd REJECT the file, so the
+	// operator must extend, never redefine, what the managed block writes.
 	Extra string
 }
 

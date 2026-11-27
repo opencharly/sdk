@@ -514,6 +514,68 @@ func TestEnsureRewritesAStaleConfigWithoutParallelism(t *testing.T) {
 	}
 }
 
+// TestDaemonConfig_RendersEveryWorkerKnob — every OPTIONAL worker/GCPolicy knob the
+// renderer models must reach the TOML when set, and must be ABSENT at its zero value (so an
+// empty field means "the daemon's own default", never an empty-string setting). Without
+// this, a renderer branch could be dropped and the suite would stay green.
+func TestDaemonConfig_RendersEveryWorkerKnob(t *testing.T) {
+	cfg := DaemonConfig(DaemonOptions{
+		ProcessMode:      "native",
+		MaxParallelism:   3,
+		Snapshotter:      "overlayfs",
+		NoProcessSandbox: true,
+		GCPolicies: []GCPolicy{{
+			ReservedSpace: "5GB",
+			MaxUsedSpace:  "9GB",
+			MinFreeSpace:  "2GB",
+			KeepDuration:  "24h",
+			All:           true,
+			Filters:       []string{"type==source.local", "type==exec.cachemount"},
+		}},
+		Extra: "[worker.oci]\n  oom-score-adj = 100\n",
+	})
+	for _, want := range []string{
+		`process-mode = "native"`,
+		"max-parallelism = 3",
+		`snapshotter = "overlayfs"`,
+		"noProcessSandbox = true",
+		"[[worker.oci.gcpolicy]]",
+		"all = true",
+		`reservedSpace = "5GB"`,
+		`maxUsedSpace = "9GB"`,
+		`minFreeSpace = "2GB"`,
+		`keepDuration = "24h"`,
+		`filters = ["type==source.local", "type==exec.cachemount"]`,
+		"# operator extra (defaults.buildkit.extra)",
+		"oom-score-adj = 100",
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("the rendered config must carry %q:\n%s", want, cfg)
+		}
+	}
+
+	// Zero value: every optional block is OMITTED. process-mode is the one always-present
+	// key (the daemon requires a value), and it defaults to sandbox.
+	zero := DaemonConfig(DaemonOptions{})
+	if !strings.Contains(zero, `process-mode = "sandbox"`) {
+		t.Errorf("process-mode must always render, defaulting to sandbox:\n%s", zero)
+	}
+	for _, absent := range []string{
+		"max-parallelism", "snapshotter", "noProcessSandbox", "gcpolicy", "all = true",
+		"keepDuration", "filters =", "operator extra", "oom-score-adj",
+	} {
+		if strings.Contains(zero, absent) {
+			t.Errorf("a zero-value option must not render (%q appeared):\n%s", absent, zero)
+		}
+	}
+
+	// A GCPolicy with only `all` renders the table without inventing empty keys.
+	allOnly := DaemonConfig(DaemonOptions{GCPolicies: []GCPolicy{{All: true}}})
+	if !strings.Contains(allOnly, "[[worker.oci.gcpolicy]]\n  all = true\n") {
+		t.Errorf("an all-only policy must render just `all = true`:\n%s", allOnly)
+	}
+}
+
 // TestDaemonConfig_CarriesTheRegistryMirror — the base-input half of the local-build bridge.
 //
 // MEASURED (spike, buildkitd 0.34.0, a registry:2 mirror on 127.0.0.1:5000):
