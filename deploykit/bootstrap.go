@@ -81,14 +81,27 @@ func (g *Generator) WriteBootstrap(b *strings.Builder, img *buildkit.ResolvedBox
 		// emitted shell probes for the shadow-utils tool rather than branching on
 		// a distro name, so any base with either userland works. The login shell
 		// is probed the same way — Alpine ships no /bin/bash.
-		fmt.Fprintf(b, "RUN if ! getent passwd %d >/dev/null 2>&1; then \\\n", img.UID)
+		//
+		// The guard is the NAME, not the UID (opencharly/sdk#655): the contract the
+		// image goes on to declare is `USER <name>` (the WORKDIR/home and the
+		// ai.opencharly.user label are name-based, and `podman exec` resolves a
+		// container's configured user by name). Guarding on the uid meant a base
+		// whose uid 1000 already belonged to ANOTHER account (ubuntu, a builder
+		// image, a distro whose base_user differs) short-circuited the block, so
+		// the declared name was never created and every exec failed with
+		// `unable to find user <name>: no matching entries in passwd file`.
+		// When the uid IS taken by another account, the name is still created at
+		// that uid via --non-unique (useradd -o) so the uid contract holds too;
+		// the second command is the fallback for a userland that rejects the
+		// duplicate uid outright.
+		fmt.Fprintf(b, "RUN if ! getent passwd %s >/dev/null 2>&1; then \\\n", img.User)
 		b.WriteString("      LOGIN_SHELL=/bin/sh; [ -x /bin/bash ] && LOGIN_SHELL=/bin/bash; \\\n")
 		b.WriteString("      if command -v useradd >/dev/null 2>&1; then \\\n")
 		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || groupadd -g %d %s) && \\\n", img.GID, img.GID, img.User)
-		fmt.Fprintf(b, "        useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s; \\\n", img.UID, img.GID, img.User)
+		fmt.Fprintf(b, "        { useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s || useradd -o -m -u %d -g %d -s \"$LOGIN_SHELL\" %s; }; \\\n", img.UID, img.GID, img.User, img.UID, img.GID, img.User)
 		b.WriteString("      else \\\n")
 		fmt.Fprintf(b, "        (getent group %d >/dev/null 2>&1 || addgroup -g %d %s) && \\\n", img.GID, img.GID, img.User)
-		fmt.Fprintf(b, "        adduser -D -h %s -u %d -G %s -s \"$LOGIN_SHELL\" %s; \\\n", img.Home, img.UID, img.User, img.User)
+		fmt.Fprintf(b, "        { adduser -D -h %s -u %d -G %s -s \"$LOGIN_SHELL\" %s || adduser -D -h %s -G %s -s \"$LOGIN_SHELL\" %s; }; \\\n", img.Home, img.UID, img.User, img.User, img.Home, img.User, img.User)
 		b.WriteString("      fi; \\\n")
 		b.WriteString("    fi\n\n")
 	}

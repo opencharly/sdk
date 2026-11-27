@@ -88,3 +88,31 @@ func TestWriteBootstrap_AdoptedUserEmitsNoUseradd(t *testing.T) {
 		t.Errorf("adopted-user branch missing its comment\n--- emitted ---\n%s", got)
 	}
 }
+
+// TestWriteBootstrap_GuardsOnTheDeclaredNameNotTheUID pins opencharly/sdk#655: the
+// account the image DECLARES is `USER <name>`, and `podman exec` resolves a
+// container's configured user by name. The creation guard must therefore ask about
+// that NAME. Guarding on the uid let a base whose uid 1000 belonged to another
+// account (ubuntu, a builder image) short-circuit the block, so the declared name
+// was never created and every exec failed with
+// `unable to find user user: no matching entries in passwd file`.
+//
+// Red arm (the pre-fix code): the third assertion below failed because the guard
+// read `getent passwd 1000`, and the fourth failed because no --non-unique fallback
+// existed to create the name when the uid was taken.
+func TestWriteBootstrap_GuardsOnTheDeclaredNameNotTheUID(t *testing.T) {
+	var b strings.Builder
+	g := &Generator{}
+	g.WriteBootstrap(&b, bootstrapCreateBox())
+	got := b.String()
+
+	if !strings.Contains(got, "if ! getent passwd user >/dev/null 2>&1") {
+		t.Errorf("the creation guard does not ask about the DECLARED NAME\n--- emitted ---\n%s", got)
+	}
+	if strings.Contains(got, "getent passwd 1000 >/dev/null 2>&1") {
+		t.Errorf("the creation guard still keys on the UID, so a base whose uid is owned by another name creates nothing\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, "useradd -o -m -u 1000 -g 1000") {
+		t.Errorf("no --non-unique fallback: a base whose uid 1000 is taken by another account still cannot create the declared name\n--- emitted ---\n%s", got)
+	}
+}
