@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,18 +249,349 @@ func TestPaths_ComeFromTheResolver(t *testing.T) {
 }
 
 // TestDaemonConfig_SetsOnlyTheMeasuredShape: the config carries the OCI worker's sandbox
-// process mode and NOTHING venue-specific. In particular no snapshotter: the
-// native-vs-overlayfs measurement came from a doubly-nested user namespace, so writing
-// either value here would promote a venue result into a universal rule.
+// process mode and the GC budget, and NOTHING venue-specific. In particular no
+// snapshotter by default: the native-vs-overlayfs measurement came from a doubly-nested
+// user namespace, so writing either value here would promote a venue result into a
+// universal rule.
 func TestDaemonConfig_SetsOnlyTheMeasuredShape(t *testing.T) {
 	cfg := DaemonConfig(DaemonOptions{})
 	if !strings.Contains(cfg, `process-mode = "sandbox"`) {
 		t.Errorf("the OCI worker must run in sandbox process mode:\n%s", cfg)
 	}
-	for _, forbidden := range []string{"snapshotter", "overlayfs", "native", "gckeepstorage"} {
+	for _, forbidden := range []string{"snapshotter", "overlayfs", "native"} {
 		if strings.Contains(cfg, forbidden) {
 			t.Errorf("config must not pin %q (unmeasured here):\n%s", forbidden, cfg)
 		}
+	}
+}
+
+// TestDaemonConfig_CarriesTheGCBudget — the cache-policy control (opencharly/charly#1292).
+//
+// buildkitd's compiled default GC policy keeps a 373 GB free-space target (the
+// `--oci-worker-gc-keepstorage 10000,373000,100000` default). On a host with less free
+// space than that, the GC prunes reclaimable cache down to the ~10 GB reserve floor on
+// every pass, so a repeated build of an unchanged tree re-executes its layers. The drive
+// therefore writes an explicit 100 GB budget, and the default free-space target is small.
+func TestDaemonConfig_CarriesTheGCBudget(t *testing.T) {
+	cfg := DaemonConfig(DaemonOptions{})
+	for _, want := range []string{
+		"  gc = true",
+		`  reservedSpace = "100GB"`,
+		`  maxUsedSpace = "100GB"`,
+		`  minFreeSpace = "10GB"`,
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("the default config must carry %q:\n%s", want, cfg)
+		}
+	}
+	// The legacy worker key is `gckeepstorage` (all lowercase, mirroring
+	// `--oci-worker-gc-keepstorage`), so the guard must be CASE-INSENSITIVE: a renderer that
+	// regressed to `gckeepstorage = ...` has to fail here, not slip past a camel-case match.
+	// `373000` catches the default VALUE form independently of the key.
+	if strings.Contains(strings.ToLower(cfg), "keepstorage") || strings.Contains(cfg, "373000") {
+		t.Errorf("the legacy `gckeepstorage` key (and the 373 GB default) must not be rendered:\n%s", cfg)
+	}
+}
+
+// TestDaemonConfig_GCIsConfigurable — every GC knob the charly.yml surface exposes renders,
+// and the disabled arm drops the budget keys (they are meaningless with gc = false).
+func TestDaemonConfig_GCIsConfigurable(t *testing.T) {
+	cfg := DaemonConfig(DaemonOptions{
+		GCReservedSpace: "40GB",
+		GCMaxUsedSpace:  "80GB",
+		GCMinFreeSpace:  "5GB",
+		GCPolicies: []GCPolicy{{
+			ReservedSpace: "1GB",
+			MaxUsedSpace:  "2GB",
+			MinFreeSpace:  "3GB",
+			KeepDuration:  "48h",
+			Filters:       []string{"type==source.local", "type==exec.cachemount"},
+		}},
+	})
+	for _, want := range []string{
+		`  reservedSpace = "40GB"`,
+		`  maxUsedSpace = "80GB"`,
+		`  minFreeSpace = "5GB"`,
+		"[[worker.oci.gcpolicy]]",
+		`  keepDuration = "48h"`,
+		`  filters = ["type==source.local", "type==exec.cachemount"]`,
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("config must carry %q:\n%s", want, cfg)
+		}
+	}
+
+	off := DaemonConfig(DaemonOptions{GCDisabled: true})
+	if !strings.Contains(off, "  gc = false") {
+		t.Errorf("GCDisabled must render gc = false:\n%s", off)
+	}
+	if strings.Contains(off, "reservedSpace") {
+		t.Errorf("a disabled GC must not render a budget:\n%s", off)
+	}
+}
+
+// TestConfigGC_RoundTrips — the reader that lets Ensure tell whether a RUNNING daemon was
+// started with the policy now requested.
+func TestConfigGC_RoundTrips(t *testing.T) {
+	want := DaemonOptions{GCReservedSpace: "40GB", GCMaxUsedSpace: "80GB", GCMinFreeSpace: "5GB"}
+	got := ConfigGC(DaemonConfig(want))
+	if !want.SameGC(got) {
+		t.Errorf("rendered GC must read back as the requested policy: got %s", got.Describe())
+	}
+	if (DaemonOptions{}).SameGC(got) {
+		t.Errorf("the default policy must differ from a 40/80/5 budget")
+	}
+	off := ConfigGC(DaemonConfig(DaemonOptions{GCDisabled: true}))
+	if off.Enabled {
+		t.Errorf("a disabled GC must read back disabled: %s", off.Describe())
+	}
+}
+
+// TestGCConfigMismatch — the running-daemon report Ensure prints when the daemon predates
+// the requested GC policy. The policy is fixed at daemon start, so a mismatch is REPORTED
+// (never fatal) and the operator restarts; a matching policy reports nothing.
+func TestGCConfigMismatch(t *testing.T) {
+	opts := DaemonOptions{GCReservedSpace: "40GB", GCMaxUsedSpace: "80GB", GCMinFreeSpace: "5GB"}
+
+	// The pre-change rendered form: no GC section at all.
+	old := "[worker.oci]\n  process-mode = \"sandbox\"\n  max-parallelism = 4\n"
+	msg, mismatch := GCConfigMismatch(old, opts)
+	if !mismatch {
+		t.Fatal("a config without the requested GC policy must report a mismatch")
+	}
+	for _, want := range []string{"the daemon's default GC policy", "373GB free target", "reservedSpace=40GB", "maxUsedSpace=80GB", "minFreeSpace=5GB"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the report must name %q:\n%s", want, msg)
+		}
+	}
+
+	if msg, mismatch := GCConfigMismatch(DaemonConfig(opts), opts); mismatch || msg != "" {
+		t.Fatalf("a matching policy must report nothing: mismatch=%v msg=%q", mismatch, msg)
+	}
+
+	// An explicit `gc = false` still describes as disabled; an ABSENT gc key is the
+	// daemon's enabled default, a different state that must not read as disabled.
+	explicitOff := GCConfig{}
+	explicitOff.Explicit, explicitOff.Enabled = true, false
+	if got := explicitOff.Describe(); got != "gc disabled" {
+		t.Errorf("an explicit gc=false must describe as disabled: %q", got)
+	}
+	absent := ConfigGC("[worker.oci]\n  process-mode = \"sandbox\"\n")
+	if !absent.Enabled || absent.Explicit {
+		t.Errorf("an absent gc key must read as the daemon's ENABLED default (not explicit): %+v", absent)
+	}
+	if got := absent.Describe(); !strings.Contains(got, "default GC policy") {
+		t.Errorf("an absent gc key must describe as the daemon's default policy: %q", got)
+	}
+
+	// A disabled GC is a real change from an enabled budget and vice versa.
+	if _, mismatch := GCConfigMismatch(DaemonConfig(opts), DaemonOptions{GCDisabled: true}); !mismatch {
+		t.Error("enabled -> disabled must report a mismatch")
+	}
+	if _, mismatch := GCConfigMismatch(DaemonConfig(DaemonOptions{GCDisabled: true}), opts); !mismatch {
+		t.Error("disabled -> enabled must report a mismatch")
+	}
+}
+
+// fakeWorkers is a Runner that answers the daemon probe. It is used ONLY by the Ensure
+// config test, whose seam materialises the socket; nothing else about a daemon is faked.
+type fakeWorkers struct{}
+
+func (fakeWorkers) Run(context.Context, string, ...string) (string, error) {
+	return "oci.process-mode:SANDBOX", nil
+}
+
+// TestEnsureReportsTheRunningDaemonsGCPolicy — the daemon-LISTENING branch: a daemon that
+// is already up keeps its start-time policy, so Ensure must REPORT the mismatch on stderr
+// rather than fail or silently accept it. This reaches the branch the always-write test
+// cannot (it starts from no socket), so the fmt.Fprintf wiring is proven, not only the pure
+// helper. It FAILS on the tree without the report (stderr stays empty).
+func TestEnsureReportsTheRunningDaemonsGCPolicy(t *testing.T) {
+	rt, cache := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", rt)
+	t.Setenv("XDG_CACHE_HOME", cache)
+
+	cfg, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A daemon started before the GC budget existed: same parallelism (so no restart is
+	// demanded) and NO gc section.
+	stale := "[worker.oci]\n  process-mode = \"sandbox\"\n  max-parallelism = 4\n"
+	if err := os.WriteFile(cfg, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sock, err := SocketPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(sock), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sock, nil, 0o600); err != nil { // the probe stats the socket
+		t.Fatal(err)
+	}
+
+	// Swap the process stderr for a pipe: the report's DESTINATION is part of the claim.
+	oldErr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = oldErr })
+
+	opts := DaemonOptions{MaxParallelism: 4, GCReservedSpace: "40GB", GCMaxUsedSpace: "80GB", GCMinFreeSpace: "5GB"}
+	got, err := Ensure(context.Background(), fakeWorkers{}, opts)
+	_ = w.Close()
+	os.Stderr = oldErr
+	if err != nil {
+		t.Fatalf("Ensure against a listening daemon: %v", err)
+	}
+	if got.Started {
+		t.Error("Ensure must report that it attached to the running daemon, not that it started one")
+	}
+	report, _ := io.ReadAll(r)
+	for _, want := range []string{"the daemon's default GC policy", "373GB free target", "reservedSpace=40GB", "maxUsedSpace=80GB", "minFreeSpace=5GB", sock} {
+		if !strings.Contains(string(report), want) {
+			t.Errorf("the running-daemon report must name %q:\n%s", want, report)
+		}
+	}
+}
+
+// TestEnsureRewritesAStaleConfigWithoutParallelism — the always-write arm, exercised on
+// the REAL Ensure path.
+//
+// The pre-change shape skipped the write when MaxParallelism was 0 and a config file
+// already existed, so a stale daemon config survived an ensure and a daemon started from
+// it. This test starts from exactly that file (a pre-GC config, max-parallelism=4) and
+// asserts Ensure REPLACES it with the rendered config for an options value carrying no
+// parallelism at all. It FAILS on the unmodified tree (the write was skipped).
+func TestEnsureRewritesAStaleConfigWithoutParallelism(t *testing.T) {
+	rt, cache := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", rt)
+	t.Setenv("XDG_CACHE_HOME", cache)
+
+	cfg, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := "[worker.oci]\n  process-mode = \"sandbox\"\n  max-parallelism = 4\n"
+	if err := os.WriteFile(cfg, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture the spawn instead of launching a daemon: the assertion is about the config
+	// decision that precedes it, and a real rootlesskit here would be a bed, not a gate.
+	// The seam materialises the socket the readiness probe stats, so Ensure returns as
+	// soon as the fake daemon "answers" rather than waiting out its deadline.
+	var gotArgs []string
+	var gotLog string
+	old := startDaemon
+	startDaemon = func(_ context.Context, logPath string, args []string) error {
+		gotLog, gotArgs = logPath, args
+		for i, a := range args {
+			if a == "--addr" && i+1 < len(args) {
+				if err := os.WriteFile(strings.TrimPrefix(args[i+1], "unix://"), nil, 0o600); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { startDaemon = old })
+
+	opts := DaemonOptions{} // no parallelism: the case the old branch refused to write
+	if _, err := Ensure(context.Background(), fakeWorkers{}, opts); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	got, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := DaemonConfig(opts); string(got) != want {
+		t.Fatalf("the stale config was not replaced by the rendered one:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if !strings.Contains(string(got), "reservedSpace") {
+		t.Errorf("the rendered config must carry the GC budget:\n%s", got)
+	}
+	if strings.Contains(string(got), "max-parallelism = 4") {
+		t.Errorf("the stale parallelism survived:\n%s", got)
+	}
+	if gotLog == "" || len(gotArgs) == 0 {
+		t.Fatalf("the daemon was not spawned through the seam: log=%q args=%v", gotLog, gotArgs)
+	}
+	if !strings.Contains(strings.Join(gotArgs, " "), "--config "+cfg) {
+		t.Errorf("the spawn must name the rendered config: %v", gotArgs)
+	}
+}
+
+// TestDaemonConfig_RendersEveryWorkerKnob — every OPTIONAL worker/GCPolicy knob the
+// renderer models must reach the TOML when set, and must be ABSENT at its zero value (so an
+// empty field means "the daemon's own default", never an empty-string setting). Without
+// this, a renderer branch could be dropped and the suite would stay green.
+func TestDaemonConfig_RendersEveryWorkerKnob(t *testing.T) {
+	cfg := DaemonConfig(DaemonOptions{
+		ProcessMode:      "native",
+		MaxParallelism:   3,
+		Snapshotter:      "overlayfs",
+		NoProcessSandbox: true,
+		GCPolicies: []GCPolicy{{
+			ReservedSpace: "5GB",
+			MaxUsedSpace:  "9GB",
+			MinFreeSpace:  "2GB",
+			KeepDuration:  "24h",
+			All:           true,
+			Filters:       []string{"type==source.local", "type==exec.cachemount"},
+		}},
+		Extra: "[worker.oci]\n  oom-score-adj = 100\n",
+	})
+	for _, want := range []string{
+		`process-mode = "native"`,
+		"max-parallelism = 3",
+		`snapshotter = "overlayfs"`,
+		"noProcessSandbox = true",
+		"[[worker.oci.gcpolicy]]",
+		"all = true",
+		`reservedSpace = "5GB"`,
+		`maxUsedSpace = "9GB"`,
+		`minFreeSpace = "2GB"`,
+		`keepDuration = "24h"`,
+		`filters = ["type==source.local", "type==exec.cachemount"]`,
+		"# operator extra (defaults.buildkit.extra)",
+		"oom-score-adj = 100",
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("the rendered config must carry %q:\n%s", want, cfg)
+		}
+	}
+
+	// Zero value: every optional block is OMITTED. process-mode is the one always-present
+	// key (the daemon requires a value), and it defaults to sandbox.
+	zero := DaemonConfig(DaemonOptions{})
+	if !strings.Contains(zero, `process-mode = "sandbox"`) {
+		t.Errorf("process-mode must always render, defaulting to sandbox:\n%s", zero)
+	}
+	for _, absent := range []string{
+		"max-parallelism", "snapshotter", "noProcessSandbox", "gcpolicy", "all = true",
+		"keepDuration", "filters =", "operator extra", "oom-score-adj",
+	} {
+		if strings.Contains(zero, absent) {
+			t.Errorf("a zero-value option must not render (%q appeared):\n%s", absent, zero)
+		}
+	}
+
+	// A GCPolicy with only `all` renders the table without inventing empty keys.
+	allOnly := DaemonConfig(DaemonOptions{GCPolicies: []GCPolicy{{All: true}}})
+	if !strings.Contains(allOnly, "[[worker.oci.gcpolicy]]\n  all = true\n") {
+		t.Errorf("an all-only policy must render just `all = true`:\n%s", allOnly)
 	}
 }
 
