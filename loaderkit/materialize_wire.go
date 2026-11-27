@@ -50,6 +50,13 @@ type pluginKindsByPath = map[string]map[string]map[string]json.RawMessage
 type materializedNamespace struct {
 	Path string            `json:"path"`
 	File *spec.UnifiedFile `json:"file"`
+	// Ref marks a BACK-EDGE level: a namespace already on the current path. The wire cannot carry
+	// the cycle as a nested value, so it records the ANCESTOR's path (AliasOf, "" = the root) and
+	// the rebuild re-attaches the pointer. Without it a reloaded graph loses the alias, and a box
+	// in the child that bases on it (`base: <alias>.<box>`) resolves to nothing
+	// (opencharly/charly#1295).
+	Ref     bool   `json:"ref,omitempty"`
+	AliasOf string `json:"alias_of,omitempty"`
 }
 
 // materializedEnvelope carries a spec.UnifiedFile plus the two things a plain json.Marshal cannot:
@@ -80,22 +87,33 @@ func withoutNamespaces(uf *spec.UnifiedFile) *spec.UnifiedFile {
 // entirely: it contributes nothing to any finite walk, since collectBeds returns the instant it
 // re-enters an ancestor. Recording a fabricated copy for the back-edge would instead make the
 // reconstructed tree enumerate beds the source never exposes.
-func captureNamespaceLevels(uf *spec.UnifiedFile, prefix string, out *[]materializedNamespace, ancestors NamespaceAncestors) {
+func captureNamespaceLevels(uf *spec.UnifiedFile, prefix string, out *[]materializedNamespace, ancestors NamespaceAncestors, paths map[*spec.UnifiedFile]string) {
 	leave, ok := ancestors.Enter(uf)
 	if !ok {
 		return
 	}
 	defer leave()
+	if _, seen := paths[uf]; !seen {
+		paths[uf] = prefix
+	}
 	for name, ns := range uf.Namespaces {
-		if ns == nil || ancestors[ns] {
+		if ns == nil {
 			continue
 		}
 		path := name
 		if prefix != "" {
 			path = prefix + "." + name
 		}
+		if ancestors[ns] {
+			// A genuine back-edge: record the ancestor's path so the rebuild can re-attach the
+			// POINTER instead of fabricating a copy (which would enumerate beds the source never
+			// exposes). It contributes nothing to a finite walk, but it is what a `base:` inside
+			// the child resolves through.
+			*out = append(*out, materializedNamespace{Path: path, Ref: true, AliasOf: paths[ns]})
+			continue
+		}
 		*out = append(*out, materializedNamespace{Path: path, File: withoutNamespaces(ns)})
-		captureNamespaceLevels(ns, path, out, ancestors)
+		captureNamespaceLevels(ns, path, out, ancestors, paths)
 	}
 }
 
@@ -129,6 +147,50 @@ func attachNamespaceLevel(root *spec.UnifiedFile, path string, file *spec.Unifie
 		}
 		cur = next
 	}
+}
+
+// attachNamespaceRef points root's namespace at Path at the node living at aliasPath ("" = root),
+// recreating an import back-edge after a round-trip. A dangling aliasOf is ignored: the capture walk
+// records every ancestor path, so a miss means a malformed payload rather than a real graph.
+func attachNamespaceRef(root *spec.UnifiedFile, path, aliasPath string) {
+	if root == nil || path == "" {
+		return
+	}
+	target := root
+	if aliasPath != "" {
+		target = namespaceAtPath(root, aliasPath)
+	}
+	if target == nil {
+		return
+	}
+	segs := strings.Split(path, ".")
+	cur := root
+	for i, seg := range segs {
+		if i == len(segs)-1 {
+			if cur.Namespaces == nil {
+				cur.Namespaces = map[string]*spec.UnifiedFile{}
+			}
+			cur.Namespaces[seg] = target
+			return
+		}
+		next := cur.Namespaces[seg]
+		if next == nil {
+			return
+		}
+		cur = next
+	}
+}
+
+// namespaceAtPath resolves a dot path ("a.b") to the mounted node, nil when absent.
+func namespaceAtPath(root *spec.UnifiedFile, path string) *spec.UnifiedFile {
+	cur := root
+	for _, seg := range strings.Split(path, ".") {
+		if cur == nil || cur.Namespaces == nil {
+			return nil
+		}
+		cur = cur.Namespaces[seg]
+	}
+	return cur
 }
 
 // capturePluginKinds walks uf + its mounted namespaces, recording each level's PluginKinds under its
@@ -189,7 +251,7 @@ func restorePluginKindsSeen(uf *spec.UnifiedFile, prefix string, in pluginKindsB
 func MarshalMaterialized(uf *spec.UnifiedFile) ([]byte, error) {
 	env := materializedEnvelope{UF: withoutNamespaces(uf), PluginKinds: pluginKindsByPath{}}
 	capturePluginKinds(uf, "", env.PluginKinds)
-	captureNamespaceLevels(uf, "", &env.Namespaces, NamespaceAncestors{})
+	captureNamespaceLevels(uf, "", &env.Namespaces, NamespaceAncestors{}, map[*spec.UnifiedFile]string{})
 	return json.Marshal(env)
 }
 
@@ -207,7 +269,18 @@ func UnmarshalMaterialized(data []byte, uf *spec.UnifiedFile) error {
 		uf.Namespaces = nil
 	}
 	for _, lvl := range env.Namespaces {
+		if lvl.Ref {
+			continue
+		}
 		attachNamespaceLevel(uf, lvl.Path, lvl.File)
+	}
+	// Back-edges LAST, once every real level exists: an alias must point at the ATTACHED node, so a
+	// later alias can also target an earlier alias's target.
+	for _, lvl := range env.Namespaces {
+		if !lvl.Ref {
+			continue
+		}
+		attachNamespaceRef(uf, lvl.Path, lvl.AliasOf)
 	}
 	restorePluginKinds(uf, "", env.PluginKinds)
 	return nil

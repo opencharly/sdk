@@ -43,8 +43,12 @@ func TestMarshalMaterialized_SelfCycleRoundTrips(t *testing.T) {
 	if got.RootDir != "/repo/self" {
 		t.Fatalf("root RootDir = %q, want /repo/self", got.RootDir)
 	}
-	if len(got.Namespaces) != 0 {
-		t.Fatalf("self back-edge must truncate, got namespaces %v", got.Namespaces)
+	// The back-edge is restored as a POINTER to the reloaded root, not dropped: a box in a child
+	// that bases on the alias (`base: <alias>.<box>`) must still resolve after the round-trip
+	// (opencharly/charly#1295). The graph is cyclic by design, and every walk carries the
+	// path-scoped guard, so restoring it fabricates nothing.
+	if got.Namespaces["self"] != &got {
+		t.Fatalf("self back-edge must restore as a pointer to the reloaded root, got %v", got.Namespaces["self"])
 	}
 }
 
@@ -72,8 +76,8 @@ func TestMarshalMaterialized_MutualCycleRoundTrips(t *testing.T) {
 	if subGot == nil || subGot.RootDir != "/repo/sub" {
 		t.Fatalf("reachable namespace sub wrong: %+v", subGot)
 	}
-	if len(subGot.Namespaces) != 0 {
-		t.Fatalf("mutual back-edge must truncate, got %v", subGot.Namespaces)
+	if up := subGot.Namespaces["up"]; up != &got {
+		t.Fatalf("mutual back-edge must restore as a pointer to the reloaded root, got %v", up)
 	}
 }
 
