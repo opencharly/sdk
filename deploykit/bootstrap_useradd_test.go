@@ -135,9 +135,9 @@ func TestWriteBootstrap_GuardsOnTheDeclaredNameNotTheUID(t *testing.T) {
 //     it had the uid form and the group-free fallback, but no group-named form:
 //     `expected exactly three adduser attempts (uid / group-free / group-named), got 2`
 //     and "no group-named fallback";
-//   - the round-1 emitter (uid-guarded, `addgroup -g 1000 user`, one `-G user` attempt)
-//     fails assertions 1, 2, 3 and 5 (assertion 4 passes: its fallback already passed
-//     `-G user`).
+//   - the round-1 emitter (uid-guarded, `addgroup -g 1000 user`, BOTH adduser forms
+//     passing `-G user`) fails assertions 1, 2, 3 and 5; assertion 4 passes only
+//     because its fallback happens to be the group-named form.
 func TestWriteBootstrap_BusyboxLegEnsuresTheGroupByNameAndFallsBack(t *testing.T) {
 	var b strings.Builder
 	g := &Generator{}
