@@ -91,26 +91,29 @@ func Ensure(ctx context.Context, r Runner, opts DaemonOptions) (*Daemon, error) 
 		// by a killed daemon, an unowned daemon answering for the one we thought we replaced).
 		// Applying a changed daemon-level setting reliably therefore needs a SUPERVISOR (a
 		// user unit), which is a design decision this package does not take on its own.
+		raw, rerr := os.ReadFile(cfg)
 		configured := 0
-		if raw, rerr := os.ReadFile(cfg); rerr == nil {
+		if rerr == nil {
 			configured = ConfigMaxParallelism(string(raw))
 		}
 		if NeedsRestart(configured, opts.MaxParallelism) {
 			return nil, fmt.Errorf("buildkitdrive: the running daemon was configured with max-parallelism=%d but %d was requested; the value is set at daemon start, so stop the daemon (%s) and this drive will start it with the new value", configured, opts.MaxParallelism, d.Socket)
 		}
+		// The GC policy is a daemon-start setting too. A mismatch is reported, not fatal:
+		// the cache budget is a performance contract, and failing every build on a host
+		// whose daemon predates it would be worse than the slower cache.
+		if rerr == nil {
+			if msg, mismatch := GCConfigMismatch(string(raw), opts); mismatch {
+				fmt.Fprintf(os.Stderr, "%s (socket %s)\n", strings.TrimRight(msg, "\n"), d.Socket)
+			}
+		}
 		return d, nil
 	}
-	// No daemon is listening. A caller WITH an opinion writes the config; a caller WITHOUT
-	// one adopts whatever is on disk (the drive's value, or the daemon's own defaults) and
-	// never overwrites it — that is what keeps two callers from fighting over the file.
-	if opts.MaxParallelism > 0 {
-		if err := writeIfChanged(cfg, DaemonConfig(opts)); err != nil {
-			return nil, err
-		}
-	} else if _, err := os.Stat(cfg); err != nil {
-		if err := os.WriteFile(cfg, []byte(DaemonConfig(DaemonOptions{})), 0o644); err != nil {
-			return nil, fmt.Errorf("buildkitdrive: write %s: %w", cfg, err)
-		}
+	// No daemon is listening. The drive always has an opinion now (the GC budget is a
+	// package default), so it writes the full rendered config when it differs; the file
+	// then describes the daemon this call is about to start.
+	if err := writeIfChanged(cfg, DaemonConfig(opts)); err != nil {
+		return nil, err
 	}
 	args := DaemonArgs(sock, stateRoot, cfg)
 	// ⚑ The daemon OUTLIVES the caller, so it must NOT inherit the caller's streams. A
@@ -121,20 +124,8 @@ func Ensure(ctx context.Context, r Runner, opts DaemonOptions) (*Daemon, error) 
 	// in a log beside its state root, which is also where a reader looks for the daemon's
 	// own startup diagnostics.
 	logPath := filepath.Join(stateRoot, LogName)
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("buildkitdrive: daemon log %s: %w", logPath, err)
-	}
-	defer func() { _ = logFile.Close() }() // the child keeps its own descriptor
-	cmd := exec.CommandContext(ctx, RootlesskitBinary, args...)
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("buildkitdrive: start %s: %w", RootlesskitBinary, err)
-	}
-	// Release rather than Wait: the daemon outlives this call by design, and releasing
-	// hands its reaping to init instead of leaving a zombie behind.
-	if err := cmd.Process.Release(); err != nil {
-		return nil, fmt.Errorf("buildkitdrive: release %s: %w", RootlesskitBinary, err)
+	if err := startDaemon(ctx, logPath, args); err != nil {
+		return nil, err
 	}
 	d.Started = true
 	deadline := time.Now().Add(ReadinessTimeout)
@@ -151,6 +142,31 @@ func Ensure(ctx context.Context, r Runner, opts DaemonOptions) (*Daemon, error) 
 		case <-time.After(readinessInterval):
 		}
 	}
+}
+
+// startDaemon launches the detached rootlesskit/daemon process and releases it.
+//
+// It is a package variable, not an inline exec, so Ensure's decision to WRITE the rendered
+// config before it starts a daemon is exercised by a unit test without launching a real
+// daemon (a unit test that needed rootlesskit, a user namespace and a socket would be a bed,
+// not a gate). The production value is the measured one.
+var startDaemon = func(ctx context.Context, logPath string, args []string) error {
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("buildkitdrive: daemon log %s: %w", logPath, err)
+	}
+	defer func() { _ = logFile.Close() }() // the child keeps its own descriptor
+	cmd := exec.CommandContext(ctx, RootlesskitBinary, args...)
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("buildkitdrive: start %s: %w", RootlesskitBinary, err)
+	}
+	// Release rather than Wait: the daemon outlives this call by design, and releasing
+	// hands its reaping to init instead of leaving a zombie behind.
+	if err := cmd.Process.Release(); err != nil {
+		return fmt.Errorf("buildkitdrive: release %s: %w", RootlesskitBinary, err)
+	}
+	return nil
 }
 
 // DaemonArgs renders the daemon's spawn argv.

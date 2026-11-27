@@ -112,26 +112,162 @@ type DaemonOptions struct {
 	// locally instead of through the upstream registry. Empty leaves the daemon's own
 	// resolution.
 	RegistryMirror string
+
+	// ProcessMode is the OCI worker's process mode. Empty selects "sandbox" — the
+	// measured shape (CapEff 0, no added capability).
+	ProcessMode string
+
+	// Snapshotter pins the worker's snapshotter ("overlayfs" or "native"). Empty leaves
+	// the daemon's own "auto" resolution in place; the doubly-nested measurement that
+	// required "native" is a VENUE result, not a universal default.
+	Snapshotter string
+
+	// NoProcessSandbox runs subprocesses in the main pid namespace (the daemon's
+	// `noProcessSandbox`, needed when buildkitd itself runs inside a container).
+	NoProcessSandbox bool
+
+	// GCDisabled turns the worker's garbage collector off. The zero value keeps it ON
+	// with the package's cache budget below.
+	GCDisabled bool
+
+	// GCReservedSpace is the cache floor the GC never reclaims below
+	// (`[worker.oci] reservedSpace`). Empty selects DefaultGCReservedSpace.
+	GCReservedSpace string
+
+	// GCMaxUsedSpace is the cache ceiling the GC reclaims above
+	// (`[worker.oci] maxUsedSpace`). Empty selects DefaultGCMaxUsedSpace.
+	GCMaxUsedSpace string
+
+	// GCMinFreeSpace is the free-space target the GC tries to leave
+	// (`[worker.oci] minFreeSpace`). Empty selects DefaultGCMinFreeSpace. It is
+	// deliberately SMALL: buildkitd's compiled default free target is 373 GB, and on a
+	// host with less free space every GC pass prunes the cache to the reserve floor —
+	// the measured cause of a repeated build of an unchanged tree re-executing layers.
+	GCMinFreeSpace string
+
+	// GCPolicies renders `[[worker.oci.gcpolicy]]` entries (advanced per-record policies).
+	// Empty renders none; the scalar budget above still applies.
+	GCPolicies []GCPolicy
+
+	// Extra is raw buildkitd.toml appended VERBATIM after the managed sections — the
+	// escape hatch for a daemon setting charly does not model. Nothing enforces exclusivity:
+	// a duplicate table (`[worker.oci]` again) makes buildkitd REJECT the file, so the
+	// operator must extend, never redefine, what the managed block writes.
+	Extra string
+}
+
+// GCPolicy is one `[[worker.oci.gcpolicy]]` entry: a per-record override of the worker's
+// cache budget. Empty fields are omitted; `all` applies the policy to every record.
+type GCPolicy struct {
+	ReservedSpace string
+	MaxUsedSpace  string
+	MinFreeSpace  string
+	KeepDuration  string
+	All           bool
+	Filters       []string
+}
+
+// The default GC budget. buildkitd's own default free-space target (373 GB) exceeds a
+// typical developer host's free space, so its GC prunes reclaimable cache down to the
+// ~10 GB reserve floor on every pass; a 100 GB floor/ceiling keeps a warm layer cache
+// across builds instead. Measured on 2026-11-27: a 1.9 TB disk at 87% used (247 GB free)
+// kept ~8-10 GB of cache and re-executed the builder layers (opencharly/charly#1292).
+const (
+	DefaultGCReservedSpace = "100GB"
+	DefaultGCMaxUsedSpace  = "100GB"
+	DefaultGCMinFreeSpace  = "10GB"
+)
+
+// gcBudget resolves the GC knobs a DaemonOptions carries, applying the package defaults.
+func (o DaemonOptions) gcBudget() (reserved, maxUsed, minFree string) {
+	reserved, maxUsed, minFree = o.GCReservedSpace, o.GCMaxUsedSpace, o.GCMinFreeSpace
+	if reserved == "" {
+		reserved = DefaultGCReservedSpace
+	}
+	if maxUsed == "" {
+		maxUsed = DefaultGCMaxUsedSpace
+	}
+	if minFree == "" {
+		minFree = DefaultGCMinFreeSpace
+	}
+	return reserved, maxUsed, minFree
+}
+
+// wantedGC is the ConfigGC these options render, for comparison with a running daemon's file.
+func (o DaemonOptions) wantedGC() GCConfig {
+	if o.GCDisabled {
+		return GCConfig{}
+	}
+	reserved, maxUsed, minFree := o.gcBudget()
+	return GCConfig{Enabled: true, ReservedSpace: reserved, MaxUsedSpace: maxUsed, MinFreeSpace: minFree}
 }
 
 // DaemonConfig renders buildkitd.toml for the resolved options.
 //
-// The ONE worker configuration this drive needs is the OCI worker's process mode: the
-// measured shape is `process-mode = "sandbox"` with NO added capability (CapEff=0) and
-// no `--oci-worker-no-process-sandbox`. Nothing else is set here, and in particular no
-// snapshotter is forced: the `native`-vs-`overlayfs` measurement was taken in a
-// DOUBLY-NESTED user namespace (where `native` was required and `overlayfs` produced an
-// empty container rootfs) and on a plain host `overlayfs` is the documented default and
-// was not tested — so forcing either one here would encode a venue-specific result as a
-// universal rule. GC is likewise left alone: it is expressible only in this file and is
-// UNPROVEN, so it is not invented.
+// The measured shape is `process-mode = "sandbox"` with NO added capability (CapEff=0) and
+// no `--oci-worker-no-process-sandbox`. No snapshotter is forced by default: the
+// `native`-vs-`overlayfs` measurement was taken in a DOUBLY-NESTED user namespace, where
+// `native` was required, and on a plain host `overlayfs` is the documented default — so
+// forcing either one as a UNIVERSAL default would encode a venue result as a rule. A
+// project that genuinely needs one sets it explicitly.
+//
+// GC IS configured, with a 100 GB budget by default. Leaving it to buildkitd's compiled
+// default sets a 373 GB free-space target; on a host with less free space the GC prunes
+// reclaimable cache down to the ~10 GB reserve floor on every pass, so a repeated build of
+// an unchanged tree re-executes its layers (opencharly/charly#1292). The budget is a
+// DAEMON setting like max-parallelism: it takes effect when the daemon starts, and a
+// running daemon with a different policy is reported by Ensure.
 func DaemonConfig(opts DaemonOptions) string {
+	processMode := opts.ProcessMode
+	if processMode == "" {
+		processMode = "sandbox"
+	}
 	cfg := "# Rendered by sdk/buildkitdrive. Do not hand-edit: the drive writes it from the\n" +
 		"# resolver's roots on every ensure.\n" +
 		"[worker.oci]\n" +
-		"  process-mode = \"sandbox\"\n"
+		fmt.Sprintf("  process-mode = %q\n", processMode)
 	if opts.MaxParallelism > 0 {
 		cfg += fmt.Sprintf("  max-parallelism = %d\n", opts.MaxParallelism)
+	}
+	if opts.Snapshotter != "" {
+		cfg += fmt.Sprintf("  snapshotter = %q\n", opts.Snapshotter)
+	}
+	if opts.NoProcessSandbox {
+		cfg += "  noProcessSandbox = true\n"
+	}
+	if opts.GCDisabled {
+		cfg += "  gc = false\n"
+	} else {
+		reserved, maxUsed, minFree := opts.gcBudget()
+		cfg += "  gc = true\n"
+		cfg += fmt.Sprintf("  reservedSpace = %q\n", reserved)
+		cfg += fmt.Sprintf("  maxUsedSpace = %q\n", maxUsed)
+		cfg += fmt.Sprintf("  minFreeSpace = %q\n", minFree)
+	}
+	for _, p := range opts.GCPolicies {
+		cfg += "\n[[worker.oci.gcpolicy]]\n"
+		if p.All {
+			cfg += "  all = true\n"
+		}
+		if p.ReservedSpace != "" {
+			cfg += fmt.Sprintf("  reservedSpace = %q\n", p.ReservedSpace)
+		}
+		if p.MaxUsedSpace != "" {
+			cfg += fmt.Sprintf("  maxUsedSpace = %q\n", p.MaxUsedSpace)
+		}
+		if p.MinFreeSpace != "" {
+			cfg += fmt.Sprintf("  minFreeSpace = %q\n", p.MinFreeSpace)
+		}
+		if p.KeepDuration != "" {
+			cfg += fmt.Sprintf("  keepDuration = %q\n", p.KeepDuration)
+		}
+		if len(p.Filters) > 0 {
+			quoted := make([]string, len(p.Filters))
+			for i, f := range p.Filters {
+				quoted[i] = strconv.Quote(f)
+			}
+			cfg += "  filters = [" + strings.Join(quoted, ", ") + "]\n"
+		}
 	}
 	if opts.RegistryMirror != "" {
 		// MEASURED (spike, buildkitd 0.34.0): the mirror key is the registry HOST, not a
@@ -140,6 +276,9 @@ func DaemonConfig(opts DaemonOptions) string {
 		// on its own stanza, or the daemon refuses the mirror rather than falling back.
 		cfg += fmt.Sprintf("\n[registry.\"ghcr.io\"]\n  mirrors = [%q]\n", opts.RegistryMirror)
 		cfg += fmt.Sprintf("\n[registry.%q]\n  http = true\n", opts.RegistryMirror)
+	}
+	if extra := strings.TrimSpace(opts.Extra); extra != "" {
+		cfg += "\n# operator extra (defaults.buildkit.extra)\n" + extra + "\n"
 	}
 	return cfg
 }
@@ -163,6 +302,83 @@ func ConfigMaxParallelism(content string) int {
 		return n
 	}
 	return 0
+}
+
+// ConfigGC is the GC policy a rendered buildkitd.toml carries, as read back from the file.
+// It is the value the daemon would load on its NEXT start; a daemon already running has the
+// value it started with, which is why Ensure reports a mismatch instead of rewriting a live
+// daemon's file.
+type GCConfig struct {
+	Enabled       bool
+	ReservedSpace string
+	MaxUsedSpace  string
+	MinFreeSpace  string
+}
+
+// ConfigGC reads the GC keys this file records. It parses the rendered form (this kit is the
+// only writer), within `[worker.oci]` only; an absent `gc` key reads as disabled (the
+// daemon's own default when the key is missing is `false` for the worker's gc field).
+func ConfigGC(content string) GCConfig {
+	out := GCConfig{}
+	inWorker := false
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			inWorker = line == "[worker.oci]"
+			continue
+		}
+		if !inWorker {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.Trim(strings.TrimSpace(value), `"`)
+		switch key {
+		case "gc":
+			out.Enabled = value == "true"
+		case "reservedSpace":
+			out.ReservedSpace = value
+		case "maxUsedSpace":
+			out.MaxUsedSpace = value
+		case "minFreeSpace":
+			out.MinFreeSpace = value
+		}
+	}
+	return out
+}
+
+// SameGC reports whether a rendered config's GC policy is the one opts asks for.
+func (o DaemonOptions) SameGC(configured GCConfig) bool {
+	if o.GCDisabled {
+		return !configured.Enabled
+	}
+	reserved, maxUsed, minFree := o.gcBudget()
+	return configured.Enabled && configured.ReservedSpace == reserved &&
+		configured.MaxUsedSpace == maxUsed && configured.MinFreeSpace == minFree
+}
+
+// Describe renders a ConfigGC for a diagnostic line.
+func (c GCConfig) Describe() string {
+	if !c.Enabled {
+		return "gc disabled"
+	}
+	return fmt.Sprintf("gc reservedSpace=%s maxUsedSpace=%s minFreeSpace=%s", c.ReservedSpace, c.MaxUsedSpace, c.MinFreeSpace)
+}
+
+// GCConfigMismatch reports whether a rendered config's GC policy differs from opts, and the
+// diagnostic line Ensure prints for a RUNNING daemon that was started with the old policy.
+// It is a PURE function so the running-daemon report is testable without a daemon: the
+// policy is fixed at daemon start, and the operator restarts it to apply the new one.
+func GCConfigMismatch(rendered string, opts DaemonOptions) (string, bool) {
+	configured := ConfigGC(rendered)
+	if opts.SameGC(configured) {
+		return "", false
+	}
+	return fmt.Sprintf("buildkitdrive: the running daemon was started with %s; %s was requested. The GC policy is fixed at daemon start — stop the daemon and this drive will start it with the new policy.\n",
+		configured.Describe(), opts.wantedGC().Describe()), true
 }
 
 // NeedsRestart reports whether a daemon configured with `configured` must be restarted to
