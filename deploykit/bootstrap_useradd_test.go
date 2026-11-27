@@ -123,26 +123,40 @@ func TestWriteBootstrap_GuardsOnTheDeclaredNameNotTheUID(t *testing.T) {
 //   - busybox `adduser` creates the same-named GROUP itself and takes -G by NAME
 //     (`adduser -G 1000` dies "unknown group 1000"), so a pre-created group is not
 //     needed — and actively breaks the fallback ("group 'user' in use", measured).
-//   - when uid 1000 is taken, the fallback must drop --uid AND --group together;
-//     `adduser -D -h DIR -s SHELL user` is the form busybox accepts there (measured:
-//     `user:x:1001:1001` — the declared NAME resolves, which is the contract).
+//   - when uid 1000 is taken the fallback must drop --uid AND --group together
+//     (`adduser -D -h DIR -s SHELL user`, measured `user:x:1001:1001`);
+//   - when group `user` ALREADY exists and uid 1000 is taken, that group-free form
+//     dies "group 'user' in use", so a third form passes the group NAME and no uid
+//     (`adduser -D -h DIR -G user -s SHELL user`, measured: it creates the account
+//     in the existing group at the next free uid).
 //
-// Red arm (the previous round's emitter): the second and third assertions failed —
-// the leg carried `addgroup -g 1000 user` (gid-keyed, so group `user` can be absent)
-// and the fallback still passed `-G user`.
+// Red arm, measured against TWO emitters (both pasted in the PR body):
+//   - the emitter reviewed in the previous round (c19ff8e) fails assertions 4 and 5 —
+//     it had the uid form and the group-free fallback, but no group-named form:
+//     `expected exactly three adduser attempts (uid / group-free / group-named), got 2`
+//     and "no group-named fallback";
+//   - the round-1 emitter (uid-guarded, `addgroup -g 1000 user`, one `-G user` attempt)
+//     fails assertions 1, 2, 3 and 5 (assertion 4 passes: its fallback already passed
+//     `-G user`).
 func TestWriteBootstrap_BusyboxLegEnsuresTheGroupByNameAndFallsBack(t *testing.T) {
 	var b strings.Builder
 	g := &Generator{}
 	g.WriteBootstrap(&b, bootstrapCreateBox())
 	got := b.String()
 
-	if strings.Contains(got, "addgroup") || strings.Contains(got, "-G ") {
-		t.Errorf("the busybox leg pre-creates/passes a group: busybox adduser makes its own same-named group, and a pre-created one breaks the fallback with \"group 'user' in use\" (measured)\n--- emitted ---\n%s", got)
+	if strings.Contains(got, "addgroup") {
+		t.Errorf("the busybox leg pre-creates a group: busybox adduser makes its own same-named group, and a pre-created one breaks the group-free fallback with \"group 'user' in use\" (measured)\n--- emitted ---\n%s", got)
+	}
+	if !strings.Contains(got, `-u 1000 -s "$LOGIN_SHELL" user ||`) {
+		t.Errorf("the busybox primary no longer passes the uid first\n--- emitted ---\n%s", got)
 	}
 	if !strings.Contains(got, `adduser -D -h /home/user -s "$LOGIN_SHELL" user`) {
-		t.Errorf("no uid-and-group-free adduser fallback: a base whose uid 1000 is taken still cannot create the declared name\n--- emitted ---\n%s", got)
+		t.Errorf("no uid-and-group-free adduser fallback: a base whose uid 1000 is taken (group absent) still cannot create the declared name\n--- emitted ---\n%s", got)
 	}
-	if n := strings.Count(got, "adduser -D"); n != 2 {
-		t.Errorf("expected exactly two adduser attempts (primary + fallback), got %d\n--- emitted ---\n%s", n, got)
+	if !strings.Contains(got, `adduser -D -h /home/user -G user -s "$LOGIN_SHELL" user`) {
+		t.Errorf("no group-named fallback: on a base that already has group `user` but not the account, the group-free form dies \"group 'user' in use\" and the name is never created\n--- emitted ---\n%s", got)
+	}
+	if n := strings.Count(got, "adduser -D"); n != 3 {
+		t.Errorf("expected exactly three adduser attempts (uid / group-free / group-named), got %d\n--- emitted ---\n%s", n, got)
 	}
 }

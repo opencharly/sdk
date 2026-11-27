@@ -101,14 +101,18 @@ func (g *Generator) WriteBootstrap(b *strings.Builder, img *buildkit.ResolvedBox
 		fmt.Fprintf(b, "        { useradd -m -u %d -g %d -s \"$LOGIN_SHELL\" %s || useradd -o -m -u %d -g %d -s \"$LOGIN_SHELL\" %s; }; \\\n", img.UID, img.GID, img.User, img.UID, img.GID, img.User)
 		b.WriteString("      else \\\n")
 		// busybox adduser creates the same-named GROUP itself and takes -G by NAME
-		// (measured: `adduser -G 1000` on Alpine dies "unknown group 1000"), so a
-		// pre-created group is not only unnecessary — it BREAKS the group-free
-		// fallback ("group 'user' in use"). Neither attempt passes --group:
-		// `-u UID` gives the uid when it is free, and the fallback lets busybox pick
-		// the next free uid when it is not (measured on a base whose uid 1000 is
-		// another account: `user:x:1001:1001` — the declared NAME resolves, which is
-		// the contract; a busybox userland has no --non-unique to hold uid 1000).
-		fmt.Fprintf(b, "        { adduser -D -h %s -u %d -s \"$LOGIN_SHELL\" %s || adduser -D -h %s -s \"$LOGIN_SHELL\" %s; }; \\\n", img.Home, img.UID, img.User, img.Home, img.User)
+		// (measured: `adduser -G 1000` on Alpine dies "unknown group 1000"). Three
+		// measured refusals need three forms, and each form covers exactly one of
+		// them (all three measured on Alpine):
+		//   1. `-u UID` alone        — uid free: creates user at UID + group `user`.
+		//   2. neither `-u` nor `-G` — uid taken, group absent: "uid '1000' in use" on
+		//      a base without the group → creates user at the next free uid.
+		//      (But it dies "group 'user' in use" when the group ALREADY exists.)
+		//   3. `-G user`, no `-u`    — group present, uid taken: creates the account at
+		//      the next free uid IN the existing group.
+		// A busybox userland has no --non-unique, so the uid may move; the contract is
+		// the declared NAME resolving, which every form guarantees.
+		fmt.Fprintf(b, "        { adduser -D -h %s -u %d -s \"$LOGIN_SHELL\" %s || adduser -D -h %s -s \"$LOGIN_SHELL\" %s || adduser -D -h %s -G %s -s \"$LOGIN_SHELL\" %s; }; \\\n", img.Home, img.UID, img.User, img.Home, img.User, img.Home, img.User, img.User)
 		b.WriteString("      fi; \\\n")
 		b.WriteString("    fi\n\n")
 	}
