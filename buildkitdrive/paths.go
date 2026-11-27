@@ -380,12 +380,6 @@ func GCConfigMismatch(rendered string, opts DaemonOptions) (string, bool) {
 		configured.Describe(), opts.wantedGC().Describe()), true
 }
 
-// ConfigDiffers reports whether an on-disk config differs from what opts renders — the
-// ensure's write decision. Pure, so the "always write the full config" arm is testable.
-func ConfigDiffers(existing string, opts DaemonOptions) bool {
-	return existing != DaemonConfig(opts)
-}
-
 // NeedsRestart reports whether a daemon configured with `configured` must be restarted to
 // honour `want`.
 //

@@ -124,20 +124,8 @@ func Ensure(ctx context.Context, r Runner, opts DaemonOptions) (*Daemon, error) 
 	// in a log beside its state root, which is also where a reader looks for the daemon's
 	// own startup diagnostics.
 	logPath := filepath.Join(stateRoot, LogName)
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("buildkitdrive: daemon log %s: %w", logPath, err)
-	}
-	defer func() { _ = logFile.Close() }() // the child keeps its own descriptor
-	cmd := exec.CommandContext(ctx, RootlesskitBinary, args...)
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("buildkitdrive: start %s: %w", RootlesskitBinary, err)
-	}
-	// Release rather than Wait: the daemon outlives this call by design, and releasing
-	// hands its reaping to init instead of leaving a zombie behind.
-	if err := cmd.Process.Release(); err != nil {
-		return nil, fmt.Errorf("buildkitdrive: release %s: %w", RootlesskitBinary, err)
+	if err := startDaemon(ctx, logPath, args); err != nil {
+		return nil, err
 	}
 	d.Started = true
 	deadline := time.Now().Add(ReadinessTimeout)
@@ -154,6 +142,31 @@ func Ensure(ctx context.Context, r Runner, opts DaemonOptions) (*Daemon, error) 
 		case <-time.After(readinessInterval):
 		}
 	}
+}
+
+// startDaemon launches the detached rootlesskit/daemon process and releases it.
+//
+// It is a package variable, not an inline exec, so Ensure's decision to WRITE the rendered
+// config before it starts a daemon is exercised by a unit test without launching a real
+// daemon (a unit test that needed rootlesskit, a user namespace and a socket would be a bed,
+// not a gate). The production value is the measured one.
+var startDaemon = func(ctx context.Context, logPath string, args []string) error {
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("buildkitdrive: daemon log %s: %w", logPath, err)
+	}
+	defer func() { _ = logFile.Close() }() // the child keeps its own descriptor
+	cmd := exec.CommandContext(ctx, RootlesskitBinary, args...)
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("buildkitdrive: start %s: %w", RootlesskitBinary, err)
+	}
+	// Release rather than Wait: the daemon outlives this call by design, and releasing
+	// hands its reaping to init instead of leaving a zombie behind.
+	if err := cmd.Process.Release(); err != nil {
+		return fmt.Errorf("buildkitdrive: release %s: %w", RootlesskitBinary, err)
+	}
+	return nil
 }
 
 // DaemonArgs renders the daemon's spawn argv.

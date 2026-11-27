@@ -373,20 +373,82 @@ func TestGCConfigMismatch(t *testing.T) {
 	}
 }
 
-// TestConfigDiffers — the ensure's write decision: the full rendered config is written when
-// the file differs (the always-write arm that replaced the "adopt whatever is on disk" path),
-// and not rewritten when it already matches.
-func TestConfigDiffers(t *testing.T) {
-	opts := DaemonOptions{MaxParallelism: 4}
-	if !ConfigDiffers("", opts) {
-		t.Error("an absent config must be written")
+// fakeWorkers is a Runner that answers the daemon probe. It is used ONLY by the Ensure
+// config test, whose seam materialises the socket; nothing else about a daemon is faked.
+type fakeWorkers struct{}
+
+func (fakeWorkers) Run(context.Context, string, ...string) (string, error) {
+	return "oci.process-mode:SANDBOX", nil
+}
+
+// TestEnsureRewritesAStaleConfigWithoutParallelism — the always-write arm, exercised on
+// the REAL Ensure path.
+//
+// The pre-change shape skipped the write when MaxParallelism was 0 and a config file
+// already existed, so a stale daemon config survived an ensure and a daemon started from
+// it. This test starts from exactly that file (a pre-GC config, max-parallelism=4) and
+// asserts Ensure REPLACES it with the rendered config for an options value carrying no
+// parallelism at all. It FAILS on the unmodified tree (the write was skipped).
+func TestEnsureRewritesAStaleConfigWithoutParallelism(t *testing.T) {
+	rt, cache := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", rt)
+	t.Setenv("XDG_CACHE_HOME", cache)
+
+	cfg, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ConfigDiffers(DaemonConfig(opts), opts) {
-		t.Error("an identical config must not be rewritten")
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	// The pre-change file (no GC budget) must be upgraded.
-	if !ConfigDiffers("[worker.oci]\n  process-mode = \"sandbox\"\n  max-parallelism = 4\n", opts) {
-		t.Error("a config without the GC budget must be rewritten")
+	stale := "[worker.oci]\n  process-mode = \"sandbox\"\n  max-parallelism = 4\n"
+	if err := os.WriteFile(cfg, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture the spawn instead of launching a daemon: the assertion is about the config
+	// decision that precedes it, and a real rootlesskit here would be a bed, not a gate.
+	// The seam materialises the socket the readiness probe stats, so Ensure returns as
+	// soon as the fake daemon "answers" rather than waiting out its deadline.
+	var gotArgs []string
+	var gotLog string
+	old := startDaemon
+	startDaemon = func(_ context.Context, logPath string, args []string) error {
+		gotLog, gotArgs = logPath, args
+		for i, a := range args {
+			if a == "--addr" && i+1 < len(args) {
+				if err := os.WriteFile(strings.TrimPrefix(args[i+1], "unix://"), nil, 0o600); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { startDaemon = old })
+
+	opts := DaemonOptions{} // no parallelism: the case the old branch refused to write
+	if _, err := Ensure(context.Background(), fakeWorkers{}, opts); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	got, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := DaemonConfig(opts); string(got) != want {
+		t.Fatalf("the stale config was not replaced by the rendered one:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if !strings.Contains(string(got), "reservedSpace") {
+		t.Errorf("the rendered config must carry the GC budget:\n%s", got)
+	}
+	if strings.Contains(string(got), "max-parallelism = 4") {
+		t.Errorf("the stale parallelism survived:\n%s", got)
+	}
+	if gotLog == "" || len(gotArgs) == 0 {
+		t.Fatalf("the daemon was not spawned through the seam: log=%q args=%v", gotLog, gotArgs)
+	}
+	if !strings.Contains(strings.Join(gotArgs, " "), "--config "+cfg) {
+		t.Errorf("the spawn must name the rendered config: %v", gotArgs)
 	}
 }
 
